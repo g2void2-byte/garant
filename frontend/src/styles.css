@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+  }
+
+  body {
+    @apply bg-bg text-white font-display antialiased;
+    background-image:
+      radial-gradient(900px 600px at 20% -10%, rgba(255, 167, 36, 0.18), transparent 60%),
+      radial-gradient(900px 600px at 80% 110%, rgba(120, 90, 255, 0.16), transparent 60%),
+      linear-gradient(180deg, #0b0b0e 0%, #0e0e13 100%);
+    background-attachment: fixed;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  * {
+    -webkit-user-drag: none;
+  }
+
+  ::selection {
+    background: rgba(255, 167, 36, 0.35);
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply rounded-3xl border border-white/5 bg-bg-card/70 backdrop-blur-xl shadow-card;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .glass-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    background-size: 24px 24px;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+    pointer-events: none;
+    opacity: 0.5;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-3 rounded-full
+           font-semibold text-sm transition-all duration-200
+           active:scale-[0.97];
+  }
+
+  .btn-primary {
+    @apply btn text-bg shadow-glow;
+    background: linear-gradient(135deg, #ffd07a 0%, #ffa724 55%, #f29100 100%);
+  }
+
+  .btn-primary:hover {
+    filter: brightness(1.05);
+  }
+
+  .btn-ghost {
+    @apply btn bg-white/5 hover:bg-white/10 text-white;
+  }
+
+  .btn-danger {
+    @apply btn bg-danger/20 hover:bg-danger/30 text-red-300;
+  }
+
+  .input {
+    @apply w-full rounded-2xl bg-bg-input/70 border border-white/5
+           px-4 py-3 text-sm placeholder-white/30
+           outline-none transition focus:border-brand/60 focus:bg-bg-input;
+  }
+
+  .stat-card {
+    @apply glass-card p-4 flex flex-col;
+  }
+
+  .pill {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-medium;
+  }
+}
+
+/* iOS-style scrollbar polish */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}

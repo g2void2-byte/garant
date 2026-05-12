@@ -1,0 +1,31 @@
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.db
+*.db-journal
+
+# Env
+.env
+.env.local
+*.env.local
+
+# Node
+node_modules/
+dist/
+build/
+.cache/
+
+# Logs
+*.log
