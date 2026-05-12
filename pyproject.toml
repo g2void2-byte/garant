@@ -1,0 +1,30 @@
+[project]
+name = "garant"
+version = "1.0.0"
+description = "Telegram escrow bot + Mini App (TMA)"
+requires-python = ">=3.11"
+dependencies = [
+    "aiocryptopay==0.3.5",
+    "aiofiles==23.2.1",
+    "aiogram==3.4.1",
+    "aiohttp==3.9.3",
+    "aiohttp-proxy==0.1.2",
+    "AsyncPayments==1.4.0",
+    "magic-filter==1.0.12",
+    "peewee==3.17.1",
+    "pydantic==2.5.3",
+    "pydantic_core==2.14.6",
+    "fastapi==0.115.0",
+    "uvicorn[standard]==0.30.6",
+    "websockets==12.0",
+    "python-multipart==0.0.9",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["webapp/frontend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

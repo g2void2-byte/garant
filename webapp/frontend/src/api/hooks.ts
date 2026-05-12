@@ -1,0 +1,245 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "./client";
+import type {
+  CategoryDto,
+  DealDto,
+  DepositDto,
+  InvoiceDto,
+  NotificationCountersDto,
+  NotificationDto,
+  ReviewDto,
+  ServiceDto,
+  SupportPersonDto,
+  UserCardDto,
+} from "./types";
+
+export function useMe() {
+  return useQuery<UserCardDto>({
+    queryKey: ["me"],
+    queryFn: () => api.get("api/me").json(),
+    staleTime: 30_000,
+  });
+}
+
+export function useUpdateMe() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<{ description: string; banner_url: string | null; forums: any[] }>) =>
+      api.patch("api/me", { json: body }).json<UserCardDto>(),
+    onSuccess: (data) => {
+      qc.setQueryData(["me"], data);
+    },
+  });
+}
+
+export function useCategories() {
+  return useQuery<CategoryDto[]>({
+    queryKey: ["categories"],
+    queryFn: () => api.get("api/categories").json(),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useServices(params: { category?: string; q?: string; owner?: string } = {}) {
+  const searchParams: Record<string, string> = {};
+  if (params.category) searchParams.category = params.category;
+  if (params.q) searchParams.q = params.q;
+  if (params.owner) searchParams.owner = params.owner;
+  return useQuery<ServiceDto[]>({
+    queryKey: ["services", params],
+    queryFn: () => api.get("api/services", { searchParams }).json(),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateService() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { category_slug: string; title: string; description: string; price: number }) =>
+      api.post("api/services", { json: body }).json<ServiceDto>(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["services"] });
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      qc.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
+}
+
+export function useDeleteService() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`api/services/${id}`).json(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["services"] });
+    },
+  });
+}
+
+export function useUsers(params: { q?: string; filter?: string } = {}) {
+  const searchParams: Record<string, string> = {};
+  if (params.q) searchParams.q = params.q;
+  if (params.filter) searchParams.filter = params.filter;
+  return useQuery<UserCardDto[]>({
+    queryKey: ["users", params],
+    queryFn: () => api.get("api/users", { searchParams }).json(),
+    staleTime: 15_000,
+  });
+}
+
+export function useUser(username: string | undefined) {
+  return useQuery<UserCardDto>({
+    queryKey: ["user", username],
+    queryFn: () => api.get(`api/users/${username}`).json(),
+    enabled: !!username,
+  });
+}
+
+export function useDeals(params: { role?: string; status?: string } = {}) {
+  const searchParams: Record<string, string> = {};
+  if (params.role) searchParams.role = params.role;
+  if (params.status) searchParams.status = params.status;
+  return useQuery<DealDto[]>({
+    queryKey: ["deals", params],
+    queryFn: () => api.get("api/deals", { searchParams }).json(),
+    staleTime: 15_000,
+  });
+}
+
+export function useDeal(id: number | undefined) {
+  return useQuery<DealDto>({
+    queryKey: ["deal", id],
+    queryFn: () => api.get(`api/deals/${id}`).json(),
+    enabled: !!id,
+  });
+}
+
+export function useDealAction(action: "confirm" | "complete" | "cancel" | "arbitrate") {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason?: string }) => {
+      const searchParams: Record<string, string> = {};
+      if (action === "arbitrate" && reason) searchParams.reason = reason;
+      return api.post(`api/deals/${id}/${action}`, { searchParams }).json<DealDto>();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deals"] });
+      qc.invalidateQueries({ queryKey: ["deal"] });
+    },
+  });
+}
+
+export function useCreateDeal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { counterparty: string; role: "buyer" | "seller"; sum: number; description: string; pay_comission: "buyer" | "seller" }) =>
+      api.post("api/deals", { json: body }).json<DealDto>(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deals"] });
+    },
+  });
+}
+
+export function useReviews(username: string | undefined) {
+  return useQuery<ReviewDto[]>({
+    queryKey: ["reviews", username],
+    queryFn: () => api.get("api/reviews", { searchParams: { user: username! } }).json(),
+    enabled: !!username,
+  });
+}
+
+export function useCreateReview() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { target_username: string; rating: number; text: string; deal_id?: number }) =>
+      api.post("api/reviews", { json: body }).json<ReviewDto>(),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["reviews", vars.target_username] });
+      qc.invalidateQueries({ queryKey: ["user", vars.target_username] });
+    },
+  });
+}
+
+export function useNotifications(type?: string) {
+  return useQuery<NotificationDto[]>({
+    queryKey: ["notifications", type ?? "all"],
+    queryFn: () =>
+      api.get("api/notifications", { searchParams: type ? { type } : {} }).json(),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useNotificationCounters() {
+  return useQuery<NotificationCountersDto>({
+    queryKey: ["notifications", "counters"],
+    queryFn: () => api.get("api/notifications/counters").json(),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useMarkNotificationRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.post(`api/notifications/${id}/read`).json(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useMarkAllRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post("api/notifications/read-all").json(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+}
+
+export function useAdmins() {
+  return useQuery<SupportPersonDto[]>({
+    queryKey: ["support", "admins"],
+    queryFn: () => api.get("api/support/admins").json(),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useArbiters() {
+  return useQuery<SupportPersonDto[]>({
+    queryKey: ["support", "arbiters"],
+    queryFn: () => api.get("api/support/arbiters").json(),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useDeposits() {
+  return useQuery<DepositDto[]>({
+    queryKey: ["payments", "deposits"],
+    queryFn: () => api.get("api/payments/deposit").json(),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateDepositInvoice() {
+  return useMutation({
+    mutationFn: (amount: number) =>
+      api.post("api/payments/deposit/invoice", { json: { amount } }).json<InvoiceDto>(),
+  });
+}
+
+export function useCreateDeposit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (amount: number) => api.post("api/payments/deposit", { json: { amount } }).json<DepositDto>(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["payments"] });
+      qc.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
+}
+
+export function useWithdraw() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (amount: number) => api.post("api/payments/withdraw", { json: { amount } }).json(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
+  });
+}
