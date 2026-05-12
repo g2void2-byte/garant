@@ -1,0 +1,37 @@
+# --- Editors ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+
+# --- Env ---
+.env
+.env.local
+*.env.local
+
+# --- Node ---
+node_modules/
+dist/
+build/
+.cache/
+*.tsbuildinfo
+.parcel-cache/
+
+# --- Logs / OS ---
+*.log
+Thumbs.db
