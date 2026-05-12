@@ -97,7 +97,17 @@ if _FRONTEND_DIST.is_dir():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str) -> FileResponse:
-        target = _FRONTEND_DIST / full_path
-        if full_path and target.is_file():
+        index = _FRONTEND_DIST / "index.html"
+        if not full_path:
+            return FileResponse(index)
+        # Resolve the requested path and confirm it stays *inside* the dist
+        # directory before serving it.  This blocks `..`-based path traversal
+        # from leaking arbitrary files off the host filesystem.
+        target = (_FRONTEND_DIST / full_path).resolve()
+        try:
+            target.relative_to(_FRONTEND_DIST)
+        except ValueError:
+            return FileResponse(index)
+        if target.is_file():
             return FileResponse(target)
-        return FileResponse(_FRONTEND_DIST / "index.html")
+        return FileResponse(index)

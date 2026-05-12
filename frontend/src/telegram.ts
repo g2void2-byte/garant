@@ -63,8 +63,32 @@ export function getInitData(): string {
 
   // Dev fallback — emulate a Telegram payload without a hash so the backend
   // (configured without BOT_TOKEN in development) still authenticates us.
+  //
+  // For local multi-user testing, append ?as=<tg_id>&name=<first>&u=<username>
+  // to the URL once; the identity is stashed in sessionStorage so it survives
+  // React-Router navigations within the same tab.
+  let user: TelegramUser = DEV_FALLBACK_USER;
+  try {
+    const url = new URL(window.location.href);
+    const asId = url.searchParams.get("as");
+    if (asId) {
+      const overrideUser: TelegramUser = {
+        id: Number(asId),
+        first_name: url.searchParams.get("name") ?? `User ${asId}`,
+        username: url.searchParams.get("u") ?? undefined,
+        photo_url: "",
+      };
+      window.sessionStorage.setItem("autogarant.dev_user", JSON.stringify(overrideUser));
+      user = overrideUser;
+    } else {
+      const stashed = window.sessionStorage.getItem("autogarant.dev_user");
+      if (stashed) user = JSON.parse(stashed) as TelegramUser;
+    }
+  } catch {
+    user = DEV_FALLBACK_USER;
+  }
   const params = new URLSearchParams();
-  params.set("user", JSON.stringify(DEV_FALLBACK_USER));
+  params.set("user", JSON.stringify(user));
   params.set("auth_date", String(Math.floor(Date.now() / 1000)));
   return params.toString();
 }

@@ -20,8 +20,13 @@ export default function DealDetail() {
   });
 
   const act = useMutation({
-    mutationFn: (action: "fund" | "confirm" | "cancel" | "open_dispute") =>
-      api.dealAction(Number(id), action),
+    mutationFn: ({
+      action,
+      reason,
+    }: {
+      action: "fund" | "confirm" | "cancel" | "open_dispute";
+      reason?: string;
+    }) => api.dealAction(Number(id), action, reason),
     onSuccess: async () => {
       notify("success");
       haptic("medium");
@@ -93,7 +98,11 @@ export default function DealDetail() {
         )}
       </div>
 
-      <Actions deal={deal} onAct={(a) => act.mutate(a)} busy={act.isPending} />
+      <Actions
+        deal={deal}
+        onAct={(action, reason) => act.mutate({ action, reason })}
+        busy={act.isPending}
+      />
     </motion.div>
   );
 }
@@ -138,7 +147,7 @@ function Actions({
   busy,
 }: {
   deal: Deal;
-  onAct: (a: "fund" | "confirm" | "cancel" | "open_dispute") => void;
+  onAct: (a: "fund" | "confirm" | "cancel" | "open_dispute", reason?: string) => void;
   busy: boolean;
 }) {
   const { user } = useUser();
@@ -180,7 +189,7 @@ function Actions({
             if (b.action === "open_dispute") {
               const reason = prompt("Причина спора?");
               if (!reason) return;
-              onAct("open_dispute");
+              onAct("open_dispute", reason);
               return;
             }
             onAct(b.action);
