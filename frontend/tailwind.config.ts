@@ -15,9 +15,11 @@ export default {
         "text-muted": "var(--text-muted)",
         success: "var(--success)",
         danger: "var(--danger)",
+        warning: "var(--warning)",
       },
       fontFamily: {
         sans: [
+          "'TT Hoves'",
           "var(--tg-theme-font-family, -apple-system)",
           "system-ui",
           "Segoe UI",
@@ -29,10 +31,11 @@ export default {
       },
       boxShadow: {
         pop: "0 8px 30px rgba(0,0,0,.35)",
-        glow: "0 0 30px rgba(255,214,10,0.18)",
+        glow: "0 0 30px rgba(254,230,0,0.18)",
+        navbar: "0 4px 42px rgba(5,5,5,.5)",
       },
       borderRadius: {
-        card: "16px",
+        card: "14px",
       },
       keyframes: {
         shimmer: {
@@ -52,6 +55,12 @@ export default {
         shimmer: "shimmer 1.4s linear infinite",
         breathe: "breathe 3s ease-in-out infinite",
         fadein: "fadein .25s ease-out both",
+      },
+      maxWidth: {
+        app: "500px",
+      },
+      height: {
+        navbar: "62px",
       },
     },
   },

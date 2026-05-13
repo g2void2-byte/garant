@@ -3,16 +3,17 @@
 @tailwind utilities;
 
 :root {
-  --bg: #0e0e0f;
-  --panel: #1a1a1b;
-  --panel-2: #222224;
-  --border: #2a2a2c;
-  --accent: #ffd60a;
-  --accent-fg: #0e0e0f;
-  --text: #f5f5f7;
-  --text-muted: #8a8a8e;
+  --bg: #1c1c1c;
+  --panel: #282828;
+  --panel-2: #5f5f60;
+  --border: #3a3a3c;
+  --accent: #fee600;
+  --accent-fg: #1c1c1c;
+  --text: #ffffff;
+  --text-muted: #878787;
   --success: #34d399;
-  --danger: #f87171;
+  --danger: #f66262;
+  --warning: #f8b31f;
 
   font-feature-settings: "tnum" on;
   color-scheme: dark;
@@ -30,7 +31,8 @@ body,
 body {
   margin: 0;
   -webkit-tap-highlight-color: transparent;
-  font-family: var(--tg-theme-font-family, -apple-system, system-ui, "Segoe UI", Roboto, sans-serif);
+  font-family: "TT Hoves", var(--tg-theme-font-family, -apple-system), system-ui, "Segoe UI",
+    Roboto, sans-serif;
   overflow-x: hidden;
 }
 
@@ -58,7 +60,7 @@ button {
 }
 
 .glow-accent {
-  box-shadow: 0 0 30px rgba(255, 214, 10, 0.25), 0 0 6px rgba(255, 214, 10, 0.4);
+  box-shadow: 0 0 30px rgba(254, 230, 0, 0.25), 0 0 6px rgba(254, 230, 0, 0.4);
 }
 
 .no-scrollbar::-webkit-scrollbar {
