@@ -53,6 +53,20 @@ async def get_counters(user: CurrentUser, session: SessionDep):
     )
 
 
+@router.get("/{notif_id}", response_model=NotificationOut)
+async def get_notification(notif_id: int, user: CurrentUser, session: SessionDep):
+    """Fetch a single notification by id.
+
+    Used by the dedicated ``/notifications/:id`` detail page so the frontend
+    can render the full body + payload (deep links into the related deal,
+    deposit, etc) without scrolling the inbox list.
+    """
+    notif = await session.get(Notification, notif_id)
+    if not notif or notif.recipient_id != user.id:
+        raise HTTPException(404, "Уведомление не найдено")
+    return NotificationOut.model_validate(notif, from_attributes=True)
+
+
 @router.post("/{notif_id}/read")
 async def mark_read(notif_id: int, user: CurrentUser, session: SessionDep):
     notif = await session.get(Notification, notif_id)
