@@ -18,5 +18,21 @@ class Settings(BaseSettings):
     run_bot: bool = True
     allow_unsigned_init_data: bool = False
 
+    pin_jwt_secret: str = ""
+    pin_session_ttl_seconds: int = 60 * 60 * 12
+    pin_max_attempts: int = 3
+    pin_lock_minutes: int = 60
+    pin_reset_code_ttl_seconds: int = 10 * 60
+
 
 settings = Settings()
+
+
+def pin_secret() -> str:
+    """JWT secret for PIN session tokens. Falls back to bot_token-derived hash."""
+    if settings.pin_jwt_secret:
+        return settings.pin_jwt_secret
+    import hashlib
+
+    seed = (settings.bot_token or "garant-dev-pin-secret").encode()
+    return hashlib.sha256(b"pin-jwt:" + seed).hexdigest()

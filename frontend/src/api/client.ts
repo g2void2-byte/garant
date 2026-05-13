@@ -1,4 +1,5 @@
 import ky, { HTTPError } from "ky";
+import { getPinToken } from "@/lib/pin";
 import { getInitData } from "@/lib/tg";
 
 const baseURL = import.meta.env.VITE_API_URL || "";
@@ -11,6 +12,8 @@ export const api = ky.create({
       (req) => {
         const initData = getInitData();
         if (initData) req.headers.set("Authorization", `tma ${initData}`);
+        const pinToken = getPinToken();
+        if (pinToken) req.headers.set("X-Pin-Token", pinToken);
       },
     ],
     beforeError: [

@@ -60,6 +60,7 @@ from .routers import (  # noqa: E402
     me,
     notifications,
     payments,
+    pin,
     reviews,
     services,
     support,
@@ -67,7 +68,7 @@ from .routers import (  # noqa: E402
     ws,
 )
 
-for r in (me, categories, services, users, deals, reviews, notifications, payments, support, ws):
+for r in (me, pin, categories, services, users, deals, reviews, notifications, payments, support, ws):
     app.include_router(r.router)
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"

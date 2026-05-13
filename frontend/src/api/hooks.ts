@@ -7,6 +7,9 @@ import type {
   InvoiceDto,
   NotificationCountersDto,
   NotificationDto,
+  PinResetRequestDto,
+  PinStatusDto,
+  PinTokenDto,
   ReviewDto,
   ServiceDto,
   SupportPersonDto,
@@ -241,5 +244,58 @@ export function useWithdraw() {
   return useMutation({
     mutationFn: (amount: number) => api.post("api/payments/withdraw", { json: { amount } }).json(),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
+  });
+}
+
+// ── PIN ─────────────────────────────────────────────────
+
+export function usePinStatus() {
+  return useQuery<PinStatusDto>({
+    queryKey: ["pin", "status"],
+    queryFn: () => api.get("api/pin/status").json(),
+    staleTime: 0,
+    refetchOnMount: true,
+  });
+}
+
+export function useSetupPin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (pin: string) =>
+      api.post("api/pin/setup", { json: { pin } }).json<PinTokenDto>(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pin"] }),
+  });
+}
+
+export function useCheckPin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (pin: string) =>
+      api.post("api/pin/check", { json: { pin } }).json<PinTokenDto>(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pin"] }),
+  });
+}
+
+export function useChangePin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { old_pin: string; new_pin: string }) =>
+      api.post("api/pin/change", { json: body }).json<PinTokenDto>(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pin"] }),
+  });
+}
+
+export function useRequestPinReset() {
+  return useMutation({
+    mutationFn: () => api.post("api/pin/reset/request").json<PinResetRequestDto>(),
+  });
+}
+
+export function useConfirmPinReset() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { code: string; new_pin: string }) =>
+      api.post("api/pin/reset/confirm", { json: body }).json<PinTokenDto>(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pin"] }),
   });
 }

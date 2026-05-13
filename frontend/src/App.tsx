@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { PinGate } from "@/components/PinGate";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -54,30 +55,32 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <LiveNotifications />
-        <BrowserRouter>
-          <div className="min-h-full">
-            <Suspense fallback={<PageFallback />}>
-              <Routes>
-                <Route path="/" element={<Navigate to="/search" replace />} />
-                <Route path="/search" element={<SearchPage />} />
-                <Route path="/search/categories" element={<CategoriesPage />} />
-                <Route path="/search/categories/:slug" element={<CategoriesPage />} />
-                <Route path="/u/:username" element={<UserProfilePage />} />
-                <Route path="/deals" element={<DealsPage />} />
-                <Route path="/deals/new" element={<CreateDealPage />} />
-                <Route path="/deals/:id" element={<DealDetailPage />} />
-                <Route path="/help" element={<HelpPage />} />
-                <Route path="/notifications" element={<NotificationsPage />} />
-                <Route path="/profile" element={<ProfilePage />} />
-                <Route path="/profile/services/new" element={<AddServicePage />} />
-                <Route path="/profile/deposit" element={<DepositPage />} />
-                <Route path="*" element={<Navigate to="/search" replace />} />
-              </Routes>
-            </Suspense>
-            <BottomNav />
-          </div>
-        </BrowserRouter>
+        <PinGate>
+          <LiveNotifications />
+          <BrowserRouter>
+            <div className="min-h-full">
+              <Suspense fallback={<PageFallback />}>
+                <Routes>
+                  <Route path="/" element={<Navigate to="/search" replace />} />
+                  <Route path="/search" element={<SearchPage />} />
+                  <Route path="/search/categories" element={<CategoriesPage />} />
+                  <Route path="/search/categories/:slug" element={<CategoriesPage />} />
+                  <Route path="/u/:username" element={<UserProfilePage />} />
+                  <Route path="/deals" element={<DealsPage />} />
+                  <Route path="/deals/new" element={<CreateDealPage />} />
+                  <Route path="/deals/:id" element={<DealDetailPage />} />
+                  <Route path="/help" element={<HelpPage />} />
+                  <Route path="/notifications" element={<NotificationsPage />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/profile/services/new" element={<AddServicePage />} />
+                  <Route path="/profile/deposit" element={<DepositPage />} />
+                  <Route path="*" element={<Navigate to="/search" replace />} />
+                </Routes>
+              </Suspense>
+              <BottomNav />
+            </div>
+          </BrowserRouter>
+        </PinGate>
       </ToastProvider>
     </QueryClientProvider>
   );
