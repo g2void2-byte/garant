@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import notifier
 from .config import settings
+from .cryptopay import CryptoPay, CryptoPayError
 from .models import (
     Currency,
     NotificationType,
@@ -89,20 +90,27 @@ async def create_deposit_invoice(
         )
 
     try:
-        from AsyncPayments.cryptoBot import CryptoBot
-
-        crypto = CryptoBot(settings.cryptobot_token)
-        invoice = await crypto.create_invoice(asset=currency.code, amount=amount)
-    except Exception as e:
+        async with CryptoPay(
+            settings.cryptobot_token, testnet=settings.cryptobot_testnet
+        ) as crypto:
+            invoice = await crypto.create_invoice(asset=currency.code, amount=amount)
+    except CryptoPayError as e:
         logger.error("CryptoBot invoice error: %s", e)
         raise HTTPException(502, f"Ошибка CryptoBot: {e}")
 
+    pay_url = (
+        invoice.mini_app_invoice_url
+        or invoice.bot_invoice_url
+        or invoice.pay_url
+        or invoice.web_app_invoice_url
+        or ""
+    )
     deposit = WalletDeposit(
         user_id=user.id,
         currency_id=currency.id,
         amount=amount,
         provider_invoice_id=str(invoice.invoice_id),
-        pay_url=invoice.pay_url,
+        pay_url=pay_url,
         status=WalletDepositStatus.pending,
     )
     session.add(deposit)
@@ -144,11 +152,13 @@ async def poll_deposit_status(session: AsyncSession, deposit: WalletDeposit) -> 
     if not settings.cryptobot_token:
         return deposit
     try:
-        from AsyncPayments.cryptoBot import CryptoBot
-
-        crypto = CryptoBot(settings.cryptobot_token)
-        rows = await crypto.get_invoices(invoice_ids=[int(deposit.provider_invoice_id)])
-    except Exception as e:
+        async with CryptoPay(
+            settings.cryptobot_token, testnet=settings.cryptobot_testnet
+        ) as crypto:
+            rows = await crypto.get_invoices(
+                invoice_ids=[int(deposit.provider_invoice_id)]
+            )
+    except CryptoPayError as e:
         logger.warning("CryptoBot poll error: %s", e)
         return deposit
 

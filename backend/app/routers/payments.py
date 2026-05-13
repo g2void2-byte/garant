@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
 from ..config import settings
+from ..cryptopay import CryptoPay, CryptoPayError
 from ..deps import CurrentUser, SessionDep
 from ..models import Invoice, InvoiceProvider, InvoiceStatus
 from ..schemas import DepositReq, InvoiceCreateReq, InvoiceOut, InvoiceStatusOut, WithdrawReq
@@ -45,13 +46,11 @@ async def create_deposit_invoice(
         raise HTTPException(502, "CryptoBot не настроен")
 
     try:
-        from AsyncPayments.cryptoBot import CryptoBot
-
-        crypto = CryptoBot(settings.cryptobot_token)
-        invoice = await crypto.create_invoice(
-            asset="USDT", amount=body.amount,
-        )
-    except Exception as e:
+        async with CryptoPay(
+            settings.cryptobot_token, testnet=settings.cryptobot_testnet
+        ) as crypto:
+            invoice = await crypto.create_invoice(asset="USDT", amount=body.amount)
+    except CryptoPayError as e:
         logger.error("CryptoBot error: %s", e)
         raise HTTPException(502, f"Ошибка CryptoBot: {e}")
 
@@ -82,15 +81,15 @@ async def check_invoice(invoice_id: int, user: CurrentUser, session: SessionDep)
 
     if inv.status == InvoiceStatus.pending and settings.cryptobot_token:
         try:
-            from AsyncPayments.cryptoBot import CryptoBot
-
-            crypto = CryptoBot(settings.cryptobot_token)
-            checks = await crypto.get_invoices(
-                invoice_ids=[int(inv.provider_invoice_id)],
-            )
+            async with CryptoPay(
+                settings.cryptobot_token, testnet=settings.cryptobot_testnet
+            ) as crypto:
+                checks = await crypto.get_invoices(
+                    invoice_ids=[int(inv.provider_invoice_id)]
+                )
             if checks and checks[0].status == "paid":
                 inv = await credit_invoice(session, inv)
-        except Exception as e:
+        except CryptoPayError as e:
             logger.warning("CryptoBot poll error: %s", e)
 
     return InvoiceStatusOut(
