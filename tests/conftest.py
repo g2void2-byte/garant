@@ -118,6 +118,7 @@ _TABLES_TO_TRUNCATE: tuple[str, ...] = (
     "media",
     "notifications",
     "account_transfer_codes",
+    "service_comments",
     "services",
     "forums",
     "users",

@@ -182,6 +182,62 @@ class ServiceModerationDecision(BaseModel):
     reason: str = ""
 
 
+class ServiceOwnerOut(BaseModel):
+    """Owner card embedded in :class:`ServiceDetailOut`."""
+
+    id: int
+    username: str | None
+    display_name: str
+    photo_url: str | None
+    rating: float
+    deals_count: int
+    good: int
+    bad: int
+    is_admin: bool
+    is_arbiter: bool
+
+
+class ServiceDetailOut(ServiceOut):
+    owner: ServiceOwnerOut | None
+    comments_count: int
+    rating_avg: float | None
+    rating_count: int
+
+
+class ServiceCommentCreate(BaseModel):
+    text: str = ""
+    rating: int | None = None
+
+    @field_validator("text")
+    @classmethod
+    def _text_len(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) > 1024:
+            raise ValueError("Комментарий слишком длинный (≤1024)")
+        return v
+
+    @field_validator("rating")
+    @classmethod
+    def _rating_range(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v < 1 or v > 5:
+            raise ValueError("Оценка должна быть от 1 до 5")
+        return v
+
+
+class ServiceCommentOut(BaseModel):
+    id: int
+    service_id: int
+    author_id: int
+    author_username: str | None
+    author_display_name: str
+    author_photo_url: str | None
+    text: str
+    rating: int | None
+    created_at: datetime
+
+
 # ── Deals ──────────────────────────────────────────────
 
 

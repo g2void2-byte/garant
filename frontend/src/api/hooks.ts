@@ -15,6 +15,8 @@ import type {
   PinStatusDto,
   PinTokenDto,
   ReviewDto,
+  ServiceCommentDto,
+  ServiceDetailDto,
   ServiceDto,
   SupportPersonDto,
   UserCardDto,
@@ -126,6 +128,48 @@ export function useDeleteService() {
     mutationFn: (id: number) => api.delete(`api/services/${id}`).json(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["services"] });
+    },
+  });
+}
+
+export function useServiceDetail(id: number | undefined) {
+  return useQuery<ServiceDetailDto>({
+    queryKey: ["service", id],
+    queryFn: () => api.get(`api/services/${id}`).json(),
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+}
+
+export function useServiceComments(id: number | undefined) {
+  return useQuery<ServiceCommentDto[]>({
+    queryKey: ["service", id, "comments"],
+    queryFn: () => api.get(`api/services/${id}/comments`).json(),
+    enabled: !!id,
+    staleTime: 15_000,
+  });
+}
+
+export function useCreateServiceComment(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { text: string; rating: number | null }) =>
+      api.post(`api/services/${id}/comments`, { json: body }).json<ServiceCommentDto>(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["service", id, "comments"] });
+      qc.invalidateQueries({ queryKey: ["service", id] });
+    },
+  });
+}
+
+export function useDeleteServiceComment(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (commentId: number) =>
+      api.delete(`api/services/${id}/comments/${commentId}`).json(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["service", id, "comments"] });
+      qc.invalidateQueries({ queryKey: ["service", id] });
     },
   });
 }

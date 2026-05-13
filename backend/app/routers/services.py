@@ -17,13 +17,24 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
 
 from ..deps import CurrentUser, SessionDep
-from ..models import AppSettings, Category, Service, ServiceStatus, User
-from ..rate_limit import RLServiceCreate
+from ..models import (
+    AppSettings,
+    Category,
+    Service,
+    ServiceComment,
+    ServiceStatus,
+    User,
+)
+from ..rate_limit import RLServiceComment, RLServiceCreate
 from ..schemas import (
     CategoryOut,
+    ServiceCommentCreate,
+    ServiceCommentOut,
     ServiceCreate,
+    ServiceDetailOut,
     ServiceModerationDecision,
     ServiceOut,
+    ServiceOwnerOut,
     ServiceUpdate,
 )
 from ..search import build_prefix_tsquery
@@ -48,6 +59,43 @@ def _service_out(s: Service) -> ServiceOut:
             services_count=0,
         ),
         created_at=s.created_at,
+    )
+
+
+def _owner_out(user: User | None) -> ServiceOwnerOut | None:
+    if user is None:
+        return None
+    good = int(user.good or 0)
+    bad = int(user.bad or 0)
+    total = good + bad
+    rating = (good / total) * 5 if total else 0.0
+    return ServiceOwnerOut(
+        id=user.id,
+        username=user.username,
+        display_name=user.display_name or (user.username or ""),
+        photo_url=user.photo_url,
+        rating=round(rating, 2),
+        deals_count=int(user.deals_total or 0),
+        good=good,
+        bad=bad,
+        is_admin=bool(user.is_admin),
+        is_arbiter=bool(user.is_arbiter),
+    )
+
+
+def _comment_out(c: ServiceComment) -> ServiceCommentOut:
+    return ServiceCommentOut(
+        id=c.id,
+        service_id=c.service_id,
+        author_id=c.author_id,
+        author_username=c.author.username if c.author else None,
+        author_display_name=(c.author.display_name or (c.author.username or ""))
+        if c.author
+        else "",
+        author_photo_url=c.author.photo_url if c.author else None,
+        text=c.text,
+        rating=c.rating,
+        created_at=c.created_at,
     )
 
 
@@ -154,6 +202,128 @@ async def create_service(
     await session.commit()
     await session.refresh(service)
     return _service_out(service)
+
+
+@router.get("/{service_id}", response_model=ServiceDetailOut)
+async def get_service(service_id: int, user: CurrentUser, session: SessionDep):
+    service = await session.get(Service, service_id)
+    if not service:
+        raise HTTPException(404, "Услуга не найдена")
+    # Hide non-active rows from everyone except the owner and admins.
+    if service.status != ServiceStatus.active and not (
+        user.is_admin or service.owner_id == user.id
+    ):
+        raise HTTPException(404, "Услуга не найдена")
+
+    count_stmt = select(func.count(ServiceComment.id)).where(
+        ServiceComment.service_id == service.id
+    )
+    comments_count = int((await session.execute(count_stmt)).scalar_one())
+
+    rating_stmt = select(
+        func.avg(ServiceComment.rating),
+        func.count(ServiceComment.rating),
+    ).where(
+        ServiceComment.service_id == service.id,
+        ServiceComment.rating.is_not(None),
+    )
+    rating_row = (await session.execute(rating_stmt)).one()
+    rating_avg = float(rating_row[0]) if rating_row[0] is not None else None
+    rating_count = int(rating_row[1] or 0)
+
+    base = _service_out(service)
+    return ServiceDetailOut(
+        **base.model_dump(),
+        owner=_owner_out(service.owner),
+        comments_count=comments_count,
+        rating_avg=round(rating_avg, 2) if rating_avg is not None else None,
+        rating_count=rating_count,
+    )
+
+
+@router.get("/{service_id}/comments", response_model=list[ServiceCommentOut])
+async def list_service_comments(
+    service_id: int,
+    user: CurrentUser,
+    session: SessionDep,
+    limit: int = Query(50, ge=1, le=200),
+):
+    service = await session.get(Service, service_id)
+    if not service:
+        raise HTTPException(404, "Услуга не найдена")
+    if service.status != ServiceStatus.active and not (
+        user.is_admin or service.owner_id == user.id
+    ):
+        raise HTTPException(404, "Услуга не найдена")
+    stmt = (
+        select(ServiceComment)
+        .where(ServiceComment.service_id == service.id)
+        .order_by(ServiceComment.created_at.desc())
+        .limit(limit)
+    )
+    result = await session.execute(stmt)
+    return [_comment_out(c) for c in result.scalars().all()]
+
+
+@router.post(
+    "/{service_id}/comments",
+    response_model=ServiceCommentOut,
+    status_code=201,
+)
+async def create_service_comment(
+    service_id: int,
+    body: ServiceCommentCreate,
+    user: CurrentUser,
+    session: SessionDep,
+    _rl: RLServiceComment,
+):
+    service = await session.get(Service, service_id)
+    if not service:
+        raise HTTPException(404, "Услуга не найдена")
+    if service.status != ServiceStatus.active and not (
+        user.is_admin or service.owner_id == user.id
+    ):
+        raise HTTPException(404, "Услуга не найдена")
+    if service.owner_id == user.id:
+        raise HTTPException(400, "Нельзя оставлять комментарий к своей услуге")
+    text = (body.text or "").strip()
+    if not text and body.rating is None:
+        raise HTTPException(400, "Введите комментарий или оценку")
+
+    comment = ServiceComment(
+        service_id=service.id,
+        author_id=user.id,
+        text=text,
+        rating=body.rating,
+    )
+    session.add(comment)
+    await session.commit()
+    await session.refresh(comment)
+    # ``refresh`` doesn't materialise the relationship; reload explicitly.
+    await session.refresh(comment, attribute_names=["author"])
+    return _comment_out(comment)
+
+
+@router.delete("/{service_id}/comments/{comment_id}")
+async def delete_service_comment(
+    service_id: int,
+    comment_id: int,
+    user: CurrentUser,
+    session: SessionDep,
+):
+    comment = await session.get(ServiceComment, comment_id)
+    if not comment or comment.service_id != service_id:
+        raise HTTPException(404, "Комментарий не найден")
+    service = await session.get(Service, service_id)
+    if not service:
+        raise HTTPException(404, "Услуга не найдена")
+    is_author = comment.author_id == user.id
+    is_owner = service.owner_id == user.id
+    if not (is_author or is_owner or user.is_admin):
+        raise HTTPException(403, "Нет доступа")
+    await session.delete(comment)
+    await session.commit()
+    return {"ok": True}
 
 
 @router.patch("/{service_id}", response_model=ServiceOut)

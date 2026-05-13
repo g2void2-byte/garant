@@ -146,6 +146,7 @@ RLDealCreate = Annotated[None, Depends(rate_limit("deal-create", limit=10, windo
 RLServiceCreate = Annotated[None, Depends(rate_limit("service-create", limit=10, window=60))]
 RLWithdrawal = Annotated[None, Depends(rate_limit("withdrawal", limit=5, window=300))]
 RLDealMessage = Annotated[None, Depends(rate_limit("deal-message", limit=30, window=60))]
+RLServiceComment = Annotated[None, Depends(rate_limit("service-comment", limit=10, window=60))]
 
 
 __all__ = [
@@ -159,4 +160,5 @@ __all__ = [
     "RLServiceCreate",
     "RLWithdrawal",
     "RLDealMessage",
+    "RLServiceComment",
 ]
