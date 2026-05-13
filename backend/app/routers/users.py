@@ -34,7 +34,7 @@ _DEALS_BUCKETS: dict[str, tuple[int | None, int | None]] = {
 
 # Continental's "Префикс" radio. Keys are stringly-typed to match the
 # bundle's data attributes.
-_STATUS_KEYS = {"5", "4", "3"}
+_STATUS_KEYS = {"5", "4", "3", "2"}
 
 
 def _parse_date(value: str | None) -> datetime | None:
@@ -120,6 +120,8 @@ async def list_users(
             stmt = stmt.where(User.is_moderator.is_(True))
         elif status == "3":
             stmt = stmt.where(User.is_arbiter.is_(True))
+        elif status == "2":
+            stmt = stmt.where(User.is_vip.is_(True))
 
     reg_from_dt = _parse_date(reg_from)
     reg_to_dt = _parse_date(reg_to)

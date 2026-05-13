@@ -24,24 +24,35 @@ def user_to_out(
     """
     reviews_count = user.good + user.bad
     total = reviews_count or 1
-    rating = round(user.good / total * 5, 1)
+    computed_rating = round(user.good / total * 5, 1)
+    # Admin PR-A — an admin may override the rating manually; when set
+    # we return that value instead of the auto-computed one.
+    rating = float(user.rating_manual) if user.rating_manual is not None else computed_rating
+    # Precedence: admin > moderator > arbiter > vip > regular. Admin and
+    # VIP can co-exist but admin wins for the *primary* prefix shown next
+    # to the username; ``is_vip`` flag is still surfaced separately so
+    # the UI can show both badges if needed.
     if user.is_admin:
         prefix = "admin"
     elif user.is_moderator:
         prefix = "moderator"
     elif user.is_arbiter:
         prefix = "arbiter"
+    elif user.is_vip:
+        prefix = "vip"
     else:
         prefix = None
     # ``admin`` exposes the user's privilege tier as an int — Continental's
-    # search filter sheet uses the same numbering (5=admin, 4=moderator,
-    # 3=arbiter, 0=regular).
+    # search filter sheet uses the same numbering. We extend it with
+    # ``2 = vip`` so the existing ``status`` query param can target it.
     if user.is_admin:
         admin_level = 5
     elif user.is_moderator:
         admin_level = 4
     elif user.is_arbiter:
         admin_level = 3
+    elif user.is_vip:
+        admin_level = 2
     else:
         admin_level = 0
     return UserOut(
@@ -58,6 +69,9 @@ def user_to_out(
         is_admin=user.is_admin,
         is_moderator=user.is_moderator,
         is_arbiter=user.is_arbiter,
+        is_vip=bool(user.is_vip),
+        is_banned=bool(user.is_banned),
+        is_frozen=bool(user.is_frozen),
         admin=admin_level,
         good=user.good,
         bad=user.bad,

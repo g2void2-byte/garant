@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,12 +13,30 @@ from .pin import decode_session_token
 from .security import InitDataError, verify_init_data
 
 
+def _client_ip(request: Request) -> str | None:
+    """Best-effort extraction of the originating IP.
+
+    Honours the standard reverse-proxy headers (``X-Forwarded-For`` /
+    ``X-Real-IP``) and falls back to the direct socket peer. Trust here
+    is fine because the API is fronted by a single proxy in production
+    and the IP is only used for forensics/auditing — never authorisation.
+    """
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    real = request.headers.get("x-real-ip")
+    if real:
+        return real.strip()
+    return request.client.host if request.client else None
+
+
 async def get_session():
     async with async_session() as session:
         yield session
 
 
 async def get_current_user(
+    request: Request,
     authorization: Annotated[str, Header()],
     session: AsyncSession = Depends(get_session),
 ) -> User:
@@ -38,21 +57,41 @@ async def get_current_user(
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
 
+    ip = _client_ip(request)
+    now = datetime.utcnow()
+
     if user is None:
         user = User(
             tg_user_id=tg_user_id,
             username=tg_user.get("username"),
             display_name=tg_user.get("first_name", ""),
             photo_url=tg_user.get("photo_url"),
+            last_ip=ip,
+            last_login_at=now,
+            login_count=1,
         )
         session.add(user)
         await session.commit()
         await session.refresh(user)
-
-    elif tg_user.get("username") and user.username != tg_user["username"]:
-        user.username = tg_user["username"]
-        await session.commit()
-        await session.refresh(user)
+    else:
+        dirty = False
+        if tg_user.get("username") and user.username != tg_user["username"]:
+            user.username = tg_user["username"]
+            dirty = True
+        # Track every authenticated request as a "session ping" so the
+        # admin panel can show "last seen" / "last ip" without a separate
+        # WS heartbeat. We deliberately update on every call (no debounce)
+        # because the audit value of an exact timestamp outweighs the
+        # write cost on Postgres.
+        if user.last_ip != ip:
+            user.last_ip = ip
+            dirty = True
+        user.last_login_at = now
+        user.login_count = (user.login_count or 0) + 1
+        dirty = True
+        if dirty:
+            await session.commit()
+            await session.refresh(user)
 
     return user
 
@@ -77,6 +116,37 @@ async def require_pin_session(
     return user
 
 
+async def require_admin(
+    user: User = Depends(get_current_user),
+) -> User:
+    """Gate an endpoint behind ``is_admin``.
+
+    Used by every ``/api/admin/*`` route. The bot has only two privileged
+    roles surfaced through the admin panel: ``admin`` (full) and
+    ``arbiter`` (only the arbitration tab). The ``is_moderator`` flag
+    still exists on the model as a soft tag but is *not* recognised by
+    the admin panel — the role was deliberately removed from the spec.
+    """
+    if not user.is_admin:
+        raise HTTPException(403, "Доступ запрещён")
+    return user
+
+
+async def require_admin_or_arbiter(
+    user: User = Depends(get_current_user),
+) -> User:
+    """Gate an endpoint behind ``is_admin`` OR ``is_arbiter``.
+
+    Used by arbitration-only endpoints in the admin panel: arbiters can
+    read their own dispute queue, admins see everything.
+    """
+    if not (user.is_admin or user.is_arbiter):
+        raise HTTPException(403, "Доступ запрещён")
+    return user
+
+
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 PinUser = Annotated[User, Depends(require_pin_session)]
+AdminUser = Annotated[User, Depends(require_admin)]
+AdminOrArbiterUser = Annotated[User, Depends(require_admin_or_arbiter)]

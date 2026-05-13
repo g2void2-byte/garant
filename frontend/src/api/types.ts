@@ -59,10 +59,13 @@ export interface UserCardDto {
   photo_url: string | null;
   balance: number;
   admin: number;
-  prefix: "admin" | "moderator" | "arbiter" | null;
+  prefix: "admin" | "moderator" | "arbiter" | "vip" | null;
   is_admin?: boolean;
   is_moderator?: boolean;
   is_arbiter?: boolean;
+  is_vip?: boolean;
+  is_banned?: boolean;
+  is_frozen?: boolean;
   good: number;
   bad: number;
   deposit: number;
@@ -246,4 +249,100 @@ export interface WalletWithdrawalDto {
   admin_note: string;
   created_at: string;
   processed_at: string | null;
+}
+
+// ── Admin panel ─────────────────────────────────────────────────────────
+
+export interface AdminDashboardDto {
+  total_users: number;
+  new_users_24h: number;
+  new_users_7d: number;
+  online_users_5min: number;
+  total_deals: number;
+  open_deals: number;
+  open_arbitration: number;
+  total_services: number;
+  active_services: number;
+  banned_users: number;
+  frozen_users: number;
+  admins: number;
+  arbiters: number;
+  vips: number;
+}
+
+export type AdminUserPrefix = "admin" | "moderator" | "arbiter" | "vip" | null;
+
+export interface AdminUserListItemDto {
+  id: number;
+  tg_user_id: number;
+  username: string | null;
+  display_name: string;
+  photo_url: string | null;
+  prefix: AdminUserPrefix;
+  is_admin: boolean;
+  is_moderator: boolean;
+  is_arbiter: boolean;
+  is_vip: boolean;
+  is_banned: boolean;
+  is_frozen: boolean;
+  balance: number;
+  deposit_total: number;
+  rating: number;
+  deals_total: number;
+  deals_success: number;
+  last_ip: string | null;
+  last_login_at: string | null;
+  created_at: string;
+}
+
+export interface AdminUserListDto {
+  items: AdminUserListItemDto[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AdminUserDetailDto {
+  id: number;
+  tg_user_id: number;
+  username: string | null;
+  display_name: string;
+  photo_url: string | null;
+  banner_url: string | null;
+  description: string;
+  balance: number;
+  deposit_total: number;
+  rating_auto: number;
+  rating_manual: number | null;
+  rating_effective: number;
+  good: number;
+  bad: number;
+  deals_total: number;
+  deals_success: number;
+  deals_failed: number;
+  deals_arbitrage: number;
+  is_admin: boolean;
+  is_moderator: boolean;
+  is_arbiter: boolean;
+  is_vip: boolean;
+  is_banned: boolean;
+  ban_reason: string | null;
+  is_frozen: boolean;
+  freeze_reason: string | null;
+  is_anonymous_deals: boolean;
+  is_hidden_profile: boolean;
+  has_pin: boolean;
+  last_ip: string | null;
+  last_login_at: string | null;
+  login_count: number;
+  created_at: string;
+}
+
+export interface AdminListUsersQuery {
+  q?: string;
+  role?: "admin" | "moderator" | "arbiter" | "vip" | "regular" | "any";
+  status?: "any" | "active" | "banned" | "frozen";
+  sort?: "created_desc" | "created_asc" | "rating" | "deals" | "deposit";
+  page?: number;
+  page_size?: number;
 }

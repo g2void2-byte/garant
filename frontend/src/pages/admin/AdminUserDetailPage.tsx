@@ -1,0 +1,528 @@
+import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  Ban,
+  CheckCircle2,
+  Crown,
+  Gavel,
+  KeyRound,
+  LogOut,
+  Snowflake,
+  Star,
+  Trash2,
+  ShieldCheck,
+} from "lucide-react";
+import { Page } from "@/components/layout/Page";
+import { Header } from "@/components/layout/Header";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { BadgePrefix } from "@/components/ui/BadgePrefix";
+import { useToast } from "@/components/ui/Toast";
+import {
+  useAdminBanUser,
+  useAdminFreezeUser,
+  useAdminInvalidateSessions,
+  useAdminResetPin,
+  useAdminSetRating,
+  useAdminSetRole,
+  useAdminSetStats,
+  useAdminUnbanUser,
+  useAdminUnfreezeUser,
+  useAdminUser,
+} from "@/api/admin/hooks";
+import { useMe } from "@/api/hooks";
+import type { AdminUserDetailDto } from "@/api/types";
+import { haptic } from "@/lib/tg";
+
+/**
+ * Continental admin user detail screen.
+ *
+ * Sections (top → bottom):
+ *   1. Identity card (avatar, names, prefix, tg_user_id, last_ip, sessions)
+ *   2. Moderation actions (ban/unban, freeze/unfreeze, reset-PIN, invalidate sessions)
+ *   3. Roles (Admin / Arbiter / VIP toggles, saved atomically)
+ *   4. Rating override
+ *   5. Stats editor (deals_total / good / bad / deposit_total ...)
+ *
+ * Each section is its own subcomponent — they all share the same
+ * mutation pattern (mutate → toast → invalidate via hook).
+ */
+export default function AdminUserDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const userId = Number(id);
+  const navigate = useNavigate();
+  const { data: me } = useMe();
+  const { data: user, isLoading } = useAdminUser(
+    Number.isFinite(userId) ? userId : undefined,
+  );
+
+  if (me && !me.is_admin) {
+    navigate("/search", { replace: true });
+    return null;
+  }
+
+  if (!Number.isFinite(userId)) {
+    return (
+      <Page showBack onBack={() => navigate("/admin/users")}>
+        <Header title="Пользователь" />
+        <p className="px-4 text-sm text-text-muted">Неверный ID.</p>
+      </Page>
+    );
+  }
+
+  return (
+    <Page showBack onBack={() => navigate("/admin/users")}>
+      <Header title="Пользователь" />
+      {isLoading || !user ? (
+        <div className="px-4 space-y-3">
+          <Skeleton className="h-24" />
+          <Skeleton className="h-40" />
+          <Skeleton className="h-32" />
+        </div>
+      ) : (
+        <div className="px-4 space-y-4 pb-8">
+          <IdentityCard user={user} />
+          <ModerationSection user={user} isSelf={user.id === me?.id} />
+          <RolesSection user={user} isSelf={user.id === me?.id} />
+          <RatingSection user={user} />
+          <StatsSection user={user} />
+        </div>
+      )}
+    </Page>
+  );
+}
+
+// ── Identity ───────────────────────────────────────────────────────────
+
+function IdentityCard({ user }: { user: AdminUserDetailDto }) {
+  return (
+    <section className="bg-panel rounded-card p-4">
+      <div className="flex items-start gap-3">
+        <div className="w-16 h-16 rounded-full bg-panel-2 overflow-hidden flex-shrink-0">
+          {user.photo_url && (
+            <img src={user.photo_url} alt="" className="w-full h-full object-cover" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h2 className="font-semibold truncate">{user.display_name}</h2>
+            <BadgePrefix prefix={pickPrefix(user)} />
+          </div>
+          <div className="text-xs text-text-muted">@{user.username ?? "—"}</div>
+          <div className="text-xs text-text-muted">tg_id: {user.tg_user_id}</div>
+        </div>
+      </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+        <Detail label="Создан" value={shortDate(user.created_at)} />
+        <Detail label="Последний вход" value={user.last_login_at ? shortDate(user.last_login_at) : "—"} />
+        <Detail label="IP" value={user.last_ip ?? "—"} mono />
+        <Detail label="Входов всего" value={String(user.login_count)} />
+        <Detail label="Баланс" value={`$${user.balance.toFixed(2)}`} />
+        <Detail label="Депозит" value={`$${user.deposit_total.toFixed(2)}`} />
+        <Detail label="Рейтинг" value={user.rating_effective.toFixed(1)} />
+        <Detail label="PIN" value={user.has_pin ? "Установлен" : "Нет"} />
+      </dl>
+
+      {(user.is_banned || user.is_frozen) && (
+        <div className="mt-3 space-y-1 text-xs">
+          {user.is_banned && (
+            <p className="text-danger">Бан · {user.ban_reason ?? "без причины"}</p>
+          )}
+          {user.is_frozen && (
+            <p className="text-warning">Заморожен · {user.freeze_reason ?? "без причины"}</p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function pickPrefix(user: AdminUserDetailDto) {
+  if (user.is_admin) return "admin";
+  if (user.is_arbiter) return "arbiter";
+  if (user.is_vip) return "vip";
+  return null;
+}
+
+function Detail({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <dt className="text-text-muted">{label}</dt>
+      <dd className={mono ? "font-mono" : ""}>{value}</dd>
+    </div>
+  );
+}
+
+function shortDate(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
+}
+
+// ── Moderation actions ────────────────────────────────────────────────
+
+function ModerationSection({ user, isSelf }: { user: AdminUserDetailDto; isSelf: boolean }) {
+  const toast = useToast();
+  const ban = useAdminBanUser();
+  const unban = useAdminUnbanUser();
+  const freeze = useAdminFreezeUser();
+  const unfreeze = useAdminUnfreezeUser();
+  const resetPin = useAdminResetPin();
+  const invalidate = useAdminInvalidateSessions();
+
+  const [banReason, setBanReason] = useState("");
+  const [freezeReason, setFreezeReason] = useState("");
+
+  const run = async <T,>(
+    label: string,
+    mutateAsync: (args: { userId: number; body?: Record<string, unknown> }) => Promise<T>,
+    body?: Record<string, unknown>,
+  ) => {
+    try {
+      await mutateAsync({ userId: user.id, body });
+      haptic("success");
+      toast.show({ kind: "success", title: label });
+    } catch (e) {
+      haptic("error");
+      toast.show({ kind: "error", title: (e as Error).message || "Не удалось" });
+    }
+  };
+
+  return (
+    <section className="bg-panel rounded-card p-4 space-y-4">
+      <h3 className="font-semibold text-sm">Модерация</h3>
+
+      <div className="space-y-2">
+        <Input
+          placeholder="Причина бана (опционально)"
+          value={banReason}
+          onChange={(e) => setBanReason(e.target.value)}
+        />
+        <div className="flex gap-2">
+          <Button
+            variant="danger"
+            size="sm"
+            fullWidth
+            disabled={isSelf || ban.isPending}
+            onClick={() => run("Забанен", ban.mutateAsync, { reason: banReason || null })}
+          >
+            <Ban size={16} /> Забанить
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            fullWidth
+            disabled={!user.is_banned || unban.isPending}
+            onClick={() => run("Разбанен", unban.mutateAsync)}
+          >
+            <CheckCircle2 size={16} /> Снять бан
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Input
+          placeholder="Причина заморозки (опционально)"
+          value={freezeReason}
+          onChange={(e) => setFreezeReason(e.target.value)}
+        />
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            fullWidth
+            disabled={isSelf || freeze.isPending}
+            onClick={() => run("Заморожен", freeze.mutateAsync, { reason: freezeReason || null })}
+          >
+            <Snowflake size={16} /> Заморозить
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            fullWidth
+            disabled={!user.is_frozen || unfreeze.isPending}
+            onClick={() => run("Разморожен", unfreeze.mutateAsync)}
+          >
+            <CheckCircle2 size={16} /> Разморозить
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          fullWidth
+          disabled={!user.has_pin || resetPin.isPending}
+          onClick={() => run("PIN сброшен", resetPin.mutateAsync)}
+        >
+          <KeyRound size={16} /> Сбросить PIN
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          fullWidth
+          disabled={isSelf || invalidate.isPending}
+          onClick={() => run("Сессии сброшены", invalidate.mutateAsync)}
+        >
+          <LogOut size={16} /> Разлогинить
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+// ── Roles ─────────────────────────────────────────────────────────────
+
+function RolesSection({ user, isSelf }: { user: AdminUserDetailDto; isSelf: boolean }) {
+  const toast = useToast();
+  const setRole = useAdminSetRole();
+  const [isAdmin, setIsAdmin] = useState(user.is_admin);
+  const [isArbiter, setIsArbiter] = useState(user.is_arbiter);
+  const [isVip, setIsVip] = useState(user.is_vip);
+
+  const dirty =
+    isAdmin !== user.is_admin || isArbiter !== user.is_arbiter || isVip !== user.is_vip;
+
+  const apply = async () => {
+    try {
+      await setRole.mutateAsync({
+        userId: user.id,
+        body: { is_admin: isAdmin, is_arbiter: isArbiter, is_vip: isVip },
+      });
+      haptic("success");
+      toast.show({ kind: "success", title: "Роли обновлены" });
+    } catch (e) {
+      haptic("error");
+      toast.show({ kind: "error", title: (e as Error).message || "Не удалось" });
+    }
+  };
+
+  return (
+    <section className="bg-panel rounded-card p-4 space-y-3">
+      <h3 className="font-semibold text-sm">Роли</h3>
+      <RoleToggle
+        icon={<ShieldCheck size={18} />}
+        label="Админ"
+        checked={isAdmin}
+        disabled={isSelf}
+        onChange={setIsAdmin}
+      />
+      <RoleToggle
+        icon={<Gavel size={18} />}
+        label="Арбитр"
+        checked={isArbiter}
+        onChange={setIsArbiter}
+      />
+      <RoleToggle
+        icon={<Crown size={18} />}
+        label="VIP"
+        checked={isVip}
+        onChange={setIsVip}
+      />
+      <Button
+        variant="primary"
+        size="sm"
+        fullWidth
+        disabled={!dirty || setRole.isPending}
+        onClick={apply}
+      >
+        Сохранить роли
+      </Button>
+    </section>
+  );
+}
+
+function RoleToggle({
+  icon,
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className={`flex items-center gap-3 ${disabled ? "opacity-50" : ""}`}>
+      <span className="text-text-muted">{icon}</span>
+      <span className="flex-1 text-sm">{label}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="w-5 h-5 accent-accent"
+      />
+    </label>
+  );
+}
+
+// ── Rating ────────────────────────────────────────────────────────────
+
+function RatingSection({ user }: { user: AdminUserDetailDto }) {
+  const toast = useToast();
+  const setRating = useAdminSetRating();
+  const [draft, setDraft] = useState(
+    user.rating_manual !== null ? String(user.rating_manual) : "",
+  );
+
+  const save = async (clear = false) => {
+    const value = clear ? null : Number(draft.replace(",", "."));
+    if (!clear && Number.isNaN(value)) {
+      toast.show({ kind: "error", title: "Неверное число" });
+      return;
+    }
+    try {
+      await setRating.mutateAsync({
+        userId: user.id,
+        body: { rating: value },
+      });
+      haptic("success");
+      toast.show({
+        kind: "success",
+        title: clear ? "Сброшено" : "Рейтинг сохранён",
+      });
+      if (clear) setDraft("");
+    } catch (e) {
+      haptic("error");
+      toast.show({ kind: "error", title: (e as Error).message || "Не удалось" });
+    }
+  };
+
+  return (
+    <section className="bg-panel rounded-card p-4 space-y-3">
+      <h3 className="font-semibold text-sm flex items-center gap-2">
+        <Star size={16} /> Рейтинг (0..5)
+      </h3>
+      <p className="text-xs text-text-muted">
+        Авто-рейтинг: {user.rating_auto.toFixed(1)} · Сейчас:{" "}
+        {user.rating_effective.toFixed(1)}
+        {user.rating_manual !== null && " (override)"}
+      </p>
+      <Input
+        type="number"
+        step="0.1"
+        min="0"
+        max="5"
+        placeholder="Например 4.8"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <div className="flex gap-2">
+        <Button
+          variant="primary"
+          size="sm"
+          fullWidth
+          disabled={setRating.isPending || draft === ""}
+          onClick={() => save(false)}
+        >
+          Сохранить
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          fullWidth
+          disabled={setRating.isPending || user.rating_manual === null}
+          onClick={() => save(true)}
+        >
+          <Trash2 size={14} /> Сбросить
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────
+
+interface StatsDraft {
+  deals_total: string;
+  deals_success: string;
+  deals_failed: string;
+  deals_arbitrage: string;
+  good: string;
+  bad: string;
+  deposit_total: string;
+}
+
+function StatsSection({ user }: { user: AdminUserDetailDto }) {
+  const toast = useToast();
+  const setStats = useAdminSetStats();
+  const [draft, setDraft] = useState<StatsDraft>({
+    deals_total: String(user.deals_total),
+    deals_success: String(user.deals_success),
+    deals_failed: String(user.deals_failed),
+    deals_arbitrage: String(user.deals_arbitrage),
+    good: String(user.good),
+    bad: String(user.bad),
+    deposit_total: String(user.deposit_total),
+  });
+
+  const fields: Array<{
+    key: keyof StatsDraft;
+    label: string;
+    type: "int" | "float";
+  }> = [
+    { key: "deals_total", label: "Сделок всего", type: "int" },
+    { key: "deals_success", label: "Успешных", type: "int" },
+    { key: "deals_failed", label: "Неуспешных", type: "int" },
+    { key: "deals_arbitrage", label: "В арбитраже", type: "int" },
+    { key: "good", label: "Положительных оценок", type: "int" },
+    { key: "bad", label: "Отрицательных оценок", type: "int" },
+    { key: "deposit_total", label: "Депозит всего ($)", type: "float" },
+  ];
+
+  const apply = async () => {
+    const body: Record<string, number | null> = {};
+    for (const f of fields) {
+      const raw = draft[f.key];
+      if (raw === "") continue;
+      const n = Number(raw.replace(",", "."));
+      if (Number.isNaN(n)) {
+        toast.show({ kind: "error", title: `Неверное число: ${f.label}` });
+        return;
+      }
+      body[f.key] = f.type === "int" ? Math.trunc(n) : n;
+    }
+    try {
+      await setStats.mutateAsync({ userId: user.id, body });
+      haptic("success");
+      toast.show({ kind: "success", title: "Статистика сохранена" });
+    } catch (e) {
+      haptic("error");
+      toast.show({ kind: "error", title: (e as Error).message || "Не удалось" });
+    }
+  };
+
+  return (
+    <section className="bg-panel rounded-card p-4 space-y-3">
+      <h3 className="font-semibold text-sm">Статистика профиля</h3>
+      <div className="grid grid-cols-2 gap-2">
+        {fields.map((f) => (
+          <Input
+            key={f.key}
+            label={f.label}
+            type="number"
+            value={draft[f.key]}
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, [f.key]: e.target.value }))
+            }
+          />
+        ))}
+      </div>
+      <Button
+        variant="primary"
+        size="sm"
+        fullWidth
+        disabled={setStats.isPending}
+        onClick={apply}
+      >
+        Сохранить статистику
+      </Button>
+    </section>
+  );
+}

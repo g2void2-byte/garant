@@ -11,7 +11,7 @@ import { cn } from "@/lib/cn";
  *  1. Рейтинг          — single-select: 5.0 / 4.5-4.9 / 4.0-4.4 / 3.5-3.9 / Ниже 3.5
  *  2. Количество сделок — single-select: 0-10 / 11-50 / 51-100 / 101+
  *  3. Депозит          — numeric "от" input
- *  4. Префикс          — single-select: Администратор / Модератор / Арбитр
+ *  4. Префикс          — single-select: Администратор / Модератор / Арбитр / VIP
  *  5. Дата регистрации — От / До date inputs
  *
  * On Apply the parent receives the new filter object and is responsible
@@ -52,6 +52,7 @@ const STATUS_OPTIONS = [
   { value: "5", label: "Администратор" },
   { value: "4", label: "Модератор" },
   { value: "3", label: "Арбитр" },
+  { value: "2", label: "VIP" },
 ];
 
 function RadioRow({

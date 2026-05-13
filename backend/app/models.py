@@ -16,7 +16,7 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -135,6 +135,28 @@ class User(Base):
     # P3.2 — privacy toggles surfaced in the bot "Настройки" submenu.
     is_anonymous_deals: Mapped[bool] = mapped_column(Boolean, default=False)
     is_hidden_profile: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Admin PR-A — moderation state. ``is_banned`` blocks deal/service
+    # creation and withdrawals; ``is_frozen`` blocks spending only.
+    is_banned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    ban_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_frozen: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    freeze_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Admin PR-A — VIP prefix, manually granted by admins. Shown next to
+    # the username and (in a later PR) entitles the user to a reduced
+    # commission rate configured in the global settings.
+    is_vip: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Admin PR-A — passive connection fingerprint, refreshed by
+    # ``get_current_user`` on every authenticated request.
+    last_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    login_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Admin PR-A — aggregate stats editable by an admin via /admin/users/:id/stats
+    deposit_total: Mapped[float] = mapped_column(Numeric(14, 2), default=0, server_default="0")
+    # Admin PR-A — optional override of the *computed* rating (see
+    # services.py:_recompute_user_rating). When non-null this value
+    # takes precedence in profile responses; setting to null restores
+    # the auto-computed rating.
+    rating_manual: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # P3.4 — full-text search vector. Computed by Postgres on INSERT/UPDATE.
@@ -180,6 +202,13 @@ class Service(Base):
         Enum(ServiceStatus), default=ServiceStatus.active, index=True
     )
     ban_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Admin PR-A — service stats editable by an admin via
+    # /admin/services/:id/stats. These are *display* fields used on the
+    # service detail page; they do not influence the deal state machine.
+    views: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    deals_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    deposit: Mapped[float] = mapped_column(Numeric(14, 2), default=0, server_default="0")
+    rating_manual: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # P3.4 — full-text search vector. Title is weighted higher than description.
@@ -513,3 +542,29 @@ class AccountTransferCode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     source_user: Mapped[User] = relationship(foreign_keys=[source_user_id], lazy="selectin")
+
+
+class AdminAuditLog(Base):
+    """Append-only log of admin actions.
+
+    A row is written for every privileged operation performed via the
+    :file:`backend/app/routers/admin/*` endpoints. Designed for forensics
+    and the ``/admin/audit`` viewer — never modified or deleted from
+    production code.
+    """
+
+    __tablename__ = "admin_audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    target_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+    actor: Mapped[User | None] = relationship(foreign_keys=[actor_id], lazy="selectin")
