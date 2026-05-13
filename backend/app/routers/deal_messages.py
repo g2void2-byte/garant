@@ -23,6 +23,7 @@ from sqlalchemy import select
 
 from ..deps import CurrentUser, SessionDep
 from ..models import Deal, DealMessage, Media
+from ..rate_limit import RLDealMessage
 from ..schemas import DealMessageCreate, DealMessageOut, MediaOut
 from ..ws import manager
 
@@ -112,6 +113,7 @@ async def create_message(
     body: DealMessageCreate,
     user: CurrentUser,
     session: SessionDep,
+    _rl: RLDealMessage,
 ) -> DealMessageOut:
     deal = await _load_deal_or_403(session, deal_id, user)
 

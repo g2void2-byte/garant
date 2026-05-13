@@ -55,8 +55,13 @@ _notifier._safe_send_dm = _noop_dm  # type: ignore[assignment]
 
 @pytest_asyncio.fixture(autouse=True)
 async def reset_db():
-    """Drop and recreate all tables, then run seed (currencies, categories, settings)."""
+    """Drop and recreate all tables, then run seed (currencies, categories, settings).
+
+    Also wipes the in-process rate-limit buckets so a test doesn't see
+    leftover hits from an earlier one.
+    """
     from backend.app.db import Base, async_session, engine
+    from backend.app.rate_limit import reset_state_for_tests
     from backend.app.seed import run_seed
 
     async with engine.begin() as conn:
@@ -65,6 +70,8 @@ async def reset_db():
 
     async with async_session() as session:
         await run_seed(session)
+
+    reset_state_for_tests()
 
     yield
 

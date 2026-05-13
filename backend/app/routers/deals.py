@@ -5,6 +5,7 @@ from sqlalchemy import or_, select
 
 from ..deps import CurrentUser, PinUser, SessionDep
 from ..models import Deal, DealStatus, User
+from ..rate_limit import RLDealCreate
 from ..schemas import (
     DealArbitrationRequest,
     DealCancelRequest,
@@ -125,7 +126,7 @@ async def get_deal(deal_id: int, user: CurrentUser, session: SessionDep):
 
 @router.post("", response_model=DealOut, status_code=201)
 async def create_deal_endpoint(
-    body: DealCreate, user: PinUser, session: SessionDep
+    body: DealCreate, user: PinUser, session: SessionDep, _rl: RLDealCreate
 ):
     stmt = select(User).where(User.username == body.counterparty)
     result = await session.execute(stmt)
