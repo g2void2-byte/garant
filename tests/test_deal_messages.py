@@ -228,3 +228,55 @@ async def test_ordering_oldest_first(client):
     assert listed.status_code == 200
     items = listed.json()
     assert [m["text"] for m in items] == ["first", "second", "third"]
+
+
+async def test_arbiter_can_write_in_deal_chat(client):
+    """PR-B: arbiter (and admin) can write into the deal chat even if
+    they aren't buyer/seller. Their message reaches both parties."""
+    from backend.app.db import async_session
+    from backend.app.models import User
+
+    deal_id, buyer_init, seller_init, _, _ = await _create_deal(client)
+
+    arb_init = signed_init_data(9999, "arb_user")
+    me_resp = await client.get("/api/me", headers=auth_headers(arb_init))
+    assert me_resp.status_code == 200
+    arb_id = me_resp.json()["id"]
+    async with async_session() as session:
+        u = await session.get(User, arb_id)
+        assert u is not None
+        u.is_arbiter = True
+        await session.commit()
+
+    resp = await client.post(
+        f"/api/deals/{deal_id}/messages",
+        json={"text": "Arbiter speaking", "attachments": []},
+        headers=auth_headers(arb_init),
+    )
+    assert resp.status_code == 201, resp.text
+    msg = resp.json()
+    assert msg["text"] == "Arbiter speaking"
+    assert msg["sender_username"] == "arb_user"
+
+    # Buyer sees the message
+    listed = await client.get(f"/api/deals/{deal_id}/messages", headers=auth_headers(buyer_init))
+    assert listed.status_code == 200
+    assert any(m["text"] == "Arbiter speaking" for m in listed.json())
+
+    # Seller sees the message
+    listed = await client.get(f"/api/deals/{deal_id}/messages", headers=auth_headers(seller_init))
+    assert listed.status_code == 200
+    assert any(m["text"] == "Arbiter speaking" for m in listed.json())
+
+
+async def test_random_user_cannot_write_in_deal_chat(client):
+    """Non-staff, non-participant users still get 403."""
+    deal_id, *_ = await _create_deal(client)
+    init = signed_init_data(7777, "stranger")
+    await client.get("/api/me", headers=auth_headers(init))
+    resp = await client.post(
+        f"/api/deals/{deal_id}/messages",
+        json={"text": "hi", "attachments": []},
+        headers=auth_headers(init),
+    )
+    assert resp.status_code == 403

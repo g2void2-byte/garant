@@ -1,0 +1,537 @@
+import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  AlertTriangle,
+  Check,
+  CornerDownRight,
+  DollarSign,
+  Gavel,
+  Lock,
+  Send,
+  Split,
+  Trash2,
+  Undo2,
+  UserCheck,
+} from "lucide-react";
+import { Page } from "@/components/layout/Page";
+import { Header } from "@/components/layout/Header";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { Button } from "@/components/ui/Button";
+import { Sheet } from "@/components/ui/Sheet";
+import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
+import { useToast } from "@/components/ui/Toast";
+import {
+  useAdminAssignArbiter,
+  useAdminDeal,
+  useAdminDeleteDeal,
+  useAdminForceArbitration,
+  useAdminForceRefund,
+  useAdminForceRelease,
+  useAdminSplitDeal,
+} from "@/api/admin/hooks";
+import { useMe } from "@/api/hooks";
+import type { AdminDealDetailDto, AdminBalanceSnapshotDto } from "@/api/types";
+import { api } from "@/api/client";
+import { haptic } from "@/lib/tg";
+
+const STATUS_LABEL: Record<string, string> = {
+  cancelled: "Отменена",
+  pending_confirmation: "Подтверждение",
+  pending_payment: "Ожидание оплаты",
+  in_progress: "В работе",
+  completed: "Завершена",
+  arbitration: "Арбитраж",
+  resolved_for_buyer: "В пользу покупателя",
+  resolved_for_seller: "В пользу продавца",
+  pending_cancellation: "Запрошена отмена",
+  cancelled_for_inactivity: "Отменена по неактивности",
+};
+
+const EVENT_KIND: Record<string, string> = {
+  created: "Создана",
+  in_progress: "Запущена",
+  cancel_request: "Запрос отмены",
+  arbitration_started: "Открыт арбитраж",
+  arbitration_resolved: "Арбитраж решён",
+  completed: "Завершена",
+  cancelled: "Отменена",
+};
+
+const TERMINAL = new Set([
+  "completed",
+  "cancelled",
+  "resolved_for_buyer",
+  "resolved_for_seller",
+  "cancelled_for_inactivity",
+]);
+
+/**
+ * Continental admin deal detail page.
+ *
+ * Layout (top → bottom):
+ *   1. Status banner (Заглавный статус сделки + флаги).
+ *   2. Balance snapshot (buyer/seller карточки).
+ *   3. Action panel (force-release/refund/split/arbitration/assign/delete).
+ *   4. Audit timeline (reverse chronological).
+ *   5. Chat — read-only feed + одно поле для ответа админа в чат сделки.
+ */
+export default function AdminDealDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const dealId = Number(id);
+  const navigate = useNavigate();
+  const { data: me } = useMe();
+  const { data: deal, isLoading } = useAdminDeal(
+    Number.isFinite(dealId) ? dealId : undefined,
+  );
+
+  if (me && !me.is_admin && !me.is_arbiter) {
+    navigate("/search", { replace: true });
+    return null;
+  }
+
+  if (!Number.isFinite(dealId)) {
+    return (
+      <Page showBack onBack={() => navigate("/admin/deals")}>
+        <Header title="Сделка" />
+        <p className="px-4 text-sm text-text-muted">Неверный ID.</p>
+      </Page>
+    );
+  }
+
+  return (
+    <Page showBack onBack={() => navigate(-1)}>
+      <Header
+        title={deal ? `Сделка #${deal.id}` : "Сделка"}
+        subtitle={deal ? STATUS_LABEL[deal.status] ?? deal.status : undefined}
+      />
+      {isLoading || !deal ? (
+        <div className="px-4 space-y-3">
+          <Skeleton className="h-20" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-40" />
+        </div>
+      ) : (
+        <div className="px-4 space-y-4 pb-8">
+          <StatusBanner deal={deal} />
+          <BalanceSnapshotCard buyer={deal.buyer} seller={deal.seller} sum={deal.sum} commission={deal.commission_amount} />
+          {me?.is_admin && <ActionPanel deal={deal} />}
+          <EventsTimeline deal={deal} />
+          <MessagesFeed deal={deal} />
+        </div>
+      )}
+    </Page>
+  );
+}
+
+// ── Status ────────────────────────────────────────────────────────────────
+
+function StatusBanner({ deal }: { deal: AdminDealDetailDto }) {
+  const isArb = deal.status === "arbitration";
+  const hasCancel = deal.cancellation_requested_at && !TERMINAL.has(deal.status);
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`rounded-card p-4 ${
+        isArb ? "bg-danger/10 border border-danger/30" : hasCancel ? "bg-warning/10 border border-warning/30" : "bg-panel"
+      }`}
+    >
+      <div className="text-xs uppercase tracking-wide text-text-muted mb-1">{deal.description || "—"}</div>
+      <div className="text-base font-semibold flex items-center gap-2">
+        {isArb && <Gavel size={16} className="text-danger" />}
+        {hasCancel && <AlertTriangle size={16} className="text-warning" />}
+        {STATUS_LABEL[deal.status] ?? deal.status}
+      </div>
+      {deal.cancellation_reason && (
+        <div className="mt-2 text-xs text-warning">Причина отмены: {deal.cancellation_reason}</div>
+      )}
+      {deal.arbitration_reason && (
+        <div className="mt-2 text-xs text-danger">Причина арбитража: {deal.arbitration_reason}</div>
+      )}
+      {deal.arbitration_resolution && (
+        <div className="mt-2 text-xs text-text-muted">Решение: {deal.arbitration_resolution}</div>
+      )}
+    </motion.section>
+  );
+}
+
+// ── Balance snapshot ──────────────────────────────────────────────────────
+
+function BalanceSnapshotCard({
+  buyer,
+  seller,
+  sum,
+  commission,
+}: {
+  buyer: AdminBalanceSnapshotDto;
+  seller: AdminBalanceSnapshotDto;
+  sum: number;
+  commission: number | null;
+}) {
+  return (
+    <section className="grid grid-cols-2 gap-3">
+      <PartyCard side="Покупатель" snap={buyer} />
+      <PartyCard side="Продавец" snap={seller} />
+      <div className="col-span-2 bg-panel rounded-card p-3 flex items-center justify-between text-sm">
+        <div className="flex items-center gap-2">
+          <DollarSign size={14} className="text-text-muted" /> Сумма сделки
+        </div>
+        <div className="font-semibold">${sum.toFixed(2)}</div>
+      </div>
+      {commission !== null && (
+        <div className="col-span-2 bg-panel rounded-card p-3 flex items-center justify-between text-sm">
+          <div className="flex items-center gap-2">
+            <Lock size={14} className="text-text-muted" /> Комиссия
+          </div>
+          <div className="font-semibold">{commission.toFixed(2)}</div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PartyCard({ side, snap }: { side: string; snap: AdminBalanceSnapshotDto }) {
+  return (
+    <div className="bg-panel rounded-card p-3">
+      <div className="text-[11px] uppercase tracking-wide text-text-muted">{side}</div>
+      <div className="mt-1 font-semibold truncate">{snap.display_name}</div>
+      <div className="text-xs text-text-muted truncate">@{snap.username ?? "—"} · id {snap.user_id}</div>
+      <div className="mt-2 text-xs text-text-muted">
+        Свободно <span className="text-text font-medium">{snap.amount.toFixed(4)}</span>{" "}
+        {snap.currency_code ?? "USD"}
+      </div>
+      <div className="text-xs text-text-muted">
+        В сделке <span className="text-text font-medium">{snap.locked.toFixed(4)}</span>{" "}
+        {snap.currency_code ?? "USD"}
+      </div>
+    </div>
+  );
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────
+
+function ActionPanel({ deal }: { deal: AdminDealDetailDto }) {
+  const navigate = useNavigate();
+  const toast = useToast();
+  const [sheet, setSheet] = useState<null | "release" | "refund" | "split" | "arbitration" | "assign" | "delete">(null);
+  const release = useAdminForceRelease();
+  const refund = useAdminForceRefund();
+  const split = useAdminSplitDeal();
+  const arb = useAdminForceArbitration();
+  const assign = useAdminAssignArbiter();
+  const del = useAdminDeleteDeal();
+  const [reason, setReason] = useState("");
+  const [splitBuyerPct, setSplitBuyerPct] = useState("50");
+  const [arbiterUsername, setArbiterUsername] = useState("");
+  const terminal = TERMINAL.has(deal.status);
+
+  const run = async (action: "release" | "refund" | "split" | "arbitration" | "assign" | "delete") => {
+    haptic("light");
+    try {
+      if (action === "release") {
+        await release.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined } });
+        toast.show({ kind: "success", title: "Средства переданы продавцу" });
+      } else if (action === "refund") {
+        await refund.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined } });
+        toast.show({ kind: "success", title: "Возврат покупателю" });
+      } else if (action === "split") {
+        const buyer_percent = Number(splitBuyerPct);
+        if (!Number.isFinite(buyer_percent) || buyer_percent < 0 || buyer_percent > 100) {
+          toast.show({ kind: "error", title: "Доля покупателя должна быть 0..100" });
+          return;
+        }
+        await split.mutateAsync({
+          dealId: deal.id,
+          body: { buyer_percent, reason: reason || undefined },
+        });
+        toast.show({ kind: "success", title: `Сплит ${buyer_percent}% / ${100 - buyer_percent}%` });
+      } else if (action === "arbitration") {
+        await arb.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined } });
+        toast.show({ kind: "success", title: "Арбитраж открыт" });
+      } else if (action === "assign") {
+        if (!arbiterUsername.trim()) {
+          toast.show({ kind: "error", title: "Введите username арбитра" });
+          return;
+        }
+        // Lookup user by username
+        const u: any = await api
+          .get(`api/admin/users`, { searchParams: { q: arbiterUsername.trim() } })
+          .json();
+        const candidate = u.items.find(
+          (x: any) =>
+            x.username?.toLowerCase() === arbiterUsername.trim().toLowerCase().replace(/^@/, ""),
+        );
+        if (!candidate) {
+          toast.show({ kind: "error", title: "Юзер не найден" });
+          return;
+        }
+        if (!candidate.is_arbiter) {
+          toast.show({ kind: "error", title: "Этот юзер не арбитр" });
+          return;
+        }
+        await assign.mutateAsync({
+          dealId: deal.id,
+          body: { arbiter_id: candidate.id },
+        });
+        toast.show({ kind: "success", title: "Арбитр назначен" });
+      } else if (action === "delete") {
+        await del.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined } });
+        toast.show({ kind: "success", title: "Сделка удалена, средства возвращены" });
+        navigate("/admin/deals", { replace: true });
+      }
+      setSheet(null);
+      setReason("");
+    } catch (e: any) {
+      toast.show({ kind: "error", title: "Ошибка", body: e?.message ?? "" });
+    }
+  };
+
+  const buttons = [
+    {
+      key: "release" as const,
+      label: "Принудительное завершение",
+      icon: Check,
+      variant: "primary" as const,
+      disabled: terminal,
+    },
+    {
+      key: "refund" as const,
+      label: "Возврат покупателю",
+      icon: Undo2,
+      variant: "secondary" as const,
+      disabled: terminal,
+    },
+    {
+      key: "split" as const,
+      label: "Сплит-выплата",
+      icon: Split,
+      variant: "secondary" as const,
+      disabled: terminal,
+    },
+    {
+      key: "arbitration" as const,
+      label: "Открыть арбитраж",
+      icon: Gavel,
+      variant: "secondary" as const,
+      disabled: deal.status === "arbitration" || terminal,
+    },
+    {
+      key: "assign" as const,
+      label: "Назначить арбитра",
+      icon: UserCheck,
+      variant: "secondary" as const,
+      disabled: deal.status !== "arbitration",
+    },
+    {
+      key: "delete" as const,
+      label: "Удалить сделку",
+      icon: Trash2,
+      variant: "danger" as const,
+      disabled: false,
+    },
+  ];
+
+  return (
+    <section className="bg-panel rounded-card p-4 space-y-2">
+      <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-1">Действия</h3>
+      <div className="grid grid-cols-2 gap-2">
+        {buttons.map((btn, idx) => (
+          <motion.div
+            key={btn.key}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.04 }}
+          >
+            <Button
+              size="sm"
+              fullWidth
+              variant={btn.variant}
+              disabled={btn.disabled}
+              onClick={() => setSheet(btn.key)}
+            >
+              <btn.icon size={14} className="-ml-0.5" />
+              <span className="ml-1.5">{btn.label}</span>
+            </Button>
+          </motion.div>
+        ))}
+      </div>
+
+      <Sheet open={sheet !== null} onClose={() => setSheet(null)} title={sheet ? actionTitle(sheet) : ""}>
+        <div className="space-y-3">
+          {sheet === "split" && (
+            <Input
+              label="Доля покупателя, %"
+              type="number"
+              inputMode="numeric"
+              value={splitBuyerPct}
+              onChange={(e) => setSplitBuyerPct(e.target.value)}
+            />
+          )}
+          {sheet === "assign" && (
+            <Input
+              label="Username арбитра"
+              placeholder="@arbiter1"
+              value={arbiterUsername}
+              onChange={(e) => setArbiterUsername(e.target.value)}
+            />
+          )}
+          {sheet !== "assign" && (
+            <Textarea
+              label="Причина (опционально)"
+              placeholder="Краткое объяснение для аудита и DM сторонам"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          )}
+          <div className="flex gap-2">
+            <Button variant="secondary" fullWidth onClick={() => setSheet(null)}>
+              Отмена
+            </Button>
+            <Button
+              fullWidth
+              variant={sheet === "delete" ? "danger" : "primary"}
+              onClick={() => sheet && run(sheet)}
+            >
+              Подтвердить
+            </Button>
+          </div>
+        </div>
+      </Sheet>
+    </section>
+  );
+}
+
+function actionTitle(a: "release" | "refund" | "split" | "arbitration" | "assign" | "delete") {
+  return {
+    release: "Завершить — продавцу",
+    refund: "Возврат покупателю",
+    split: "Сплит-выплата",
+    arbitration: "Открыть арбитраж",
+    assign: "Назначить арбитра",
+    delete: "Удалить сделку",
+  }[a];
+}
+
+// ── Timeline ─────────────────────────────────────────────────────────────
+
+function EventsTimeline({ deal }: { deal: AdminDealDetailDto }) {
+  if (deal.events.length === 0) return null;
+  return (
+    <section className="bg-panel rounded-card p-4">
+      <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-2">События</h3>
+      <ul className="space-y-2">
+        <AnimatePresence>
+          {deal.events.map((ev, idx) => (
+            <motion.li
+              key={`${ev.kind}-${ev.at}-${idx}`}
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: idx * 0.04 }}
+              className="flex items-start gap-2 text-sm"
+            >
+              <CornerDownRight size={14} className="text-text-muted mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <div className="font-medium">{EVENT_KIND[ev.kind] ?? ev.kind}</div>
+                <div className="text-xs text-text-muted">
+                  {shortDate(ev.at)}
+                  {ev.actor ? ` · ${ev.actor}` : ""} · {ev.description}
+                </div>
+              </div>
+            </motion.li>
+          ))}
+        </AnimatePresence>
+      </ul>
+    </section>
+  );
+}
+
+// ── Messages ─────────────────────────────────────────────────────────────
+
+function MessagesFeed({ deal }: { deal: AdminDealDetailDto }) {
+  const toast = useToast();
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const send = async () => {
+    const t = text.trim();
+    if (!t) return;
+    setSending(true);
+    try {
+      await api.post(`api/deals/${deal.id}/messages`, { json: { text: t, attachments: [] } });
+      toast.show({ kind: "success", title: "Сообщение отправлено" });
+      setText("");
+      // Refresh the page-level query
+      window.dispatchEvent(new CustomEvent("admin-deal-refetch"));
+    } catch (e: any) {
+      toast.show({ kind: "error", title: "Не отправлено", body: e?.message ?? "" });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <section className="bg-panel rounded-card p-4">
+      <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-2">Чат сделки</h3>
+      {deal.messages.length === 0 ? (
+        <div className="text-sm text-text-muted py-4 text-center">Пока пусто</div>
+      ) : (
+        <ul className="space-y-2 mb-3">
+          {deal.messages.map((m) => {
+            const isBuyer = m.sender_id === deal.buyer.user_id;
+            const isSeller = m.sender_id === deal.seller.user_id;
+            const side = isBuyer ? "buyer" : isSeller ? "seller" : "staff";
+            return (
+              <motion.li
+                key={m.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`rounded-card p-2 text-sm ${
+                  side === "buyer"
+                    ? "bg-panel-2"
+                    : side === "seller"
+                    ? "bg-panel-2"
+                    : "bg-accent/10 border border-accent/30"
+                }`}
+              >
+                <div className="text-[11px] uppercase tracking-wide text-text-muted mb-0.5">
+                  {side === "staff" ? "Админ/арбитр" : side === "buyer" ? "Покупатель" : "Продавец"} · @
+                  {m.sender_username ?? "—"} · {shortDate(m.created_at)}
+                </div>
+                <div className="whitespace-pre-wrap">{m.text}</div>
+              </motion.li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="flex items-end gap-2">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={2}
+          placeholder="Сообщение в чат сделки от админа"
+          className="flex-1 bg-panel-2 rounded-button px-3 py-2 text-sm placeholder:text-text-muted focus:outline-none resize-y"
+        />
+        <Button onClick={send} disabled={sending || !text.trim()}>
+          <Send size={14} />
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function shortDate(value: string): string {
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleString("ru-RU", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return value;
+  }
+}

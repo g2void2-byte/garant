@@ -34,6 +34,9 @@ const PinResetPage = lazy(() => import("@/pages/pin/PinResetPage"));
 const AdminDashboardPage = lazy(() => import("@/pages/admin/AdminDashboardPage"));
 const AdminUsersPage = lazy(() => import("@/pages/admin/AdminUsersPage"));
 const AdminUserDetailPage = lazy(() => import("@/pages/admin/AdminUserDetailPage"));
+const AdminDealsPage = lazy(() => import("@/pages/admin/AdminDealsPage"));
+const AdminDealDetailPage = lazy(() => import("@/pages/admin/AdminDealDetailPage"));
+const AdminArbitrationPage = lazy(() => import("@/pages/admin/AdminArbitrationPage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -112,6 +115,9 @@ export function App() {
                   <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
                   <Route path="/admin/users" element={<AdminUsersPage />} />
                   <Route path="/admin/users/:id" element={<AdminUserDetailPage />} />
+                  <Route path="/admin/deals" element={<AdminDealsPage />} />
+                  <Route path="/admin/deals/:id" element={<AdminDealDetailPage />} />
+                  <Route path="/admin/arbitration" element={<AdminArbitrationPage />} />
                   {/* Backwards-compatible redirects from the pre-Continental routes. */}
                   <Route path="/help" element={<Navigate to="/support" replace />} />
                   <Route path="/u/:username" element={<RedirectUser />} />

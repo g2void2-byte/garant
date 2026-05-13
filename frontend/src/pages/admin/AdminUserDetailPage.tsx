@@ -34,6 +34,7 @@ import {
 import { useMe } from "@/api/hooks";
 import type { AdminUserDetailDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
+import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
 
 /**
  * Continental admin user detail screen.
@@ -87,6 +88,9 @@ export default function AdminUserDetailPage() {
           <RolesSection user={user} isSelf={user.id === me?.id} />
           <RatingSection user={user} />
           <StatsSection user={user} />
+          <ServicesSection userId={user.id} />
+          <ReviewsSection userId={user.id} />
+          <CommentsSection userId={user.id} />
         </div>
       )}
     </Page>

@@ -1,0 +1,383 @@
+import { useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { motion } from "framer-motion";
+import { Filter, ChevronLeft, ChevronRight, AlertTriangle, Gavel, Search } from "lucide-react";
+import { Page } from "@/components/layout/Page";
+import { Header } from "@/components/layout/Header";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Sheet } from "@/components/ui/Sheet";
+import { Button } from "@/components/ui/Button";
+import { useAdminDeals } from "@/api/admin/hooks";
+import { useMe } from "@/api/hooks";
+import type { AdminDealListItemDto, AdminListDealsQuery } from "@/api/types";
+
+const STATUS_LABEL: Record<string, string> = {
+  any: "Все",
+  cancelled: "Отменена",
+  pending_confirmation: "Подтверждение",
+  pending_payment: "Ожидание оплаты",
+  in_progress: "В работе",
+  completed: "Завершена",
+  arbitration: "Арбитраж",
+  resolved_for_buyer: "В пользу покупателя",
+  resolved_for_seller: "В пользу продавца",
+  pending_cancellation: "Запрошена отмена",
+  cancelled_for_inactivity: "Отменена по неактивности",
+};
+
+const STATUSES = Object.keys(STATUS_LABEL) as Array<keyof typeof STATUS_LABEL>;
+
+/**
+ * Continental admin deals list.
+ *
+ * URL-driven filters: ``?status=in_progress&currency=USDT&has_arbitration=true``
+ * so dashboards / deep-links from the user detail page can seed the
+ * filter sheet without state plumbing.
+ */
+export default function AdminDealsPage() {
+  const navigate = useNavigate();
+  const { data: me } = useMe();
+  const [params, setParams] = useSearchParams();
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [draftCurrency, setDraftCurrency] = useState(params.get("currency") ?? "");
+  const [draftMin, setDraftMin] = useState(params.get("min_sum") ?? "");
+  const [draftMax, setDraftMax] = useState(params.get("max_sum") ?? "");
+
+  const status = (params.get("status") ?? "any") as NonNullable<AdminListDealsQuery["status"]>;
+  const currency = params.get("currency") ?? undefined;
+  const min_sum = params.get("min_sum") ? Number(params.get("min_sum")) : undefined;
+  const max_sum = params.get("max_sum") ? Number(params.get("max_sum")) : undefined;
+  const has_arbitration = params.get("has_arbitration") === "true" || undefined;
+  const has_cancel_request = params.get("has_cancel_request") === "true" || undefined;
+  const page = Number(params.get("page") ?? "1") || 1;
+
+  const query: AdminListDealsQuery = {
+    status,
+    currency,
+    min_sum,
+    max_sum,
+    has_arbitration,
+    has_cancel_request,
+    page,
+    page_size: 20,
+  };
+  const { data, isLoading } = useAdminDeals(query);
+
+  if (me && !me.is_admin) {
+    navigate("/search", { replace: true });
+    return null;
+  }
+
+  const update = (next: Record<string, string | number | boolean | undefined | null>) => {
+    const sp = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(next)) {
+      if (v === undefined || v === null || v === "" || v === false || v === "any") {
+        sp.delete(k);
+      } else {
+        sp.set(k, String(v));
+      }
+    }
+    if (!("page" in next)) sp.delete("page");
+    setParams(sp, { replace: true });
+  };
+
+  const items: AdminDealListItemDto[] = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / 20));
+
+  return (
+    <Page showBack onBack={() => navigate("/admin")}>
+      <Header
+        title="Сделки"
+        subtitle={data ? `${total} всего` : undefined}
+        right={
+          <button
+            type="button"
+            onClick={() => setFilterOpen(true)}
+            className="rounded-button bg-panel p-2 text-text-muted active:scale-95"
+            aria-label="Фильтры"
+          >
+            <Filter size={18} />
+          </button>
+        }
+      />
+
+      {/* Status chips — horizontally scrollable */}
+      <div className="px-4 -mx-1 overflow-x-auto no-scrollbar flex gap-2 mb-3 pb-1">
+        {STATUSES.map((s) => (
+          <motion.button
+            key={s}
+            type="button"
+            whileTap={{ scale: 0.95 }}
+            onClick={() => update({ status: s === "any" ? undefined : s })}
+            className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs border transition-colors ${
+              status === s
+                ? "bg-accent text-black border-accent"
+                : "bg-panel text-text-muted border-border hover:bg-panel-2"
+            }`}
+          >
+            {STATUS_LABEL[s]}
+          </motion.button>
+        ))}
+      </div>
+
+      {/* Active filter chips */}
+      {(currency || min_sum !== undefined || max_sum !== undefined || has_arbitration || has_cancel_request) && (
+        <div className="px-4 -mx-1 overflow-x-auto no-scrollbar flex gap-2 mb-3 pb-1">
+          {currency && (
+            <FilterChip onRemove={() => update({ currency: undefined })}>
+              Валюта: {currency}
+            </FilterChip>
+          )}
+          {min_sum !== undefined && (
+            <FilterChip onRemove={() => update({ min_sum: undefined })}>
+              Мин: {min_sum}
+            </FilterChip>
+          )}
+          {max_sum !== undefined && (
+            <FilterChip onRemove={() => update({ max_sum: undefined })}>
+              Макс: {max_sum}
+            </FilterChip>
+          )}
+          {has_arbitration && (
+            <FilterChip onRemove={() => update({ has_arbitration: undefined })}>
+              <Gavel size={11} className="inline -mt-0.5" /> Арбитраж
+            </FilterChip>
+          )}
+          {has_cancel_request && (
+            <FilterChip onRemove={() => update({ has_cancel_request: undefined })}>
+              <AlertTriangle size={11} className="inline -mt-0.5" /> Запрос отмены
+            </FilterChip>
+          )}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="px-4 space-y-3">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={<Search size={20} />}
+          title="Сделок не найдено"
+          description="Попробуйте изменить фильтры."
+        />
+      ) : (
+        <ul className="px-4 space-y-2">
+          {items.map((deal, idx) => (
+            <motion.li
+              key={deal.id}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(idx, 8) * 0.03, duration: 0.18 }}
+            >
+              <DealRow deal={deal} onOpen={() => navigate(`/admin/deals/${deal.id}`)} />
+            </motion.li>
+          ))}
+        </ul>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 mt-4 mb-2 text-sm">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => update({ page: page - 1 })}
+            className="p-2 rounded-button bg-panel disabled:opacity-40 active:scale-95"
+            aria-label="Назад"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <span className="text-text-muted">
+            {page} / {totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => update({ page: page + 1 })}
+            className="p-2 rounded-button bg-panel disabled:opacity-40 active:scale-95"
+            aria-label="Вперёд"
+          >
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      )}
+
+      <Sheet open={filterOpen} onClose={() => setFilterOpen(false)} title="Фильтры">
+        <div className="space-y-4">
+          <label className="block text-sm">
+            <span className="text-text-muted">Валюта</span>
+            <input
+              value={draftCurrency}
+              onChange={(e) => setDraftCurrency(e.target.value.toUpperCase())}
+              placeholder="USDT, BTC..."
+              className="mt-1 w-full bg-panel rounded-button px-3 py-2"
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-sm">
+              <span className="text-text-muted">Мин. сумма</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={draftMin}
+                onChange={(e) => setDraftMin(e.target.value)}
+                className="mt-1 w-full bg-panel rounded-button px-3 py-2"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-text-muted">Макс. сумма</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={draftMax}
+                onChange={(e) => setDraftMax(e.target.value)}
+                className="mt-1 w-full bg-panel rounded-button px-3 py-2"
+              />
+            </label>
+          </div>
+          <div className="space-y-2">
+            <ToggleRow
+              label="Только с арбитражем"
+              checked={!!has_arbitration}
+              onChange={(v) => update({ has_arbitration: v || undefined })}
+            />
+            <ToggleRow
+              label="Только с запросом отмены"
+              checked={!!has_cancel_request}
+              onChange={(v) => update({ has_cancel_request: v || undefined })}
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="secondary"
+              fullWidth
+              onClick={() => {
+                setDraftCurrency("");
+                setDraftMin("");
+                setDraftMax("");
+                update({
+                  currency: undefined,
+                  min_sum: undefined,
+                  max_sum: undefined,
+                  has_arbitration: undefined,
+                  has_cancel_request: undefined,
+                });
+                setFilterOpen(false);
+              }}
+            >
+              Сбросить
+            </Button>
+            <Button
+              fullWidth
+              onClick={() => {
+                update({
+                  currency: draftCurrency || undefined,
+                  min_sum: draftMin ? Number(draftMin) : undefined,
+                  max_sum: draftMax ? Number(draftMax) : undefined,
+                });
+                setFilterOpen(false);
+              }}
+            >
+              Применить
+            </Button>
+          </div>
+        </div>
+      </Sheet>
+    </Page>
+  );
+}
+
+function FilterChip({ children, onRemove }: { children: React.ReactNode; onRemove: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onRemove}
+      className="whitespace-nowrap rounded-full px-3 py-1.5 text-xs bg-accent/10 text-accent border border-accent/30 active:scale-95"
+    >
+      {children} ×
+    </button>
+  );
+}
+
+function ToggleRow({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between bg-panel rounded-button px-3 py-2.5 cursor-pointer select-none">
+      <span className="text-sm">{label}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="size-4 accent-accent"
+      />
+    </label>
+  );
+}
+
+function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen: () => void }) {
+  const accent =
+    deal.status === "arbitration"
+      ? "border-danger/40"
+      : deal.status === "pending_cancellation"
+      ? "border-warning/40"
+      : deal.status === "completed" || deal.status === "resolved_for_seller" || deal.status === "resolved_for_buyer"
+      ? "border-success/30"
+      : "border-border";
+
+  return (
+    <motion.button
+      type="button"
+      whileHover={{ scale: 1.005 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={onOpen}
+      className={`w-full text-left bg-panel rounded-card p-3 flex items-center gap-3 border ${accent} hover:bg-panel-2 transition-colors`}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 text-sm font-semibold">
+          <span>#{deal.id}</span>
+          <span className="text-text-muted">·</span>
+          <span className="text-text-muted truncate">
+            @{deal.buyer_username ?? "—"} → @{deal.seller_username ?? "—"}
+          </span>
+        </div>
+        <div className="mt-0.5 text-xs text-text-muted flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-text">
+            {deal.amount?.toFixed(deal.currency_code === "USDT" || deal.currency_code === "USDC" ? 2 : 6) ?? deal.sum.toFixed(2)}{" "}
+            {deal.currency_code ?? "USD"}
+          </span>
+          <span>·</span>
+          <span>{STATUS_LABEL[deal.status] ?? deal.status}</span>
+          {deal.has_arbitration && (
+            <>
+              <span>·</span>
+              <span className="text-danger flex items-center gap-0.5">
+                <Gavel size={11} /> арбитраж
+              </span>
+            </>
+          )}
+          {deal.has_cancel_request && (
+            <>
+              <span>·</span>
+              <span className="text-warning flex items-center gap-0.5">
+                <AlertTriangle size={11} /> отмена
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+      <ChevronRight size={16} className="text-text-muted shrink-0" />
+    </motion.button>
+  );
+}

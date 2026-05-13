@@ -163,14 +163,23 @@ async def create_message(
 
     out = await _serialize(session, msg)
 
-    # Fan out to the other participant's WebSocket. We deliberately skip
+    # Fan out to the other party's WebSocket. We deliberately skip
     # ``notifier.push`` (no notifications row, no DM) to avoid spamming
     # the badge/DM pipeline on every chat line.
-    other_id = deal.seller_id if user.id == deal.buyer_id else deal.buyer_id
+    #
+    # When the sender is a participant we only need to broadcast to the
+    # opposite party. When the sender is staff (admin / arbiter writing
+    # into the deal chat) we broadcast to *both* buyer and seller, so
+    # both sides see the moderator's message in real time.
     event: dict[str, Any] = {
         "event": "deal_message",
         "data": out.model_dump(mode="json"),
     }
-    await manager.publish(other_id, event)
+    if user.id in (deal.buyer_id, deal.seller_id):
+        other_id = deal.seller_id if user.id == deal.buyer_id else deal.buyer_id
+        await manager.publish(other_id, event)
+    else:
+        await manager.publish(deal.buyer_id, event)
+        await manager.publish(deal.seller_id, event)
 
     return out
