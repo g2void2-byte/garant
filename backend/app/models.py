@@ -1,0 +1,198 @@
+from __future__ import annotations
+
+import enum
+from datetime import datetime
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .db import Base
+
+
+class DealStatus(str, enum.Enum):
+    wait_confirm = "wait_confirm"
+    confirmed = "confirmed"
+    success = "success"
+    failed = "failed"
+    arbitrage = "arbitrage"
+
+
+class PayCommission(str, enum.Enum):
+    buyer = "buyer"
+    seller = "seller"
+
+
+class NotificationType(str, enum.Enum):
+    deals = "deals"
+    deposits = "deposits"
+    system = "system"
+
+
+class InvoiceStatus(str, enum.Enum):
+    pending = "pending"
+    paid = "paid"
+    expired = "expired"
+
+
+class InvoiceProvider(str, enum.Enum):
+    cryptobot = "cryptobot"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tg_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    username: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(128), default="")
+    photo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    banner_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    balance: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    frozen_balance: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    description: Mapped[str] = mapped_column(Text, default="")
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_arbiter: Mapped[bool] = mapped_column(Boolean, default=False)
+    deals_total: Mapped[int] = mapped_column(Integer, default=0)
+    deals_success: Mapped[int] = mapped_column(Integer, default=0)
+    deals_failed: Mapped[int] = mapped_column(Integer, default=0)
+    deals_arbitrage: Mapped[int] = mapped_column(Integer, default=0)
+    good: Mapped[int] = mapped_column(Integer, default=0)
+    bad: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    services: Mapped[list[Service]] = relationship(back_populates="owner", lazy="selectin")
+    forums: Mapped[list[Forum]] = relationship(back_populates="owner", lazy="selectin")
+
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    icon: Mapped[str] = mapped_column(String(64), default="")
+
+    services: Mapped[list[Service]] = relationship(back_populates="category", lazy="selectin")
+
+
+class Service(Base):
+    __tablename__ = "services"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"))
+    title: Mapped[str] = mapped_column(String(256))
+    description: Mapped[str] = mapped_column(Text, default="")
+    price: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    owner: Mapped[User] = relationship(back_populates="services", lazy="selectin")
+    category: Mapped[Category] = relationship(back_populates="services", lazy="selectin")
+
+
+class Deal(Base):
+    __tablename__ = "deals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    buyer_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    sum: Mapped[float] = mapped_column(Numeric(14, 2))
+    description: Mapped[str] = mapped_column(Text, default="")
+    pay_commission: Mapped[PayCommission] = mapped_column(
+        Enum(PayCommission), default=PayCommission.buyer
+    )
+    status: Mapped[DealStatus] = mapped_column(
+        Enum(DealStatus), default=DealStatus.wait_confirm
+    )
+    confirm_buyer: Mapped[bool] = mapped_column(Boolean, default=False)
+    confirm_seller: Mapped[bool] = mapped_column(Boolean, default=False)
+    arbitrage_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    buyer: Mapped[User] = relationship(foreign_keys=[buyer_id], lazy="selectin")
+    seller: Mapped[User] = relationship(foreign_keys=[seller_id], lazy="selectin")
+
+
+class Review(Base):
+    __tablename__ = "reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    target_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    deal_id: Mapped[int | None] = mapped_column(ForeignKey("deals.id"), nullable=True)
+    rating: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    author: Mapped[User] = relationship(foreign_keys=[author_id], lazy="selectin")
+    target: Mapped[User] = relationship(foreign_keys=[target_id], lazy="selectin")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recipient_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    type: Mapped[NotificationType] = mapped_column(
+        Enum(NotificationType), default=NotificationType.system
+    )
+    title: Mapped[str] = mapped_column(String(256))
+    body: Mapped[str] = mapped_column(Text, default="")
+    payload: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    recipient: Mapped[User] = relationship(foreign_keys=[recipient_id], lazy="selectin")
+
+
+class Invoice(Base):
+    __tablename__ = "invoices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    provider: Mapped[InvoiceProvider] = mapped_column(
+        Enum(InvoiceProvider), default=InvoiceProvider.cryptobot
+    )
+    provider_invoice_id: Mapped[str] = mapped_column(String(256), unique=True)
+    amount: Mapped[float] = mapped_column(Numeric(14, 2))
+    status: Mapped[InvoiceStatus] = mapped_column(
+        Enum(InvoiceStatus), default=InvoiceStatus.pending
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    owner: Mapped[User] = relationship(foreign_keys=[owner_id], lazy="selectin")
+
+
+class AppSettings(Base):
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    deal_commission_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=5.0)
+    invoice_commission_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0.0)
+    min_deposit: Mapped[float] = mapped_column(Numeric(14, 2), default=1.0)
+    min_withdraw: Mapped[float] = mapped_column(Numeric(14, 2), default=1.0)
+
+
+class Forum(Base):
+    __tablename__ = "forums"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    name: Mapped[str] = mapped_column(String(256), default="")
+    url: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    owner: Mapped[User] = relationship(back_populates="forums", lazy="selectin")
