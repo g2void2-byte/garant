@@ -57,6 +57,9 @@ class UserOut(BaseModel):
     is_admin: bool
     is_moderator: bool = False
     is_arbiter: bool
+    is_vip: bool = False
+    is_banned: bool = False
+    is_frozen: bool = False
     admin: int
     good: int
     bad: int
@@ -532,3 +535,207 @@ class SupportPersonOut(BaseModel):
     photo_url: str | None
     admin: int
     prefix: str
+
+
+# ── Admin Panel ────────────────────────────────────────
+
+
+class AdminDashboardOut(BaseModel):
+    """Summary counters for ``/admin/dashboard``."""
+
+    total_users: int
+    new_users_24h: int
+    new_users_7d: int
+    online_users_5min: int
+    total_deals: int
+    open_deals: int
+    open_arbitration: int
+    total_services: int
+    active_services: int
+    banned_users: int
+    frozen_users: int
+    admins: int
+    arbiters: int
+    vips: int
+
+
+class AdminUserListItem(BaseModel):
+    """Single row in the ``/admin/users`` listing."""
+
+    id: int
+    tg_user_id: int
+    username: str | None
+    display_name: str
+    photo_url: str | None
+    prefix: str | None
+    is_admin: bool
+    is_moderator: bool
+    is_arbiter: bool
+    is_vip: bool
+    is_banned: bool
+    is_frozen: bool
+    balance: float
+    deposit_total: float
+    rating: float
+    deals_total: int
+    deals_success: int
+    last_ip: str | None
+    last_login_at: datetime | None
+    created_at: datetime
+
+
+class AdminUserListOut(BaseModel):
+    items: list[AdminUserListItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminUserDetailOut(BaseModel):
+    """Full admin view of a user — superset of :class:`UserOut`.
+
+    Includes fields that are deliberately hidden from regular users
+    (tg_user_id, IP, login_count, ban/freeze reasons).
+    """
+
+    id: int
+    tg_user_id: int
+    username: str | None
+    display_name: str
+    photo_url: str | None
+    banner_url: str | None
+    description: str
+    balance: float
+    deposit_total: float
+    rating_auto: float
+    rating_manual: float | None
+    rating_effective: float
+    good: int
+    bad: int
+    deals_total: int
+    deals_success: int
+    deals_failed: int
+    deals_arbitrage: int
+    is_admin: bool
+    is_moderator: bool
+    is_arbiter: bool
+    is_vip: bool
+    is_banned: bool
+    ban_reason: str | None
+    is_frozen: bool
+    freeze_reason: str | None
+    is_anonymous_deals: bool
+    is_hidden_profile: bool
+    has_pin: bool
+    last_ip: str | None
+    last_login_at: datetime | None
+    login_count: int
+    created_at: datetime
+
+
+class AdminReasonIn(BaseModel):
+    """Optional ``{reason}`` body shared by most state-change endpoints.
+
+    User stated reasons are *optional* — server accepts an empty body.
+    A reason is logged verbatim into ``admin_audit_log.reason`` and DMed
+    to the affected user.
+    """
+
+    reason: str | None = None
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if len(v) > 500:
+            raise ValueError("Причина слишком длинная (≤500)")
+        return v
+
+
+class AdminSetRoleIn(BaseModel):
+    """Body for ``POST /admin/users/:id/role``.
+
+    Exactly one of the role flags may be true; pass all false to revoke
+    privileges. ``is_moderator`` is intentionally unsupported per the
+    spec — the field is still there in the DB but the admin panel does
+    not grant it.
+    """
+
+    is_admin: bool = False
+    is_arbiter: bool = False
+    is_vip: bool = False
+
+
+class AdminSetRatingIn(BaseModel):
+    """Body for ``POST /admin/users/:id/rating``.
+
+    ``rating`` is the manual override (0..5 with one decimal). Pass
+    ``None`` to clear the override and restore the auto-computed rating.
+    """
+
+    rating: float | None = None
+
+    @field_validator("rating")
+    @classmethod
+    def _rating_ok(cls, v: float | None) -> float | None:
+        if v is None:
+            return v
+        if v < 0 or v > 5:
+            raise ValueError("Рейтинг должен быть в диапазоне 0..5")
+        return round(v, 1)
+
+
+class AdminSetStatsIn(BaseModel):
+    """Body for ``POST /admin/users/:id/stats``.
+
+    Every field is optional — only provided keys are applied. Negative
+    values are rejected because counts/sums don't make sense below
+    zero. Rating is *not* part of this schema (see
+    :class:`AdminSetRatingIn`) and has no range validation.
+    """
+
+    deals_total: int | None = None
+    deals_success: int | None = None
+    deals_failed: int | None = None
+    deals_arbitrage: int | None = None
+    good: int | None = None
+    bad: int | None = None
+    deposit_total: float | None = None
+
+    @field_validator(
+        "deals_total",
+        "deals_success",
+        "deals_failed",
+        "deals_arbitrage",
+        "good",
+        "bad",
+    )
+    @classmethod
+    def _non_negative_int(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("Значение не может быть отрицательным")
+        return v
+
+    @field_validator("deposit_total")
+    @classmethod
+    def _non_negative_float(cls, v: float | None) -> float | None:
+        if v is not None and v < 0:
+            raise ValueError("Значение не может быть отрицательным")
+        return v
+
+
+class AdminAuditLogOut(BaseModel):
+    id: int
+    actor_id: int | None
+    actor_username: str | None
+    action: str
+    target_type: str | None
+    target_id: int | None
+    reason: str | None
+    payload: dict | None
+    ip: str | None
+    created_at: datetime

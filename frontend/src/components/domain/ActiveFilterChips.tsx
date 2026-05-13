@@ -20,6 +20,7 @@ const STATUS_LABELS: Record<string, string> = {
   "5": "Префикс: Администратор",
   "4": "Префикс: Модератор",
   "3": "Префикс: Арбитр",
+  "2": "Префикс: VIP",
 };
 
 interface ActiveFilterChipsProps {

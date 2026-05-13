@@ -31,6 +31,9 @@ const ServiceDetailPage = lazy(() => import("@/pages/search/ServiceDetailPage"))
 const ArbitrationPage = lazy(() => import("@/pages/arbitration/ArbitrationPage"));
 const DealPaymentPage = lazy(() => import("@/pages/deals/DealPaymentPage"));
 const PinResetPage = lazy(() => import("@/pages/pin/PinResetPage"));
+const AdminDashboardPage = lazy(() => import("@/pages/admin/AdminDashboardPage"));
+const AdminUsersPage = lazy(() => import("@/pages/admin/AdminUsersPage"));
+const AdminUserDetailPage = lazy(() => import("@/pages/admin/AdminUserDetailPage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -105,6 +108,10 @@ export function App() {
                   <Route path="/wallet/deposit" element={<WalletDepositPage />} />
                   <Route path="/wallet/withdraw" element={<WalletWithdrawPage />} />
                   <Route path="/wallet/:code" element={<WalletCurrencyPage />} />
+                  <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+                  <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
+                  <Route path="/admin/users" element={<AdminUsersPage />} />
+                  <Route path="/admin/users/:id" element={<AdminUserDetailPage />} />
                   {/* Backwards-compatible redirects from the pre-Continental routes. */}
                   <Route path="/help" element={<Navigate to="/support" replace />} />
                   <Route path="/u/:username" element={<RedirectUser />} />

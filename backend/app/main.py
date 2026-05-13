@@ -112,6 +112,7 @@ from .routers import (  # noqa: E402
     wallet,
     ws,
 )
+from .routers.admin import routers as admin_routers  # noqa: E402
 
 for r in (
     me,
@@ -134,6 +135,11 @@ for r in (
     app.include_router(r.router)
 
 app.include_router(services.admin_router)
+
+# Admin panel routers (PR-A: dashboard + users management). All routes
+# under /api/admin/* require an authenticated admin.
+for r in admin_routers:
+    app.include_router(r)
 
 # Serve uploaded media files from disk.
 _media_root = _Path(settings.media_root).expanduser().resolve()

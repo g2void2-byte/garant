@@ -147,6 +147,10 @@ RLServiceCreate = Annotated[None, Depends(rate_limit("service-create", limit=10,
 RLWithdrawal = Annotated[None, Depends(rate_limit("withdrawal", limit=5, window=300))]
 RLDealMessage = Annotated[None, Depends(rate_limit("deal-message", limit=30, window=60))]
 RLServiceComment = Annotated[None, Depends(rate_limit("service-comment", limit=10, window=60))]
+# Admin endpoints get a generous limit — enough to never block normal
+# usage (bulk actions, audit log pagination) but slow enough to flag a
+# leaked/stolen admin session before the entire DB walks out the door.
+RLAdmin = Annotated[None, Depends(rate_limit("admin", limit=600, window=60))]
 
 
 __all__ = [
@@ -161,4 +165,5 @@ __all__ = [
     "RLWithdrawal",
     "RLDealMessage",
     "RLServiceComment",
+    "RLAdmin",
 ]

@@ -4,6 +4,7 @@ import {
   Pause,
   Play,
   Plus,
+  ShieldCheck,
   Trash2,
   Wallet,
   Settings as SettingsIcon,
@@ -73,6 +74,15 @@ export default function ProfilePage() {
           >
             <Link2 className="size-4" /> Добавить форумы
           </Button>
+          {me.is_admin && (
+            <Button
+              variant="primary"
+              onClick={() => navigate("/admin")}
+              className="col-span-2"
+            >
+              <ShieldCheck className="size-4" /> Админ-панель
+            </Button>
+          )}
         </div>
 
         <ProfileStatsGrid user={me} onDepositClick={() => navigate("/wallet")} />
