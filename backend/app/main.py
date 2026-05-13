@@ -86,6 +86,7 @@ app.add_middleware(
 from .routers import (  # noqa: E402
     account,
     categories,
+    chat,
     deals,
     me,
     notifications,
@@ -107,6 +108,7 @@ for r in (
     services,
     users,
     deals,
+    chat,
     reviews,
     notifications,
     payments,
@@ -115,6 +117,8 @@ for r in (
     ws,
 ):
     app.include_router(r.router)
+
+app.include_router(chat.unread_router)
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 

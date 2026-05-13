@@ -3,7 +3,10 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
 
+from ..db import async_session
+from ..models import User
 from ..security import InitDataError, verify_init_data
 from ..ws import manager
 
@@ -25,16 +28,30 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=4001, reason=str(e))
         return
 
-    user_id = tg_user.get("id")
-    if not user_id:
+    tg_user_id = tg_user.get("id")
+    if not tg_user_id:
         await websocket.close(code=4001, reason="No user id")
         return
 
-    await manager.connect(user_id, websocket)
+    # Map Telegram id → internal User.id; ``notifier.push`` and
+    # ``services_chat`` route by internal id so the WS must register
+    # under that key. Skip the WS if the user has never hit the API.
+    async with async_session() as session:
+        user = (
+            await session.execute(
+                select(User).where(User.tg_user_id == tg_user_id)
+            )
+        ).scalar_one_or_none()
+    if user is None:
+        await websocket.close(code=4001, reason="Unknown user")
+        return
+    internal_id = user.id
+
+    await manager.connect(internal_id, websocket)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        manager.disconnect(user_id, websocket)
+        manager.disconnect(internal_id, websocket)
     except Exception:
-        manager.disconnect(user_id, websocket)
+        manager.disconnect(internal_id, websocket)

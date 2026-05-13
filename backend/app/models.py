@@ -69,6 +69,17 @@ class NotificationType(str, enum.Enum):
     system = "system"
 
 
+class DealMessageKind(str, enum.Enum):
+    """Source of a deal-chat row.
+
+    ``user`` — written by a participant; ``system`` — server-emitted on
+    state transitions (accept, cancel-request, debate, ...).
+    """
+
+    user = "user"
+    system = "system"
+
+
 class InvoiceStatus(str, enum.Enum):
     pending = "pending"
     paid = "paid"
@@ -411,3 +422,56 @@ class AccountTransferCode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     source_user: Mapped[User] = relationship(foreign_keys=[source_user_id], lazy="selectin")
+
+
+# ── In-deal chat (PR-4) ────────────────────────────────
+
+
+class DealMessage(Base):
+    """A single message in a deal's chat.
+
+    Participants (buyer/seller) write ``user`` messages; the server
+    emits ``system`` rows on every state transition. Admins / arbiters
+    may read once the deal is in arbitration.
+    """
+
+    __tablename__ = "deal_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    deal_id: Mapped[int] = mapped_column(ForeignKey("deals.id"), index=True)
+    author_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    body: Mapped[str] = mapped_column(Text, default="")
+    # JSON list of {kind: image|file, url, name, size}. Kept for the
+    # follow-up attachments PR; v1 always writes ``"[]"``.
+    attachments_json: Mapped[str] = mapped_column(Text, default="[]")
+    kind: Mapped[DealMessageKind] = mapped_column(
+        Enum(DealMessageKind), default=DealMessageKind.user, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), index=True
+    )
+
+    deal: Mapped[Deal] = relationship(foreign_keys=[deal_id], lazy="selectin")
+    author: Mapped[User | None] = relationship(
+        foreign_keys=[author_id], lazy="selectin"
+    )
+
+
+class DealReadMarker(Base):
+    """Per-user, per-deal high-watermark for the chat.
+
+    Updated when a user opens the chat or hits the "mark read" endpoint.
+    Unread count for a user is the number of messages newer than this
+    marker authored by someone other than them.
+    """
+
+    __tablename__ = "deal_read_markers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    deal_id: Mapped[int] = mapped_column(ForeignKey("deals.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    last_read_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )

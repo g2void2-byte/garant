@@ -40,6 +40,7 @@ from .models import (
     User,
     UserBalance,
 )
+from .services_chat import post_system_message
 from .services_wallet import get_currency_by_code, get_or_create_balance
 
 logger = logging.getLogger(__name__)
@@ -165,6 +166,11 @@ async def create_deal(
     await session.commit()
     await session.refresh(deal)
 
+    await post_system_message(
+        session,
+        deal,
+        f"Сделка #{deal.id} создана на {amt} {currency.code}.",
+    )
     await notifier.push(
         session,
         seller.id,
@@ -190,6 +196,7 @@ async def accept_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     await session.commit()
     await session.refresh(deal)
 
+    await post_system_message(session, deal, "Продавец принял сделку. Работа началась.")
     await notifier.push(
         session,
         deal.buyer_id,
@@ -224,6 +231,11 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     await session.commit()
     await session.refresh(deal)
 
+    await post_system_message(
+        session,
+        deal,
+        "Продавец отклонил сделку. Средства возвращены покупателю.",
+    )
     await notifier.push(
         session,
         deal.buyer_id,
@@ -272,6 +284,11 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     await session.commit()
     await session.refresh(deal)
 
+    await post_system_message(
+        session,
+        deal,
+        f"Покупатель завершил сделку. Продавец получил {payout} {currency.code}.",
+    )
     await notifier.push(
         session,
         deal.seller_id,
@@ -301,6 +318,12 @@ async def request_cancel(
     await session.commit()
     await session.refresh(deal)
 
+    role = "Покупатель" if user.id == deal.buyer_id else "Продавец"
+    await post_system_message(
+        session,
+        deal,
+        f"{role} запросил отмену сделки" + (f": {reason}" if reason else "."),
+    )
     other_id = deal.seller_id if user.id == deal.buyer_id else deal.buyer_id
     await notifier.push(
         session,
@@ -326,6 +349,9 @@ async def revoke_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
     await session.commit()
     await session.refresh(deal)
 
+    await post_system_message(
+        session, deal, "Инициатор отозвал запрос отмены. Сделка продолжается."
+    )
     other_id = deal.seller_id if user.id == deal.buyer_id else deal.buyer_id
     await notifier.push(
         session,
@@ -365,6 +391,11 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
     await session.commit()
     await session.refresh(deal)
 
+    await post_system_message(
+        session,
+        deal,
+        "Стороны согласовали отмену. Средства возвращены покупателю.",
+    )
     await notifier.push(
         session,
         deal.cancellation_initiator_id or deal.buyer_id,
@@ -409,6 +440,13 @@ async def start_arbitration(
         seller.deals_arbitrage += 1
     await session.commit()
     await session.refresh(deal)
+
+    role = "Покупатель" if user.id == deal.buyer_id else "Продавец"
+    await post_system_message(
+        session,
+        deal,
+        f"{role} открыл арбитраж: {reason}",
+    )
 
     arbiters = (
         await session.execute(select(User).where(User.is_arbiter.is_(True)))
@@ -488,6 +526,13 @@ async def resolve_arbitration(
     await session.commit()
     await session.refresh(deal)
 
+    winner_label = "покупателя" if winner == "buyer" else "продавца"
+    note_suffix = f"\nКомментарий: {note}" if note else ""
+    await post_system_message(
+        session,
+        deal,
+        f"Арбитр вынес решение в пользу {winner_label}.{note_suffix}",
+    )
     winner_id = deal.buyer_id if winner == "buyer" else deal.seller_id
     loser_id = deal.seller_id if winner == "buyer" else deal.buyer_id
     await notifier.push(
@@ -570,6 +615,15 @@ async def sweep_inactivity(session: AsyncSession) -> int:
         deal.completed_at = now
         await session.commit()
 
+        await post_system_message(
+            session,
+            deal,
+            (
+                "Сделка автоматически закрыта за неактивность."
+                if target_status == DealStatus.cancelled_for_inactivity
+                else "Сделка автоматически отменена (запрос отмены висел без ответа)."
+            ),
+        )
         for recipient_id in (deal.buyer_id, deal.seller_id):
             await notifier.push(
                 session,

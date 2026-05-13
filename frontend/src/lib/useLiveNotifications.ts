@@ -3,7 +3,11 @@ import { useEffect } from "react";
 import { connectNotifications, type WsEvent } from "@/lib/ws";
 import { haptic } from "@/lib/tg";
 import { useToast } from "@/components/ui/Toast";
-import type { NotificationDto } from "@/api/types";
+import type {
+  DealMessageDto,
+  DealMessagesPageDto,
+  NotificationDto,
+} from "@/api/types";
 
 export function useLiveNotifications() {
   const qc = useQueryClient();
@@ -12,6 +16,34 @@ export function useLiveNotifications() {
   useEffect(() => {
     const disconnect = connectNotifications({
       onEvent: (event: WsEvent) => {
+        if (event.event === "deal_message" && event.data) {
+          const msg = event.data as DealMessageDto;
+          qc.setQueryData<DealMessagesPageDto>(
+            ["deals", msg.deal_id, "messages"],
+            (prev) => {
+              if (!prev) return { items: [msg], unread: msg.kind === "user" ? 1 : 0 };
+              if (prev.items.some((it) => it.id === msg.id)) return prev;
+              return {
+                items: [...prev.items, msg],
+                unread:
+                  msg.kind === "user" ? (prev.unread || 0) + 1 : prev.unread,
+              };
+            },
+          );
+          qc.invalidateQueries({ queryKey: ["chat", "unread-total"] });
+          return;
+        }
+
+        if (event.event === "deal_messages_read" && event.data) {
+          const { deal_id } = event.data as { deal_id: number };
+          qc.setQueryData<DealMessagesPageDto>(
+            ["deals", deal_id, "messages"],
+            (prev) => (prev ? { ...prev, unread: 0 } : prev),
+          );
+          qc.invalidateQueries({ queryKey: ["chat", "unread-total"] });
+          return;
+        }
+
         if (event.event !== "notification" || !event.data) return;
         const notif = event.data as NotificationDto;
 
@@ -39,7 +71,12 @@ export function useLiveNotifications() {
 
         haptic("light");
         toast.show({
-          kind: notif.type === "deals" ? "info" : notif.type === "deposits" ? "success" : "info",
+          kind:
+            notif.type === "deals"
+              ? "info"
+              : notif.type === "deposits"
+                ? "success"
+                : "info",
           title: notif.title,
           body: notif.body,
         });
