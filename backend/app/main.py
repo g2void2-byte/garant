@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from .config import settings
 from .db import async_session, create_tables
@@ -137,7 +138,25 @@ FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "di
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    """Liveness + DB readiness check.
+
+    Returns 200 with ``{"status": "ok", "db": "ok"}`` when the database
+    responds to ``SELECT 1``. Returns 503 with ``{"status": "degraded",
+    "db": "down"}`` if the DB round-trip fails — useful for container
+    health checks and front-proxy readiness gates.
+    """
+    from fastapi.responses import JSONResponse
+
+    try:
+        async with async_session() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception:  # noqa: BLE001
+        logger.exception("health check: DB ping failed")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "db": "down"},
+        )
+    return {"status": "ok", "db": "ok"}
 
 
 if FRONTEND_DIST.is_dir():

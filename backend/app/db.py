@@ -128,4 +128,19 @@ def _apply_lightweight_migrations(sync_conn) -> None:
                     text(f"ALTER TABLE users ADD COLUMN {col} {ddl}")
                 )
 
-    # ``media`` is created from scratch by create_all() above; no migration needed.
+    # ``media`` and ``deal_messages`` are created from scratch by
+    # create_all() above; no DDL migration needed.
+
+    # P2 — add indexes on hot-path columns for existing tables. CREATE
+    # INDEX IF NOT EXISTS is idempotent so this is safe to re-run.
+    for ddl in (
+        "CREATE INDEX IF NOT EXISTS ix_deals_buyer_id ON deals(buyer_id)",
+        "CREATE INDEX IF NOT EXISTS ix_deals_seller_id ON deals(seller_id)",
+        "CREATE INDEX IF NOT EXISTS ix_deals_created_at ON deals(created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_deals_status ON deals(status)",
+        "CREATE INDEX IF NOT EXISTS ix_reviews_author_id ON reviews(author_id)",
+        "CREATE INDEX IF NOT EXISTS ix_reviews_target_id ON reviews(target_id)",
+        "CREATE INDEX IF NOT EXISTS ix_notifications_is_read ON notifications(is_read)",
+        "CREATE INDEX IF NOT EXISTS ix_notifications_created_at ON notifications(created_at)",
+    ):
+        sync_conn.execute(text(ddl))
