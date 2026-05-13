@@ -31,6 +31,27 @@ export function useMe() {
   });
 }
 
+export interface MediaDto {
+  id: number;
+  kind: string;
+  url: string;
+  name: string;
+  size: number;
+  content_type: string;
+  created_at?: string | null;
+}
+
+export function useUploadMedia() {
+  return useMutation({
+    mutationFn: async ({ kind, file }: { kind: string; file: File }) => {
+      const form = new FormData();
+      form.append("kind", kind);
+      form.append("file", file);
+      return api.post("api/media/upload", { body: form, timeout: 30_000 }).json<MediaDto>();
+    },
+  });
+}
+
 export function useUpdateMe() {
   const qc = useQueryClient();
   return useMutation({
@@ -39,6 +60,7 @@ export function useUpdateMe() {
         display_name: string;
         description: string;
         banner_url: string | null;
+        photo_url: string | null;
         forums: { name: string; url: string }[];
       }>,
     ) => api.patch("api/me", { json: body }).json<UserCardDto>(),

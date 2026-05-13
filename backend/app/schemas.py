@@ -65,7 +65,21 @@ class UserUpdate(BaseModel):
     display_name: str | None = None
     description: str | None = None
     banner_url: str | None = None
+    photo_url: str | None = None
     forums: list[ForumOut] | None = None
+
+    @field_validator("photo_url")
+    @classmethod
+    def _photo_url_ok(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return v
+        v = v.strip()
+        if len(v) > 1024:
+            raise ValueError("Ссылка на фото слишком длинная")
+        low = v.lower()
+        if not (low.startswith("http://") or low.startswith("https://") or low.startswith("/media/")):
+            raise ValueError("Фото должно быть http(s):// или /media/... ссылкой")
+        return v
 
     @field_validator("display_name")
     @classmethod
@@ -212,6 +226,16 @@ class DealOut(BaseModel):
 
 
 # ── Reviews ────────────────────────────────────────────
+
+class MediaOut(BaseModel):
+    id: int
+    kind: str
+    url: str
+    name: str
+    size: int
+    content_type: str
+    created_at: datetime | None
+
 
 class ReviewCreate(BaseModel):
     target_username: str

@@ -51,7 +51,9 @@ async def update_me(body: UserUpdate, user: CurrentUser, session: SessionDep):
     if body.description is not None:
         user.description = body.description
     if body.banner_url is not None:
-        user.banner_url = body.banner_url
+        user.banner_url = body.banner_url or None
+    if body.photo_url is not None:
+        user.photo_url = body.photo_url or None
     if body.forums is not None:
         for f in list(user.forums):
             await session.delete(f)

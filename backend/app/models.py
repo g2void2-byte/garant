@@ -311,6 +311,27 @@ class Forum(Base):
     owner: Mapped[User] = relationship(back_populates="forums", lazy="selectin")
 
 
+class Media(Base):
+    """Uploaded image / file.
+
+    Stored on disk under ``settings.media_root`` and served via
+    ``settings.media_base_url``.  ``kind`` is a free-form bucket name
+    ("avatar", "banner", "deal", ...) used to group uploads and apply
+    per-bucket policy.
+    """
+
+    __tablename__ = "media"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    url: Mapped[str] = mapped_column(Text)
+    name: Mapped[str] = mapped_column(String(256), default="")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    content_type: Mapped[str] = mapped_column(String(64), default="application/octet-stream")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 # ── Multi-currency wallet ──────────────────────────────
 
 
