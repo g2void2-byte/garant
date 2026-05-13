@@ -7,6 +7,28 @@ export function formatCurrency(value: number, code: string, decimals = 2): strin
   return `${fixed} ${code}`;
 }
 
+const DEFAULT_DECIMALS: Record<string, number> = {
+  USDT: 2,
+  USDC: 2,
+  BTC: 8,
+  ETH: 6,
+  TON: 4,
+  LTC: 6,
+  BNB: 6,
+  TRX: 4,
+  DOGE: 4,
+  SOL: 6,
+};
+
+export function formatAmount(value: number | null | undefined, code: string): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "0";
+  const decimals = DEFAULT_DECIMALS[code.toUpperCase()] ?? 2;
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: decimals,
+  });
+}
+
 export function formatMoney(value: number): string {
   if (!Number.isFinite(value)) return "$0";
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;

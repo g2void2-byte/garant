@@ -120,17 +120,33 @@ export function useDeal(id: number | undefined) {
   });
 }
 
-export function useDealAction(action: "confirm" | "complete" | "cancel" | "arbitrate") {
+export type DealActionPath =
+  | "accept"
+  | "decline"
+  | "finish"
+  | "cancel_request"
+  | "cancel_request/revoke"
+  | "cancel_request/accept"
+  | "debate"
+  | "resolve";
+
+export function useDealAction(action: DealActionPath) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason?: string }) => {
-      const searchParams: Record<string, string> = {};
-      if (action === "arbitrate" && reason) searchParams.reason = reason;
-      return api.post(`api/deals/${id}/${action}`, { searchParams }).json<DealDto>();
-    },
+    mutationFn: ({
+      id,
+      body,
+    }: {
+      id: number;
+      body?: Record<string, unknown>;
+    }) =>
+      api
+        .post(`api/deals/${id}/${action}`, body ? { json: body } : {})
+        .json<DealDto>(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["deals"] });
       qc.invalidateQueries({ queryKey: ["deal"] });
+      qc.invalidateQueries({ queryKey: ["wallet"] });
     },
   });
 }
@@ -138,10 +154,17 @@ export function useDealAction(action: "confirm" | "complete" | "cancel" | "arbit
 export function useCreateDeal() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { counterparty: string; role: "buyer" | "seller"; sum: number; description: string; pay_comission: "buyer" | "seller" }) =>
-      api.post("api/deals", { json: body }).json<DealDto>(),
+    mutationFn: (body: {
+      counterparty: string;
+      role: "buyer" | "seller";
+      sum: number;
+      description: string;
+      pay_comission: "buyer" | "seller";
+      currency_code: string;
+    }) => api.post("api/deals", { json: body }).json<DealDto>(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["deals"] });
+      qc.invalidateQueries({ queryKey: ["wallet"] });
     },
   });
 }

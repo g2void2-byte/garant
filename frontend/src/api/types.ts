@@ -38,6 +38,18 @@ export interface UserCardDto {
   forums: { name?: string; url?: string }[];
 }
 
+export type DealStatus =
+  | "cancelled"
+  | "pending_confirmation"
+  | "pending_payment"
+  | "in_progress"
+  | "completed"
+  | "arbitration"
+  | "resolved_for_buyer"
+  | "resolved_for_seller"
+  | "pending_cancellation"
+  | "cancelled_for_inactivity";
+
 export interface DealDto {
   id: number;
   buyer: string;
@@ -45,11 +57,24 @@ export interface DealDto {
   sum: number;
   description: string;
   pay_comission: string;
-  status: string;
+  status: DealStatus | string;
   confirm_buyer: boolean;
   confirm_seller: boolean;
   role: "buyer" | "seller";
   created_at: string | null;
+  currency_code: string | null;
+  amount: number | null;
+  commission_amount: number | null;
+  in_progress_at: string | null;
+  completed_at: string | null;
+  cancellation_initiator: "buyer" | "seller" | "other" | null;
+  cancellation_reason: string | null;
+  cancellation_requested_at: string | null;
+  arbitration_initiator: "buyer" | "seller" | "other" | null;
+  arbitration_reason: string | null;
+  arbitration_resolved_by: string | null;
+  arbitration_resolution: "buyer" | "seller" | null;
+  arbitration_resolved_at: string | null;
 }
 
 export interface ReviewDto {
