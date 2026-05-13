@@ -330,10 +330,6 @@ class DepositReq(BaseModel):
     amount: float
 
 
-class WithdrawReq(BaseModel):
-    amount: float
-
-
 # ── Wallet (multi-currency) ────────────────────────────
 
 
