@@ -49,14 +49,13 @@ def _webapp(url_path: str) -> WebAppInfo:
 
 
 def search_keyboard() -> InlineKeyboardMarkup:
+    # "Поиск пользователя" opens the user-search hub; "Поиск услуг" opens
+    # the categories grid which is the entry point for service search.
+    # The TMA does not consume query strings here, so we use bare routes.
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🥷 Поиск пользователя", web_app=_webapp("/search?tab=users")
-                )
-            ],
-            [InlineKeyboardButton(text="🛒 Поиск услуг", web_app=_webapp("/search?tab=services"))],
+            [InlineKeyboardButton(text="🥷 Поиск пользователя", web_app=_webapp("/search"))],
+            [InlineKeyboardButton(text="🛒 Поиск услуг", web_app=_webapp("/search/categories"))],
         ]
     )
 
@@ -64,22 +63,25 @@ def search_keyboard() -> InlineKeyboardMarkup:
 def deals_keyboard(
     *, buys_count: int, sales_count: int, pending_payment_count: int
 ) -> InlineKeyboardMarkup:
+    # The deals list inside the TMA filters by role/status via in-page
+    # tabs — it does not consume query strings. All three buttons open
+    # /deals; counts in the labels are informational.
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text=f"🛒 Покупок: {buys_count}",
-                    web_app=_webapp("/deals?as=buyer"),
+                    web_app=_webapp("/deals"),
                 ),
                 InlineKeyboardButton(
                     text=f"🎁 Продаж: {sales_count}",
-                    web_app=_webapp("/deals?as=seller"),
+                    web_app=_webapp("/deals"),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=f"⏰ Ожидающие оплаты: {pending_payment_count}",
-                    web_app=_webapp("/deals?filter=pending_payment"),
+                    web_app=_webapp("/deals"),
                 )
             ],
         ]
@@ -94,9 +96,9 @@ def profile_keyboard() -> InlineKeyboardMarkup:
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="👤 Мой профиль", web_app=_webapp("/profile/me"))],
+            [InlineKeyboardButton(text="👤 Мой профиль", web_app=_webapp("/profile"))],
             second_row,
-            [InlineKeyboardButton(text="💼 Депозит", web_app=_webapp("/wallet/deposit"))],
+            [InlineKeyboardButton(text="💼 Депозит", web_app=_webapp("/profile/deposit"))],
         ]
     )
 
@@ -116,7 +118,10 @@ def settings_keyboard(user: User) -> InlineKeyboardMarkup:
                     text=f"{hidden_mark} Скрытый профиль", callback_data=CB_TOGGLE_HIDDEN
                 )
             ],
-            [InlineKeyboardButton(text="🔒 PIN", web_app=_webapp("/settings/pin"))],
+            # The TMA has no dedicated PIN settings page — the global
+            # PinGate shows a setup/unlock dialog on any protected route,
+            # so we route to /profile and let the gate take over.
+            [InlineKeyboardButton(text="🔒 PIN", web_app=_webapp("/profile"))],
             [InlineKeyboardButton(text="🔙 Назад", callback_data=CB_PROFILE)],
         ]
     )
