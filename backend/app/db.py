@@ -107,6 +107,8 @@ def _apply_lightweight_migrations(sync_conn) -> None:
             ("dm_deals", "BOOLEAN NOT NULL DEFAULT 1"),
             ("dm_deposits", "BOOLEAN NOT NULL DEFAULT 1"),
             ("dm_system", "BOOLEAN NOT NULL DEFAULT 1"),
+            ("is_anonymous_deals", "BOOLEAN NOT NULL DEFAULT 0"),
+            ("is_hidden_profile", "BOOLEAN NOT NULL DEFAULT 0"),
         ]:
             if col not in existing:
                 sync_conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {ddl}"))
