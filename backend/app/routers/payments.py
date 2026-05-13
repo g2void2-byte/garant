@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 
 from ..config import settings
@@ -11,6 +11,11 @@ from ..deps import CurrentUser, SessionDep
 from ..models import Invoice, InvoiceProvider, InvoiceStatus
 from ..schemas import DepositReq, InvoiceCreateReq, InvoiceOut, InvoiceStatusOut, WithdrawReq
 from ..services import credit_invoice
+from ..services_payments import (
+    handle_invoice_paid,
+    verify_webhook_signature,
+    webhook_secret,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +80,12 @@ async def create_deposit_invoice(
 
 @router.get("/deposit/invoice/{invoice_id}", response_model=InvoiceStatusOut)
 async def check_invoice(invoice_id: int, user: CurrentUser, session: SessionDep):
+    """Polling fallback for legacy USD invoices.
+
+    Webhook (``POST /api/payments/webhook/cryptobot``) is the primary
+    path; this endpoint stays so the legacy DepositPage can still pull
+    state directly if a webhook is missed.
+    """
     inv = await session.get(Invoice, invoice_id)
     if not inv or inv.owner_id != user.id:
         raise HTTPException(404, "Инвойс не найден")
@@ -129,3 +140,37 @@ async def withdraw(body: WithdrawReq, user: CurrentUser, session: SessionDep):
     user.balance = float(user.balance) - body.amount
     await session.commit()
     return {"ok": True, "new_balance": float(user.balance)}
+
+
+@router.post("/webhook/cryptobot")
+async def cryptobot_webhook(request: Request, session: SessionDep):
+    """Receive a Crypto Pay update.
+
+    The Crypto Pay app posts JSON with ``update_type`` and ``payload``.
+    We verify ``crypto-pay-api-signature`` against the bot token, then
+    dispatch by ``update_type``. Response is always 200 (with an ``ok``
+    bool) so Crypto Pay doesn't keep retrying on benign duplicates.
+    """
+    raw = await request.body()
+    signature = request.headers.get("crypto-pay-api-signature")
+    secret = webhook_secret()
+
+    if secret and not verify_webhook_signature(secret, raw, signature):
+        # Soft-reject: log and 401 so Crypto Pay surfaces the misconfig.
+        logger.warning("CryptoBot webhook bad signature")
+        raise HTTPException(401, "Bad signature")
+
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, "Body must be JSON")
+
+    update_type = body.get("update_type") or body.get("type")
+    payload = body.get("payload") or {}
+
+    if update_type == "invoice_paid":
+        result = await handle_invoice_paid(session, payload)
+        return {"ok": True, **result}
+
+    logger.info("CryptoBot webhook ignored update_type=%s", update_type)
+    return {"ok": True, "ignored": update_type or "unknown"}

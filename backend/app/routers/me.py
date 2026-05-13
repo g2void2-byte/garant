@@ -36,6 +36,9 @@ def _user_out(user, deposit: float = 0, deals_sum: float = 0) -> UserOut:
         deals_sum=deals_sum,
         online=True,
         forums=[ForumOut(name=f.name, url=f.url) for f in user.forums],
+        dm_deals=bool(user.dm_deals),
+        dm_deposits=bool(user.dm_deposits),
+        dm_system=bool(user.dm_system),
     )
 
 
@@ -51,12 +54,20 @@ async def update_me(body: UserUpdate, user: CurrentUser, session: SessionDep):
     if body.description is not None:
         user.description = body.description
     if body.banner_url is not None:
-        user.banner_url = body.banner_url
+        user.banner_url = body.banner_url or None
+    if body.photo_url is not None:
+        user.photo_url = body.photo_url or None
     if body.forums is not None:
         for f in list(user.forums):
             await session.delete(f)
         for fd in body.forums:
             session.add(Forum(owner_id=user.id, name=fd.name, url=fd.url))
+    if body.dm_deals is not None:
+        user.dm_deals = body.dm_deals
+    if body.dm_deposits is not None:
+        user.dm_deposits = body.dm_deposits
+    if body.dm_system is not None:
+        user.dm_system = body.dm_system
     await session.commit()
     await session.refresh(user)
     return _user_out(user)

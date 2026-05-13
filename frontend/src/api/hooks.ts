@@ -31,11 +31,42 @@ export function useMe() {
   });
 }
 
+export interface MediaDto {
+  id: number;
+  kind: string;
+  url: string;
+  name: string;
+  size: number;
+  content_type: string;
+  created_at?: string | null;
+}
+
+export function useUploadMedia() {
+  return useMutation({
+    mutationFn: async ({ kind, file }: { kind: string; file: File }) => {
+      const form = new FormData();
+      form.append("kind", kind);
+      form.append("file", file);
+      return api.post("api/media/upload", { body: form, timeout: 30_000 }).json<MediaDto>();
+    },
+  });
+}
+
 export function useUpdateMe() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: Partial<{ description: string; banner_url: string | null; forums: any[] }>) =>
-      api.patch("api/me", { json: body }).json<UserCardDto>(),
+    mutationFn: (
+      body: Partial<{
+        display_name: string;
+        description: string;
+        banner_url: string | null;
+        photo_url: string | null;
+        forums: { name: string; url: string }[];
+        dm_deals: boolean;
+        dm_deposits: boolean;
+        dm_system: boolean;
+      }>,
+    ) => api.patch("api/me", { json: body }).json<UserCardDto>(),
     onSuccess: (data) => {
       qc.setQueryData(["me"], data);
     },
@@ -50,15 +81,29 @@ export function useCategories() {
   });
 }
 
-export function useServices(params: { category?: string; q?: string; owner?: string } = {}) {
+export function useServices(
+  params: { category?: string; q?: string; owner?: string; status?: string } = {},
+) {
   const searchParams: Record<string, string> = {};
   if (params.category) searchParams.category = params.category;
   if (params.q) searchParams.q = params.q;
   if (params.owner) searchParams.owner = params.owner;
+  if (params.status) searchParams.status = params.status;
   return useQuery<ServiceDto[]>({
     queryKey: ["services", params],
     queryFn: () => api.get("api/services", { searchParams }).json(),
     staleTime: 30_000,
+  });
+}
+
+export function useUpdateService() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Partial<{ title: string; description: string; price: number; status: string }> }) =>
+      api.patch(`api/services/${id}`, { json: body }).json<ServiceDto>(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["services"] });
+    },
   });
 }
 
@@ -183,7 +228,7 @@ export function useReviews(username: string | undefined) {
 export function useCreateReview() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { target_username: string; rating: number; text: string; deal_id?: number }) =>
+    mutationFn: (body: { target_username: string; rating: number; text: string; deal_id: number }) =>
       api.post("api/reviews", { json: body }).json<ReviewDto>(),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["reviews", vars.target_username] });

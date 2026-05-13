@@ -92,6 +92,21 @@ class WalletWithdrawStatus(str, enum.Enum):
     rejected = "rejected"   # declined, funds returned
 
 
+class ServiceStatus(str, enum.Enum):
+    """Service moderation lifecycle.
+
+    * ``draft``    — the owner is still editing; hidden from public.
+    * ``active``   — visible in catalog and search.
+    * ``paused``   — owner-side hide (keeps the row, hides from catalog).
+    * ``banned``   — admin-side ban (hidden, owner cannot reactivate).
+    """
+
+    draft = "draft"
+    active = "active"
+    paused = "paused"
+    banned = "banned"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -117,6 +132,10 @@ class User(Base):
     pin_locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     pin_reset_code_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pin_reset_expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # PR-G — DM notification preferences (one toggle per NotificationType bucket).
+    dm_deals: Mapped[bool] = mapped_column(Boolean, default=True)
+    dm_deposits: Mapped[bool] = mapped_column(Boolean, default=True)
+    dm_system: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     services: Mapped[list[Service]] = relationship(back_populates="owner", lazy="selectin")
@@ -143,6 +162,10 @@ class Service(Base):
     title: Mapped[str] = mapped_column(String(256))
     description: Mapped[str] = mapped_column(Text, default="")
     price: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    status: Mapped[ServiceStatus] = mapped_column(
+        Enum(ServiceStatus), default=ServiceStatus.active, index=True
+    )
+    ban_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     owner: Mapped[User] = relationship(back_populates="services", lazy="selectin")
@@ -276,6 +299,8 @@ class AppSettings(Base):
     inactivity_pending_cancellation_days: Mapped[int] = mapped_column(
         Integer, default=3
     )
+    # PR-6 — maximum simultaneously-active services per user.
+    max_active_services_per_user: Mapped[int] = mapped_column(Integer, default=10)
 
 
 class Forum(Base):
@@ -288,6 +313,27 @@ class Forum(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     owner: Mapped[User] = relationship(back_populates="forums", lazy="selectin")
+
+
+class Media(Base):
+    """Uploaded image / file.
+
+    Stored on disk under ``settings.media_root`` and served via
+    ``settings.media_base_url``.  ``kind`` is a free-form bucket name
+    ("avatar", "banner", "deal", ...) used to group uploads and apply
+    per-bucket policy.
+    """
+
+    __tablename__ = "media"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    url: Mapped[str] = mapped_column(Text)
+    name: Mapped[str] = mapped_column(String(256), default="")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    content_type: Mapped[str] = mapped_column(String(64), default="application/octet-stream")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 # ── Multi-currency wallet ──────────────────────────────
