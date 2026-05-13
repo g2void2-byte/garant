@@ -233,6 +233,29 @@ class Deal(Base):
     )
 
 
+class DealMessage(Base):
+    """An in-app chat message attached to a deal.
+
+    Restricted to deal participants (buyer + seller) and admins/arbiters.
+    ``attachments_json`` stores a JSON-encoded list of ``Media.id`` values
+    uploaded via ``/api/media/upload`` with ``kind="deal"`` — keeping the
+    media table as the single source of truth for files.
+    """
+
+    __tablename__ = "deal_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    deal_id: Mapped[int] = mapped_column(ForeignKey("deals.id"), index=True)
+    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    text: Mapped[str] = mapped_column(Text, default="")
+    attachments_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), index=True
+    )
+
+    sender: Mapped[User] = relationship(foreign_keys=[sender_id], lazy="selectin")
+
+
 class Review(Base):
     __tablename__ = "reviews"
 

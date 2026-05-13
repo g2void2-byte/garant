@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Sheet } from "@/components/ui/Sheet";
 import { Textarea } from "@/components/ui/Textarea";
+import { DealChatPanel } from "./DealChatPanel";
 import {
   useCreateReview,
   useDeal,
@@ -412,6 +413,8 @@ export default function DealDetailPage() {
             </Button>
           )}
         </div>
+
+        {isParticipant && <DealChatPanel dealId={deal.id} />}
       </div>
 
       <Sheet
