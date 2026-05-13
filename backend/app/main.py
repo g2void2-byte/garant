@@ -116,6 +116,8 @@ for r in (
 ):
     app.include_router(r.router)
 
+app.include_router(services.admin_router)
+
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
 

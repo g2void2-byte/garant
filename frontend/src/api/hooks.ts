@@ -50,15 +50,29 @@ export function useCategories() {
   });
 }
 
-export function useServices(params: { category?: string; q?: string; owner?: string } = {}) {
+export function useServices(
+  params: { category?: string; q?: string; owner?: string; status?: string } = {},
+) {
   const searchParams: Record<string, string> = {};
   if (params.category) searchParams.category = params.category;
   if (params.q) searchParams.q = params.q;
   if (params.owner) searchParams.owner = params.owner;
+  if (params.status) searchParams.status = params.status;
   return useQuery<ServiceDto[]>({
     queryKey: ["services", params],
     queryFn: () => api.get("api/services", { searchParams }).json(),
     staleTime: 30_000,
+  });
+}
+
+export function useUpdateService() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Partial<{ title: string; description: string; price: number; status: string }> }) =>
+      api.patch(`api/services/${id}`, { json: body }).json<ServiceDto>(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["services"] });
+    },
   });
 }
 

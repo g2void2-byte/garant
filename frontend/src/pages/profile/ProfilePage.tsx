@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
-import { ArrowRightLeft, Plus, Wallet, Settings as SettingsIcon, Star, Link2 } from "lucide-react";
+import { ArrowRightLeft, Pause, Play, Plus, Trash2, Wallet, Settings as SettingsIcon, Star, Link2 } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Button } from "@/components/ui/Button";
 import { ToggleTabs } from "@/components/ui/ToggleTabs";
@@ -13,10 +13,12 @@ import { ProfileHeader } from "@/components/domain/ProfileHeader";
 import { ProfileStatsGrid } from "@/components/domain/ProfileStatsGrid";
 import { ServiceCard } from "@/components/domain/ServiceCard";
 import {
+  useDeleteService,
   useMe,
   useReviews,
   useServices,
   useUpdateMe,
+  useUpdateService,
 } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
 import { relativeTime } from "@/lib/format";
@@ -32,6 +34,8 @@ export default function ProfilePage() {
   const [forumsOpen, setForumsOpen] = useState(false);
 
   const updateMe = useUpdateMe();
+  const updateService = useUpdateService();
+  const deleteService = useDeleteService();
 
   const [description, setDescription] = useState("");
   const [forumName, setForumName] = useState("");
@@ -102,9 +106,52 @@ export default function ProfilePage() {
 
         {tab === "services" &&
           (!services || services.length === 0 ? (
-            <EmptyState title="Услуги отсутствуют" description="У этого пользователя пока нет услуг" />
+            <EmptyState title="Услуги отсутствуют" description="Нажмите «Добавить услугу», чтобы добавить первую" />
           ) : (
-            services.map((s, i) => <ServiceCard key={s.id} service={s} index={i} />)
+            services.map((s, i) => (
+              <ServiceCard
+                key={s.id}
+                service={s}
+                index={i}
+                rightSlot={
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    {s.status !== "banned" && (
+                      <button
+                        type="button"
+                        className="size-8 grid place-items-center rounded-full bg-panel-2 text-text-muted active:scale-95"
+                        aria-label={s.status === "active" ? "Поставить на паузу" : "Сделать активной"}
+                        onClick={() => {
+                          haptic("light");
+                          updateService.mutate({
+                            id: s.id,
+                            body: { status: s.status === "active" ? "paused" : "active" },
+                          });
+                        }}
+                      >
+                        {s.status === "active" ? (
+                          <Pause className="size-4" />
+                        ) : (
+                          <Play className="size-4" />
+                        )}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="size-8 grid place-items-center rounded-full bg-panel-2 text-danger active:scale-95"
+                      aria-label="Удалить"
+                      onClick={() => {
+                        if (window.confirm(`Удалить услугу «${s.title}»?`)) {
+                          haptic("warning");
+                          deleteService.mutate(s.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                }
+              />
+            ))
           ))}
 
         {tab === "reviews" &&
