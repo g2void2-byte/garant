@@ -14,7 +14,25 @@ Without these tokens, use `ALLOW_UNSIGNED_INIT_DATA=1` and `RUN_BOT=0` for local
 
 ## Local Dev Setup
 
-### 1. Start PostgreSQL (the only supported DB)
+### Option A: Docker Compose (recommended)
+
+One command brings up Postgres + Redis + backend + frontend with hot-reload:
+
+```bash
+cp .env.compose.example .env   # optional: edit BOT_TOKEN / CRYPTOBOT_TOKEN for live tests
+docker compose up
+```
+
+- Backend: <http://localhost:8080> (uvicorn `--reload`, alembic on boot)
+- Frontend: <http://localhost:5173> (vite hot-reload)
+- Postgres: `localhost:5432` (user/pass/db = `garant`)
+- Redis: `localhost:6379` — empty `REDIS_URL` keeps it in-process; set to `redis://redis:6379/0` in `.env` to exercise P3.5 pub/sub + Redis rate-limit
+
+Code is bind-mounted, so edits trigger hot-reload without rebuilds. `docker compose down -v` wipes the Postgres volume.
+
+### Option B: Manual (without Docker)
+
+#### 1. Start PostgreSQL
 
 ```bash
 docker run -d --name garant-pg \
@@ -22,7 +40,7 @@ docker run -d --name garant-pg \
   -p 5432:5432 postgres:16-alpine
 ```
 
-### 2. Create `.env` file
+#### 2. Create `.env` file
 
 ```bash
 cat > .env << 'EOF'
@@ -37,7 +55,7 @@ ALLOW_UNSIGNED_INIT_DATA=1
 EOF
 ```
 
-### 3. Start backend
+#### 3. Start backend
 
 ```bash
 uvicorn backend.app.main:app --host 0.0.0.0 --port 8080
@@ -46,7 +64,7 @@ uvicorn backend.app.main:app --host 0.0.0.0 --port 8080
 On startup the backend runs `alembic upgrade head` (creates 17 tables) and
 seeds 16 categories + 10 currencies + default app settings.
 
-### 4. Start frontend
+#### 4. Start frontend
 
 ```bash
 cd frontend && VITE_API_URL=http://localhost:8080 npm run dev
