@@ -1069,3 +1069,634 @@ class AdminCommentUpdateIn(BaseModel):
         if v < 1 or v > 5:
             raise ValueError("Оценка должна быть от 1 до 5")
         return v
+
+
+# ── Admin: wallets / balances (PR-CDE) ─────────────────
+
+
+class AdminUserBalanceOut(BaseModel):
+    """A single ``(user, currency, amount, locked)`` row.
+
+    Returned in admin wallet views and inside :class:`AdminUserWalletOut`.
+    ``user_id`` / ``username`` are denormalised so the list page can
+    render without a second fetch.
+    """
+
+    user_id: int
+    username: str | None
+    display_name: str
+    currency_id: int
+    currency_code: str
+    currency_name: str
+    decimals: int
+    amount: float
+    locked: float
+    total: float
+    updated_at: datetime | None
+
+
+class AdminWalletListItem(BaseModel):
+    """Per-user wallet summary in the admin wallet list."""
+
+    user_id: int
+    username: str | None
+    display_name: str
+    photo_url: str | None
+    is_admin: bool
+    is_arbiter: bool
+    is_vip: bool
+    is_banned: bool
+    is_frozen: bool
+    balances: list[AdminUserBalanceOut]
+    total_usd_estimate: float
+
+
+class AdminWalletListOut(BaseModel):
+    items: list[AdminWalletListItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminWalletAdjustIn(BaseModel):
+    """Body for ``POST /api/admin/wallets/:user_id/adjust``.
+
+    ``amount`` is the *delta* in the asset's native unit. Positive values
+    credit, negative debit. ``currency_code`` references the asset; the
+    user-balance row is created if absent.
+
+    Reason is optional per the user's directive ("если не указываю просто
+    корректирует баланс как я укажу").
+    """
+
+    currency_code: str
+    amount: float
+    reason: str | None = None
+
+    @field_validator("currency_code")
+    @classmethod
+    def _code_ok(cls, v: str) -> str:
+        v = (v or "").strip().upper()
+        if not v or len(v) > 16:
+            raise ValueError("Некорректный код валюты")
+        return v
+
+    @field_validator("amount")
+    @classmethod
+    def _amount_ok(cls, v: float) -> float:
+        if v == 0:
+            raise ValueError("Сумма не может быть равна нулю")
+        return v
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_len(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if len(v) > 500:
+            raise ValueError("Причина слишком длинная (≤500)")
+        return v
+
+
+# ── Admin: deposits queue (PR-CDE) ─────────────────────
+
+
+class AdminDepositOut(BaseModel):
+    id: int
+    user_id: int
+    username: str | None
+    display_name: str
+    currency_code: str
+    amount: float
+    status: str
+    provider_invoice_id: str
+    pay_url: str
+    created_at: datetime
+    paid_at: datetime | None
+
+
+class AdminDepositListOut(BaseModel):
+    items: list[AdminDepositOut]
+    total: int
+    page: int
+    page_size: int
+
+
+# ── Admin: withdrawals queue (PR-CDE) ──────────────────
+
+
+class AdminWithdrawalOut(BaseModel):
+    id: int
+    user_id: int
+    username: str | None
+    display_name: str
+    currency_code: str
+    amount: float
+    address: str
+    status: str
+    admin_note: str
+    created_at: datetime
+    processed_at: datetime | None
+
+
+class AdminWithdrawalListOut(BaseModel):
+    items: list[AdminWithdrawalOut]
+    counters: dict[str, int]
+
+
+class AdminWithdrawalDecisionIn(BaseModel):
+    """Body for approve/reject + manual mark-sent on a withdrawal."""
+
+    action: Literal["approve", "reject", "mark_sent"]
+    note: str | None = None
+
+    @field_validator("note")
+    @classmethod
+    def _note_len(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if len(v) > 500:
+            raise ValueError("Комментарий слишком длинный (≤500)")
+        return v
+
+
+# ── Admin: treasury (PR-CDE) ───────────────────────────
+
+
+class AdminTreasuryBalanceOut(BaseModel):
+    """Per-currency commission accumulator.
+
+    ``accrued`` sums up ``commission_amount`` on every completed deal in
+    this currency; ``withdrawn`` subtracts the sum of successful
+    ``treasury_withdrawals`` rows. ``available`` is the diff and the
+    only amount the admin can withdraw.
+    """
+
+    currency_id: int
+    currency_code: str
+    currency_name: str
+    decimals: int
+    accrued: float
+    withdrawn: float
+    available: float
+
+
+class AdminTreasuryOverviewOut(BaseModel):
+    balances: list[AdminTreasuryBalanceOut]
+    total_withdrawals: int
+
+
+class AdminTreasuryWithdrawIn(BaseModel):
+    """Body for ``POST /api/admin/treasury/withdraw``.
+
+    Requires the ``X-Totp-Code`` header (validated by a dependency) and
+    ``confirm=true`` to satisfy the double-confirm gate.
+    """
+
+    currency_code: str
+    amount: float
+    address: str
+    confirm: bool = False
+    note: str | None = None
+
+    @field_validator("currency_code")
+    @classmethod
+    def _code_ok(cls, v: str) -> str:
+        v = (v or "").strip().upper()
+        if not v or len(v) > 16:
+            raise ValueError("Некорректный код валюты")
+        return v
+
+    @field_validator("amount")
+    @classmethod
+    def _amount_ok(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("Сумма должна быть положительной")
+        return v
+
+    @field_validator("address")
+    @classmethod
+    def _address_ok(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Адрес не может быть пустым")
+        if len(v) > 256:
+            raise ValueError("Адрес слишком длинный (≤256)")
+        return v
+
+
+class AdminTreasuryWithdrawOut(BaseModel):
+    id: int
+    actor_id: int
+    currency_code: str
+    amount: float
+    address: str
+    status: str
+    note: str
+    cryptobot_transfer_id: str | None
+    created_at: datetime
+
+
+# ── Admin: settings (PR-CDE) ───────────────────────────
+
+
+class AdminSettingsOut(BaseModel):
+    deal_commission_percent: float
+    invoice_commission_percent: float
+    vip_commission_percent: float
+    min_deposit: float
+    min_withdraw: float
+    inactivity_pending_confirmation_days: int
+    inactivity_pending_cancellation_days: int
+    max_active_services_per_user: int
+    maintenance_enabled: bool
+    maintenance_message: str
+    auto_withdraw_enabled: bool
+
+
+class AdminSettingsUpdateIn(BaseModel):
+    """Partial update of :class:`AppSettings`.
+
+    Every field is optional. Numeric values must be non-negative
+    (commission percentages additionally bounded to ``0..100``).
+    """
+
+    deal_commission_percent: float | None = None
+    invoice_commission_percent: float | None = None
+    vip_commission_percent: float | None = None
+    min_deposit: float | None = None
+    min_withdraw: float | None = None
+    inactivity_pending_confirmation_days: int | None = None
+    inactivity_pending_cancellation_days: int | None = None
+    max_active_services_per_user: int | None = None
+    maintenance_enabled: bool | None = None
+    maintenance_message: str | None = None
+    auto_withdraw_enabled: bool | None = None
+
+    @field_validator(
+        "deal_commission_percent",
+        "invoice_commission_percent",
+        "vip_commission_percent",
+    )
+    @classmethod
+    def _commission_ok(cls, v: float | None) -> float | None:
+        if v is None:
+            return v
+        # ``vip_commission_percent`` allows -1 ("no override").
+        if v < -1 or v > 100:
+            raise ValueError("Комиссия должна быть в диапазоне -1..100")
+        return round(v, 2)
+
+    @field_validator(
+        "min_deposit",
+        "min_withdraw",
+    )
+    @classmethod
+    def _min_ok(cls, v: float | None) -> float | None:
+        if v is None:
+            return v
+        if v < 0:
+            raise ValueError("Значение не может быть отрицательным")
+        return v
+
+    @field_validator(
+        "inactivity_pending_confirmation_days",
+        "inactivity_pending_cancellation_days",
+        "max_active_services_per_user",
+    )
+    @classmethod
+    def _int_ok(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v < 0:
+            raise ValueError("Значение не может быть отрицательным")
+        return v
+
+    @field_validator("maintenance_message")
+    @classmethod
+    def _msg_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("Сообщение не может быть пустым")
+        if len(v) > 1024:
+            raise ValueError("Сообщение слишком длинное (≤1024)")
+        return v
+
+
+# ── Admin: taxonomy (categories + forums) ──────────────
+
+
+class AdminCategoryOut(BaseModel):
+    id: int
+    slug: str
+    name: str
+    icon: str
+
+
+class AdminCategoryUpsertIn(BaseModel):
+    slug: str
+    name: str
+    icon: str = ""
+
+    @field_validator("slug")
+    @classmethod
+    def _slug_ok(cls, v: str) -> str:
+        v = (v or "").strip().lower()
+        if not v:
+            raise ValueError("Slug не может быть пустым")
+        if len(v) > 64:
+            raise ValueError("Slug слишком длинный (≤64)")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def _name_ok(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Название не может быть пустым")
+        if len(v) > 128:
+            raise ValueError("Название слишком длинное (≤128)")
+        return v
+
+    @field_validator("icon")
+    @classmethod
+    def _icon_ok(cls, v: str) -> str:
+        v = (v or "").strip()
+        if len(v) > 64:
+            raise ValueError("Иконка слишком длинная (≤64)")
+        return v
+
+
+# ── Currency CRUD (admin) ──────────────────────────────
+
+
+class AdminCurrencyOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    network: str
+    icon_url: str
+    decimals: int
+    min_deposit: float
+    min_withdraw: float
+    is_active: bool
+    sort_order: int
+
+
+class AdminCurrencyUpsertIn(BaseModel):
+    code: str
+    name: str | None = None
+    network: str | None = None
+    icon_url: str | None = None
+    decimals: int | None = None
+    min_deposit: float | None = None
+    min_withdraw: float | None = None
+    is_active: bool | None = None
+    sort_order: int | None = None
+
+    @field_validator("code")
+    @classmethod
+    def _code_ok(cls, v: str) -> str:
+        v = (v or "").strip().upper()
+        if not v or len(v) > 16:
+            raise ValueError("Некорректный код валюты")
+        return v
+
+    @field_validator("decimals")
+    @classmethod
+    def _decimals_ok(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v < 0 or v > 18:
+            raise ValueError("decimals должно быть 0..18")
+        return v
+
+    @field_validator("min_deposit", "min_withdraw")
+    @classmethod
+    def _min_ok(cls, v: float | None) -> float | None:
+        if v is None:
+            return v
+        if v < 0:
+            raise ValueError("Значение не может быть отрицательным")
+        return v
+
+
+# ── Admin: broadcasts (PR-CDE) ─────────────────────────
+
+
+class AdminBroadcastOut(BaseModel):
+    id: int
+    actor_id: int
+    actor_username: str | None
+    title: str
+    body: str
+    deeplink: str | None
+    audience_role: str | None
+    audience_active_days: int | None
+    audience_min_deals: int | None
+    dispatch_inapp: bool
+    dispatch_dm: bool
+    status: str
+    total_recipients: int
+    delivered_count: int
+    failed_count: int
+    scheduled_at: datetime | None
+    sent_at: datetime | None
+    created_at: datetime
+
+
+class AdminBroadcastListOut(BaseModel):
+    items: list[AdminBroadcastOut]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminBroadcastCreateIn(BaseModel):
+    """Body for ``POST /api/admin/broadcasts``.
+
+    Audience filters compose with AND. All optional; if every filter is
+    omitted the broadcast goes to *every* user.
+    """
+
+    title: str = ""
+    body: str
+    deeplink: str | None = None
+    audience_role: Literal["admin", "arbiter", "vip", "regular"] | None = None
+    audience_active_days: int | None = None
+    audience_min_deals: int | None = None
+    dispatch_inapp: bool = True
+    dispatch_dm: bool = False
+    scheduled_at: datetime | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _title_len(cls, v: str) -> str:
+        if len(v) > 256:
+            raise ValueError("Заголовок слишком длинный (≤256)")
+        return v
+
+    @field_validator("body")
+    @classmethod
+    def _body_ok(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Текст сообщения не может быть пустым")
+        if len(v) > 4096:
+            raise ValueError("Текст слишком длинный (≤4096)")
+        return v
+
+    @field_validator("deeplink")
+    @classmethod
+    def _deeplink_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if len(v) > 256:
+            raise ValueError("Ссылка слишком длинная (≤256)")
+        return v
+
+    @field_validator("audience_active_days", "audience_min_deals")
+    @classmethod
+    def _int_ok(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v < 0:
+            raise ValueError("Значение не может быть отрицательным")
+        return v
+
+
+class AdminBroadcastPreviewOut(BaseModel):
+    """Result of ``POST /api/admin/broadcasts/preview``."""
+
+    total_recipients: int
+
+
+# ── Admin: analytics (PR-CDE) ──────────────────────────
+
+
+class AdminAnalyticsKpiOut(BaseModel):
+    dau: int
+    wau: int
+    mau: int
+    new_users_24h: int
+    new_users_7d: int
+    deals_24h: int
+    deals_7d: int
+    deals_volume_usd_30d: float
+    open_arbitration: int
+    pending_withdrawals: int
+
+
+class AdminAnalyticsSeriesPoint(BaseModel):
+    date: str  # ISO date (YYYY-MM-DD)
+    value: float
+
+
+class AdminAnalyticsSeriesOut(BaseModel):
+    deals_count_30d: list[AdminAnalyticsSeriesPoint]
+    deals_volume_30d: list[AdminAnalyticsSeriesPoint]
+    new_users_30d: list[AdminAnalyticsSeriesPoint]
+    deposits_30d: list[AdminAnalyticsSeriesPoint]
+    withdrawals_30d: list[AdminAnalyticsSeriesPoint]
+
+
+class AdminAnalyticsTopUserOut(BaseModel):
+    user_id: int
+    username: str | None
+    display_name: str
+    value: float
+
+
+class AdminAnalyticsTopListsOut(BaseModel):
+    top_sellers: list[AdminAnalyticsTopUserOut]
+    top_buyers: list[AdminAnalyticsTopUserOut]
+    top_arbiters: list[AdminAnalyticsTopUserOut]
+
+
+# ── Admin: system (PR-CDE) ─────────────────────────────
+
+
+class AdminSystemStatusOut(BaseModel):
+    db_ok: bool
+    db_latency_ms: float | None
+    redis_ok: bool
+    redis_latency_ms: float | None
+    cryptobot_configured: bool
+    bot_configured: bool
+    backend_version: str
+    started_at: datetime | None
+    uptime_seconds: float
+
+
+# ── Admin: 2FA (PR-CDE) ────────────────────────────────
+
+
+class Admin2faSetupOut(BaseModel):
+    """Returned by ``POST /api/admin/2fa/setup``.
+
+    ``secret`` is the base32-encoded shared secret; ``otpauth_url`` is
+    the ``otpauth://`` URI compatible with Google Authenticator / 1Password.
+    The secret is *not* persisted until the admin confirms a code via
+    ``POST /api/admin/2fa/enable``.
+    """
+
+    secret: str
+    otpauth_url: str
+
+
+class Admin2faConfirmIn(BaseModel):
+    secret: str
+    code: str
+
+    @field_validator("secret")
+    @classmethod
+    def _secret_ok(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v or len(v) < 16 or len(v) > 64:
+            raise ValueError("Некорректный секрет")
+        return v
+
+    @field_validator("code")
+    @classmethod
+    def _code_ok(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v.isdigit() or len(v) not in (6, 8):
+            raise ValueError("Код должен состоять из 6 или 8 цифр")
+        return v
+
+
+class Admin2faStatusOut(BaseModel):
+    enabled: bool
+
+
+class Admin2faVerifyIn(BaseModel):
+    code: str
+
+    @field_validator("code")
+    @classmethod
+    def _code_ok(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v.isdigit() or len(v) not in (6, 8):
+            raise ValueError("Код должен состоять из 6 или 8 цифр")
+        return v
+
+
+# ── Admin: audit log (PR-CDE) ──────────────────────────
+
+
+class AdminAuditLogListOut(BaseModel):
+    items: list[AdminAuditLogOut]
+    total: int
+    page: int
+    page_size: int

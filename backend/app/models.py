@@ -157,6 +157,11 @@ class User(Base):
     # takes precedence in profile responses; setting to null restores
     # the auto-computed rating.
     rating_manual: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
+    # Admin PR-CDE — TOTP secret used to gate treasury withdrawals and
+    # user deletion. ``totp_enabled`` is set the moment the user has
+    # confirmed a code; resetting drops both fields back to NULL.
+    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # P3.4 — full-text search vector. Computed by Postgres on INSERT/UPDATE.
@@ -386,6 +391,29 @@ class AppSettings(Base):
     inactivity_pending_cancellation_days: Mapped[int] = mapped_column(Integer, default=3)
     # PR-6 — maximum simultaneously-active services per user.
     max_active_services_per_user: Mapped[int] = mapped_column(Integer, default=10)
+    # Admin PR-CDE — VIP commission override. When >=0 it replaces
+    # ``deal_commission_percent`` for users with ``is_vip=true``;
+    # ``-1`` means "no override, charge the normal rate".
+    vip_commission_percent: Mapped[float] = mapped_column(
+        Numeric(5, 2), default=-1.0, server_default="-1"
+    )
+    # Admin PR-CDE — global maintenance switch. When ``True`` the bot
+    # and TMA both display a maintenance banner and reject every write
+    # except for callers with ``is_admin=true``.
+    maintenance_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    maintenance_message: Mapped[str] = mapped_column(
+        Text,
+        default="Сервис на технических работах. Зайдите позже.",
+        server_default="Сервис на технических работах. Зайдите позже.",
+    )
+    # Admin PR-CDE — when ``True`` approved withdrawals are pushed to
+    # CryptoBot Transfer immediately; otherwise they stay in the
+    # ``approved`` queue waiting for a manual ``mark sent``.
+    auto_withdraw_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
 
 
 class Forum(Base):
@@ -542,6 +570,71 @@ class AccountTransferCode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     source_user: Mapped[User] = relationship(foreign_keys=[source_user_id], lazy="selectin")
+
+
+class TreasuryWithdrawal(Base):
+    """Admin-initiated withdrawal of accumulated commission.
+
+    Tracks payouts of the platform's commission balance to an external
+    address. Requires 2FA + double-confirm on creation; status moves
+    ``pending`` → ``sent`` (or ``rejected``) once the CryptoBot transfer
+    completes. Currency is stored by ``currency_id`` so the
+    ``treasury_balance`` view can aggregate by asset.
+    """
+
+    __tablename__ = "treasury_withdrawals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
+    amount: Mapped[float] = mapped_column(Numeric(18, 8))
+    address: Mapped[str] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(
+        String(16), default="sent", server_default="sent", index=True
+    )
+    note: Mapped[str] = mapped_column(Text, default="")
+    cryptobot_transfer_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+    actor: Mapped[User] = relationship(foreign_keys=[actor_id], lazy="selectin")
+    currency: Mapped[Currency] = relationship(foreign_keys=[currency_id], lazy="selectin")
+
+
+class Broadcast(Base):
+    """Admin-authored push delivered in-app and/or via Telegram DM.
+
+    Stores the *intent* (audience filter + body + dispatch flags); the
+    actual recipients are computed at send time and counted into
+    ``total_recipients`` / ``delivered_count``.  ``status`` is ``draft``
+    when scheduled (``scheduled_at`` set), ``sent`` once dispatched.
+    """
+
+    __tablename__ = "broadcasts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(256), default="")
+    body: Mapped[str] = mapped_column(Text)
+    deeplink: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Audience filters — all optional; empty = "everyone".
+    audience_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    audience_active_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    audience_min_deals: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Dispatch flags.
+    dispatch_inapp: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    dispatch_dm: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Lifecycle.
+    status: Mapped[str] = mapped_column(
+        String(16), default="sent", server_default="sent", index=True
+    )
+    total_recipients: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    delivered_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+    actor: Mapped[User] = relationship(foreign_keys=[actor_id], lazy="selectin")
 
 
 class AdminAuditLog(Base):

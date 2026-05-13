@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
+import { MaintenanceBanner } from "@/components/MaintenanceBanner";
 import { PinGate } from "@/components/PinGate";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -37,6 +38,17 @@ const AdminUserDetailPage = lazy(() => import("@/pages/admin/AdminUserDetailPage
 const AdminDealsPage = lazy(() => import("@/pages/admin/AdminDealsPage"));
 const AdminDealDetailPage = lazy(() => import("@/pages/admin/AdminDealDetailPage"));
 const AdminArbitrationPage = lazy(() => import("@/pages/admin/AdminArbitrationPage"));
+const AdminWalletsPage = lazy(() => import("@/pages/admin/AdminWalletsPage"));
+const AdminDepositsPage = lazy(() => import("@/pages/admin/AdminDepositsPage"));
+const AdminWithdrawalsPage = lazy(() => import("@/pages/admin/AdminWithdrawalsPage"));
+const AdminTreasuryPage = lazy(() => import("@/pages/admin/AdminTreasuryPage"));
+const AdminSettingsPage = lazy(() => import("@/pages/admin/AdminSettingsPage"));
+const AdminBroadcastsPage = lazy(() => import("@/pages/admin/AdminBroadcastsPage"));
+const AdminAnalyticsPage = lazy(() => import("@/pages/admin/AdminAnalyticsPage"));
+const AdminTaxonomyPage = lazy(() => import("@/pages/admin/AdminTaxonomyPage"));
+const AdminSystemPage = lazy(() => import("@/pages/admin/AdminSystemPage"));
+const AdminAuditPage = lazy(() => import("@/pages/admin/AdminAuditPage"));
+const AdminTwoFactorPage = lazy(() => import("@/pages/admin/AdminTwoFactorPage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -80,6 +92,7 @@ export function App() {
       <ToastProvider>
         <PinGate>
           <LiveNotifications />
+          <MaintenanceBanner />
           <BrowserRouter>
             <div className="min-h-full app-container">
               <Suspense fallback={<PageFallback />}>
@@ -118,6 +131,17 @@ export function App() {
                   <Route path="/admin/deals" element={<AdminDealsPage />} />
                   <Route path="/admin/deals/:id" element={<AdminDealDetailPage />} />
                   <Route path="/admin/arbitration" element={<AdminArbitrationPage />} />
+                  <Route path="/admin/wallets" element={<AdminWalletsPage />} />
+                  <Route path="/admin/deposits" element={<AdminDepositsPage />} />
+                  <Route path="/admin/withdrawals" element={<AdminWithdrawalsPage />} />
+                  <Route path="/admin/treasury" element={<AdminTreasuryPage />} />
+                  <Route path="/admin/settings" element={<AdminSettingsPage />} />
+                  <Route path="/admin/broadcasts" element={<AdminBroadcastsPage />} />
+                  <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
+                  <Route path="/admin/taxonomy" element={<AdminTaxonomyPage />} />
+                  <Route path="/admin/system" element={<AdminSystemPage />} />
+                  <Route path="/admin/audit" element={<AdminAuditPage />} />
+                  <Route path="/admin/2fa" element={<AdminTwoFactorPage />} />
                   {/* Backwards-compatible redirects from the pre-Continental routes. */}
                   <Route path="/help" element={<Navigate to="/support" replace />} />
                   <Route path="/u/:username" element={<RedirectUser />} />

@@ -7,7 +7,24 @@ transaction as the mutation, so partial failures leave neither a stale
 audit row nor an undocumented change.
 """
 
-from . import arbitration, content, dashboard, deals, users
+from . import (
+    analytics,
+    arbitration,
+    audit,
+    broadcasts,
+    content,
+    dashboard,
+    deals,
+    deposits,
+    settings,
+    system,
+    taxonomy,
+    treasury,
+    twofa,
+    users,
+    wallets,
+    withdrawals,
+)
 
 routers = [
     dashboard.router,
@@ -15,4 +32,15 @@ routers = [
     deals.router,
     arbitration.router,
     content.router,
+    wallets.router,
+    deposits.router,
+    withdrawals.router,
+    treasury.router,
+    settings.router,
+    taxonomy.router,
+    broadcasts.router,
+    analytics.router,
+    system.router,
+    audit.router,
+    twofa.router,
 ]
