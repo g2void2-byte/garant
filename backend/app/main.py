@@ -96,6 +96,7 @@ app.add_middleware(
 
 from .routers import (  # noqa: E402
     account,
+    arbitration,
     categories,
     deal_messages,
     deals,
@@ -126,6 +127,7 @@ for r in (
     payments,
     wallet,
     support,
+    arbitration,
     media,
     ws,
 ):

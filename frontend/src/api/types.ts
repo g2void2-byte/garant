@@ -77,6 +77,8 @@ export interface UserCardDto {
   dm_deals?: boolean;
   dm_deposits?: boolean;
   dm_system?: boolean;
+  is_anonymous_deals?: boolean;
+  is_hidden_profile?: boolean;
 }
 
 export type DealStatus =

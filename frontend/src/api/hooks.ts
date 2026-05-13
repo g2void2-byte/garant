@@ -67,6 +67,8 @@ export function useUpdateMe() {
         dm_deals: boolean;
         dm_deposits: boolean;
         dm_system: boolean;
+        is_anonymous_deals: boolean;
+        is_hidden_profile: boolean;
       }>,
     ) => api.patch("api/me", { json: body }).json<UserCardDto>(),
     onSuccess: (data) => {

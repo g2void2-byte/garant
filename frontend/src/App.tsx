@@ -24,6 +24,8 @@ const SettingsPage = lazy(() => import("@/pages/profile/SettingsPage"));
 const DepositPage = lazy(() => import("@/pages/profile/DepositPage"));
 const AccountTransferPage = lazy(() => import("@/pages/profile/AccountTransferPage"));
 const WalletPage = lazy(() => import("@/pages/wallet/WalletPage"));
+const WalletDepositPage = lazy(() => import("@/pages/wallet/WalletDepositPage"));
+const WalletWithdrawPage = lazy(() => import("@/pages/wallet/WalletWithdrawPage"));
 const WalletCurrencyPage = lazy(() => import("@/pages/wallet/WalletCurrencyPage"));
 const ServiceDetailPage = lazy(() => import("@/pages/search/ServiceDetailPage"));
 const ArbitrationPage = lazy(() => import("@/pages/arbitration/ArbitrationPage"));
@@ -100,6 +102,8 @@ export function App() {
                   <Route path="/pin-reset" element={<PinResetPage />} />
                   <Route path="/arbitration" element={<ArbitrationPage />} />
                   <Route path="/wallet" element={<WalletPage />} />
+                  <Route path="/wallet/deposit" element={<WalletDepositPage />} />
+                  <Route path="/wallet/withdraw" element={<WalletWithdrawPage />} />
                   <Route path="/wallet/:code" element={<WalletCurrencyPage />} />
                   {/* Backwards-compatible redirects from the pre-Continental routes. */}
                   <Route path="/help" element={<Navigate to="/support" replace />} />

@@ -36,6 +36,10 @@ async def update_me(body: UserUpdate, user: CurrentUser, session: SessionDep):
         user.dm_deposits = body.dm_deposits
     if body.dm_system is not None:
         user.dm_system = body.dm_system
+    if body.is_anonymous_deals is not None:
+        user.is_anonymous_deals = body.is_anonymous_deals
+    if body.is_hidden_profile is not None:
+        user.is_hidden_profile = body.is_hidden_profile
     await session.commit()
     await session.refresh(user)
     return user_to_out(user)
