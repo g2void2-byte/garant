@@ -26,6 +26,7 @@ from ..schemas import (
     ServiceOut,
     ServiceUpdate,
 )
+from ..search import build_prefix_tsquery
 
 router = APIRouter(prefix="/api/services", tags=["services"])
 
@@ -80,8 +81,12 @@ async def list_services(
     stmt = select(Service)
     if category:
         stmt = stmt.join(Category).where(Category.slug == category)
-    if q:
-        stmt = stmt.where(Service.title.ilike(f"%{q}%"))
+    ts_q = build_prefix_tsquery(q) if q else None
+    fts_rank = None
+    if ts_q:
+        tsq = func.to_tsquery("simple", ts_q)
+        stmt = stmt.where(Service.search_vector.op("@@")(tsq))
+        fts_rank = func.ts_rank(Service.search_vector, tsq)
     if owner:
         stmt = stmt.join(Service.owner).where(User.username == owner)
 
@@ -103,7 +108,10 @@ async def list_services(
         # public catalog: active only
         stmt = stmt.where(Service.status == ServiceStatus.active)
 
-    stmt = stmt.order_by(Service.created_at.desc())
+    if fts_rank is not None:
+        stmt = stmt.order_by(fts_rank.desc(), Service.created_at.desc())
+    else:
+        stmt = stmt.order_by(Service.created_at.desc())
     result = await session.execute(stmt)
     return [_service_out(s) for s in result.scalars().all()]
 
@@ -237,9 +245,16 @@ async def admin_list_services(
         except ValueError as exc:
             raise HTTPException(400, "Неизвестный статус услуги") from exc
         stmt = stmt.where(Service.status == wanted)
-    if q:
-        stmt = stmt.where(Service.title.ilike(f"%{q}%"))
-    stmt = stmt.order_by(Service.created_at.desc())
+    ts_q = build_prefix_tsquery(q) if q else None
+    if ts_q:
+        tsq = func.to_tsquery("simple", ts_q)
+        stmt = stmt.where(Service.search_vector.op("@@")(tsq))
+        stmt = stmt.order_by(
+            func.ts_rank(Service.search_vector, tsq).desc(),
+            Service.created_at.desc(),
+        )
+    else:
+        stmt = stmt.order_by(Service.created_at.desc())
     result = await session.execute(stmt)
     return [_service_out(s) for s in result.scalars().all()]
 
