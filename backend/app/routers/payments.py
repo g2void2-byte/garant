@@ -45,7 +45,9 @@ async def list_deposits(user: CurrentUser, session: SessionDep):
 
 @router.post("/deposit/invoice", response_model=InvoiceOut)
 async def create_deposit_invoice(
-    body: InvoiceCreateReq, user: CurrentUser, session: SessionDep,
+    body: InvoiceCreateReq,
+    user: CurrentUser,
+    session: SessionDep,
 ):
     if not settings.cryptobot_token or settings.cryptobot_token.startswith("000"):
         raise HTTPException(502, "CryptoBot не настроен")
@@ -95,9 +97,7 @@ async def check_invoice(invoice_id: int, user: CurrentUser, session: SessionDep)
             async with CryptoPay(
                 settings.cryptobot_token, testnet=settings.cryptobot_testnet
             ) as crypto:
-                checks = await crypto.get_invoices(
-                    invoice_ids=[int(inv.provider_invoice_id)]
-                )
+                checks = await crypto.get_invoices(invoice_ids=[int(inv.provider_invoice_id)])
             if checks and checks[0].status == "paid":
                 inv = await credit_invoice(session, inv)
         except CryptoPayError as e:

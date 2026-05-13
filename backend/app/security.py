@@ -27,9 +27,7 @@ def verify_init_data(init_data: str) -> dict:
     if not received_hash:
         raise InitDataError("hash is missing from init data")
 
-    items = sorted(
-        (k, v[0]) for k, v in parsed.items()
-    )
+    items = sorted((k, v[0]) for k, v in parsed.items())
     data_check_string = "\n".join(f"{k}={v}" for k, v in items)
 
     secret_key = hmac.new(b"WebAppData", settings.bot_token.encode(), hashlib.sha256).digest()

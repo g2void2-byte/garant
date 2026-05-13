@@ -65,9 +65,7 @@ async def test_happy_path_deal(client):
 
     # Verify money moved: buyer spent 10.5, seller got 10.
     async with async_session() as session:
-        usdt = (
-            await session.execute(select(Currency).where(Currency.code == "USDT"))
-        ).scalar_one()
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         seller_bal = (
             await session.execute(
                 select(UserBalance).where(
@@ -123,9 +121,7 @@ async def test_decline_refunds_buyer(client):
     assert decline_resp.json()["status"] == DealStatus.cancelled.value
 
     async with async_session() as session:
-        usdt = (
-            await session.execute(select(Currency).where(Currency.code == "USDT"))
-        ).scalar_one()
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         buyer_bal = (
             await session.execute(
                 select(UserBalance).where(

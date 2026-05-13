@@ -55,12 +55,14 @@ async def seed_settings(session: AsyncSession) -> None:
     if result.scalar_one_or_none() is not None:
         return
 
-    session.add(AppSettings(
-        deal_commission_percent=5.0,
-        invoice_commission_percent=0.0,
-        min_deposit=1.0,
-        min_withdraw=1.0,
-    ))
+    session.add(
+        AppSettings(
+            deal_commission_percent=5.0,
+            invoice_commission_percent=0.0,
+            min_deposit=1.0,
+            min_withdraw=1.0,
+        )
+    )
     await session.commit()
 
 
@@ -70,16 +72,18 @@ async def seed_currencies(session: AsyncSession) -> None:
         return
 
     for code, name, network, decimals, min_deposit, min_withdraw, sort_order in CURRENCIES:
-        session.add(Currency(
-            code=code,
-            name=name,
-            network=network,
-            decimals=decimals,
-            min_deposit=min_deposit,
-            min_withdraw=min_withdraw,
-            sort_order=sort_order,
-            is_active=True,
-        ))
+        session.add(
+            Currency(
+                code=code,
+                name=name,
+                network=network,
+                decimals=decimals,
+                min_deposit=min_deposit,
+                min_withdraw=min_withdraw,
+                sort_order=sort_order,
+                is_active=True,
+            )
+        )
     await session.commit()
 
 

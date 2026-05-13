@@ -29,9 +29,7 @@ def signed_init_data(tg_user_id: int, username: str = "user") -> str:
     auth_date = str(int(time.time()))
     items = sorted([("auth_date", auth_date), ("user", user)])
     data_check_string = "\n".join(f"{k}={v}" for k, v in items)
-    secret_key = hmac.new(
-        b"WebAppData", settings.bot_token.encode(), hashlib.sha256
-    ).digest()
+    secret_key = hmac.new(b"WebAppData", settings.bot_token.encode(), hashlib.sha256).digest()
     h = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
     return urlencode({"user": user, "auth_date": auth_date, "hash": h})
 
@@ -40,14 +38,10 @@ def auth_headers(init_data: str) -> dict[str, str]:
     return {"Authorization": f"tma {init_data}"}
 
 
-async def setup_pin(
-    client: AsyncClient, init_data: str, pin: str = "1234"
-) -> str:
+async def setup_pin(client: AsyncClient, init_data: str, pin: str = "1234") -> str:
     """Bootstrap a user (POST /api/pin/setup creates the User row) and
     return the X-Pin-Token for PIN-gated endpoints."""
-    resp = await client.post(
-        "/api/pin/setup", json={"pin": pin}, headers=auth_headers(init_data)
-    )
+    resp = await client.post("/api/pin/setup", json={"pin": pin}, headers=auth_headers(init_data))
     assert resp.status_code == 200, resp.text
     return resp.json()["token"]
 
@@ -55,15 +49,11 @@ async def setup_pin(
 async def get_user_id_by_tg(session: AsyncSession, tg_user_id: int) -> int:
     from backend.app.models import User
 
-    result = await session.execute(
-        select(User).where(User.tg_user_id == tg_user_id)
-    )
+    result = await session.execute(select(User).where(User.tg_user_id == tg_user_id))
     return result.scalar_one().id
 
 
-async def credit_balance(
-    session: AsyncSession, user_id: int, code: str, amount: float
-) -> None:
+async def credit_balance(session: AsyncSession, user_id: int, code: str, amount: float) -> None:
     """Directly credit a user's spendable balance for a currency.
 
     Bypasses CryptoBot — used to give buyers escrow funds without

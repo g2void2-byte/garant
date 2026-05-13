@@ -112,9 +112,7 @@ async def ws_server():
     from backend.app.main import app
 
     port = _free_port()
-    config = uvicorn.Config(
-        app, host="127.0.0.1", port=port, log_level="error", lifespan="off"
-    )
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error", lifespan="off")
     server = uvicorn.Server(config)
     task = asyncio.create_task(server.serve())
 

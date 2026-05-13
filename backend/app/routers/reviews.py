@@ -46,7 +46,12 @@ async def create_review(body: ReviewCreate, author: CurrentUser, session: Sessio
         raise HTTPException(400, "Нельзя оставить отзыв о себе")
     try:
         review = await post_review(
-            session, author, target, body.rating, body.text, body.deal_id,
+            session,
+            author,
+            target,
+            body.rating,
+            body.text,
+            body.deal_id,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

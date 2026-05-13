@@ -74,15 +74,11 @@ async def test_rate_limit_is_per_user(client):
     # Burn A's bucket — setup already used 1, so 4 more saturates it.
     for _ in range(4):
         await client.post("/api/pin/check", json={"pin": "0000"}, headers=auth_headers(a))
-    blocked_a = await client.post(
-        "/api/pin/check", json={"pin": "0000"}, headers=auth_headers(a)
-    )
+    blocked_a = await client.post("/api/pin/check", json={"pin": "0000"}, headers=auth_headers(a))
     assert blocked_a.status_code == 429
 
     # B is still fine.
-    ok_b = await client.post(
-        "/api/pin/check", json={"pin": "2222"}, headers=auth_headers(b)
-    )
+    ok_b = await client.post("/api/pin/check", json={"pin": "2222"}, headers=auth_headers(b))
     assert ok_b.status_code == 200, ok_b.text
 
 
@@ -92,7 +88,5 @@ async def test_rate_limit_resets_between_tests(client):
     """
     init = signed_init_data(3001, "rl_pin_user")  # reused tg_user_id from earlier
     await setup_pin(client, init, pin="9876")
-    resp = await client.post(
-        "/api/pin/check", json={"pin": "0000"}, headers=auth_headers(init)
-    )
+    resp = await client.post("/api/pin/check", json={"pin": "0000"}, headers=auth_headers(init))
     assert resp.status_code != 429

@@ -15,9 +15,7 @@ async def test_missing_authorization_header(client):
 
 
 async def test_invalid_authorization_scheme(client):
-    resp = await client.get(
-        "/api/me", headers={"Authorization": "Bearer something"}
-    )
+    resp = await client.get("/api/me", headers={"Authorization": "Bearer something"})
     assert resp.status_code == 401
 
 
@@ -42,8 +40,6 @@ async def test_valid_signature_creates_user(client):
 async def test_missing_initdata_fields_rejected(client, missing_field):
     init_data = signed_init_data(101, "bob")
     # Drop one of the signed fields; this also invalidates the signature.
-    stripped = "&".join(
-        kv for kv in init_data.split("&") if not kv.startswith(f"{missing_field}=")
-    )
+    stripped = "&".join(kv for kv in init_data.split("&") if not kv.startswith(f"{missing_field}="))
     resp = await client.get("/api/me", headers=auth_headers(stripped))
     assert resp.status_code == 401

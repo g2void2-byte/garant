@@ -47,16 +47,12 @@ async def _recompute_user_rating(session: AsyncSession, target: User) -> None:
     """
     good = (
         await session.execute(
-            select(func.count(Review.id)).where(
-                Review.target_id == target.id, Review.rating >= 4
-            )
+            select(func.count(Review.id)).where(Review.target_id == target.id, Review.rating >= 4)
         )
     ).scalar_one()
     bad = (
         await session.execute(
-            select(func.count(Review.id)).where(
-                Review.target_id == target.id, Review.rating <= 2
-            )
+            select(func.count(Review.id)).where(Review.target_id == target.id, Review.rating <= 2)
         )
     ).scalar_one()
     target.good = int(good or 0)
@@ -92,9 +88,7 @@ async def post_review(
 
     existing = (
         await session.execute(
-            select(Review).where(
-                Review.author_id == author.id, Review.deal_id == deal_id
-            )
+            select(Review).where(Review.author_id == author.id, Review.deal_id == deal_id)
         )
     ).scalar_one_or_none()
     if existing is not None:
@@ -116,7 +110,9 @@ async def post_review(
     await session.refresh(review)
 
     await notifier.push(
-        session, target.id, NotificationType.system,
+        session,
+        target.id,
+        NotificationType.system,
         "Новый отзыв",
         f"@{author.username} оставил отзыв ({rating}/5)",
         {"review_id": review.id},
@@ -144,7 +140,9 @@ async def credit_invoice(
 
     if owner:
         await notifier.push(
-            session, owner.id, NotificationType.deposits,
+            session,
+            owner.id,
+            NotificationType.deposits,
             "Депозит зачислен",
             f"${float(invoice.amount):.2f} зачислено на баланс",
         )

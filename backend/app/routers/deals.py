@@ -47,9 +47,7 @@ def _deal_out(deal: Deal, user_id: int) -> DealOut:
         currency_code=currency_code,
         amount=(float(deal.amount) if deal.amount is not None else None),
         commission_amount=(
-            float(deal.commission_amount)
-            if deal.commission_amount is not None
-            else None
+            float(deal.commission_amount) if deal.commission_amount is not None else None
         ),
         in_progress_at=deal.in_progress_at,
         completed_at=deal.completed_at,
@@ -58,11 +56,7 @@ def _deal_out(deal: Deal, user_id: int) -> DealOut:
         cancellation_requested_at=deal.cancellation_requested_at,
         arbitration_initiator=_role_for(deal, deal.arbitration_initiator_id),
         arbitration_reason=deal.arbitration_reason,
-        arbitration_resolved_by=(
-            "admin"
-            if deal.arbitration_resolved_by is not None
-            else None
-        ),
+        arbitration_resolved_by=("admin" if deal.arbitration_resolved_by is not None else None),
         arbitration_resolution=deal.arbitration_resolution,
         arbitration_resolved_at=deal.arbitration_resolved_at,
     )
@@ -100,9 +94,7 @@ async def list_deals(
     role: str | None = Query(None),
     status: str | None = Query(None),
 ):
-    stmt = select(Deal).where(
-        or_(Deal.buyer_id == user.id, Deal.seller_id == user.id)
-    )
+    stmt = select(Deal).where(or_(Deal.buyer_id == user.id, Deal.seller_id == user.id))
     if role == "buyer":
         stmt = select(Deal).where(Deal.buyer_id == user.id)
     elif role == "seller":
@@ -154,9 +146,7 @@ async def create_deal_endpoint(
 
 
 @router.post("/{deal_id}/accept", response_model=DealOut)
-async def accept_deal_endpoint(
-    deal_id: int, user: PinUser, session: SessionDep
-):
+async def accept_deal_endpoint(deal_id: int, user: PinUser, session: SessionDep):
     deal = await _get(session, deal_id)
     try:
         deal = await accept_deal(session, deal, user)
@@ -166,9 +156,7 @@ async def accept_deal_endpoint(
 
 
 @router.post("/{deal_id}/decline", response_model=DealOut)
-async def decline_deal_endpoint(
-    deal_id: int, user: PinUser, session: SessionDep
-):
+async def decline_deal_endpoint(deal_id: int, user: PinUser, session: SessionDep):
     deal = await _get(session, deal_id)
     try:
         deal = await decline_deal(session, deal, user)
@@ -178,9 +166,7 @@ async def decline_deal_endpoint(
 
 
 @router.post("/{deal_id}/finish", response_model=DealOut)
-async def finish_deal_endpoint(
-    deal_id: int, user: PinUser, session: SessionDep
-):
+async def finish_deal_endpoint(deal_id: int, user: PinUser, session: SessionDep):
     deal = await _get(session, deal_id)
     try:
         deal = await finish_deal(session, deal, user)
@@ -205,9 +191,7 @@ async def cancel_request_endpoint(
 
 
 @router.post("/{deal_id}/cancel_request/revoke", response_model=DealOut)
-async def cancel_revoke_endpoint(
-    deal_id: int, user: PinUser, session: SessionDep
-):
+async def cancel_revoke_endpoint(deal_id: int, user: PinUser, session: SessionDep):
     deal = await _get(session, deal_id)
     try:
         deal = await revoke_cancel(session, deal, user)
@@ -217,9 +201,7 @@ async def cancel_revoke_endpoint(
 
 
 @router.post("/{deal_id}/cancel_request/accept", response_model=DealOut)
-async def cancel_accept_endpoint(
-    deal_id: int, user: PinUser, session: SessionDep
-):
+async def cancel_accept_endpoint(deal_id: int, user: PinUser, session: SessionDep):
     deal = await _get(session, deal_id)
     try:
         deal = await accept_cancel(session, deal, user)

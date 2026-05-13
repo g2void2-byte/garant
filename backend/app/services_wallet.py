@@ -60,16 +60,24 @@ async def get_or_create_balance(
     return bal
 
 
-async def list_balances(session: AsyncSession, user_id: int) -> list[tuple[Currency, UserBalance | None]]:
+async def list_balances(
+    session: AsyncSession, user_id: int
+) -> list[tuple[Currency, UserBalance | None]]:
     """Return every active currency with the user's balance row (or None)."""
     currencies = (
-        await session.execute(
-            select(Currency).where(Currency.is_active.is_(True)).order_by(Currency.sort_order)
+        (
+            await session.execute(
+                select(Currency).where(Currency.is_active.is_(True)).order_by(Currency.sort_order)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     balances = (
-        await session.execute(select(UserBalance).where(UserBalance.user_id == user_id))
-    ).scalars().all()
+        (await session.execute(select(UserBalance).where(UserBalance.user_id == user_id)))
+        .scalars()
+        .all()
+    )
     by_currency = {b.currency_id: b for b in balances}
     return [(c, by_currency.get(c.id)) for c in currencies]
 
@@ -155,9 +163,7 @@ async def poll_deposit_status(session: AsyncSession, deposit: WalletDeposit) -> 
         async with CryptoPay(
             settings.cryptobot_token, testnet=settings.cryptobot_testnet
         ) as crypto:
-            rows = await crypto.get_invoices(
-                invoice_ids=[int(deposit.provider_invoice_id)]
-            )
+            rows = await crypto.get_invoices(invoice_ids=[int(deposit.provider_invoice_id)])
     except CryptoPayError as e:
         logger.warning("CryptoBot poll error: %s", e)
         return deposit
@@ -206,9 +212,7 @@ async def create_withdrawal(
     await session.refresh(withdrawal)
 
     # Notify admins
-    admins = (
-        await session.execute(select(User).where(User.is_admin.is_(True)))
-    ).scalars().all()
+    admins = (await session.execute(select(User).where(User.is_admin.is_(True)))).scalars().all()
     for admin in admins:
         await notifier.push(
             session,

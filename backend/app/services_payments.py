@@ -46,9 +46,7 @@ def verify_webhook_signature(secret: str, body: bytes, signature: str | None) ->
     return hmac.compare_digest(expected, signature)
 
 
-async def _find_legacy_invoice(
-    session: AsyncSession, provider_invoice_id: str
-) -> Invoice | None:
+async def _find_legacy_invoice(session: AsyncSession, provider_invoice_id: str) -> Invoice | None:
     result = await session.execute(
         select(Invoice).where(Invoice.provider_invoice_id == provider_invoice_id)
     )
@@ -59,16 +57,12 @@ async def _find_wallet_deposit(
     session: AsyncSession, provider_invoice_id: str
 ) -> WalletDeposit | None:
     result = await session.execute(
-        select(WalletDeposit).where(
-            WalletDeposit.provider_invoice_id == provider_invoice_id
-        )
+        select(WalletDeposit).where(WalletDeposit.provider_invoice_id == provider_invoice_id)
     )
     return result.scalar_one_or_none()
 
 
-async def handle_invoice_paid(
-    session: AsyncSession, payload: dict[str, Any]
-) -> dict[str, Any]:
+async def handle_invoice_paid(session: AsyncSession, payload: dict[str, Any]) -> dict[str, Any]:
     """Idempotently credit the user balance for a paid invoice.
 
     Accepts the ``payload`` shape Crypto Pay sends for ``invoice_paid``::

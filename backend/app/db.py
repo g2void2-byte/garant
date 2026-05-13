@@ -62,26 +62,15 @@ def _apply_lightweight_migrations(sync_conn) -> None:
         # Map legacy statuses (5-state machine) onto the new 10-state machine
         # in a single sweep. Idempotent: rows already migrated are no-ops.
         sync_conn.execute(
-            text(
-                "UPDATE deals SET status = 'pending_confirmation' "
-                "WHERE status = 'wait_confirm'"
-            )
+            text("UPDATE deals SET status = 'pending_confirmation' WHERE status = 'wait_confirm'")
         )
         sync_conn.execute(
-            text(
-                "UPDATE deals SET status = 'in_progress' WHERE status = 'confirmed'"
-            )
+            text("UPDATE deals SET status = 'in_progress' WHERE status = 'confirmed'")
         )
+        sync_conn.execute(text("UPDATE deals SET status = 'completed' WHERE status = 'success'"))
+        sync_conn.execute(text("UPDATE deals SET status = 'cancelled' WHERE status = 'failed'"))
         sync_conn.execute(
-            text("UPDATE deals SET status = 'completed' WHERE status = 'success'")
-        )
-        sync_conn.execute(
-            text("UPDATE deals SET status = 'cancelled' WHERE status = 'failed'")
-        )
-        sync_conn.execute(
-            text(
-                "UPDATE deals SET status = 'arbitration' WHERE status = 'arbitrage'"
-            )
+            text("UPDATE deals SET status = 'arbitration' WHERE status = 'arbitrage'")
         )
 
     if inspector.has_table("app_settings"):
@@ -101,9 +90,7 @@ def _apply_lightweight_migrations(sync_conn) -> None:
             ),
         ]:
             if col not in existing:
-                sync_conn.execute(
-                    text(f"ALTER TABLE app_settings ADD COLUMN {col} {ddl}")
-                )
+                sync_conn.execute(text(f"ALTER TABLE app_settings ADD COLUMN {col} {ddl}"))
 
     if inspector.has_table("services"):
         existing = {col["name"] for col in inspector.get_columns("services")}
@@ -112,9 +99,7 @@ def _apply_lightweight_migrations(sync_conn) -> None:
             ("ban_reason", "TEXT"),
         ]:
             if col not in existing:
-                sync_conn.execute(
-                    text(f"ALTER TABLE services ADD COLUMN {col} {ddl}")
-                )
+                sync_conn.execute(text(f"ALTER TABLE services ADD COLUMN {col} {ddl}"))
 
     if inspector.has_table("users"):
         existing = {col["name"] for col in inspector.get_columns("users")}
@@ -124,9 +109,7 @@ def _apply_lightweight_migrations(sync_conn) -> None:
             ("dm_system", "BOOLEAN NOT NULL DEFAULT 1"),
         ]:
             if col not in existing:
-                sync_conn.execute(
-                    text(f"ALTER TABLE users ADD COLUMN {col} {ddl}")
-                )
+                sync_conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {ddl}"))
 
     # ``media`` and ``deal_messages`` are created from scratch by
     # create_all() above; no DDL migration needed.
