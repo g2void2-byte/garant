@@ -21,11 +21,41 @@ from .db import Base
 
 
 class DealStatus(str, enum.Enum):
+    """Deal lifecycle. Values match the Continental reference bundle
+    (`pending_confirmation`, `in_progress`, `arbitration`, ...).
+
+    Terminal states: ``cancelled``, ``completed``, ``resolved_for_buyer``,
+    ``resolved_for_seller``, ``cancelled_for_inactivity``.
+    """
+
+    cancelled = "cancelled"                             # 0
+    pending_confirmation = "pending_confirmation"       # 1
+    pending_payment = "pending_payment"                 # 2 (reserved; not used today)
+    in_progress = "in_progress"                         # 3
+    completed = "completed"                             # 4
+    arbitration = "arbitration"                         # 5
+    resolved_for_buyer = "resolved_for_buyer"           # 6
+    resolved_for_seller = "resolved_for_seller"         # 7
+    pending_cancellation = "pending_cancellation"       # 8
+    cancelled_for_inactivity = "cancelled_for_inactivity"  # 9
+
+    # Legacy values kept for old rows; migrated on startup.
     wait_confirm = "wait_confirm"
     confirmed = "confirmed"
     success = "success"
     failed = "failed"
     arbitrage = "arbitrage"
+
+
+TERMINAL_DEAL_STATUSES = frozenset(
+    {
+        DealStatus.cancelled,
+        DealStatus.completed,
+        DealStatus.resolved_for_buyer,
+        DealStatus.resolved_for_seller,
+        DealStatus.cancelled_for_inactivity,
+    }
+)
 
 
 class PayCommission(str, enum.Enum):
@@ -131,7 +161,7 @@ class Deal(Base):
         Enum(PayCommission), default=PayCommission.buyer
     )
     status: Mapped[DealStatus] = mapped_column(
-        Enum(DealStatus), default=DealStatus.wait_confirm
+        Enum(DealStatus), default=DealStatus.pending_confirmation
     )
     confirm_buyer: Mapped[bool] = mapped_column(Boolean, default=False)
     confirm_seller: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -139,8 +169,45 @@ class Deal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Multi-currency fields (PR-3). ``currency_id`` is nullable for legacy
+    # rows that lived on the old ``User.balance`` USD column. New deals
+    # always set it.
+    currency_id: Mapped[int | None] = mapped_column(
+        ForeignKey("currencies.id"), nullable=True, index=True
+    )
+    amount: Mapped[float | None] = mapped_column(Numeric(28, 8), nullable=True)
+    commission_amount: Mapped[float | None] = mapped_column(Numeric(28, 8), nullable=True)
+    in_progress_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Cancel-debate flow.
+    cancellation_initiator_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cancellation_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+
+    # Arbitration flow.
+    arbitration_initiator_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    arbitration_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    arbitration_resolved_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    arbitration_resolution: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
+    arbitration_resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+
     buyer: Mapped[User] = relationship(foreign_keys=[buyer_id], lazy="selectin")
     seller: Mapped[User] = relationship(foreign_keys=[seller_id], lazy="selectin")
+    currency: Mapped[Currency | None] = relationship(
+        foreign_keys=[currency_id], lazy="selectin"
+    )
 
 
 class Review(Base):
@@ -202,6 +269,13 @@ class AppSettings(Base):
     invoice_commission_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0.0)
     min_deposit: Mapped[float] = mapped_column(Numeric(14, 2), default=1.0)
     min_withdraw: Mapped[float] = mapped_column(Numeric(14, 2), default=1.0)
+    # PR-3 — auto-cancel timeouts.
+    inactivity_pending_confirmation_days: Mapped[int] = mapped_column(
+        Integer, default=7
+    )
+    inactivity_pending_cancellation_days: Mapped[int] = mapped_column(
+        Integer, default=3
+    )
 
 
 class Forum(Base):
@@ -312,3 +386,28 @@ class WalletWithdrawal(Base):
 
     user: Mapped[User] = relationship(foreign_keys=[user_id], lazy="selectin")
     currency: Mapped[Currency] = relationship(foreign_keys=[currency_id], lazy="selectin")
+
+
+# ── Account transfer (PR-CA) ───────────────────────────
+
+
+class AccountTransferCode(Base):
+    """One-time code that re-points a user's ``tg_user_id`` to a new
+    Telegram account.
+
+    Issued by the existing (source) account from a PIN-gated endpoint and
+    delivered via the bot DM. Consumed by the new (target) account once
+    they enter the code on the new device.
+    """
+
+    __tablename__ = "account_transfer_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    target_tg_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    source_user: Mapped[User] = relationship(foreign_keys=[source_user_id], lazy="selectin")

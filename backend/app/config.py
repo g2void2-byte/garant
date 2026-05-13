@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     pin_lock_minutes: int = 60
     pin_reset_code_ttl_seconds: int = 10 * 60
 
+    # PR-3 — periodic sweep of stale deals (0 disables).
+    inactivity_sweep_seconds: int = 600
+
+    # PR-CA — TTL for account-transfer one-time codes.
+    account_transfer_code_ttl_seconds: int = 15 * 60
+
 
 settings = Settings()
 

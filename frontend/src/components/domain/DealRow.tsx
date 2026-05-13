@@ -2,16 +2,40 @@ import { motion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { DealDto } from "@/api/types";
-import { formatMoney, relativeTime } from "@/lib/format";
+import { formatAmount, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string; icon: string }> = {
-  WAIT_CONFIRM: { text: "Ожидает подтверждения", cls: "bg-[#48390F] text-accent", icon: "⏳" },
-  CONFIRMED: { text: "Подтверждена", cls: "bg-success/15 text-success", icon: "✅" },
-  SUCCESS: { text: "Успех", cls: "bg-success/15 text-success", icon: "🎉" },
-  FAILED: { text: "Отменена", cls: "bg-danger/15 text-danger", icon: "❌" },
-  ARBITRAGE: { text: "Арбитраж", cls: "bg-accent/15 text-accent", icon: "⚖️" },
-  WAIT_FINAL_CONFIRM: { text: "Финальное подтверждение", cls: "bg-accent/15 text-accent", icon: "⏳" },
+  pending_confirmation: {
+    text: "Ожидает подтверждения",
+    cls: "bg-[#48390F] text-accent",
+    icon: "⏳",
+  },
+  pending_payment: { text: "Ожидает оплаты", cls: "bg-[#48390F] text-accent", icon: "💳" },
+  in_progress: { text: "В работе", cls: "bg-success/15 text-success", icon: "▶️" },
+  completed: { text: "Завершена", cls: "bg-success/15 text-success", icon: "🎉" },
+  cancelled: { text: "Отменена", cls: "bg-danger/15 text-danger", icon: "❌" },
+  cancelled_for_inactivity: {
+    text: "Отмена за неактивность",
+    cls: "bg-danger/15 text-danger",
+    icon: "⏱️",
+  },
+  arbitration: { text: "Арбитраж", cls: "bg-accent/15 text-accent", icon: "⚖️" },
+  resolved_for_buyer: {
+    text: "В пользу покупателя",
+    cls: "bg-success/15 text-success",
+    icon: "🛒",
+  },
+  resolved_for_seller: {
+    text: "В пользу продавца",
+    cls: "bg-success/15 text-success",
+    icon: "🏷️",
+  },
+  pending_cancellation: {
+    text: "Запрошена отмена",
+    cls: "bg-accent/15 text-accent",
+    icon: "⏸️",
+  },
 };
 
 export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) {
@@ -44,7 +68,12 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
             </div>
           </div>
           <div className="text-right shrink-0">
-            <div className="text-accent font-bold">{formatMoney(deal.sum)}</div>
+            <div className="text-accent font-bold">
+              {formatAmount(deal.amount ?? deal.sum, deal.currency_code ?? "USDT")}{" "}
+              <span className="text-text-muted text-xs font-normal">
+                {deal.currency_code ?? ""}
+              </span>
+            </div>
             <div className="mt-1 inline-flex items-center text-text-muted text-xs">
               {deal.role === "buyer" ? "Покупка" : "Продажа"} <ChevronRight className="size-3" />
             </div>

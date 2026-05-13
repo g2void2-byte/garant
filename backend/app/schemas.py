@@ -84,6 +84,27 @@ class DealCreate(BaseModel):
     sum: float
     description: str = ""
     pay_comission: PayCommission = PayCommission.buyer
+    currency_code: str = "USDT"
+
+
+class DealCancelRequest(BaseModel):
+    reason: str = ""
+
+
+class DealArbitrationRequest(BaseModel):
+    reason: str = ""
+
+
+class DealResolveRequest(BaseModel):
+    winner: str  # "buyer" or "seller"
+    note: str = ""
+
+    @field_validator("winner")
+    @classmethod
+    def winner_valid(cls, v: str) -> str:
+        if v not in ("buyer", "seller"):
+            raise ValueError("winner должен быть 'buyer' или 'seller'")
+        return v
 
 
 class DealOut(BaseModel):
@@ -98,6 +119,20 @@ class DealOut(BaseModel):
     confirm_seller: bool
     role: str
     created_at: datetime | None
+    # PR-3 — multi-currency + state-machine extras.
+    currency_code: str | None = None
+    amount: float | None = None
+    commission_amount: float | None = None
+    in_progress_at: datetime | None = None
+    completed_at: datetime | None = None
+    cancellation_initiator: str | None = None
+    cancellation_reason: str | None = None
+    cancellation_requested_at: datetime | None = None
+    arbitration_initiator: str | None = None
+    arbitration_reason: str | None = None
+    arbitration_resolved_by: str | None = None
+    arbitration_resolution: str | None = None
+    arbitration_resolved_at: datetime | None = None
 
 
 # ── Reviews ────────────────────────────────────────────

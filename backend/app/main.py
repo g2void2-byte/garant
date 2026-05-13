@@ -18,11 +18,34 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s: %(message)s")
 
 _bot_task: asyncio.Task | None = None
+_inactivity_task: asyncio.Task | None = None
+
+
+async def _inactivity_loop(interval_seconds: int) -> None:
+    """Periodically sweep stale deals.
+
+    Runs forever; cancelled cleanly during shutdown. Uses a fresh
+    session per iteration so a transient SQLite write lock doesn't
+    poison subsequent runs.
+    """
+    from .services_deals import sweep_inactivity
+
+    while True:
+        try:
+            async with async_session() as session:
+                affected = await sweep_inactivity(session)
+            if affected:
+                logger.info("inactivity sweep: cancelled %d deal(s)", affected)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("inactivity sweep failed")
+        await asyncio.sleep(interval_seconds)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _bot_task
+    global _bot_task, _inactivity_task
 
     await create_tables()
 
@@ -33,14 +56,20 @@ async def lifespan(app: FastAPI):
         from .bot.runner import start_polling
         _bot_task = asyncio.create_task(start_polling())
 
+    if settings.inactivity_sweep_seconds > 0:
+        _inactivity_task = asyncio.create_task(
+            _inactivity_loop(settings.inactivity_sweep_seconds)
+        )
+
     yield
 
-    if _bot_task and not _bot_task.done():
-        _bot_task.cancel()
-        try:
-            await _bot_task
-        except asyncio.CancelledError:
-            pass
+    for task in (_bot_task, _inactivity_task):
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(title="Garant TMA", lifespan=lifespan)
@@ -55,6 +84,7 @@ app.add_middleware(
 )
 
 from .routers import (  # noqa: E402
+    account,
     categories,
     deals,
     me,
@@ -72,6 +102,7 @@ from .routers import (  # noqa: E402
 for r in (
     me,
     pin,
+    account,
     categories,
     services,
     users,

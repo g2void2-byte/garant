@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
+  AccountTransferConfirmDto,
+  AccountTransferStartDto,
+  AccountTransferStatusDto,
   CategoryDto,
   CurrencyDto,
   DealDto,
@@ -120,17 +123,33 @@ export function useDeal(id: number | undefined) {
   });
 }
 
-export function useDealAction(action: "confirm" | "complete" | "cancel" | "arbitrate") {
+export type DealActionPath =
+  | "accept"
+  | "decline"
+  | "finish"
+  | "cancel_request"
+  | "cancel_request/revoke"
+  | "cancel_request/accept"
+  | "debate"
+  | "resolve";
+
+export function useDealAction(action: DealActionPath) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason?: string }) => {
-      const searchParams: Record<string, string> = {};
-      if (action === "arbitrate" && reason) searchParams.reason = reason;
-      return api.post(`api/deals/${id}/${action}`, { searchParams }).json<DealDto>();
-    },
+    mutationFn: ({
+      id,
+      body,
+    }: {
+      id: number;
+      body?: Record<string, unknown>;
+    }) =>
+      api
+        .post(`api/deals/${id}/${action}`, body ? { json: body } : {})
+        .json<DealDto>(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["deals"] });
       qc.invalidateQueries({ queryKey: ["deal"] });
+      qc.invalidateQueries({ queryKey: ["wallet"] });
     },
   });
 }
@@ -138,10 +157,17 @@ export function useDealAction(action: "confirm" | "complete" | "cancel" | "arbit
 export function useCreateDeal() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { counterparty: string; role: "buyer" | "seller"; sum: number; description: string; pay_comission: "buyer" | "seller" }) =>
-      api.post("api/deals", { json: body }).json<DealDto>(),
+    mutationFn: (body: {
+      counterparty: string;
+      role: "buyer" | "seller";
+      sum: number;
+      description: string;
+      pay_comission: "buyer" | "seller";
+      currency_code: string;
+    }) => api.post("api/deals", { json: body }).json<DealDto>(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["deals"] });
+      qc.invalidateQueries({ queryKey: ["wallet"] });
     },
   });
 }
@@ -301,6 +327,47 @@ export function useConfirmPinReset() {
     mutationFn: (body: { code: string; new_pin: string }) =>
       api.post("api/pin/reset/confirm", { json: body }).json<PinTokenDto>(),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pin"] }),
+  });
+}
+
+// ── Account transfer (PR-CA) ───────────────────────────
+
+export function useAccountTransferStatus() {
+  return useQuery<AccountTransferStatusDto>({
+    queryKey: ["account", "transfer", "status"],
+    queryFn: () => api.get("api/account/transfer/status").json(),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useStartAccountTransfer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post("api/account/transfer/start").json<AccountTransferStartDto>(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["account", "transfer"] }),
+  });
+}
+
+export function useCancelAccountTransfer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post("api/account/transfer/cancel").json<AccountTransferStatusDto>(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["account", "transfer"] }),
+  });
+}
+
+export function useConfirmAccountTransfer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) =>
+      api
+        .post("api/account/transfer/confirm", { json: { code } })
+        .json<AccountTransferConfirmDto>(),
+    onSuccess: () => {
+      qc.invalidateQueries();
+    },
   });
 }
 

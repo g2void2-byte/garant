@@ -1,23 +1,37 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
 import { ToggleTabs } from "@/components/ui/ToggleTabs";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
-import { useCreateDeal } from "@/api/hooks";
+import { Select } from "@/components/ui/Select";
+import { useCreateDeal, useCurrencies } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
 
 export default function CreateDealPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const create = useCreateDeal();
+  const { data: currencies } = useCurrencies();
   const [counterparty, setCounterparty] = useState(params.get("to") ?? "");
   const [role, setRole] = useState<"buyer" | "seller">("buyer");
   const [sum, setSum] = useState("");
   const [description, setDescription] = useState("");
-  const [comissionFrom, setComissionFrom] = useState<"buyer" | "seller">("buyer");
+  const [comissionFrom, setComissionFrom] = useState<"buyer" | "seller">(
+    "buyer",
+  );
+  const [currencyCode, setCurrencyCode] = useState("USDT");
+
+  const currencyOptions = useMemo(
+    () =>
+      (currencies ?? []).map((c) => ({
+        value: c.code,
+        label: `${c.code} — ${c.name}`,
+      })),
+    [currencies],
+  );
 
   const submit = async () => {
     const amount = parseFloat(sum);
@@ -32,6 +46,7 @@ export default function CreateDealPage() {
         sum: amount,
         description,
         pay_comission: comissionFrom,
+        currency_code: currencyCode,
       });
       haptic("success");
       navigate(`/deals/${deal.id}`);
@@ -59,8 +74,18 @@ export default function CreateDealPage() {
           value={counterparty}
           onChange={(e) => setCounterparty(e.target.value)}
         />
+        {currencyOptions.length > 0 && (
+          <div className="space-y-1">
+            <div className="text-xs text-text-muted px-1">Валюта</div>
+            <Select
+              value={currencyCode}
+              options={currencyOptions}
+              onChange={setCurrencyCode}
+            />
+          </div>
+        )}
         <Input
-          label="Сумма (USDT)"
+          label={`Сумма (${currencyCode})`}
           type="number"
           min={0.01}
           step={0.01}
