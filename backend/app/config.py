@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     bot_token: str = ""
     cryptobot_token: str = ""
+    cryptobot_testnet: bool = False
 
     webapp_url: str = "http://localhost:5173"
     webapp_port: int = 8080
