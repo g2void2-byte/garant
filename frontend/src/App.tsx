@@ -61,7 +61,7 @@ export function App() {
         <PinGate>
           <LiveNotifications />
           <BrowserRouter>
-            <div className="min-h-full">
+            <div className="min-h-full app-container">
               <Suspense fallback={<PageFallback />}>
                 <Routes>
                   <Route path="/" element={<Navigate to="/search" replace />} />

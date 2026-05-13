@@ -12,38 +12,48 @@ interface ButtonProps extends Omit<HTMLMotionProps<"button">, "ref"> {
   fullWidth?: boolean;
 }
 
+/**
+ * Continental `_button_vrakq_1` design:
+ *   font-size: 16px, font-weight: 500, border-radius: 8px
+ *   primary  → bg #fee600, color #000
+ *   secondary → bg #383838, color #fff
+ *   disabled  → bg #383838, color #5f5f60
+ *   heights   → 44px (md/lg), 40px (sm)
+ */
 const VARIANT: Record<Variant, string> = {
-  primary: "bg-accent text-accent-fg hover:brightness-95 active:brightness-90",
-  secondary: "bg-panel-2 text-text border border-border hover:bg-[#28282A]",
-  ghost: "bg-transparent text-text hover:bg-panel-2",
-  danger: "bg-danger/15 text-danger border border-danger/40 hover:bg-danger/25",
+  primary: "bg-accent text-black hover:brightness-95 active:brightness-90",
+  secondary: "bg-secondary text-text hover:opacity-90 active:opacity-80",
+  ghost: "bg-transparent text-text hover:bg-secondary/60",
+  danger: "bg-danger text-white hover:opacity-90 active:opacity-80",
 };
 
 const SIZE: Record<Size, string> = {
-  sm: "h-9 px-3 text-sm rounded-xl",
-  md: "h-12 px-4 text-base rounded-2xl",
-  lg: "h-14 px-5 text-base rounded-2xl",
+  sm: "h-10 px-3 text-[15px]",
+  md: "h-11 px-4 text-base",
+  lg: "h-11 px-5 text-base",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "primary", size = "md", fullWidth = false, className, onClick, children, ...rest },
+  { variant = "primary", size = "md", fullWidth = false, className, onClick, children, disabled, ...rest },
   ref,
 ) {
   return (
     <motion.button
       ref={ref}
-      whileTap={{ scale: 0.97 }}
+      whileTap={{ scale: disabled ? 1 : 0.98 }}
       transition={{ type: "spring", stiffness: 500, damping: 30 }}
+      disabled={disabled}
       className={cn(
-        "inline-flex items-center justify-center gap-2 font-semibold select-none",
-        "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+        "inline-flex items-center justify-center gap-1.5 font-medium select-none rounded-button",
+        "transition-colors",
         VARIANT[variant],
         SIZE[size],
         fullWidth && "w-full",
+        disabled && "!bg-secondary !text-text-disabled !cursor-not-allowed",
         className,
       )}
       onClick={(e) => {
-        haptic(variant === "primary" ? "medium" : "light");
+        if (!disabled) haptic(variant === "primary" ? "medium" : "light");
         onClick?.(e);
       }}
       {...rest}

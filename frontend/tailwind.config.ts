@@ -8,11 +8,13 @@ export default {
         bg: "var(--bg)",
         panel: "var(--panel)",
         "panel-2": "var(--panel-2)",
+        secondary: "var(--secondary)",
         border: "var(--border)",
         accent: "var(--accent)",
         "accent-fg": "var(--accent-fg)",
         text: "var(--text)",
         "text-muted": "var(--text-muted)",
+        "text-disabled": "var(--text-disabled)",
         success: "var(--success)",
         danger: "var(--danger)",
         warning: "var(--warning)",
@@ -36,6 +38,7 @@ export default {
       },
       borderRadius: {
         card: "14px",
+        button: "8px",
       },
       keyframes: {
         shimmer: {
