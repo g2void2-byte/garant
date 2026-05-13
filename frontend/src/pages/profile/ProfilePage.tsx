@@ -1,6 +1,18 @@
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
-import { ArrowRightLeft, Pause, Play, Plus, Trash2, Wallet, Settings as SettingsIcon, Star, Link2 } from "lucide-react";
+import { useRef, useState } from "react";
+import {
+  ArrowRightLeft,
+  Image as ImageIcon,
+  Pause,
+  Play,
+  Plus,
+  Trash2,
+  Upload,
+  Wallet,
+  Settings as SettingsIcon,
+  Star,
+  Link2,
+} from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Button } from "@/components/ui/Button";
 import { ToggleTabs } from "@/components/ui/ToggleTabs";
@@ -19,6 +31,7 @@ import {
   useServices,
   useUpdateMe,
   useUpdateService,
+  useUploadMedia,
 } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
 import { relativeTime } from "@/lib/format";
@@ -36,6 +49,9 @@ export default function ProfilePage() {
   const updateMe = useUpdateMe();
   const updateService = useUpdateService();
   const deleteService = useDeleteService();
+  const uploadMedia = useUploadMedia();
+  const avatarFileRef = useRef<HTMLInputElement | null>(null);
+  const bannerFileRef = useRef<HTMLInputElement | null>(null);
 
   const [description, setDescription] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -106,6 +122,28 @@ export default function ProfilePage() {
     } catch (e) {
       haptic("error");
       setForumsError(await extractApiError(e));
+    }
+  };
+
+  const onPickImage = (kind: "avatar" | "banner") => async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const uploaded = await uploadMedia.mutateAsync({ kind, file });
+      if (kind === "avatar") {
+        setProfileError(null);
+        await updateMe.mutateAsync({ photo_url: uploaded.url });
+      } else {
+        setBannerUrl(uploaded.url);
+        await updateMe.mutateAsync({ banner_url: uploaded.url });
+      }
+      haptic("success");
+    } catch (err) {
+      haptic("error");
+      setProfileError(await extractApiError(err));
     }
   };
 
@@ -225,6 +263,36 @@ export default function ProfilePage() {
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Настройки">
         <div className="space-y-3">
+          <input
+            ref={avatarFileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={onPickImage("avatar")}
+          />
+          <input
+            ref={bannerFileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={onPickImage("banner")}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => avatarFileRef.current?.click()}
+              disabled={uploadMedia.isPending}
+            >
+              <Upload className="size-4" /> Аватар
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => bannerFileRef.current?.click()}
+              disabled={uploadMedia.isPending}
+            >
+              <ImageIcon className="size-4" /> Баннер
+            </Button>
+          </div>
           <Input
             label="Никнейм"
             placeholder="Отображаемое имя"

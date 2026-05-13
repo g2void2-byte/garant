@@ -4,6 +4,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from pathlib import Path as _Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -88,6 +89,7 @@ from .routers import (  # noqa: E402
     categories,
     deals,
     me,
+    media,
     notifications,
     payments,
     pin,
@@ -112,11 +114,21 @@ for r in (
     payments,
     wallet,
     support,
+    media,
     ws,
 ):
     app.include_router(r.router)
 
 app.include_router(services.admin_router)
+
+# Serve uploaded media files from disk.
+_media_root = _Path(settings.media_root).expanduser().resolve()
+_media_root.mkdir(parents=True, exist_ok=True)
+app.mount(
+    settings.media_base_url,
+    StaticFiles(directory=str(_media_root)),
+    name="media",
+)
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 

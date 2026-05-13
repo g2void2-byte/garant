@@ -115,3 +115,5 @@ def _apply_lightweight_migrations(sync_conn) -> None:
                 sync_conn.execute(
                     text(f"ALTER TABLE services ADD COLUMN {col} {ddl}")
                 )
+
+    # ``media`` is created from scratch by create_all() above; no migration needed.

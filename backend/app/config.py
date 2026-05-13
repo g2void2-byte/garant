@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     # PR-CA — TTL for account-transfer one-time codes.
     account_transfer_code_ttl_seconds: int = 15 * 60
 
+    # PR-E — uploaded media storage.
+    media_root: str = "./media-uploads"
+    media_base_url: str = "/media"  # served at this path on the backend host
+    media_max_bytes: int = 5 * 1024 * 1024  # 5 MiB
+    media_allowed_kinds: str = "avatar,banner,deal"
+
 
 settings = Settings()
 
