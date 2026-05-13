@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     media_max_bytes: int = 5 * 1024 * 1024  # 5 MiB
     media_allowed_kinds: str = "avatar,banner,deal"
 
+    # P3.2 — bot menu external links. Empty values hide the button.
+    bot_forums_url: str = ""
+    bot_community_chat_url: str = ""
+    bot_arbitration_url: str = ""
+    bot_docs_url: str = ""
+    bot_support_username: str = ""  # Telegram username without leading @
+
 
 settings = Settings()
 

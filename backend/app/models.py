@@ -136,6 +136,9 @@ class User(Base):
     dm_deals: Mapped[bool] = mapped_column(Boolean, default=True)
     dm_deposits: Mapped[bool] = mapped_column(Boolean, default=True)
     dm_system: Mapped[bool] = mapped_column(Boolean, default=True)
+    # P3.2 — privacy toggles surfaced in the bot "Настройки" submenu.
+    is_anonymous_deals: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_hidden_profile: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     services: Mapped[list[Service]] = relationship(back_populates="owner", lazy="selectin")
