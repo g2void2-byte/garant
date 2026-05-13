@@ -41,13 +41,6 @@ class DealStatus(str, enum.Enum):
     pending_cancellation = "pending_cancellation"  # 8
     cancelled_for_inactivity = "cancelled_for_inactivity"  # 9
 
-    # Legacy values kept for old rows; migrated on startup.
-    wait_confirm = "wait_confirm"
-    confirmed = "confirmed"
-    success = "success"
-    failed = "failed"
-    arbitrage = "arbitrage"
-
 
 TERMINAL_DEAL_STATUSES = frozenset(
     {
