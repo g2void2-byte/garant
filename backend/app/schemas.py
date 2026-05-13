@@ -69,6 +69,8 @@ class UserOut(BaseModel):
     dm_deals: bool = True
     dm_deposits: bool = True
     dm_system: bool = True
+    is_anonymous_deals: bool = False
+    is_hidden_profile: bool = False
 
 
 class UserUpdate(BaseModel):
@@ -80,6 +82,8 @@ class UserUpdate(BaseModel):
     dm_deals: bool | None = None
     dm_deposits: bool | None = None
     dm_system: bool | None = None
+    is_anonymous_deals: bool | None = None
+    is_hidden_profile: bool | None = None
 
     @field_validator("photo_url")
     @classmethod

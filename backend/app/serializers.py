@@ -70,4 +70,6 @@ def user_to_out(
         dm_deals=bool(user.dm_deals),
         dm_deposits=bool(user.dm_deposits),
         dm_system=bool(user.dm_system),
+        is_anonymous_deals=bool(user.is_anonymous_deals),
+        is_hidden_profile=bool(user.is_hidden_profile),
     )
