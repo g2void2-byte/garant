@@ -19,6 +19,7 @@ const NotificationsPage = lazy(() => import("@/pages/notifications/Notifications
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 const AddServicePage = lazy(() => import("@/pages/profile/AddServicePage"));
 const DepositPage = lazy(() => import("@/pages/profile/DepositPage"));
+const AccountTransferPage = lazy(() => import("@/pages/profile/AccountTransferPage"));
 const WalletPage = lazy(() => import("@/pages/wallet/WalletPage"));
 const WalletCurrencyPage = lazy(() => import("@/pages/wallet/WalletCurrencyPage"));
 
@@ -76,6 +77,7 @@ export function App() {
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/profile/services/new" element={<AddServicePage />} />
                   <Route path="/profile/deposit" element={<DepositPage />} />
+                  <Route path="/profile/transfer" element={<AccountTransferPage />} />
                   <Route path="/wallet" element={<WalletPage />} />
                   <Route path="/wallet/:code" element={<WalletCurrencyPage />} />
                   <Route path="*" element={<Navigate to="/search" replace />} />

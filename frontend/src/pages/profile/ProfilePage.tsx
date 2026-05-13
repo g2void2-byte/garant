@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
-import { Plus, Wallet, Settings as SettingsIcon, Star, Link2 } from "lucide-react";
+import { ArrowRightLeft, Plus, Wallet, Settings as SettingsIcon, Star, Link2 } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Button } from "@/components/ui/Button";
 import { ToggleTabs } from "@/components/ui/ToggleTabs";
@@ -176,6 +176,17 @@ export default function ProfilePage() {
           />
           <Button fullWidth onClick={saveDescription} disabled={updateMe.isPending}>
             Сохранить
+          </Button>
+          <Button
+            fullWidth
+            variant="secondary"
+            onClick={() => {
+              setSettingsOpen(false);
+              navigate("/profile/transfer");
+            }}
+          >
+            <ArrowRightLeft className="size-4" />
+            Перенести аккаунт
           </Button>
         </div>
       </Sheet>

@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # PR-3 — periodic sweep of stale deals (0 disables).
     inactivity_sweep_seconds: int = 600
 
+    # PR-CA — TTL for account-transfer one-time codes.
+    account_transfer_code_ttl_seconds: int = 15 * 60
+
 
 settings = Settings()
 

@@ -146,6 +146,21 @@ export interface PinResetRequestDto {
   expires_at: string;
 }
 
+export interface AccountTransferStatusDto {
+  has_active: boolean;
+  expires_at: string | null;
+}
+
+export interface AccountTransferStartDto {
+  delivered: boolean;
+  expires_at: string;
+}
+
+export interface AccountTransferConfirmDto {
+  ok: boolean;
+  tg_user_id: number;
+}
+
 export interface CurrencyDto {
   id: number;
   code: string;
