@@ -7,7 +7,7 @@ import { useNotificationCounters } from "@/api/hooks";
 const TABS = [
   { to: "/search", label: "Поиск", Icon: Search },
   { to: "/deals", label: "Сделки", Icon: Briefcase },
-  { to: "/help", label: "Помощь", Icon: Headphones },
+  { to: "/support", label: "Помощь", Icon: Headphones },
   { to: "/notifications", label: "Оповещения", Icon: Bell, badge: true },
   { to: "/profile", label: "Профиль", Icon: User },
 ];

@@ -164,7 +164,7 @@ export default function ProfilePage() {
 
       <div className="px-4 mt-3 space-y-3">
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="primary" onClick={() => navigate("/profile/services/new")}>
+          <Button variant="primary" onClick={() => navigate("/profile/add-service")}>
             <Plus className="size-4" /> Добавить услугу
           </Button>
           <Button variant="primary" onClick={() => navigate("/wallet")}>
@@ -325,7 +325,7 @@ export default function ProfilePage() {
             variant="secondary"
             onClick={() => {
               setSettingsOpen(false);
-              navigate("/profile/transfer");
+              navigate("/change-account");
             }}
           >
             <ArrowRightLeft className="size-4" />
