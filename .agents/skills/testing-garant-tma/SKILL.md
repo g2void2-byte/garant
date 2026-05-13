@@ -148,6 +148,10 @@ wait_confirm → (both confirm) → confirmed → (buyer completes) → success
 | `/api/me` | GET | Current user profile |
 | `/api/categories` | GET | List seeded categories |
 | `/api/users` | GET | Search users (query params: q, filter) |
+| `/api/services` | GET/POST | List/create services |
+| `/api/services/{id}` | GET | Service detail (owner card + comments/rating aggregates) |
+| `/api/services/{id}/comments` | GET/POST | List or create public comments (rating 1-5 optional) |
+| `/api/services/{id}/comments/{cid}` | DELETE | Delete (author, service owner, or admin) |
 | `/api/deals` | GET/POST | List/create deals |
 | `/api/deals/{id}/confirm` | POST | Confirm deal |
 | `/api/deals/{id}/complete` | POST | Complete deal (buyer only) |
@@ -166,6 +170,7 @@ wait_confirm → (both confirm) → confirmed → (buyer completes) → success
 | `/search` | User search with filters |
 | `/search/categories` | Categories grid |
 | `/search/categories/:slug` | Services in category |
+| `/services/:id` | Service detail (hero + owner card + stats + description + comments) |
 | `/u/:username` | Public user profile |
 | `/deals` | Deals list with role/status filter |
 | `/deals/new` | Create deal form |
@@ -185,6 +190,12 @@ wait_confirm → (both confirm) → confirmed → (buyer completes) → success
 - The catch-all (`*` → `/search`) means unknown paths silently land on the search hub. Be specific when testing bot URLs.
 - `/wallet/:code` **shadows** any `/wallet/<anything>` URL. A buggy URL like `/wallet/deposit` does **not** fall through to the catch-all — it matches `/wallet/:code` with `code="deposit"` and renders `WalletCurrencyPage`'s "Валюта не поддерживается" error. Always check the real route table when wiring up new external links.
 - There is **no** dedicated PIN settings page. `PinGate` handles PIN setup/unlock globally before any protected route renders, so links to PIN should just open any protected route (e.g. `/profile`) and let the gate trigger.
+- A catalog `ServiceCard` click navigates to the **service detail** page (`/services/:id`), not the owner profile. To reach a seller's profile from a service tile, open the detail page first and click the owner card.
+
+### Browser testing gotchas
+
+- **Cyrillic input drops characters when typed via the keyboard layer.** Direct keystroke injection (xdotool-style `type` actions) often drops or rearranges Cyrillic characters in input/textarea fields. Workarounds: use English content for adversarial assertions where the body text is incidental, or paste from the clipboard if Russian text is actually required (e.g. `xdotool key ctrl+v` after `xclip -selection clipboard`).
+- **Chrome address-bar autocomplete reuses previous paths.** Typing `localhost:5173/services/1` may autocomplete to `/services/123` (or any previously-visited path with the same prefix) and silently send you to the wrong URL. Always include the full origin, screenshot the address bar before pressing Enter, or click into the bar and press `Ctrl+A` + `Delete` before typing.
 
 ## Testing the Bot (aiogram menu)
 
@@ -243,4 +254,3 @@ Override DB connection via env vars: `POSTGRES_HOST`, `POSTGRES_PORT`,
 - Telegram WebApp HapticFeedback/BackButton warnings appear in browser console — expected outside Telegram
 - WebSocket connection auto-reconnects with exponential backoff — may see connection closed/reopened in logs
 - The `arbitrate` endpoint uses a query parameter `reason`, not a request body
-- POST `/api/wallet/withdrawals` requires `X-Pin-Token` header from a PIN-verified session (PR #29). Without it the endpoint returns 401.
