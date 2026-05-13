@@ -1,12 +1,13 @@
 import { cn } from "@/lib/cn";
 
 interface BadgePrefixProps {
-  prefix?: "admin" | "arbiter" | null;
+  prefix?: "admin" | "moderator" | "arbiter" | null;
   className?: string;
 }
 
 const LABELS: Record<string, { text: string; cls: string }> = {
   admin: { text: "Админ", cls: "bg-accent text-accent-fg" },
+  moderator: { text: "Модератор", cls: "bg-accent text-accent-fg" },
   arbiter: { text: "Арбитр", cls: "bg-accent text-accent-fg" },
 };
 

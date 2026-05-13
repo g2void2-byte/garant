@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
 import { SearchInput } from "@/components/ui/SearchInput";
@@ -10,9 +10,14 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { UserCard } from "@/components/domain/UserCard";
 import { DesignationsHelp } from "@/components/domain/DesignationsHelp";
+import {
+  SearchFilterSheet,
+  type SearchFilters,
+} from "@/components/domain/SearchFilterSheet";
+import { ActiveFilterChips } from "@/components/domain/ActiveFilterChips";
 import { useUI } from "@/stores/ui";
 import { useUsers } from "@/api/hooks";
-import { Search as SearchIcon } from "lucide-react";
+import { Search as SearchIcon, SlidersHorizontal } from "lucide-react";
 
 const FILTER_OPTIONS = [
   { value: "all", label: "Все" },
@@ -28,7 +33,31 @@ export default function SearchPage() {
 
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
-  const { data: users, isLoading } = useUsers({ q, filter });
+  const [filters, setFilters] = useState<SearchFilters>({});
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  const queryParams = useMemo(
+    () => ({
+      q,
+      filter,
+      rating: filters.rating,
+      deals: filters.deals,
+      deposit_min: filters.deposit_min,
+      status: filters.status,
+      reg_from: filters.reg_from,
+      reg_to: filters.reg_to,
+    }),
+    [q, filter, filters],
+  );
+  const { data: users, isLoading } = useUsers(queryParams);
+
+  const removeFilter = (key: keyof SearchFilters) => {
+    setFilters((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
 
   return (
     <Page>
@@ -53,7 +82,25 @@ export default function SearchPage() {
               onChange={(e) => setQ(e.target.value)}
               placeholder="Поиск пользователей"
             />
-            <Select value={filter} options={FILTER_OPTIONS} onChange={setFilter} />
+            <div className="flex gap-2">
+              <div className="flex-1 min-w-0">
+                <Select value={filter} options={FILTER_OPTIONS} onChange={setFilter} />
+              </div>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => setSheetOpen(true)}
+                aria-label="Открыть фильтры"
+              >
+                <SlidersHorizontal className="size-4" />
+                Фильтры
+              </Button>
+            </div>
+            <ActiveFilterChips
+              value={filters}
+              onRemove={removeFilter}
+              onClearAll={() => setFilters({})}
+            />
             <DesignationsHelp />
 
             {isLoading ? (
@@ -89,6 +136,13 @@ export default function SearchPage() {
           </div>
         )}
       </div>
+
+      <SearchFilterSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        value={filters}
+        onApply={setFilters}
+      />
     </Page>
   );
 }

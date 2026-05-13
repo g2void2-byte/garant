@@ -55,6 +55,7 @@ class UserOut(BaseModel):
     description: str
     prefix: str | None
     is_admin: bool
+    is_moderator: bool = False
     is_arbiter: bool
     admin: int
     good: int
@@ -194,6 +195,7 @@ class ServiceOwnerOut(BaseModel):
     good: int
     bad: int
     is_admin: bool
+    is_moderator: bool = False
     is_arbiter: bool
 
 

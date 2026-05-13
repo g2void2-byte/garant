@@ -25,7 +25,25 @@ def user_to_out(
     reviews_count = user.good + user.bad
     total = reviews_count or 1
     rating = round(user.good / total * 5, 1)
-    prefix = "admin" if user.is_admin else ("arbiter" if user.is_arbiter else None)
+    if user.is_admin:
+        prefix = "admin"
+    elif user.is_moderator:
+        prefix = "moderator"
+    elif user.is_arbiter:
+        prefix = "arbiter"
+    else:
+        prefix = None
+    # ``admin`` exposes the user's privilege tier as an int — Continental's
+    # search filter sheet uses the same numbering (5=admin, 4=moderator,
+    # 3=arbiter, 0=regular).
+    if user.is_admin:
+        admin_level = 5
+    elif user.is_moderator:
+        admin_level = 4
+    elif user.is_arbiter:
+        admin_level = 3
+    else:
+        admin_level = 0
     return UserOut(
         id=user.id,
         user_id=user.tg_user_id,
@@ -38,8 +56,9 @@ def user_to_out(
         description=user.description,
         prefix=prefix,
         is_admin=user.is_admin,
+        is_moderator=user.is_moderator,
         is_arbiter=user.is_arbiter,
-        admin=1 if user.is_admin else 0,
+        admin=admin_level,
         good=user.good,
         bad=user.bad,
         rating=rating,

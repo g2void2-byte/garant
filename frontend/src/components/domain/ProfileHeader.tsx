@@ -5,6 +5,7 @@ import { Logo } from "@/components/layout/Logo";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Админ",
+  moderator: "Модератор",
   arbiter: "Арбитр",
 };
 

@@ -115,6 +115,7 @@ class User(Base):
     frozen_balance: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
     description: Mapped[str] = mapped_column(Text, default="")
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_moderator: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     is_arbiter: Mapped[bool] = mapped_column(Boolean, default=False)
     deals_total: Mapped[int] = mapped_column(Integer, default=0)
     deals_success: Mapped[int] = mapped_column(Integer, default=0)

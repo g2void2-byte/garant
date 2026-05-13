@@ -28,6 +28,7 @@ export interface ServiceOwnerDto {
   good: number;
   bad: number;
   is_admin: boolean;
+  is_moderator: boolean;
   is_arbiter: boolean;
 }
 
@@ -58,7 +59,10 @@ export interface UserCardDto {
   photo_url: string | null;
   balance: number;
   admin: number;
-  prefix: "admin" | "arbiter" | null;
+  prefix: "admin" | "moderator" | "arbiter" | null;
+  is_admin?: boolean;
+  is_moderator?: boolean;
+  is_arbiter?: boolean;
   good: number;
   bad: number;
   deposit: number;
