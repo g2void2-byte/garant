@@ -34,8 +34,14 @@ export function useMe() {
 export function useUpdateMe() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: Partial<{ description: string; banner_url: string | null; forums: any[] }>) =>
-      api.patch("api/me", { json: body }).json<UserCardDto>(),
+    mutationFn: (
+      body: Partial<{
+        display_name: string;
+        description: string;
+        banner_url: string | null;
+        forums: { name: string; url: string }[];
+      }>,
+    ) => api.patch("api/me", { json: body }).json<UserCardDto>(),
     onSuccess: (data) => {
       qc.setQueryData(["me"], data);
     },

@@ -13,6 +13,29 @@ class ForumOut(BaseModel):
     name: str
     url: str
 
+    @field_validator("name")
+    @classmethod
+    def _name_ok(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Имя форума не может быть пустым")
+        if len(v) > 64:
+            raise ValueError("Имя форума слишком длинное (≤64)")
+        return v
+
+    @field_validator("url")
+    @classmethod
+    def _url_ok(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Ссылка не может быть пустой")
+        if len(v) > 512:
+            raise ValueError("Ссылка слишком длинная")
+        low = v.lower()
+        if not (low.startswith("http://") or low.startswith("https://") or low.startswith("tg://") or low.startswith("https://t.me/")):
+            raise ValueError("Ссылка должна начинаться с http(s):// или t.me/")
+        return v
+
 
 class UserOut(BaseModel):
     id: int
@@ -43,6 +66,47 @@ class UserUpdate(BaseModel):
     description: str | None = None
     banner_url: str | None = None
     forums: list[ForumOut] | None = None
+
+    @field_validator("display_name")
+    @classmethod
+    def _display_name_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if len(v) > 64:
+            raise ValueError("Никнейм слишком длинный (≤64)")
+        return v
+
+    @field_validator("description")
+    @classmethod
+    def _description_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if len(v) > 1024:
+            raise ValueError("Описание слишком длинное (≤1024)")
+        return v
+
+    @field_validator("banner_url")
+    @classmethod
+    def _banner_url_ok(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return v
+        v = v.strip()
+        if len(v) > 1024:
+            raise ValueError("Ссылка на баннер слишком длинная")
+        low = v.lower()
+        if not (low.startswith("http://") or low.startswith("https://")):
+            raise ValueError("Баннер должен быть http(s):// ссылкой")
+        return v
+
+    @field_validator("forums")
+    @classmethod
+    def _forums_ok(cls, v: list[ForumOut] | None) -> list[ForumOut] | None:
+        if v is None:
+            return v
+        if len(v) > 10:
+            raise ValueError("Слишком много форумов (≤10)")
+        return v
 
 
 # ── Categories ─────────────────────────────────────────

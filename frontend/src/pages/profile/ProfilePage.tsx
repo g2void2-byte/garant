@@ -38,8 +38,12 @@ export default function ProfilePage() {
   const deleteService = useDeleteService();
 
   const [description, setDescription] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [bannerUrl, setBannerUrl] = useState("");
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [forumName, setForumName] = useState("");
   const [forumUrl, setForumUrl] = useState("");
+  const [forumsError, setForumsError] = useState<string | null>(null);
 
   if (isLoading || !me) {
     return (
@@ -54,22 +58,66 @@ export default function ProfilePage() {
 
   const openSettings = () => {
     setDescription(me.description || "");
+    setDisplayName(me.display_name || "");
+    setBannerUrl(me.banner_url || "");
+    setProfileError(null);
     setSettingsOpen(true);
   };
 
-  const saveDescription = async () => {
-    await updateMe.mutateAsync({ description });
-    haptic("success");
-    setSettingsOpen(false);
+  const extractApiError = async (e: unknown): Promise<string> => {
+    const ke = e as { response?: Response; message?: string };
+    try {
+      const data = await ke.response?.json();
+      if (Array.isArray(data?.detail)) {
+        return data.detail.map((d: { msg?: string }) => d.msg ?? "").filter(Boolean).join("\n");
+      }
+      if (typeof data?.detail === "string") return data.detail;
+    } catch {
+      /* fall through */
+    }
+    return ke.message || "Не удалось сохранить";
+  };
+
+  const saveSettings = async () => {
+    setProfileError(null);
+    try {
+      await updateMe.mutateAsync({
+        description,
+        display_name: displayName,
+        banner_url: bannerUrl ? bannerUrl : null,
+      });
+      haptic("success");
+      setSettingsOpen(false);
+    } catch (e) {
+      haptic("error");
+      setProfileError(await extractApiError(e));
+    }
   };
 
   const addForum = async () => {
+    setForumsError(null);
     const forums = [...(me.forums || [])];
     forums.push({ name: forumName, url: forumUrl });
-    await updateMe.mutateAsync({ forums });
-    setForumName("");
-    setForumUrl("");
-    haptic("success");
+    try {
+      await updateMe.mutateAsync({ forums });
+      setForumName("");
+      setForumUrl("");
+      haptic("success");
+    } catch (e) {
+      haptic("error");
+      setForumsError(await extractApiError(e));
+    }
+  };
+
+  const removeForum = async (idx: number) => {
+    const forums = (me.forums || []).filter((_, i) => i !== idx);
+    try {
+      await updateMe.mutateAsync({ forums });
+      haptic("success");
+    } catch (e) {
+      haptic("error");
+      setForumsError(await extractApiError(e));
+    }
   };
 
   return (
@@ -177,13 +225,31 @@ export default function ProfilePage() {
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Настройки">
         <div className="space-y-3">
+          <Input
+            label="Никнейм"
+            placeholder="Отображаемое имя"
+            value={displayName}
+            maxLength={64}
+            onChange={(e) => setDisplayName(e.target.value)}
+          />
           <Textarea
             label="Описание профиля"
             placeholder="Расскажите о себе"
             value={description}
+            maxLength={1024}
             onChange={(e) => setDescription(e.target.value)}
           />
-          <Button fullWidth onClick={saveDescription} disabled={updateMe.isPending}>
+          <Input
+            label="Баннер (URL)"
+            placeholder="https://..."
+            value={bannerUrl}
+            inputMode="url"
+            onChange={(e) => setBannerUrl(e.target.value)}
+          />
+          {profileError && (
+            <div className="text-sm text-danger whitespace-pre-line">{profileError}</div>
+          )}
+          <Button fullWidth onClick={saveSettings} disabled={updateMe.isPending}>
             Сохранить
           </Button>
           <Button
@@ -203,13 +269,40 @@ export default function ProfilePage() {
       <Sheet open={forumsOpen} onClose={() => setForumsOpen(false)} title="Форумы">
         <div className="space-y-3">
           {me.forums?.map((f, i) => (
-            <div key={i} className="bg-panel-2 rounded-2xl p-3 text-sm">
-              <div className="font-semibold">{f.name || "—"}</div>
-              <div className="text-text-muted truncate">{f.url}</div>
+            <div
+              key={i}
+              className="bg-panel-2 rounded-2xl p-3 text-sm flex items-start justify-between gap-2"
+            >
+              <div className="min-w-0">
+                <div className="font-semibold truncate">{f.name || "—"}</div>
+                <div className="text-text-muted truncate">{f.url}</div>
+              </div>
+              <button
+                type="button"
+                aria-label="Удалить"
+                onClick={() => removeForum(i)}
+                className="text-text-muted active:scale-95"
+              >
+                <Trash2 className="size-4" />
+              </button>
             </div>
           ))}
-          <Input label="Название" value={forumName} onChange={(e) => setForumName(e.target.value)} />
-          <Input label="Ссылка" value={forumUrl} onChange={(e) => setForumUrl(e.target.value)} />
+          <Input
+            label="Название"
+            value={forumName}
+            maxLength={64}
+            onChange={(e) => setForumName(e.target.value)}
+          />
+          <Input
+            label="Ссылка"
+            placeholder="https://..."
+            inputMode="url"
+            value={forumUrl}
+            onChange={(e) => setForumUrl(e.target.value)}
+          />
+          {forumsError && (
+            <div className="text-sm text-danger whitespace-pre-line">{forumsError}</div>
+          )}
           <Button fullWidth onClick={addForum} disabled={!forumName || !forumUrl}>
             Добавить
           </Button>
