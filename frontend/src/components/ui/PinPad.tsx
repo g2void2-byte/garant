@@ -1,5 +1,4 @@
 import { motion } from "framer-motion";
-import { useEffect } from "react";
 import { cn } from "@/lib/cn";
 import { haptic } from "@/lib/tg";
 
@@ -14,10 +13,6 @@ interface PinPadProps {
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "back"] as const;
 
 export function PinPad({ value, length = 4, disabled, onChange, onComplete }: PinPadProps) {
-  useEffect(() => {
-    if (value.length === length && onComplete) onComplete(value);
-  }, [value, length, onComplete]);
-
   function press(key: string) {
     if (disabled) return;
     haptic("light");
@@ -27,7 +22,9 @@ export function PinPad({ value, length = 4, disabled, onChange, onComplete }: Pi
     }
     if (!/^\d$/.test(key)) return;
     if (value.length >= length) return;
-    onChange(value + key);
+    const next = value + key;
+    onChange(next);
+    if (next.length === length && onComplete) onComplete(next);
   }
 
   return (
