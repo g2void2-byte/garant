@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -739,3 +740,332 @@ class AdminAuditLogOut(BaseModel):
     payload: dict | None
     ip: str | None
     created_at: datetime
+
+
+# ── Admin: deal management (PR-B) ──────────────────────
+
+
+class AdminDealListItem(BaseModel):
+    """Single row in ``GET /api/admin/deals`` listing.
+
+    Contains identity, money, status, timestamps and a small set of
+    derived flags (``has_arbitration``, ``has_cancel_request``) so the
+    list view can filter and badge without a separate per-row fetch.
+    """
+
+    id: int
+    status: str
+    sum: float
+    currency_code: str | None
+    amount: float | None
+    commission_amount: float | None
+    buyer_id: int
+    buyer_username: str | None
+    seller_id: int
+    seller_username: str | None
+    pay_commission: str
+    created_at: datetime
+    in_progress_at: datetime | None
+    completed_at: datetime | None
+    has_arbitration: bool
+    has_cancel_request: bool
+
+
+class AdminDealListOut(BaseModel):
+    items: list[AdminDealListItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminBalanceSnapshot(BaseModel):
+    """``user.balance`` + per-currency lock state at request time."""
+
+    user_id: int
+    username: str | None
+    display_name: str
+    currency_code: str | None
+    amount: float
+    locked: float
+    total: float
+
+
+class AdminDealEventItem(BaseModel):
+    """One row in the deal's reconstructed event timeline.
+
+    Built from the ``Deal`` row itself (no separate event table). Each
+    timestamped column becomes its own item so the timeline UI can show
+    a single ordered list without re-deriving anything.
+    """
+
+    at: datetime
+    kind: str  # 'created' | 'in_progress' | 'cancel_request' | 'arbitration_started' | 'arbitration_resolved' | 'completed'
+    actor: str | None  # 'buyer' | 'seller' | 'admin' | 'arbiter' | None
+    description: str
+
+
+class AdminDealDetailOut(BaseModel):
+    """Full admin view of a deal."""
+
+    id: int
+    status: str
+    description: str
+    sum: float
+    currency_code: str | None
+    amount: float | None
+    commission_amount: float | None
+    pay_commission: str
+    buyer: AdminBalanceSnapshot
+    seller: AdminBalanceSnapshot
+    created_at: datetime
+    in_progress_at: datetime | None
+    completed_at: datetime | None
+    cancellation_initiator: str | None
+    cancellation_reason: str | None
+    cancellation_requested_at: datetime | None
+    arbitration_initiator: str | None
+    arbitration_reason: str | None
+    arbitration_resolved_by_id: int | None
+    arbitration_resolved_by_username: str | None
+    arbitration_resolution: str | None
+    arbitration_resolved_at: datetime | None
+    confirm_buyer: bool
+    confirm_seller: bool
+    events: list[AdminDealEventItem]
+    messages: list[DealMessageOut]
+
+
+class AdminDealActionResult(BaseModel):
+    """Generic response after a state-changing admin action on a deal."""
+
+    deal: AdminDealDetailOut
+
+
+class AdminDealForceOut(BaseModel):
+    """Body for ``POST /api/admin/deals/:id/force-release`` and similar.
+
+    Optional ``reason`` is propagated into the audit log and DMs.
+    """
+
+    reason: str | None = None
+
+    @field_validator("reason")
+    @classmethod
+    def _len(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if len(v) > 500:
+            raise ValueError("Причина слишком длинная (≤500)")
+        return v
+
+
+class AdminDealSplitIn(BaseModel):
+    """Body for ``POST /api/admin/deals/:id/split``.
+
+    ``buyer_percent`` is the share returned to the buyer; the seller
+    gets ``100 - buyer_percent`` of the same locked pot. The commission
+    component (when ``pay_commission=buyer``) is *always* retained by
+    the platform regardless of split — admin-forced splits do not give
+    commission back to either party.
+    """
+
+    buyer_percent: float
+    reason: str | None = None
+
+    @field_validator("buyer_percent")
+    @classmethod
+    def _percent_ok(cls, v: float) -> float:
+        if v < 0 or v > 100:
+            raise ValueError("Доля покупателя должна быть в диапазоне 0..100")
+        return round(v, 2)
+
+
+class AdminDealAssignArbiterIn(BaseModel):
+    """Body for ``POST /api/admin/deals/:id/assign-arbiter``.
+
+    ``arbiter_id`` must reference a user with ``is_arbiter=True`` (admins
+    are accepted too). Use ``None`` to clear the assignment.
+    """
+
+    arbiter_id: int | None = None
+
+
+# ── Admin: arbitration queue (PR-B) ────────────────────
+
+
+class AdminArbitrationCounters(BaseModel):
+    new: int
+    in_progress: int
+    closed: int
+
+
+class AdminArbitrationListOut(BaseModel):
+    items: list[AdminDealListItem]
+    counters: AdminArbitrationCounters
+    queue: str  # 'new' | 'in_progress' | 'closed' — echoes the request
+
+
+# ── Admin: content editing on behalf of users (PR-B) ────
+
+
+class AdminServiceItemOut(BaseModel):
+    id: int
+    owner_id: int
+    category_id: int
+    category_slug: str | None
+    title: str
+    description: str
+    price: float
+    status: str
+    ban_reason: str | None
+    views: int
+    deals_count: int
+    deposit: float
+    rating_manual: float | None
+    created_at: datetime
+
+
+class AdminServiceUpdateIn(BaseModel):
+    """Body for ``POST /api/admin/services/:id``.
+
+    Every field is optional. Negative numeric values are rejected per
+    the spec (counts / deposits cannot be < 0). ``rating_manual`` is
+    bounded to 0..5 to match the user rating override; pass ``None``
+    explicitly with ``clear_rating=true`` to remove it.
+    """
+
+    title: str | None = None
+    description: str | None = None
+    price: float | None = None
+    deposit: float | None = None
+    views: int | None = None
+    deals_count: int | None = None
+    rating_manual: float | None = None
+    clear_rating: bool = False
+    status: Literal["draft", "active", "paused", "banned"] | None = None
+    ban_reason: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _title_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("Название не может быть пустым")
+        if len(v) > 256:
+            raise ValueError("Название слишком длинное (≤256)")
+        return v
+
+    @field_validator("description")
+    @classmethod
+    def _description_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if len(v) > 4000:
+            raise ValueError("Описание слишком длинное (≤4000)")
+        return v
+
+    @field_validator("price", "deposit")
+    @classmethod
+    def _non_negative_float(cls, v: float | None) -> float | None:
+        if v is not None and v < 0:
+            raise ValueError("Значение не может быть отрицательным")
+        return v
+
+    @field_validator("views", "deals_count")
+    @classmethod
+    def _non_negative_int(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("Значение не может быть отрицательным")
+        return v
+
+    @field_validator("rating_manual")
+    @classmethod
+    def _rating_ok(cls, v: float | None) -> float | None:
+        if v is None:
+            return v
+        if v < 0 or v > 5:
+            raise ValueError("Рейтинг должен быть в диапазоне 0..5")
+        return round(v, 1)
+
+
+class AdminReviewItemOut(BaseModel):
+    id: int
+    deal_id: int | None
+    author_id: int
+    author_username: str | None
+    target_id: int
+    target_username: str | None
+    rating: int
+    text: str
+    created_at: datetime
+
+
+class AdminReviewUpsertIn(BaseModel):
+    """Body for ``POST /api/admin/reviews`` (create) /
+    ``POST /api/admin/reviews/:id`` (edit).
+
+    For create, ``target_id`` and ``author_id`` are required. For edit,
+    they are ignored — only ``rating`` and ``text`` can be changed.
+    """
+
+    target_id: int | None = None
+    author_id: int | None = None
+    deal_id: int | None = None
+    rating: int
+    text: str = ""
+
+    @field_validator("rating")
+    @classmethod
+    def _rating_range(cls, v: int) -> int:
+        if v < 1 or v > 5:
+            raise ValueError("Рейтинг должен быть от 1 до 5")
+        return v
+
+    @field_validator("text")
+    @classmethod
+    def _text_len(cls, v: str) -> str:
+        if len(v) > 1024:
+            raise ValueError("Текст отзыва слишком длинный (≤1024)")
+        return v
+
+
+class AdminCommentItemOut(BaseModel):
+    id: int
+    service_id: int
+    author_id: int
+    author_username: str | None
+    text: str
+    rating: int | None
+    created_at: datetime
+
+
+class AdminCommentUpdateIn(BaseModel):
+    text: str | None = None
+    rating: int | None = None
+    clear_rating: bool = False
+
+    @field_validator("text")
+    @classmethod
+    def _text_len(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("Комментарий не может быть пустым")
+        if len(v) > 1024:
+            raise ValueError("Комментарий слишком длинный (≤1024)")
+        return v
+
+    @field_validator("rating")
+    @classmethod
+    def _rating_range(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v < 1 or v > 5:
+            raise ValueError("Оценка должна быть от 1 до 5")
+        return v

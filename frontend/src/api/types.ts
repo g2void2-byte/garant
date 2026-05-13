@@ -346,3 +346,183 @@ export interface AdminListUsersQuery {
   page?: number;
   page_size?: number;
 }
+
+// ── Admin: deals (PR-B) ────────────────────────────────────────────────
+
+export interface AdminDealListItemDto {
+  id: number;
+  status: DealStatus | string;
+  sum: number;
+  currency_code: string | null;
+  amount: number | null;
+  commission_amount: number | null;
+  buyer_id: number;
+  buyer_username: string | null;
+  seller_id: number;
+  seller_username: string | null;
+  pay_commission: string;
+  created_at: string;
+  in_progress_at: string | null;
+  completed_at: string | null;
+  has_arbitration: boolean;
+  has_cancel_request: boolean;
+}
+
+export interface AdminDealListDto {
+  items: AdminDealListItemDto[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AdminBalanceSnapshotDto {
+  user_id: number;
+  username: string | null;
+  display_name: string;
+  currency_code: string | null;
+  amount: number;
+  locked: number;
+  total: number;
+}
+
+export interface AdminDealEventDto {
+  at: string;
+  kind: string;
+  actor: string | null;
+  description: string;
+}
+
+export interface AdminDealDetailDto {
+  id: number;
+  status: DealStatus | string;
+  description: string;
+  sum: number;
+  currency_code: string | null;
+  amount: number | null;
+  commission_amount: number | null;
+  pay_commission: string;
+  buyer: AdminBalanceSnapshotDto;
+  seller: AdminBalanceSnapshotDto;
+  created_at: string;
+  in_progress_at: string | null;
+  completed_at: string | null;
+  cancellation_initiator: string | null;
+  cancellation_reason: string | null;
+  cancellation_requested_at: string | null;
+  arbitration_initiator: string | null;
+  arbitration_reason: string | null;
+  arbitration_resolved_by_id: number | null;
+  arbitration_resolved_by_username: string | null;
+  arbitration_resolution: string | null;
+  arbitration_resolved_at: string | null;
+  confirm_buyer: boolean;
+  confirm_seller: boolean;
+  events: AdminDealEventDto[];
+  messages: AdminDealMessageDto[];
+}
+
+export interface AdminDealMessageDto {
+  id: number;
+  deal_id: number;
+  sender_id: number;
+  sender_username: string | null;
+  sender_display_name: string;
+  text: string;
+  attachments: { id: number; url: string; mime: string | null }[];
+  created_at: string;
+}
+
+export interface AdminListDealsQuery {
+  status?: "any" | DealStatus | string;
+  currency?: string;
+  min_sum?: number;
+  max_sum?: number;
+  has_arbitration?: boolean;
+  has_cancel_request?: boolean;
+  buyer_id?: number;
+  seller_id?: number;
+  page?: number;
+  page_size?: number;
+}
+
+// ── Admin: arbitration (PR-B) ──────────────────────────────────────────
+
+export interface AdminArbitrationCountersDto {
+  new: number;
+  in_progress: number;
+  closed: number;
+}
+
+export interface AdminArbitrationListDto {
+  items: AdminDealListItemDto[];
+  counters: AdminArbitrationCountersDto;
+  queue: "new" | "in_progress" | "closed";
+}
+
+// ── Admin: content editing (PR-B) ──────────────────────────────────────
+
+export interface AdminServiceItemDto {
+  id: number;
+  owner_id: number;
+  category_id: number;
+  category_slug: string | null;
+  title: string;
+  description: string;
+  price: number;
+  status: string;
+  ban_reason: string | null;
+  views: number;
+  deals_count: number;
+  deposit: number;
+  rating_manual: number | null;
+  created_at: string;
+}
+
+export interface AdminServiceUpdateBody {
+  title?: string;
+  description?: string;
+  price?: number;
+  deposit?: number;
+  views?: number;
+  deals_count?: number;
+  rating_manual?: number | null;
+  clear_rating?: boolean;
+  status?: "draft" | "active" | "paused" | "banned";
+  ban_reason?: string;
+}
+
+export interface AdminReviewItemDto {
+  id: number;
+  deal_id: number | null;
+  author_id: number;
+  author_username: string | null;
+  target_id: number;
+  target_username: string | null;
+  rating: number;
+  text: string;
+  created_at: string;
+}
+
+export interface AdminReviewUpsertBody {
+  target_id?: number;
+  author_id?: number;
+  deal_id?: number | null;
+  rating: number;
+  text: string;
+}
+
+export interface AdminCommentItemDto {
+  id: number;
+  service_id: number;
+  author_id: number;
+  author_username: string | null;
+  text: string;
+  rating: number | null;
+  created_at: string;
+}
+
+export interface AdminCommentUpdateBody {
+  text?: string;
+  rating?: number;
+  clear_rating?: boolean;
+}

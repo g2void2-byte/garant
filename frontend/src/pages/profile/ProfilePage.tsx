@@ -74,7 +74,7 @@ export default function ProfilePage() {
           >
             <Link2 className="size-4" /> Добавить форумы
           </Button>
-          {me.is_admin && (
+          {me.is_admin ? (
             <Button
               variant="primary"
               onClick={() => navigate("/admin")}
@@ -82,7 +82,15 @@ export default function ProfilePage() {
             >
               <ShieldCheck className="size-4" /> Админ-панель
             </Button>
-          )}
+          ) : me.is_arbiter ? (
+            <Button
+              variant="primary"
+              onClick={() => navigate("/admin/arbitration")}
+              className="col-span-2"
+            >
+              <ShieldCheck className="size-4" /> Очередь арбитража
+            </Button>
+          ) : null}
         </div>
 
         <ProfileStatsGrid user={me} onDepositClick={() => navigate("/wallet")} />

@@ -65,17 +65,20 @@ export default function AdminDashboardPage() {
               icon={<Briefcase size={18} />}
               label="Всего"
               value={data.total_deals}
+              onClick={() => navigate("/admin/deals")}
             />
             <Tile
               icon={<Briefcase size={18} />}
               label="Открытые"
               value={data.open_deals}
+              onClick={() => navigate("/admin/deals?status=in_progress")}
             />
             <Tile
               icon={<Gavel size={18} />}
               label="В арбитраже"
               value={data.open_arbitration}
               accent={data.open_arbitration > 0}
+              onClick={() => navigate("/admin/arbitration")}
             />
           </Section>
 
