@@ -62,10 +62,18 @@ async def _serialize(session, msg: DealMessage) -> DealMessageOut:
             ids = []
         if isinstance(ids, list) and ids:
             rows = (
-                await session.execute(
-                    select(Media).where(Media.id.in_([int(i) for i in ids if isinstance(i, int) or str(i).isdigit()]))
+                (
+                    await session.execute(
+                        select(Media).where(
+                            Media.id.in_(
+                                [int(i) for i in ids if isinstance(i, int) or str(i).isdigit()]
+                            )
+                        )
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             by_id = {m.id: m for m in rows}
             for raw in ids:
                 try:
@@ -94,12 +102,16 @@ async def list_messages(
 ) -> list[DealMessageOut]:
     await _load_deal_or_403(session, deal_id, user)
     rows = (
-        await session.execute(
-            select(DealMessage)
-            .where(DealMessage.deal_id == deal_id)
-            .order_by(DealMessage.created_at.asc(), DealMessage.id.asc())
+        (
+            await session.execute(
+                select(DealMessage)
+                .where(DealMessage.deal_id == deal_id)
+                .order_by(DealMessage.created_at.asc(), DealMessage.id.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [await _serialize(session, m) for m in rows]
 
 
@@ -124,10 +136,10 @@ async def create_message(
     attachment_ids: list[int] = []
     if body.attachments:
         rows = (
-            await session.execute(
-                select(Media).where(Media.id.in_(body.attachments))
-            )
-        ).scalars().all()
+            (await session.execute(select(Media).where(Media.id.in_(body.attachments))))
+            .scalars()
+            .all()
+        )
         by_id = {m.id: m for m in rows}
         for raw in body.attachments:
             media = by_id.get(raw)

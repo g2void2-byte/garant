@@ -56,12 +56,11 @@ async def lifespan(app: FastAPI):
 
     if settings.run_bot:
         from .bot.runner import start_polling
+
         _bot_task = asyncio.create_task(start_polling())
 
     if settings.inactivity_sweep_seconds > 0:
-        _inactivity_task = asyncio.create_task(
-            _inactivity_loop(settings.inactivity_sweep_seconds)
-        )
+        _inactivity_task = asyncio.create_task(_inactivity_loop(settings.inactivity_sweep_seconds))
 
     yield
 

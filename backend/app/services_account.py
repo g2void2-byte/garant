@@ -100,9 +100,7 @@ async def _invalidate_active_for(session: AsyncSession, user_id: int) -> None:
         row.consumed_at = now
 
 
-async def get_active_code(
-    session: AsyncSession, user_id: int
-) -> AccountTransferCode | None:
+async def get_active_code(session: AsyncSession, user_id: int) -> AccountTransferCode | None:
     """Return the still-valid outgoing code for a user, if any."""
     stmt = (
         select(AccountTransferCode)
@@ -169,18 +167,14 @@ async def _has_tradable_data(session: AsyncSession, user: User) -> bool:
 
     deal = (
         await session.execute(
-            select(Deal.id)
-            .where(or_(Deal.buyer_id == user.id, Deal.seller_id == user.id))
-            .limit(1)
+            select(Deal.id).where(or_(Deal.buyer_id == user.id, Deal.seller_id == user.id)).limit(1)
         )
     ).scalar_one_or_none()
     if deal is not None:
         return True
 
     if (
-        await session.execute(
-            select(Service.id).where(Service.owner_id == user.id).limit(1)
-        )
+        await session.execute(select(Service.id).where(Service.owner_id == user.id).limit(1))
     ).scalar_one_or_none() is not None:
         return True
 
@@ -202,18 +196,16 @@ async def _has_tradable_data(session: AsyncSession, user: User) -> bool:
 
     if (
         await session.execute(
-            select(WalletWithdrawal.id)
-            .where(WalletWithdrawal.user_id == user.id)
-            .limit(1)
+            select(WalletWithdrawal.id).where(WalletWithdrawal.user_id == user.id).limit(1)
         )
     ).scalar_one_or_none() is not None:
         return True
 
     balances = (
-        await session.execute(
-            select(UserBalance).where(UserBalance.user_id == user.id)
-        )
-    ).scalars().all()
+        (await session.execute(select(UserBalance).where(UserBalance.user_id == user.id)))
+        .scalars()
+        .all()
+    )
     for b in balances:
         if Decimal(str(b.amount)) > 0 or Decimal(str(b.locked)) > 0:
             return True
@@ -221,9 +213,7 @@ async def _has_tradable_data(session: AsyncSession, user: User) -> bool:
     return False
 
 
-async def confirm_transfer(
-    session: AsyncSession, target: User, code: str
-) -> User:
+async def confirm_transfer(session: AsyncSession, target: User, code: str) -> User:
     """Re-point the source account's ``tg_user_id`` to ``target.tg_user_id``.
 
     Validates that the code is live, that the new (calling) account is a
@@ -278,12 +268,8 @@ async def confirm_transfer(
     # Notifications + balances of the empty target shell are wiped to
     # release the unique tg_user_id and any FK references before the
     # row itself is removed.
-    await session.execute(
-        delete(Notification).where(Notification.recipient_id == target.id)
-    )
-    await session.execute(
-        delete(UserBalance).where(UserBalance.user_id == target.id)
-    )
+    await session.execute(delete(Notification).where(Notification.recipient_id == target.id))
+    await session.execute(delete(UserBalance).where(UserBalance.user_id == target.id))
     await session.execute(delete(Forum).where(Forum.owner_id == target.id))
 
     target_id = target.id

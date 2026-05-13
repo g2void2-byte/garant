@@ -35,9 +35,7 @@ async def test_webhook_credits_pending_deposit_and_is_idempotent(client):
 
     async with async_session() as session:
         user_id = await get_user_id_by_tg(session, 3001)
-        usdt = (
-            await session.execute(select(Currency).where(Currency.code == "USDT"))
-        ).scalar_one()
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         usdt_id = usdt.id
         session.add(
             WalletDeposit(
@@ -51,9 +49,7 @@ async def test_webhook_credits_pending_deposit_and_is_idempotent(client):
         )
         await session.commit()
 
-    body = json.dumps(
-        {"update_type": "invoice_paid", "payload": {"invoice_id": "cb-789"}}
-    ).encode()
+    body = json.dumps({"update_type": "invoice_paid", "payload": {"invoice_id": "cb-789"}}).encode()
     sig = _sign(body)
     headers = {
         "crypto-pay-api-signature": sig,
@@ -61,9 +57,7 @@ async def test_webhook_credits_pending_deposit_and_is_idempotent(client):
     }
 
     # First call credits.
-    resp = await client.post(
-        "/api/payments/webhook/cryptobot", content=body, headers=headers
-    )
+    resp = await client.post("/api/payments/webhook/cryptobot", content=body, headers=headers)
     assert resp.status_code == 200, resp.text
     assert resp.json()["ok"] is True
 
@@ -79,9 +73,7 @@ async def test_webhook_credits_pending_deposit_and_is_idempotent(client):
         assert float(bal.amount) == 42.0
 
     # Second call: idempotent — no double credit, ``already_paid`` echoed.
-    resp2 = await client.post(
-        "/api/payments/webhook/cryptobot", content=body, headers=headers
-    )
+    resp2 = await client.post("/api/payments/webhook/cryptobot", content=body, headers=headers)
     assert resp2.status_code == 200
     payload = resp2.json()
     assert payload["ok"] is True
@@ -100,9 +92,7 @@ async def test_webhook_credits_pending_deposit_and_is_idempotent(client):
 
 
 async def test_webhook_bad_signature_rejected(client):
-    body = json.dumps(
-        {"update_type": "invoice_paid", "payload": {"invoice_id": "x"}}
-    ).encode()
+    body = json.dumps({"update_type": "invoice_paid", "payload": {"invoice_id": "x"}}).encode()
     resp = await client.post(
         "/api/payments/webhook/cryptobot",
         content=body,

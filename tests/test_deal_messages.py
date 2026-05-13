@@ -161,9 +161,7 @@ async def test_message_with_attachment(client):
     # Confirm the DB row stored the ids exactly.
     async with async_session() as session:
         row = (
-            await session.execute(
-                select(DealMessage).where(DealMessage.id == msg["id"])
-            )
+            await session.execute(select(DealMessage).where(DealMessage.id == msg["id"]))
         ).scalar_one()
         assert json.loads(row.attachments_json) == [media_id]
 

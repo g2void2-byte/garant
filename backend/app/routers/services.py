@@ -131,8 +131,7 @@ async def create_service(
     if active_now >= max_active:
         raise HTTPException(
             400,
-            f"Достигнут лимит активных услуг ({max_active}). "
-            "Поставьте часть на паузу или удалите.",
+            f"Достигнут лимит активных услуг ({max_active}). Поставьте часть на паузу или удалите.",
         )
 
     service = Service(

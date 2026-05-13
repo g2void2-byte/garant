@@ -19,9 +19,7 @@ async def list_users(
 ):
     stmt = select(User)
     if q:
-        stmt = stmt.where(
-            User.username.ilike(f"%{q}%") | User.display_name.ilike(f"%{q}%")
-        )
+        stmt = stmt.where(User.username.ilike(f"%{q}%") | User.display_name.ilike(f"%{q}%"))
     if filter == "arbiters":
         stmt = stmt.where(User.is_arbiter.is_(True))
     elif filter == "admins":

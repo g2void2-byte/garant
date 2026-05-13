@@ -30,32 +30,26 @@ async def list_notifications(
 
 @router.get("/counters", response_model=NotificationCountersOut)
 async def get_counters(user: CurrentUser, session: SessionDep):
-    base = select(func.count(Notification.id)).where(
-        Notification.recipient_id == user.id
-    )
+    base = select(func.count(Notification.id)).where(Notification.recipient_id == user.id)
     all_count = (await session.execute(base)).scalar() or 0
-    unread = (
-        await session.execute(base.where(Notification.is_read.is_(False)))
-    ).scalar() or 0
+    unread = (await session.execute(base.where(Notification.is_read.is_(False)))).scalar() or 0
 
     deals = (
-        await session.execute(
-            base.where(Notification.type == NotificationType.deals)
-        )
+        await session.execute(base.where(Notification.type == NotificationType.deals))
     ).scalar() or 0
     deposits = (
-        await session.execute(
-            base.where(Notification.type == NotificationType.deposits)
-        )
+        await session.execute(base.where(Notification.type == NotificationType.deposits))
     ).scalar() or 0
     system = (
-        await session.execute(
-            base.where(Notification.type == NotificationType.system)
-        )
+        await session.execute(base.where(Notification.type == NotificationType.system))
     ).scalar() or 0
 
     return NotificationCountersOut(
-        all=all_count, deals=deals, deposits=deposits, system=system, unread=unread,
+        all=all_count,
+        deals=deals,
+        deposits=deposits,
+        system=system,
+        unread=unread,
     )
 
 

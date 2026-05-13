@@ -9,6 +9,7 @@ from .models import PayCommission
 
 # ── Users ──────────────────────────────────────────────
 
+
 class ForumOut(BaseModel):
     name: str
     url: str
@@ -32,7 +33,12 @@ class ForumOut(BaseModel):
         if len(v) > 512:
             raise ValueError("Ссылка слишком длинная")
         low = v.lower()
-        if not (low.startswith("http://") or low.startswith("https://") or low.startswith("tg://") or low.startswith("https://t.me/")):
+        if not (
+            low.startswith("http://")
+            or low.startswith("https://")
+            or low.startswith("tg://")
+            or low.startswith("https://t.me/")
+        ):
             raise ValueError("Ссылка должна начинаться с http(s):// или t.me/")
         return v
 
@@ -83,7 +89,9 @@ class UserUpdate(BaseModel):
         if len(v) > 1024:
             raise ValueError("Ссылка на фото слишком длинная")
         low = v.lower()
-        if not (low.startswith("http://") or low.startswith("https://") or low.startswith("/media/")):
+        if not (
+            low.startswith("http://") or low.startswith("https://") or low.startswith("/media/")
+        ):
             raise ValueError("Фото должно быть http(s):// или /media/... ссылкой")
         return v
 
@@ -131,6 +139,7 @@ class UserUpdate(BaseModel):
 
 # ── Categories ─────────────────────────────────────────
 
+
 class CategoryOut(BaseModel):
     id: int
     slug: str
@@ -140,6 +149,7 @@ class CategoryOut(BaseModel):
 
 
 # ── Services ───────────────────────────────────────────
+
 
 class ServiceOut(BaseModel):
     id: int
@@ -173,6 +183,7 @@ class ServiceModerationDecision(BaseModel):
 
 
 # ── Deals ──────────────────────────────────────────────
+
 
 class DealCreate(BaseModel):
     counterparty: str
@@ -232,6 +243,7 @@ class DealOut(BaseModel):
 
 
 # ── Reviews ────────────────────────────────────────────
+
 
 class MediaOut(BaseModel):
     id: int
@@ -308,6 +320,7 @@ class ReviewOut(BaseModel):
 
 # ── Notifications ──────────────────────────────────────
 
+
 class NotificationOut(BaseModel):
     id: int
     type: str
@@ -338,6 +351,7 @@ class NotificationCountersOut(BaseModel):
 
 
 # ── Payments ───────────────────────────────────────────
+
 
 class InvoiceCreateReq(BaseModel):
     amount: float
@@ -446,6 +460,7 @@ class WalletAdminWithdrawDecision(BaseModel):
 
 
 # ── Support ────────────────────────────────────────────
+
 
 class SupportPersonOut(BaseModel):
     id: int

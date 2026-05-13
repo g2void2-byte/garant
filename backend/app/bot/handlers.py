@@ -22,7 +22,6 @@ async def cmd_start(message: Message) -> None:
         ]
     )
     await message.answer(
-        "Добро пожаловать в Garant!\n"
-        "Нажмите кнопку ниже, чтобы открыть приложение.",
+        "Добро пожаловать в Garant!\nНажмите кнопку ниже, чтобы открыть приложение.",
         reply_markup=kb,
     )

@@ -89,9 +89,7 @@ async def upload_media(
     if not data:
         raise HTTPException(400, "Файл пустой")
     if len(data) > settings.media_max_bytes:
-        raise HTTPException(
-            413, f"Файл слишком большой (>{settings.media_max_bytes // 1024} КБ)"
-        )
+        raise HTTPException(413, f"Файл слишком большой (>{settings.media_max_bytes // 1024} КБ)")
 
     root = _ensure_root()
     folder = root / kind

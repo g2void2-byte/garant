@@ -56,9 +56,7 @@ async def test_sweep_cancels_stale_pending_confirmation(client):
         deal = await session.get(Deal, deal_id)
         assert deal.status == DealStatus.cancelled_for_inactivity
 
-        usdt = (
-            await session.execute(select(Currency).where(Currency.code == "USDT"))
-        ).scalar_one()
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         bal = (
             await session.execute(
                 select(UserBalance).where(

@@ -23,10 +23,7 @@ async def test_ws_receives_notification_for_authenticated_user(ws_server):
     from backend.app.notifier import push
 
     init_data = signed_init_data(4001, "alice4")
-    url = (
-        f"ws://127.0.0.1:{ws_server}/ws/notifications"
-        f"?initData={quote(init_data)}"
-    )
+    url = f"ws://127.0.0.1:{ws_server}/ws/notifications?initData={quote(init_data)}"
 
     async with websockets.connect(url, open_timeout=5) as ws:
         # The WS handler creates the user on connect.

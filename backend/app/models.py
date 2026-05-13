@@ -28,15 +28,15 @@ class DealStatus(str, enum.Enum):
     ``resolved_for_seller``, ``cancelled_for_inactivity``.
     """
 
-    cancelled = "cancelled"                             # 0
-    pending_confirmation = "pending_confirmation"       # 1
-    pending_payment = "pending_payment"                 # 2 (reserved; not used today)
-    in_progress = "in_progress"                         # 3
-    completed = "completed"                             # 4
-    arbitration = "arbitration"                         # 5
-    resolved_for_buyer = "resolved_for_buyer"           # 6
-    resolved_for_seller = "resolved_for_seller"         # 7
-    pending_cancellation = "pending_cancellation"       # 8
+    cancelled = "cancelled"  # 0
+    pending_confirmation = "pending_confirmation"  # 1
+    pending_payment = "pending_payment"  # 2 (reserved; not used today)
+    in_progress = "in_progress"  # 3
+    completed = "completed"  # 4
+    arbitration = "arbitration"  # 5
+    resolved_for_buyer = "resolved_for_buyer"  # 6
+    resolved_for_seller = "resolved_for_seller"  # 7
+    pending_cancellation = "pending_cancellation"  # 8
     cancelled_for_inactivity = "cancelled_for_inactivity"  # 9
 
     # Legacy values kept for old rows; migrated on startup.
@@ -86,10 +86,10 @@ class WalletDepositStatus(str, enum.Enum):
 
 
 class WalletWithdrawStatus(str, enum.Enum):
-    pending = "pending"     # awaiting admin review
-    approved = "approved"   # admin OK, funds locked, waiting for the timer
-    sent = "sent"           # paid out
-    rejected = "rejected"   # declined, funds returned
+    pending = "pending"  # awaiting admin review
+    approved = "approved"  # admin OK, funds locked, waiting for the timer
+    sent = "sent"  # paid out
+    rejected = "rejected"  # declined, funds returned
 
 
 class ServiceStatus(str, enum.Enum):
@@ -189,9 +189,7 @@ class Deal(Base):
     confirm_buyer: Mapped[bool] = mapped_column(Boolean, default=False)
     confirm_seller: Mapped[bool] = mapped_column(Boolean, default=False)
     arbitrage_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), index=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Multi-currency fields (PR-3). ``currency_id`` is nullable for legacy
@@ -209,9 +207,7 @@ class Deal(Base):
         ForeignKey("users.id"), nullable=True
     )
     cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cancellation_requested_at: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True
-    )
+    cancellation_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Arbitration flow.
     arbitration_initiator_id: Mapped[int | None] = mapped_column(
@@ -221,18 +217,12 @@ class Deal(Base):
     arbitration_resolved_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
-    arbitration_resolution: Mapped[str | None] = mapped_column(
-        String(16), nullable=True
-    )
-    arbitration_resolved_at: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True
-    )
+    arbitration_resolution: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    arbitration_resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     buyer: Mapped[User] = relationship(foreign_keys=[buyer_id], lazy="selectin")
     seller: Mapped[User] = relationship(foreign_keys=[seller_id], lazy="selectin")
-    currency: Mapped[Currency | None] = relationship(
-        foreign_keys=[currency_id], lazy="selectin"
-    )
+    currency: Mapped[Currency | None] = relationship(foreign_keys=[currency_id], lazy="selectin")
 
 
 class DealMessage(Base):
@@ -251,9 +241,7 @@ class DealMessage(Base):
     sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     text: Mapped[str] = mapped_column(Text, default="")
     attachments_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), index=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
     sender: Mapped[User] = relationship(foreign_keys=[sender_id], lazy="selectin")
 
@@ -285,9 +273,7 @@ class Notification(Base):
     body: Mapped[str] = mapped_column(Text, default="")
     payload: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), index=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
     recipient: Mapped[User] = relationship(foreign_keys=[recipient_id], lazy="selectin")
 
@@ -320,12 +306,8 @@ class AppSettings(Base):
     min_deposit: Mapped[float] = mapped_column(Numeric(14, 2), default=1.0)
     min_withdraw: Mapped[float] = mapped_column(Numeric(14, 2), default=1.0)
     # PR-3 — auto-cancel timeouts.
-    inactivity_pending_confirmation_days: Mapped[int] = mapped_column(
-        Integer, default=7
-    )
-    inactivity_pending_cancellation_days: Mapped[int] = mapped_column(
-        Integer, default=3
-    )
+    inactivity_pending_confirmation_days: Mapped[int] = mapped_column(Integer, default=7)
+    inactivity_pending_cancellation_days: Mapped[int] = mapped_column(Integer, default=3)
     # PR-6 — maximum simultaneously-active services per user.
     max_active_services_per_user: Mapped[int] = mapped_column(Integer, default=10)
 

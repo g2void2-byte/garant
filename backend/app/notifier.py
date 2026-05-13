@@ -79,17 +79,20 @@ async def push(
     await session.commit()
     await session.refresh(notif)
 
-    await manager.send_to_user(recipient_id, {
-        "event": "notification",
-        "data": {
-            "id": notif.id,
-            "type": notif.type.value,
-            "title": notif.title,
-            "body": notif.body,
-            "payload": payload,
-            "is_read": False,
+    await manager.send_to_user(
+        recipient_id,
+        {
+            "event": "notification",
+            "data": {
+                "id": notif.id,
+                "type": notif.type.value,
+                "title": notif.title,
+                "body": notif.body,
+                "payload": payload,
+                "is_read": False,
+            },
         },
-    })
+    )
 
     # Fire-and-forget DM dispatch. We only need the recipient's
     # ``tg_user_id`` + per-type preference, so a single ``session.get``

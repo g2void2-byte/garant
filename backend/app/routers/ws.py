@@ -38,9 +38,7 @@ async def websocket_endpoint(websocket: WebSocket):
     # ``tg_user_id`` exposed in initData) — otherwise the WS channel is a
     # silent black hole.
     async with async_session() as session:
-        result = await session.execute(
-            select(User).where(User.tg_user_id == tg_user_id)
-        )
+        result = await session.execute(select(User).where(User.tg_user_id == tg_user_id))
         user = result.scalar_one_or_none()
         if user is None:
             user = User(

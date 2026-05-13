@@ -65,9 +65,7 @@ def _q(value: Decimal | float | int, decimals: int) -> Decimal:
     return Decimal(str(value)).quantize(quant)
 
 
-def _commission(
-    amount: Decimal, percent: Decimal | float, decimals: int
-) -> Decimal:
+def _commission(amount: Decimal, percent: Decimal | float, decimals: int) -> Decimal:
     return _q(amount * Decimal(str(percent)) / Decimal(100), decimals)
 
 
@@ -142,9 +140,7 @@ async def create_deal(
     if amt <= 0:
         raise ValueError("Сумма должна быть больше нуля")
 
-    commission = _commission(
-        amt, settings.deal_commission_percent, currency.decimals
-    )
+    commission = _commission(amt, settings.deal_commission_percent, currency.decimals)
     locked = amt + commission if pay_commission == PayCommission.buyer else amt
     await _debit(session, buyer.id, currency.id, locked)
 
@@ -170,8 +166,7 @@ async def create_deal(
         seller.id,
         NotificationType.deals,
         "Новая сделка",
-        f"@{buyer.username or buyer.tg_user_id} создал сделку #{deal.id} "
-        f"на {amt} {currency.code}",
+        f"@{buyer.username or buyer.tg_user_id} создал сделку #{deal.id} на {amt} {currency.code}",
         {"deal_id": deal.id},
     )
     return deal
@@ -213,9 +208,9 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     currency = await session.get(Currency, deal.currency_id)
     assert currency is not None
     amt = _q(Decimal(str(deal.amount)), currency.decimals)
-    commission = _q(
-        Decimal(str(deal.commission_amount or 0)), currency.decimals
-    ) or _commission(amt, settings.deal_commission_percent, currency.decimals)
+    commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals) or _commission(
+        amt, settings.deal_commission_percent, currency.decimals
+    )
     locked = amt + commission if deal.pay_commission == PayCommission.buyer else amt
     await _refund(session, deal.buyer_id, currency.id, locked)
 
@@ -246,9 +241,7 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     currency = await session.get(Currency, deal.currency_id)
     assert currency is not None
     amt = _q(Decimal(str(deal.amount)), currency.decimals)
-    commission = _q(
-        Decimal(str(deal.commission_amount or 0)), currency.decimals
-    )
+    commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals)
 
     if deal.pay_commission == PayCommission.buyer:
         locked = amt + commission
@@ -257,9 +250,7 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         locked = amt
         payout = amt - commission
 
-    await _release_to(
-        session, deal.buyer_id, deal.seller_id, currency.id, locked, payout
-    )
+    await _release_to(session, deal.buyer_id, deal.seller_id, currency.id, locked, payout)
 
     deal.status = DealStatus.completed
     deal.completed_at = datetime.utcnow()
@@ -286,9 +277,7 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
 # ── Cancel-debate (soft cancel) ────────────────────────
 
 
-async def request_cancel(
-    session: AsyncSession, deal: Deal, user: User, reason: str
-) -> Deal:
+async def request_cancel(session: AsyncSession, deal: Deal, user: User, reason: str) -> Deal:
     if user.id not in (deal.buyer_id, deal.seller_id):
         raise ValueError("Вы не участник сделки")
     if deal.status != DealStatus.in_progress:
@@ -344,9 +333,7 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
     if user.id not in (deal.buyer_id, deal.seller_id):
         raise ValueError("Вы не участник сделки")
     if user.id == deal.cancellation_initiator_id:
-        raise ValueError(
-            "Инициатор не может согласиться с собственным запросом отмены"
-        )
+        raise ValueError("Инициатор не может согласиться с собственным запросом отмены")
     if deal.currency_id is None or deal.amount is None:
         raise ValueError("У сделки не задана валюта")
 
@@ -354,9 +341,9 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
     currency = await session.get(Currency, deal.currency_id)
     assert currency is not None
     amt = _q(Decimal(str(deal.amount)), currency.decimals)
-    commission = _q(
-        Decimal(str(deal.commission_amount or 0)), currency.decimals
-    ) or _commission(amt, settings.deal_commission_percent, currency.decimals)
+    commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals) or _commission(
+        amt, settings.deal_commission_percent, currency.decimals
+    )
     locked = amt + commission if deal.pay_commission == PayCommission.buyer else amt
     await _refund(session, deal.buyer_id, currency.id, locked)
 
@@ -385,9 +372,7 @@ _ARBITRATION_ELIGIBLE = (
 )
 
 
-async def start_arbitration(
-    session: AsyncSession, deal: Deal, user: User, reason: str
-) -> Deal:
+async def start_arbitration(session: AsyncSession, deal: Deal, user: User, reason: str) -> Deal:
     if user.id not in (deal.buyer_id, deal.seller_id):
         raise ValueError("Вы не участник сделки")
     if deal.status not in _ARBITRATION_ELIGIBLE:
@@ -411,11 +396,9 @@ async def start_arbitration(
     await session.refresh(deal)
 
     arbiters = (
-        await session.execute(select(User).where(User.is_arbiter.is_(True)))
-    ).scalars().all()
-    admins = (
-        await session.execute(select(User).where(User.is_admin.is_(True)))
-    ).scalars().all()
+        (await session.execute(select(User).where(User.is_arbiter.is_(True)))).scalars().all()
+    )
+    admins = (await session.execute(select(User).where(User.is_admin.is_(True)))).scalars().all()
     seen: set[int] = set()
     for recipient in [*arbiters, *admins]:
         if recipient.id in seen:
@@ -451,17 +434,11 @@ async def resolve_arbitration(
     currency = await session.get(Currency, deal.currency_id)
     assert currency is not None
     amt = _q(Decimal(str(deal.amount)), currency.decimals)
-    commission = _q(
-        Decimal(str(deal.commission_amount or 0)), currency.decimals
-    )
+    commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals)
 
     if winner == "buyer":
         # Refund the buyer in full (incl. their commission contribution).
-        locked = (
-            amt + commission
-            if deal.pay_commission == PayCommission.buyer
-            else amt
-        )
+        locked = amt + commission if deal.pay_commission == PayCommission.buyer else amt
         await _refund(session, deal.buyer_id, currency.id, locked)
         deal.status = DealStatus.resolved_for_buyer
     else:
@@ -471,9 +448,7 @@ async def resolve_arbitration(
         else:
             locked = amt
             payout = amt - commission
-        await _release_to(
-            session, deal.buyer_id, deal.seller_id, currency.id, locked, payout
-        )
+        await _release_to(session, deal.buyer_id, deal.seller_id, currency.id, locked, payout)
         deal.status = DealStatus.resolved_for_seller
 
     deal.arbitration_resolved_by = admin.id
@@ -524,27 +499,27 @@ async def sweep_inactivity(session: AsyncSession) -> int:
     """
     settings = await _settings(session)
     now = datetime.utcnow()
-    pc_cutoff = now - timedelta(
-        days=int(settings.inactivity_pending_confirmation_days)
-    )
-    pcanc_cutoff = now - timedelta(
-        days=int(settings.inactivity_pending_cancellation_days)
-    )
+    pc_cutoff = now - timedelta(days=int(settings.inactivity_pending_confirmation_days))
+    pcanc_cutoff = now - timedelta(days=int(settings.inactivity_pending_cancellation_days))
 
     affected = 0
     rows = (
-        await session.execute(
-            select(Deal).where(
-                or_(
-                    (Deal.status == DealStatus.pending_confirmation)
-                    & (Deal.created_at <= pc_cutoff),
-                    (Deal.status == DealStatus.pending_cancellation)
-                    & (Deal.cancellation_requested_at.is_not(None))
-                    & (Deal.cancellation_requested_at <= pcanc_cutoff),
+        (
+            await session.execute(
+                select(Deal).where(
+                    or_(
+                        (Deal.status == DealStatus.pending_confirmation)
+                        & (Deal.created_at <= pc_cutoff),
+                        (Deal.status == DealStatus.pending_cancellation)
+                        & (Deal.cancellation_requested_at.is_not(None))
+                        & (Deal.cancellation_requested_at <= pcanc_cutoff),
+                    )
                 )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for deal in rows:
         if deal.currency_id is None or deal.amount is None:
             continue
@@ -552,14 +527,8 @@ async def sweep_inactivity(session: AsyncSession) -> int:
         if currency is None:
             continue
         amt = _q(Decimal(str(deal.amount)), currency.decimals)
-        commission = _q(
-            Decimal(str(deal.commission_amount or 0)), currency.decimals
-        )
-        locked = (
-            amt + commission
-            if deal.pay_commission == PayCommission.buyer
-            else amt
-        )
+        commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals)
+        locked = amt + commission if deal.pay_commission == PayCommission.buyer else amt
         await _refund(session, deal.buyer_id, currency.id, locked)
         target_status = (
             DealStatus.cancelled_for_inactivity

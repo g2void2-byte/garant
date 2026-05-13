@@ -27,9 +27,7 @@ async def test_arbitration_resolved_for_buyer_refunds(client):
 
     async with async_session() as session:
         buyer_id = await get_user_id_by_tg(session, 2001)
-        admin = (
-            await session.execute(select(User).where(User.tg_user_id == 2003))
-        ).scalar_one()
+        admin = (await session.execute(select(User).where(User.tg_user_id == 2003))).scalar_one()
         admin.is_admin = True
         await session.commit()
         await credit_balance(session, buyer_id, "USDT", 100)
@@ -73,9 +71,7 @@ async def test_arbitration_resolved_for_buyer_refunds(client):
 
     # Buyer refunded fully (20 sum + 1 commission).
     async with async_session() as session:
-        usdt = (
-            await session.execute(select(Currency).where(Currency.code == "USDT"))
-        ).scalar_one()
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         bal = (
             await session.execute(
                 select(UserBalance).where(
