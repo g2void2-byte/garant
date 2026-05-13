@@ -12,15 +12,15 @@ import { Textarea } from "@/components/ui/Textarea";
 import { ProfileHeader } from "@/components/domain/ProfileHeader";
 import { ProfileStatsGrid } from "@/components/domain/ProfileStatsGrid";
 import { ServiceCard } from "@/components/domain/ServiceCard";
+import { ReviewRow } from "@/components/domain/ReviewRow";
 import {
-  useCreateDepositInvoice,
   useMe,
   useReviews,
   useServices,
   useUpdateMe,
 } from "@/api/hooks";
-import { haptic, openTelegramLink } from "@/lib/tg";
-import { formatMoney, relativeTime } from "@/lib/format";
+import { haptic } from "@/lib/tg";
+import { formatMoney } from "@/lib/format";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -29,14 +29,11 @@ export default function ProfilePage() {
   const { data: services } = useServices({ owner: me?.username });
   const { data: reviews } = useReviews(me?.username);
 
-  const [depositOpen, setDepositOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [forumsOpen, setForumsOpen] = useState(false);
 
   const updateMe = useUpdateMe();
-  const createInvoice = useCreateDepositInvoice();
 
-  const [depositAmount, setDepositAmount] = useState("50");
   const [description, setDescription] = useState("");
   const [forumName, setForumName] = useState("");
   const [forumUrl, setForumUrl] = useState("");
@@ -51,22 +48,6 @@ export default function ProfilePage() {
       </Page>
     );
   }
-
-  const handleDeposit = async () => {
-    const amount = parseFloat(depositAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      haptic("error");
-      return;
-    }
-    try {
-      const invoice = await createInvoice.mutateAsync(amount);
-      haptic("success");
-      if (invoice.pay_url) openTelegramLink(invoice.pay_url);
-      setDepositOpen(false);
-    } catch {
-      haptic("error");
-    }
-  };
 
   const saveDescription = async () => {
     await updateMe.mutateAsync({ description });
@@ -92,7 +73,7 @@ export default function ProfilePage() {
           <Button variant="primary" onClick={() => navigate("/profile/services/new")}>
             <Plus className="size-4" /> Услуга
           </Button>
-          <Button variant="secondary" onClick={() => setDepositOpen(true)}>
+          <Button variant="secondary" onClick={() => navigate("/profile/deposit")}>
             <Wallet className="size-4" /> Депозит
           </Button>
           <Button variant="secondary" onClick={() => setSettingsOpen(true)}>
@@ -103,7 +84,7 @@ export default function ProfilePage() {
           </Button>
         </div>
 
-        <ProfileStatsGrid user={me} onDepositClick={() => setDepositOpen(true)} />
+        <ProfileStatsGrid user={me} onDepositClick={() => navigate("/profile/deposit")} />
 
         <div className="bg-panel border border-border rounded-card p-3 text-sm">
           <div className="text-text-muted">Баланс</div>
@@ -135,36 +116,9 @@ export default function ProfilePage() {
               description="Завершайте сделки, чтобы получить отзывы"
             />
           ) : (
-            reviews.map((r) => (
-              <div key={r.id} className="bg-panel border border-border rounded-card p-3">
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-accent font-bold">★ {r.rating.toFixed(1)}</span>
-                  <span className="text-text-muted">от @{r.author_username}</span>
-                  <span className="text-text-muted ml-auto">{relativeTime(r.created_at)}</span>
-                </div>
-                {r.text && <div className="mt-2 text-sm">{r.text}</div>}
-              </div>
-            ))
+            reviews.map((r, i) => <ReviewRow key={r.id} review={r} index={i} />)
           ))}
       </div>
-
-      <Sheet open={depositOpen} onClose={() => setDepositOpen(false)} title="Пополнить депозит">
-        <div className="space-y-3">
-          <Input
-            label="Сумма (USDT)"
-            value={depositAmount}
-            onChange={(e) => setDepositAmount(e.target.value)}
-            type="number"
-            min={1}
-          />
-          <Button fullWidth onClick={handleDeposit} disabled={createInvoice.isPending}>
-            {createInvoice.isPending ? "Создаю..." : "Пополнить через CryptoBot"}
-          </Button>
-          <div className="text-xs text-text-muted">
-            Депозит-гарант — это сумма, замороженная на профиле как гарантия добропорядочности.
-          </div>
-        </div>
-      </Sheet>
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Настройки">
         <div className="space-y-3">

@@ -3,7 +3,9 @@ import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { ToastProvider } from "@/components/ui/Toast";
 import { initTelegram } from "@/lib/tg";
+import { useLiveNotifications } from "@/lib/useLiveNotifications";
 
 const SearchPage = lazy(() => import("@/pages/search/SearchPage"));
 const CategoriesPage = lazy(() => import("@/pages/search/CategoriesPage"));
@@ -15,6 +17,7 @@ const HelpPage = lazy(() => import("@/pages/help/HelpPage"));
 const NotificationsPage = lazy(() => import("@/pages/notifications/NotificationsPage"));
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 const AddServicePage = lazy(() => import("@/pages/profile/AddServicePage"));
+const DepositPage = lazy(() => import("@/pages/profile/DepositPage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -38,6 +41,35 @@ function PageFallback() {
   );
 }
 
+function AppShell() {
+  useLiveNotifications();
+  return (
+    <BrowserRouter>
+      <div className="min-h-full">
+        <Suspense fallback={<PageFallback />}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/search" replace />} />
+            <Route path="/search" element={<SearchPage />} />
+            <Route path="/search/categories" element={<CategoriesPage />} />
+            <Route path="/search/categories/:slug" element={<CategoriesPage />} />
+            <Route path="/u/:username" element={<UserProfilePage />} />
+            <Route path="/deals" element={<DealsPage />} />
+            <Route path="/deals/new" element={<CreateDealPage />} />
+            <Route path="/deals/:id" element={<DealDetailPage />} />
+            <Route path="/help" element={<HelpPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/profile/services/new" element={<AddServicePage />} />
+            <Route path="/profile/deposit" element={<DepositPage />} />
+            <Route path="*" element={<Navigate to="/search" replace />} />
+          </Routes>
+        </Suspense>
+        <BottomNav />
+      </div>
+    </BrowserRouter>
+  );
+}
+
 export function App() {
   useEffect(() => {
     initTelegram();
@@ -45,28 +77,9 @@ export function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <div className="min-h-full">
-          <Suspense fallback={<PageFallback />}>
-            <Routes>
-              <Route path="/" element={<Navigate to="/search" replace />} />
-              <Route path="/search" element={<SearchPage />} />
-              <Route path="/search/categories" element={<CategoriesPage />} />
-              <Route path="/search/categories/:slug" element={<CategoriesPage />} />
-              <Route path="/u/:username" element={<UserProfilePage />} />
-              <Route path="/deals" element={<DealsPage />} />
-              <Route path="/deals/new" element={<CreateDealPage />} />
-              <Route path="/deals/:id" element={<DealDetailPage />} />
-              <Route path="/help" element={<HelpPage />} />
-              <Route path="/notifications" element={<NotificationsPage />} />
-              <Route path="/profile" element={<ProfilePage />} />
-              <Route path="/profile/services/new" element={<AddServicePage />} />
-              <Route path="*" element={<Navigate to="/search" replace />} />
-            </Routes>
-          </Suspense>
-          <BottomNav />
-        </div>
-      </BrowserRouter>
+      <ToastProvider>
+        <AppShell />
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

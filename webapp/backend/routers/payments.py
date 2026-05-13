@@ -5,7 +5,8 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
-from routers.utils.cryptobot import create_add_money_request
+from routers.utils.cryptobot import check_invoice, create_add_money_request
+from utils.database.db import DB
 from utils.database.extras import WebDB
 from utils.database.models import Users
 from utils.notifier import notifier
@@ -14,6 +15,7 @@ from webapp.backend.schemas import (
     DepositCreate,
     DepositOut,
     InvoiceOut,
+    InvoiceStatusOut,
     WithdrawCreate,
 )
 
@@ -53,6 +55,49 @@ async def deposit_invoice(payload: DepositCreate, _: Users = Depends(get_current
         pay_url=getattr(invoice, "pay_url", "") or getattr(invoice, "bot_invoice_url", ""),
         amount=payload.amount,
         asset="USDT",
+    )
+
+
+@router.get("/deposit/invoice/{invoice_id}", response_model=InvoiceStatusOut)
+async def deposit_invoice_status(
+    invoice_id: str, user: Users = Depends(get_current_user)
+) -> InvoiceStatusOut:
+    """Poll CryptoBot for invoice status. On the first "paid" hit we credit
+    the user's balance, record the invoice locally and push a notification.
+    Subsequent calls return the same status without double-crediting because
+    we deduplicate on `id_operation` (the CryptoBot invoice id).
+    """
+    try:
+        invoices = await check_invoice(invoice_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("CryptoBot status check failed")
+        raise HTTPException(status_code=502, detail=f"CryptoBot error: {exc}")
+    if not invoices:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    inv = invoices[0]
+    status_str = getattr(inv, "status", "") or ""
+    paid_amount = float(getattr(inv, "paid_amount", 0) or 0)
+    db = DB()
+    credited = False
+    if status_str == "paid":
+        already = await run_in_threadpool(WebDB().has_invoice_record, int(invoice_id))
+        if not already:
+            await db.add_balance_by_username(user.username, paid_amount)
+            await db.add_invoice(user.user_id, paid_amount, int(invoice_id))
+            credited = True
+            await notifier.push(
+                user.username,
+                type_="deposits",
+                title="Баланс пополнен",
+                body=f"На баланс зачислено ${paid_amount:.2f} (CryptoBot #{invoice_id})",
+                payload={"invoice_id": invoice_id, "amount": paid_amount},
+                send_telegram=False,
+            )
+    return InvoiceStatusOut(
+        invoice_id=invoice_id,
+        status=status_str,
+        paid_amount=paid_amount,
+        credited=credited,
     )
 
 

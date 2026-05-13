@@ -6,12 +6,12 @@ import { formatMoney, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string; icon: string }> = {
-  WAIT_CONFIRM: { text: "Ожидает подтверждения", cls: "bg-[#48390F] text-accent", icon: "⏳" },
-  CONFIRMED: { text: "Подтверждена", cls: "bg-success/15 text-success", icon: "✅" },
-  SUCCESS: { text: "Успех", cls: "bg-success/15 text-success", icon: "🎉" },
-  FAILED: { text: "Отменена", cls: "bg-danger/15 text-danger", icon: "❌" },
-  ARBITRAGE: { text: "Арбитраж", cls: "bg-accent/15 text-accent", icon: "⚖️" },
-  WAIT_FINAL_CONFIRM: { text: "Финальное подтверждение", cls: "bg-accent/15 text-accent", icon: "⏳" },
+  wait_confirm: { text: "Ожидает подтверждения", cls: "bg-[#48390F] text-accent", icon: "⏳" },
+  confirmed: { text: "Подтверждена", cls: "bg-success/15 text-success", icon: "✅" },
+  success: { text: "Успех", cls: "bg-success/15 text-success", icon: "🎉" },
+  failed: { text: "Отменена", cls: "bg-danger/15 text-danger", icon: "❌" },
+  arbitrage: { text: "Арбитраж", cls: "bg-accent/15 text-accent", icon: "⚖️" },
+  wait_final_confirm: { text: "Финальное подтверждение", cls: "bg-accent/15 text-accent", icon: "⏳" },
 };
 
 export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) {

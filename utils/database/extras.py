@@ -19,6 +19,7 @@ from utils.database.models import (
     Category,
     Deals,
     Deposit,
+    Invoices,
     Notification,
     OnlineStatus,
     ProfileExtra,
@@ -246,6 +247,9 @@ class WebDB:
         deposit = Deposit.create(user_username=username.lower(), amount=amount)
         return {"id": deposit.id, "amount": float(amount), "status": "active"}
 
+    def has_invoice_record(self, id_operation: int) -> bool:
+        return Invoices.select().where(Invoices.id_operation == id_operation).exists()
+
     def release_deposit(self, deposit_id: int) -> bool:
         try:
             deposit = Deposit.get(Deposit.id == deposit_id)
@@ -305,6 +309,7 @@ class WebDB:
             user.save()
         return {
             "id": review.id,
+            "deal_id": deal_id,
             "rating": rating,
             "text": text,
             "author_username": author_username.lower(),

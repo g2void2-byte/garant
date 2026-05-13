@@ -75,7 +75,7 @@ async def confirm_deal_yes(callback: types.CallbackQuery, bot: Bot):
     seller_id = await db.get_userid_by_username(deal.seller)
     percent_deal = await db.get_percent_deal()
 
-    if deal.status != SUCCESS or deal.status != FAILED:
+    if deal.status != SUCCESS and deal.status != FAILED:
         await db.update_deal_confirm(deal_id, callback.from_user.username.lower())
         await db.update_status_deal(deal_id=deal_id, status=SUCCESS)
         pay_comission = deal.pay_comission

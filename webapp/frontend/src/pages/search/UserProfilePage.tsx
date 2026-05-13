@@ -11,7 +11,7 @@ import { ProfileStatsGrid } from "@/components/domain/ProfileStatsGrid";
 import { ServiceCard } from "@/components/domain/ServiceCard";
 import { useMe, useReviews, useServices, useUser } from "@/api/hooks";
 import { openTelegramLink } from "@/lib/tg";
-import { relativeTime } from "@/lib/format";
+import { ReviewRow } from "@/components/domain/ReviewRow";
 
 export default function UserProfilePage() {
   const navigate = useNavigate();
@@ -86,16 +86,7 @@ export default function UserProfilePage() {
                 description="Тут будут собираться отзывы по успешным сделкам"
               />
             ) : (
-              reviews.map((r) => (
-                <div key={r.id} className="bg-panel border border-border rounded-card p-3">
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-accent font-bold">★ {r.rating.toFixed(1)}</span>
-                    <span className="text-text-muted">от @{r.author_username}</span>
-                    <span className="text-text-muted ml-auto">{relativeTime(r.created_at)}</span>
-                  </div>
-                  {r.text && <div className="mt-2 text-sm">{r.text}</div>}
-                </div>
-              ))
+              reviews.map((r, i) => <ReviewRow key={r.id} review={r} index={i} />)
             )}
           </div>
         )}

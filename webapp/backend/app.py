@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from misc import config
+from utils.database.db import DB
 from utils.database.extras import WebDB
 from utils.database.models import ALL_MODELS, db
 from webapp.backend.routers import (
@@ -41,6 +42,13 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Could not enable WAL journal mode")
     WebDB().seed_default_categories()
+    # Ensure the legacy PercentInvoice / PercentDeal rows exist so that
+    # commission lookups during deposit-credit and deal-completion don't
+    # raise DoesNotExist on a fresh database.
+    try:
+        await DB().get_or_create_percents()
+    except Exception:
+        logger.exception("Could not seed percent rows")
     yield
     if not db.is_closed():
         db.close()

@@ -51,7 +51,7 @@ async def create_deal(payload: DealCreate, user: Users = Depends(get_current_use
     counterparty = payload.counterparty.lstrip("@").lower()
     if counterparty == user.username:
         raise HTTPException(status_code=400, detail="Cannot deal with yourself")
-    other = await run_in_threadpool(DB().get_user_by_username, counterparty)
+    other = await DB().get_user_by_username(counterparty)
     if other is None:
         raise HTTPException(status_code=404, detail="Counterparty not registered")
     if payload.role == "buyer":
@@ -95,10 +95,21 @@ async def confirm_deal(deal_id: int, user: Users = Depends(get_current_user)) ->
         raise HTTPException(status_code=404, detail="Deal not found")
     if user.username not in (deal.buyer, deal.seller):
         raise HTTPException(status_code=403, detail="Forbidden")
-    info = await DB().update_deal_confirm(deal_id, user.username)
-    other = info["seller"] if info["position"] == "seller" else info["position"]
+    if deal.status != WAIT_CONFIRM:
+        raise HTTPException(status_code=400, detail="Deal is not awaiting confirmation")
+    await DB().update_deal_confirm(deal_id, user.username)
+    # Re-fetch deal so we see the freshly-written confirm flag.
+    deal = await DB().get_deal_by_id(deal_id)
     if deal.confirm_buyer and deal.confirm_seller:
         await DB().update_status_deal(deal_id, CONFIRMED)
+    other = deal.seller if user.username == deal.buyer else deal.buyer
+    await notifier.push(
+        other,
+        type_="deals",
+        title="Сделка подтверждена" if not (deal.confirm_buyer and deal.confirm_seller) else "Сделка готова к исполнению",
+        body=f"@{user.username} подтвердил(а) сделку #{deal_id}",
+        payload={"deal_id": deal_id},
+    )
     return await _deal_as_response(deal_id, user.username)
 
 
@@ -111,14 +122,26 @@ async def complete_deal(deal_id: int, user: Users = Depends(get_current_user)) -
         raise HTTPException(status_code=403, detail="Only the buyer can complete a deal")
     if deal.status not in (CONFIRMED, WAIT_FINAL_CONFIRM):
         raise HTTPException(status_code=400, detail="Deal not in completable state")
+    # Credit the seller — mirrors routers/user/manage_deal.py:78-91. If the
+    # buyer pays the commission the seller gets the full sum, otherwise
+    # commission is deducted from the seller payout.
+    percent_deal = await DB().get_percent_deal()
+    if deal.pay_comission == "buyer":
+        payout = float(deal.sum)
+    else:
+        payout = float(deal.sum) - (float(deal.sum) / 100 * float(percent_deal))
     await DB().update_status_deal(deal_id, SUCCESS)
+    await DB().add_balance_by_username(deal.seller, payout)
     other = deal.seller
     await notifier.push(
         other,
         type_="deals",
         title="Сделка завершена",
-        body=f"@{user.username} подтвердил(а) исполнение сделки #{deal_id}",
-        payload={"deal_id": deal_id},
+        body=(
+            f"@{user.username} подтвердил(а) исполнение сделки #{deal_id}. "
+            f"На баланс зачислено ${payout:.2f}."
+        ),
+        payload={"deal_id": deal_id, "amount": payout},
     )
     return await _deal_as_response(deal_id, user.username)
 

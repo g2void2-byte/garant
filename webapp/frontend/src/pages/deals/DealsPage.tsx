@@ -13,11 +13,11 @@ import { useDeals } from "@/api/hooks";
 
 const STATUS_OPTIONS = [
   { value: "", label: "Все статусы" },
-  { value: "WAIT_CONFIRM", label: "Ожидает" },
-  { value: "CONFIRMED", label: "Подтверждена" },
-  { value: "SUCCESS", label: "Успех" },
-  { value: "FAILED", label: "Отменена" },
-  { value: "ARBITRAGE", label: "Арбитраж" },
+  { value: "wait_confirm", label: "Ожидает" },
+  { value: "confirmed", label: "Подтверждена" },
+  { value: "success", label: "Успех" },
+  { value: "failed", label: "Отменена" },
+  { value: "arbitrage", label: "Арбитраж" },
 ];
 
 export default function DealsPage() {

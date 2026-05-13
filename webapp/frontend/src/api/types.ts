@@ -95,6 +95,13 @@ export interface InvoiceDto {
   asset: string;
 }
 
+export interface InvoiceStatusDto {
+  invoice_id: string;
+  status: string;
+  paid_amount: number;
+  credited: boolean;
+}
+
 export interface DepositDto {
   id: number;
   amount: number;

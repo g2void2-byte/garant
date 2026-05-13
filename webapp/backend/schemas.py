@@ -140,6 +140,13 @@ class InvoiceOut(BaseModel):
     asset: str
 
 
+class InvoiceStatusOut(BaseModel):
+    invoice_id: str
+    status: str
+    paid_amount: float = 0.0
+    credited: bool = False
+
+
 class WithdrawCreate(BaseModel):
     amount: float = Field(..., gt=0)
 

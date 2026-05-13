@@ -5,6 +5,7 @@ import type {
   DealDto,
   DepositDto,
   InvoiceDto,
+  InvoiceStatusDto,
   NotificationCountersDto,
   NotificationDto,
   ReviewDto,
@@ -222,6 +223,23 @@ export function useCreateDepositInvoice() {
   return useMutation({
     mutationFn: (amount: number) =>
       api.post("api/payments/deposit/invoice", { json: { amount } }).json<InvoiceDto>(),
+  });
+}
+
+export function useInvoiceStatus(invoiceId: string | number | null, enabled = true) {
+  return useQuery<InvoiceStatusDto>({
+    queryKey: ["payments", "invoice", String(invoiceId)],
+    queryFn: () =>
+      api.get(`api/payments/deposit/invoice/${invoiceId}`).json<InvoiceStatusDto>(),
+    enabled: enabled && invoiceId !== null && invoiceId !== "",
+    refetchInterval: (query) => {
+      const data = query.state.data as InvoiceStatusDto | undefined;
+      // Stop polling once the invoice is paid (and credited) or expired.
+      if (!data) return 4_000;
+      if (data.status === "paid") return false;
+      if (data.status === "expired") return false;
+      return 4_000;
+    },
   });
 }
 
