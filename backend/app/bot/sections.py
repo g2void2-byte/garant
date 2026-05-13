@@ -14,6 +14,7 @@ from __future__ import annotations
 import pathlib
 
 from aiogram.types import (
+    BufferedInputFile,
     FSInputFile,
     InlineKeyboardMarkup,
     Message,
@@ -23,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import async_session
 from ..models import Deal, DealStatus, User
-from . import keyboards, texts
+from . import banners, keyboards, texts
 
 # Section-specific banner images. Drop a PNG/JPG next to this file under
 # ``assets/`` (search.png, deals.png, profile.png, help.png) and the bot
@@ -32,7 +33,7 @@ from . import keyboards, texts
 _ASSETS_DIR = pathlib.Path(__file__).parent / "assets"
 
 
-def _banner(name: str) -> FSInputFile | None:
+def _static_banner(name: str) -> FSInputFile | None:
     for ext in ("png", "jpg", "jpeg", "webp"):
         path = _ASSETS_DIR / f"{name}.{ext}"
         if path.exists():
@@ -149,11 +150,10 @@ async def _send(
     text: str,
     *,
     keyboard: InlineKeyboardMarkup,
-    banner_name: str,
+    photo: FSInputFile | BufferedInputFile | None,
 ) -> None:
-    banner = _banner(banner_name)
-    if banner is not None:
-        await message.answer_photo(photo=banner, caption=text, reply_markup=keyboard)
+    if photo is not None:
+        await message.answer_photo(photo=photo, caption=text, reply_markup=keyboard)
     else:
         await message.answer(text, reply_markup=keyboard)
 
@@ -163,7 +163,7 @@ async def send_search(message: Message) -> None:
         message,
         texts.search_caption(),
         keyboard=keyboards.search_keyboard(),
-        banner_name="search",
+        photo=_static_banner("search"),
     )
 
 
@@ -188,7 +188,15 @@ async def send_deals(
         sales_count=stats["sales_count"],
         pending_payment_count=stats["pending_payment_count"],
     )
-    await _send(message, body, keyboard=kb, banner_name="deals")
+    photo = BufferedInputFile(
+        banners.render_deals(
+            total_volume=stats["total_volume"],
+            deal_count=stats["total_count"],
+            sale_count=stats["sales_count"],
+        ),
+        filename="deals.jpg",
+    )
+    await _send(message, body, keyboard=kb, photo=photo)
 
 
 async def send_profile(
@@ -207,7 +215,11 @@ async def send_profile(
         sales_count=stats["sales_count"],
         sales_sum=stats["sales_sum"],
     )
-    await _send(message, body, keyboard=keyboards.profile_keyboard(), banner_name="profile")
+    photo = BufferedInputFile(
+        banners.render_profile(username=user.username, deposit=float(user.balance or 0)),
+        filename="profile.jpg",
+    )
+    await _send(message, body, keyboard=keyboards.profile_keyboard(), photo=photo)
 
 
 async def send_help(message: Message) -> None:
@@ -215,7 +227,7 @@ async def send_help(message: Message) -> None:
         message,
         texts.help_caption(),
         keyboard=keyboards.help_keyboard(),
-        banner_name="help",
+        photo=_static_banner("help"),
     )
 
 
