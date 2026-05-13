@@ -84,6 +84,7 @@ app.add_middleware(
 )
 
 from .routers import (  # noqa: E402
+    account,
     categories,
     deals,
     me,
@@ -101,6 +102,7 @@ from .routers import (  # noqa: E402
 for r in (
     me,
     pin,
+    account,
     categories,
     services,
     users,

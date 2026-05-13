@@ -386,3 +386,28 @@ class WalletWithdrawal(Base):
 
     user: Mapped[User] = relationship(foreign_keys=[user_id], lazy="selectin")
     currency: Mapped[Currency] = relationship(foreign_keys=[currency_id], lazy="selectin")
+
+
+# ── Account transfer (PR-CA) ───────────────────────────
+
+
+class AccountTransferCode(Base):
+    """One-time code that re-points a user's ``tg_user_id`` to a new
+    Telegram account.
+
+    Issued by the existing (source) account from a PIN-gated endpoint and
+    delivered via the bot DM. Consumed by the new (target) account once
+    they enter the code on the new device.
+    """
+
+    __tablename__ = "account_transfer_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    target_tg_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    source_user: Mapped[User] = relationship(foreign_keys=[source_user_id], lazy="selectin")

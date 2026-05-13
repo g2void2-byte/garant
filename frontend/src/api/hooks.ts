@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
+  AccountTransferConfirmDto,
+  AccountTransferStartDto,
+  AccountTransferStatusDto,
   CategoryDto,
   CurrencyDto,
   DealDto,
@@ -324,6 +327,47 @@ export function useConfirmPinReset() {
     mutationFn: (body: { code: string; new_pin: string }) =>
       api.post("api/pin/reset/confirm", { json: body }).json<PinTokenDto>(),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pin"] }),
+  });
+}
+
+// ── Account transfer (PR-CA) ───────────────────────────
+
+export function useAccountTransferStatus() {
+  return useQuery<AccountTransferStatusDto>({
+    queryKey: ["account", "transfer", "status"],
+    queryFn: () => api.get("api/account/transfer/status").json(),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useStartAccountTransfer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post("api/account/transfer/start").json<AccountTransferStartDto>(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["account", "transfer"] }),
+  });
+}
+
+export function useCancelAccountTransfer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post("api/account/transfer/cancel").json<AccountTransferStatusDto>(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["account", "transfer"] }),
+  });
+}
+
+export function useConfirmAccountTransfer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) =>
+      api
+        .post("api/account/transfer/confirm", { json: { code } })
+        .json<AccountTransferConfirmDto>(),
+    onSuccess: () => {
+      qc.invalidateQueries();
+    },
   });
 }
 
