@@ -59,6 +59,9 @@ class UserOut(BaseModel):
     deals_sum: float
     online: bool
     forums: list[ForumOut]
+    dm_deals: bool = True
+    dm_deposits: bool = True
+    dm_system: bool = True
 
 
 class UserUpdate(BaseModel):
@@ -67,6 +70,9 @@ class UserUpdate(BaseModel):
     banner_url: str | None = None
     photo_url: str | None = None
     forums: list[ForumOut] | None = None
+    dm_deals: bool | None = None
+    dm_deposits: bool | None = None
+    dm_system: bool | None = None
 
     @field_validator("photo_url")
     @classmethod

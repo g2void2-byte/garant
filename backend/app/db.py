@@ -116,4 +116,16 @@ def _apply_lightweight_migrations(sync_conn) -> None:
                     text(f"ALTER TABLE services ADD COLUMN {col} {ddl}")
                 )
 
+    if inspector.has_table("users"):
+        existing = {col["name"] for col in inspector.get_columns("users")}
+        for col, ddl in [
+            ("dm_deals", "BOOLEAN NOT NULL DEFAULT 1"),
+            ("dm_deposits", "BOOLEAN NOT NULL DEFAULT 1"),
+            ("dm_system", "BOOLEAN NOT NULL DEFAULT 1"),
+        ]:
+            if col not in existing:
+                sync_conn.execute(
+                    text(f"ALTER TABLE users ADD COLUMN {col} {ddl}")
+                )
+
     # ``media`` is created from scratch by create_all() above; no migration needed.
