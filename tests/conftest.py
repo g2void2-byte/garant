@@ -72,8 +72,9 @@ async def _recreate_test_db() -> None:
 
 def _alembic_upgrade_head() -> None:
     """Run ``alembic upgrade head`` against the freshly-created test DB."""
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     repo_root = pathlib.Path(__file__).resolve().parents[1]
     cfg = Config(str(repo_root / "alembic.ini"))
