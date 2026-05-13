@@ -62,6 +62,9 @@ export function useUpdateMe() {
         banner_url: string | null;
         photo_url: string | null;
         forums: { name: string; url: string }[];
+        dm_deals: boolean;
+        dm_deposits: boolean;
+        dm_system: boolean;
       }>,
     ) => api.patch("api/me", { json: body }).json<UserCardDto>(),
     onSuccess: (data) => {

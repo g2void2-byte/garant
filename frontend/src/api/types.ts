@@ -38,6 +38,9 @@ export interface UserCardDto {
   banner_url?: string | null;
   description: string;
   forums: { name: string; url: string }[];
+  dm_deals?: boolean;
+  dm_deposits?: boolean;
+  dm_system?: boolean;
 }
 
 export type DealStatus =

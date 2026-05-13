@@ -37,6 +37,9 @@ def _user_out(user: User) -> UserOut:
         deals_sum=0,
         online=True,
         forums=[ForumOut(name=f.name, url=f.url) for f in user.forums],
+        dm_deals=bool(user.dm_deals),
+        dm_deposits=bool(user.dm_deposits),
+        dm_system=bool(user.dm_system),
     )
 
 

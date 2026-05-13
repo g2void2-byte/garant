@@ -132,6 +132,10 @@ class User(Base):
     pin_locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     pin_reset_code_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pin_reset_expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # PR-G — DM notification preferences (one toggle per NotificationType bucket).
+    dm_deals: Mapped[bool] = mapped_column(Boolean, default=True)
+    dm_deposits: Mapped[bool] = mapped_column(Boolean, default=True)
+    dm_system: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     services: Mapped[list[Service]] = relationship(back_populates="owner", lazy="selectin")
