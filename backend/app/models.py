@@ -49,6 +49,19 @@ class InvoiceProvider(str, enum.Enum):
     cryptobot = "cryptobot"
 
 
+class WalletDepositStatus(str, enum.Enum):
+    pending = "pending"
+    paid = "paid"
+    expired = "expired"
+
+
+class WalletWithdrawStatus(str, enum.Enum):
+    pending = "pending"     # awaiting admin review
+    approved = "approved"   # admin OK, funds locked, waiting for the timer
+    sent = "sent"           # paid out
+    rejected = "rejected"   # declined, funds returned
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -201,3 +214,101 @@ class Forum(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     owner: Mapped[User] = relationship(back_populates="forums", lazy="selectin")
+
+
+# ── Multi-currency wallet ──────────────────────────────
+
+
+class Currency(Base):
+    """A supported asset.
+
+    The wallet is a thin UI layer over CryptoBot: ``code`` matches the
+    CryptoBot asset identifier and ``decimals`` controls how amounts are
+    rendered in the client.
+    """
+
+    __tablename__ = "currencies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    network: Mapped[str] = mapped_column(String(32), default="")
+    icon_url: Mapped[str] = mapped_column(Text, default="")
+    decimals: Mapped[int] = mapped_column(Integer, default=2)
+    min_deposit: Mapped[float] = mapped_column(Numeric(18, 8), default=1)
+    min_withdraw: Mapped[float] = mapped_column(Numeric(18, 8), default=1)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class UserBalance(Base):
+    """A user's balance in a specific currency.
+
+    Funds are split into ``amount`` (spendable) and ``locked`` (held
+    while a withdrawal is pending or during the 72h cool-down).
+    """
+
+    __tablename__ = "user_balances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
+    amount: Mapped[float] = mapped_column(Numeric(18, 8), default=0)
+    locked: Mapped[float] = mapped_column(Numeric(18, 8), default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped[User] = relationship(foreign_keys=[user_id], lazy="selectin")
+    currency: Mapped[Currency] = relationship(foreign_keys=[currency_id], lazy="selectin")
+
+
+class WalletDeposit(Base):
+    """A CryptoBot invoice issued for a wallet top-up."""
+
+    __tablename__ = "wallet_deposits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
+    amount: Mapped[float] = mapped_column(Numeric(18, 8))
+    provider: Mapped[InvoiceProvider] = mapped_column(
+        Enum(InvoiceProvider), default=InvoiceProvider.cryptobot
+    )
+    provider_invoice_id: Mapped[str] = mapped_column(String(256), index=True)
+    pay_url: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[WalletDepositStatus] = mapped_column(
+        Enum(WalletDepositStatus), default=WalletDepositStatus.pending
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    user: Mapped[User] = relationship(foreign_keys=[user_id], lazy="selectin")
+    currency: Mapped[Currency] = relationship(foreign_keys=[currency_id], lazy="selectin")
+
+
+class WalletWithdrawal(Base):
+    """A withdrawal request manually processed by an admin.
+
+    Funds move from ``UserBalance.amount`` to ``UserBalance.locked`` on
+    creation. On approval the admin sends the payout and marks the row
+    ``sent``; on rejection the funds are returned to ``amount``.
+    """
+
+    __tablename__ = "wallet_withdrawals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
+    amount: Mapped[float] = mapped_column(Numeric(18, 8))
+    address: Mapped[str] = mapped_column(String(256))
+    status: Mapped[WalletWithdrawStatus] = mapped_column(
+        Enum(WalletWithdrawStatus), default=WalletWithdrawStatus.pending
+    )
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    admin_note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    user: Mapped[User] = relationship(foreign_keys=[user_id], lazy="selectin")
+    currency: Mapped[Currency] = relationship(foreign_keys=[currency_id], lazy="selectin")

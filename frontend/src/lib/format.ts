@@ -1,3 +1,12 @@
+export function formatCurrency(value: number, code: string, decimals = 2): string {
+  if (!Number.isFinite(value)) return `0 ${code}`;
+  const fixed = value.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: decimals,
+  });
+  return `${fixed} ${code}`;
+}
+
 export function formatMoney(value: number): string {
   if (!Number.isFinite(value)) return "$0";
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;

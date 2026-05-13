@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
   CategoryDto,
+  CurrencyDto,
   DealDto,
   DepositDto,
   InvoiceDto,
@@ -14,6 +15,9 @@ import type {
   ServiceDto,
   SupportPersonDto,
   UserCardDto,
+  WalletBalanceDto,
+  WalletDepositDto,
+  WalletWithdrawalDto,
 } from "./types";
 
 export function useMe() {
@@ -297,5 +301,70 @@ export function useConfirmPinReset() {
     mutationFn: (body: { code: string; new_pin: string }) =>
       api.post("api/pin/reset/confirm", { json: body }).json<PinTokenDto>(),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pin"] }),
+  });
+}
+
+// ── Wallet ──────────────────────────────────────────────
+
+export function useCurrencies() {
+  return useQuery<CurrencyDto[]>({
+    queryKey: ["wallet", "currencies"],
+    queryFn: () => api.get("api/wallet/currencies").json(),
+    staleTime: 60 * 60_000,
+  });
+}
+
+export function useWalletBalances() {
+  return useQuery<WalletBalanceDto[]>({
+    queryKey: ["wallet", "balances"],
+    queryFn: () => api.get("api/wallet/balances").json(),
+    staleTime: 15_000,
+  });
+}
+
+export function useWalletDeposits() {
+  return useQuery<WalletDepositDto[]>({
+    queryKey: ["wallet", "deposits"],
+    queryFn: () => api.get("api/wallet/deposits").json(),
+  });
+}
+
+export function useWalletDeposit(id: number | undefined) {
+  return useQuery<WalletDepositDto>({
+    queryKey: ["wallet", "deposit", id],
+    queryFn: () => api.get(`api/wallet/deposits/${id}`).json(),
+    enabled: !!id,
+    refetchInterval: (q) => (q.state.data?.status === "pending" ? 5_000 : false),
+  });
+}
+
+export function useCreateWalletDeposit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { currency_code: string; amount: number }) =>
+      api.post("api/wallet/deposits", { json: body }).json<WalletDepositDto>(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["wallet", "deposits"] });
+      qc.invalidateQueries({ queryKey: ["wallet", "balances"] });
+    },
+  });
+}
+
+export function useWalletWithdrawals() {
+  return useQuery<WalletWithdrawalDto[]>({
+    queryKey: ["wallet", "withdrawals"],
+    queryFn: () => api.get("api/wallet/withdrawals").json(),
+  });
+}
+
+export function useCreateWalletWithdrawal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { currency_code: string; amount: number; address: string }) =>
+      api.post("api/wallet/withdrawals", { json: body }).json<WalletWithdrawalDto>(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["wallet", "withdrawals"] });
+      qc.invalidateQueries({ queryKey: ["wallet", "balances"] });
+    },
   });
 }
