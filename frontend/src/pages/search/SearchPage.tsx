@@ -32,7 +32,7 @@ export default function SearchPage() {
 
   return (
     <Page>
-      <Header title="Поиск" subtitle="Найдите гаранта, услугу или арбитра" />
+      <Header title="Поиск" subtitle="Найдите нужного пользователя или услугу за секунды" />
       <div className="px-4 space-y-3">
         <ToggleTabs
           value={mode}

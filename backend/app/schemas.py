@@ -303,5 +303,7 @@ class SupportPersonOut(BaseModel):
     id: int
     user_id: int
     username: str | None
+    display_name: str
+    photo_url: str | None
     admin: int
     prefix: str

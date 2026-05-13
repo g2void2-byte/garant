@@ -15,6 +15,8 @@ def _person_out(user: User, prefix: str) -> SupportPersonOut:
         id=user.id,
         user_id=user.tg_user_id,
         username=user.username or "",
+        display_name=user.display_name or (user.username or ""),
+        photo_url=user.photo_url,
         admin=1 if user.is_admin else 0,
         prefix=prefix,
     )
