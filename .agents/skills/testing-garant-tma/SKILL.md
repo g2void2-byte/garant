@@ -14,7 +14,15 @@ Without these tokens, use `ALLOW_UNSIGNED_INIT_DATA=1` and `RUN_BOT=0` for local
 
 ## Local Dev Setup
 
-### 1. Create `.env` file
+### 1. Start PostgreSQL (the only supported DB)
+
+```bash
+docker run -d --name garant-pg \
+  -e POSTGRES_USER=garant -e POSTGRES_PASSWORD=garant -e POSTGRES_DB=garant \
+  -p 5432:5432 postgres:16-alpine
+```
+
+### 2. Create `.env` file
 
 ```bash
 cat > .env << 'EOF'
@@ -23,21 +31,22 @@ CRYPTOBOT_TOKEN=000000:FAKE
 WEBAPP_URL=http://localhost:5173
 WEBAPP_PORT=8080
 ALLOWED_ORIGINS=http://localhost:5173,http://localhost:8080
-DATABASE_URL=sqlite+aiosqlite:///./test_database.db
+DATABASE_URL=postgresql+asyncpg://garant:garant@localhost:5432/garant
 RUN_BOT=0
 ALLOW_UNSIGNED_INIT_DATA=1
 EOF
 ```
 
-### 2. Start backend
+### 3. Start backend
 
 ```bash
 uvicorn backend.app.main:app --host 0.0.0.0 --port 8080
 ```
 
-The backend auto-creates tables and seeds 16 categories on first run.
+On startup the backend runs `alembic upgrade head` (creates 17 tables) and
+seeds 16 categories + 10 currencies + default app settings.
 
-### 3. Start frontend
+### 4. Start frontend
 
 ```bash
 cd frontend && VITE_API_URL=http://localhost:8080 npm run dev
@@ -75,17 +84,13 @@ Then refresh the page. Without this, API calls from the frontend might return 42
 
 ## Setting User Balance for Deal Testing
 
-Deal creation requires buyer balance >= amount + commission (default 5%). Use Python sqlite3 to set balance directly:
+Deal creation requires buyer balance >= amount + commission (default 5%). Set
+balance directly with `psql` (inside the running postgres container):
 
-```python
-import sqlite3
-conn = sqlite3.connect('test_database.db')
-conn.execute('UPDATE users SET balance=200 WHERE tg_user_id=111')
-conn.commit()
-conn.close()
+```bash
+docker exec -i garant-pg psql -U garant -d garant -c \
+  "UPDATE users SET balance=200 WHERE tg_user_id=111"
 ```
-
-Note: `sqlite3` CLI tool might not be installed — use Python's sqlite3 module instead.
 
 ## Deal State Machine
 
@@ -138,6 +143,21 @@ wait_confirm → (both confirm) → confirmed → (buyer completes) → success
 | `/profile` | User profile, balance, services |
 | `/profile/deposit` | CryptoBot deposit page |
 | `/u/:username` | Public user profile |
+
+## Pytest
+
+Tests run against the same PostgreSQL instance, in a separate `garant_test`
+database auto-created by `tests/conftest.py`. The fixture drops + recreates
+that DB at session start, runs `alembic upgrade head`, then truncates all
+tables between each test.
+
+```bash
+source .venv/bin/activate
+pytest -v
+```
+
+Override DB connection via env vars: `POSTGRES_HOST`, `POSTGRES_PORT`,
+`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_ADMIN_DB`, `POSTGRES_TEST_DB`.
 
 ## Known Limitations
 

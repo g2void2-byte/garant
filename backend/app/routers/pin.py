@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -69,16 +69,15 @@ class PinResetRequestOut(BaseModel):
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    # Tz-naive UTC to match ``DateTime`` columns in the DB. Postgres
+    # rejects tz-aware values written to ``TIMESTAMP WITHOUT TIME ZONE``.
+    return datetime.utcnow()
 
 
 def _is_locked(user) -> bool:
     if user.pin_locked_until is None:
         return False
-    locked_until = user.pin_locked_until
-    if locked_until.tzinfo is None:
-        locked_until = locked_until.replace(tzinfo=timezone.utc)
-    return locked_until > _now()
+    return user.pin_locked_until > _now()
 
 
 def _attempts_left(user) -> int:
@@ -218,10 +217,7 @@ async def pin_reset_confirm(
     _ensure_format(body.new_pin)
     if not user.pin_reset_code_hash or not user.pin_reset_expires:
         raise HTTPException(400, "Сначала запросите код сброса")
-    expires = user.pin_reset_expires
-    if expires.tzinfo is None:
-        expires = expires.replace(tzinfo=timezone.utc)
-    if expires < _now():
+    if user.pin_reset_expires < _now():
         user.pin_reset_code_hash = None
         user.pin_reset_expires = None
         await session.commit()

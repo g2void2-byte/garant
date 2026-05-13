@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from .config import settings
-from .db import async_session, create_tables
+from .db import async_session, run_migrations
 from .seed import run_seed
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ async def _inactivity_loop(interval_seconds: int) -> None:
 async def lifespan(app: FastAPI):
     global _bot_task, _inactivity_task
 
-    await create_tables()
+    await run_migrations()
 
     async with async_session() as session:
         await run_seed(session)

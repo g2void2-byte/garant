@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     webapp_port: int = 8080
     allowed_origins: str = "http://localhost:5173"
 
-    database_url: str = "sqlite+aiosqlite:///./database.db"
+    database_url: str = "postgresql+asyncpg://garant:garant@localhost:5432/garant"
 
     run_bot: bool = True
     allow_unsigned_init_data: bool = False
