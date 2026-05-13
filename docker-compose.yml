@@ -1,0 +1,103 @@
+# Dev stack: `docker compose up` brings the whole app online.
+#
+#   - postgres:16-alpine  → :5432  (named volume, survives compose down)
+#   - redis:7-alpine      → :6379  (ephemeral; only used when REDIS_URL set)
+#   - backend             → :8080  (uvicorn --reload, alembic on boot)
+#   - frontend            → :5173  (vite hot-reload)
+#
+# Code is bind-mounted, so edits trigger reload without rebuilds.
+# Copy `.env.compose.example` to `.env` and fill in BOT_TOKEN /
+# CRYPTOBOT_TOKEN before `docker compose up`.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: garant
+      POSTGRES_PASSWORD: garant
+      POSTGRES_DB: garant
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U garant -d garant"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://garant:garant@postgres:5432/garant
+      # Empty REDIS_URL = in-process broadcast + rate-limit; set to
+      # redis://redis:6379/0 to exercise the P3.5 multi-replica path.
+      REDIS_URL: ${REDIS_URL:-}
+      BOT_TOKEN: ${BOT_TOKEN:-0000000000:FAKE}
+      CRYPTOBOT_TOKEN: ${CRYPTOBOT_TOKEN:-000000:FAKE}
+      WEBAPP_URL: ${WEBAPP_URL:-http://localhost:5173}
+      WEBAPP_PORT: "8080"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      RUN_BOT: ${RUN_BOT:-0}
+      ALLOW_UNSIGNED_INIT_DATA: ${ALLOW_UNSIGNED_INIT_DATA:-1}
+      BOT_FORUMS_URL: ${BOT_FORUMS_URL:-}
+      BOT_COMMUNITY_CHAT_URL: ${BOT_COMMUNITY_CHAT_URL:-}
+      BOT_ARBITRATION_URL: ${BOT_ARBITRATION_URL:-}
+      BOT_DOCS_URL: ${BOT_DOCS_URL:-}
+      BOT_SUPPORT_USERNAME: ${BOT_SUPPORT_USERNAME:-}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/app/backend
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./tests:/app/tests
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    environment:
+      # SPA in the browser calls the backend directly on the host's
+      # published port 8080 (CORS handles the cross-origin part). This
+      # avoids needing to rewrite vite.config.ts proxy target.
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/tailwind.config.ts:/app/tailwind.config.ts
+      - ./frontend/postcss.config.js:/app/postcss.config.js
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  postgres_data:

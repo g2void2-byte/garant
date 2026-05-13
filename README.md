@@ -8,27 +8,39 @@ Escrow-сервис для безопасных сделок между поль
 - **Frontend**: React 18, TypeScript, Vite, TailwindCSS, Framer Motion, TanStack Query
 - **Payments**: AsyncPayments (CryptoBot SDK)
 
-## Quick start
+## Quick start — Docker Compose (recommended)
+
+One command brings up the full stack (Postgres + Redis + backend + frontend):
 
 ```bash
-# 1. Clone
 git clone https://github.com/g2void2-byte/garant.git && cd garant
+cp .env.compose.example .env          # optional: fill in BOT_TOKEN / CRYPTOBOT_TOKEN for live bot tests
+docker compose up
+```
 
-# 2. PostgreSQL (Docker)
+- Backend: <http://localhost:8080> (uvicorn `--reload`, alembic runs on boot)
+- Frontend: <http://localhost:5173> (vite hot-reload)
+- Postgres: `localhost:5432` (user/pass/db = `garant`)
+- Redis: `localhost:6379` (set `REDIS_URL=redis://redis:6379/0` in `.env` to enable the P3.5 path)
+
+Code is bind-mounted, so edits trigger hot-reload without rebuilds. Add `-d` to detach. Use `docker compose logs -f backend` to tail. Use `docker compose down -v` to wipe the Postgres volume.
+
+## Manual setup (without Docker)
+
+```bash
+# 1. PostgreSQL
 docker run -d --name garant-pg \
-  -e POSTGRES_USER=garant \
-  -e POSTGRES_PASSWORD=garant \
-  -e POSTGRES_DB=garant \
+  -e POSTGRES_USER=garant -e POSTGRES_PASSWORD=garant -e POSTGRES_DB=garant \
   -p 5432:5432 postgres:16-alpine
 
-# 3. Backend
+# 2. Backend
 cp .env.example .env          # fill in BOT_TOKEN, CRYPTOBOT_TOKEN, WEBAPP_URL
 python -m venv .venv && source .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
 uvicorn backend.app.main:app --host 0.0.0.0 --port 8080
 # Schema is applied automatically (alembic upgrade head) at startup.
 
-# 4. Frontend (separate terminal)
+# 3. Frontend (separate terminal)
 cd frontend
 npm install
 npm run dev                   # -> http://localhost:5173

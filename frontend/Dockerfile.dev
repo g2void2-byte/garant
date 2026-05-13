@@ -1,0 +1,19 @@
+# Dev image for the Vite frontend.
+#
+# Installs node_modules at build time, then expects the repo's frontend/
+# directory to be bind-mounted at /app at runtime. Vite hot-reload picks
+# up edits immediately.
+
+FROM node:20-alpine AS base
+
+WORKDIR /app
+
+# Install deps from package-lock.json (cached layer).
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+EXPOSE 5173
+
+# host=0.0.0.0 is already set in vite.config.ts; --host flag is a safety
+# net for environments where the config file is replaced.
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
