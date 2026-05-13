@@ -76,6 +76,18 @@ class ServiceCreate(BaseModel):
     price: float = 0
 
 
+class ServiceUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    price: float | None = None
+    status: str | None = None  # draft / active / paused (banned only via admin)
+
+
+class ServiceModerationDecision(BaseModel):
+    action: str  # "ban" | "unban"
+    reason: str = ""
+
+
 # ── Deals ──────────────────────────────────────────────
 
 class DealCreate(BaseModel):
