@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
-from ..deps import CurrentUser, SessionDep
+from ..deps import CurrentUser, PinUser, SessionDep
 from ..models import (
     Currency,
     WalletDeposit,
@@ -153,7 +153,7 @@ async def get_deposit(deposit_id: int, user: CurrentUser, session: SessionDep):
 @router.post("/withdrawals", response_model=WalletWithdrawalOut)
 async def create_user_withdrawal(
     body: WalletWithdrawCreateReq,
-    user: CurrentUser,
+    user: PinUser,
     session: SessionDep,
     _rl: RLWithdrawal,
 ):
