@@ -94,6 +94,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Admin PR-CDE — global maintenance switch. Reads ``AppSettings`` once
+# per request and short-circuits state-changing calls when on.
+from .maintenance import maintenance_middleware  # noqa: E402
+
+app.middleware("http")(maintenance_middleware)
+
 from .routers import (  # noqa: E402
     account,
     arbitration,
@@ -151,6 +157,30 @@ app.mount(
 )
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+
+
+@app.get("/api/settings/maintenance")
+async def public_maintenance_status():
+    """Public read-only probe of the maintenance flag.
+
+    Returned to the TMA on every poll so the banner overlay can show
+    even for un-logged-in users. Returns ``{"enabled": false,
+    "message": ""}`` if the row is missing.
+    """
+    from sqlalchemy import select as _select
+
+    from .models import AppSettings
+
+    async with async_session() as session:
+        row = (
+            await session.execute(_select(AppSettings).order_by(AppSettings.id).limit(1))
+        ).scalar_one_or_none()
+    if row is None:
+        return {"enabled": False, "message": ""}
+    return {
+        "enabled": bool(row.maintenance_enabled),
+        "message": row.maintenance_message,
+    }
 
 
 @app.get("/health")

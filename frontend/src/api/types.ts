@@ -526,3 +526,330 @@ export interface AdminCommentUpdateBody {
   rating?: number;
   clear_rating?: boolean;
 }
+
+// ── Admin PR-CDE: wallets / finance / settings / broadcasts / analytics ─
+
+export interface AdminUserBalanceDto {
+  user_id: number;
+  username: string | null;
+  display_name: string;
+  currency_id: number;
+  currency_code: string;
+  currency_name: string;
+  decimals: number;
+  amount: number;
+  locked: number;
+  total: number;
+  updated_at: string | null;
+}
+
+export interface AdminWalletListItemDto {
+  user_id: number;
+  username: string | null;
+  display_name: string;
+  photo_url: string | null;
+  is_admin: boolean;
+  is_arbiter: boolean;
+  is_vip: boolean;
+  is_banned: boolean;
+  is_frozen: boolean;
+  balances: AdminUserBalanceDto[];
+  total_usd_estimate: number;
+}
+
+export interface AdminWalletListDto {
+  items: AdminWalletListItemDto[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AdminWalletAdjustBody {
+  currency_code: string;
+  amount: number;
+  reason?: string;
+}
+
+export interface AdminDepositDto {
+  id: number;
+  user_id: number;
+  username: string | null;
+  display_name: string;
+  currency_code: string;
+  amount: number;
+  status: string;
+  provider_invoice_id: string;
+  pay_url: string;
+  created_at: string;
+  paid_at: string | null;
+}
+
+export interface AdminDepositListDto {
+  items: AdminDepositDto[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AdminWithdrawalDto {
+  id: number;
+  user_id: number;
+  username: string | null;
+  display_name: string;
+  currency_code: string;
+  amount: number;
+  address: string;
+  status: string;
+  admin_note: string;
+  created_at: string;
+  processed_at: string | null;
+}
+
+export interface AdminWithdrawalListDto {
+  items: AdminWithdrawalDto[];
+  counters: Record<string, number>;
+}
+
+export interface AdminWithdrawalDecisionBody {
+  action: "approve" | "reject" | "mark_sent";
+  note?: string;
+}
+
+export interface AdminTreasuryBalanceDto {
+  currency_id: number;
+  currency_code: string;
+  currency_name: string;
+  decimals: number;
+  accrued: number;
+  withdrawn: number;
+  available: number;
+}
+
+export interface AdminTreasuryOverviewDto {
+  balances: AdminTreasuryBalanceDto[];
+  total_withdrawals: number;
+}
+
+export interface AdminTreasuryWithdrawBody {
+  currency_code: string;
+  amount: number;
+  address: string;
+  confirm: boolean;
+  note?: string;
+}
+
+export interface AdminTreasuryWithdrawDto {
+  id: number;
+  actor_id: number;
+  currency_code: string;
+  amount: number;
+  address: string;
+  status: string;
+  note: string;
+  cryptobot_transfer_id: string | null;
+  created_at: string;
+}
+
+export interface AdminSettingsDto {
+  deal_commission_percent: number;
+  invoice_commission_percent: number;
+  vip_commission_percent: number;
+  min_deposit: number;
+  min_withdraw: number;
+  inactivity_pending_confirmation_days: number;
+  inactivity_pending_cancellation_days: number;
+  max_active_services_per_user: number;
+  maintenance_enabled: boolean;
+  maintenance_message: string;
+  auto_withdraw_enabled: boolean;
+}
+
+export interface AdminSettingsUpdateBody {
+  deal_commission_percent?: number;
+  invoice_commission_percent?: number;
+  vip_commission_percent?: number;
+  min_deposit?: number;
+  min_withdraw?: number;
+  inactivity_pending_confirmation_days?: number;
+  inactivity_pending_cancellation_days?: number;
+  max_active_services_per_user?: number;
+  maintenance_enabled?: boolean;
+  maintenance_message?: string;
+  auto_withdraw_enabled?: boolean;
+}
+
+export interface AdminCategoryDto {
+  id: number;
+  slug: string;
+  name: string;
+  icon: string;
+}
+
+export interface AdminCategoryUpsertBody {
+  slug: string;
+  name: string;
+  icon?: string;
+}
+
+export interface AdminCurrencyDto {
+  id: number;
+  code: string;
+  name: string;
+  network: string;
+  icon_url: string;
+  decimals: number;
+  min_deposit: number;
+  min_withdraw: number;
+  is_active: boolean;
+  sort_order: number;
+}
+
+export interface AdminCurrencyUpsertBody {
+  code: string;
+  name?: string;
+  network?: string;
+  icon_url?: string;
+  decimals?: number;
+  min_deposit?: number;
+  min_withdraw?: number;
+  is_active?: boolean;
+  sort_order?: number;
+}
+
+export interface AdminBroadcastDto {
+  id: number;
+  actor_id: number;
+  actor_username: string | null;
+  title: string;
+  body: string;
+  deeplink: string | null;
+  audience_role: string | null;
+  audience_active_days: number | null;
+  audience_min_deals: number | null;
+  dispatch_inapp: boolean;
+  dispatch_dm: boolean;
+  status: string;
+  total_recipients: number;
+  delivered_count: number;
+  failed_count: number;
+  scheduled_at: string | null;
+  sent_at: string | null;
+  created_at: string;
+}
+
+export interface AdminBroadcastListDto {
+  items: AdminBroadcastDto[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AdminBroadcastCreateBody {
+  title?: string;
+  body: string;
+  deeplink?: string;
+  audience_role?: "admin" | "arbiter" | "vip" | "regular";
+  audience_active_days?: number;
+  audience_min_deals?: number;
+  dispatch_inapp?: boolean;
+  dispatch_dm?: boolean;
+  scheduled_at?: string;
+}
+
+export interface AdminBroadcastPreviewDto {
+  total_recipients: number;
+}
+
+export interface AdminAnalyticsKpiDto {
+  dau: number;
+  wau: number;
+  mau: number;
+  new_users_24h: number;
+  new_users_7d: number;
+  deals_24h: number;
+  deals_7d: number;
+  deals_volume_usd_30d: number;
+  open_arbitration: number;
+  pending_withdrawals: number;
+}
+
+export interface AdminAnalyticsSeriesPointDto {
+  date: string;
+  value: number;
+}
+
+export interface AdminAnalyticsSeriesDto {
+  deals_count_30d: AdminAnalyticsSeriesPointDto[];
+  deals_volume_30d: AdminAnalyticsSeriesPointDto[];
+  new_users_30d: AdminAnalyticsSeriesPointDto[];
+  deposits_30d: AdminAnalyticsSeriesPointDto[];
+  withdrawals_30d: AdminAnalyticsSeriesPointDto[];
+}
+
+export interface AdminAnalyticsTopUserDto {
+  user_id: number;
+  username: string | null;
+  display_name: string;
+  value: number;
+}
+
+export interface AdminAnalyticsTopListsDto {
+  top_sellers: AdminAnalyticsTopUserDto[];
+  top_buyers: AdminAnalyticsTopUserDto[];
+  top_arbiters: AdminAnalyticsTopUserDto[];
+}
+
+export interface AdminSystemStatusDto {
+  db_ok: boolean;
+  db_latency_ms: number | null;
+  redis_ok: boolean;
+  redis_latency_ms: number | null;
+  cryptobot_configured: boolean;
+  bot_configured: boolean;
+  backend_version: string;
+  started_at: string | null;
+  uptime_seconds: number;
+}
+
+export interface Admin2faStatusDto {
+  enabled: boolean;
+}
+
+export interface Admin2faSetupDto {
+  secret: string;
+  otpauth_url: string;
+}
+
+export interface Admin2faConfirmBody {
+  secret: string;
+  code: string;
+}
+
+export interface Admin2faVerifyBody {
+  code: string;
+}
+
+export interface AdminAuditLogDto {
+  id: number;
+  actor_id: number | null;
+  actor_username: string | null;
+  action: string;
+  target_type: string | null;
+  target_id: number | null;
+  reason: string | null;
+  payload: Record<string, unknown> | null;
+  ip: string | null;
+  created_at: string;
+}
+
+export interface AdminAuditLogListDto {
+  items: AdminAuditLogDto[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface MaintenanceStatusDto {
+  enabled: boolean;
+  message: string;
+}
