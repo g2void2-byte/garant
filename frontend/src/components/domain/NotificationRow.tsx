@@ -1,5 +1,6 @@
 import { motion, useMotionValue, useTransform } from "framer-motion";
 import { Bell, Briefcase, Wallet, Check } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import type { NotificationDto } from "@/api/types";
 import { cn } from "@/lib/cn";
 import { relativeTime } from "@/lib/format";
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export function NotificationRow({ item, index = 0, onRead }: Props) {
+  const navigate = useNavigate();
   const x = useMotionValue(0);
   const bg = useTransform(x, [-80, 0], ["var(--success)", "transparent"]);
   const Icon = ICONS[item.type] ?? Bell;
@@ -41,9 +43,18 @@ export function NotificationRow({ item, index = 0, onRead }: Props) {
         onDragEnd={(_, info) => {
           if (info.offset.x < -50) onRead?.(item.id);
         }}
+        onClick={() => navigate(`/notifications/${item.id}`)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            navigate(`/notifications/${item.id}`);
+          }
+        }}
         style={{ x }}
         className={cn(
-          "relative flex items-start gap-3 p-3 rounded-card border bg-panel",
+          "relative flex items-start gap-3 p-3 rounded-card border bg-panel cursor-pointer",
           item.is_read ? "border-border" : "border-accent/40",
         )}
       >

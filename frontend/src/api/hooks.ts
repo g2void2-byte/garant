@@ -346,6 +346,14 @@ export function useNotifications(type?: string) {
   });
 }
 
+export function useNotification(id: number | undefined) {
+  return useQuery<NotificationDto>({
+    queryKey: ["notifications", "detail", id],
+    queryFn: () => api.get(`api/notifications/${id}`).json(),
+    enabled: typeof id === "number" && Number.isFinite(id),
+  });
+}
+
 export function useNotificationCounters() {
   return useQuery<NotificationCountersDto>({
     queryKey: ["notifications", "counters"],
