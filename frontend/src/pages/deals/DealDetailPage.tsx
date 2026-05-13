@@ -16,13 +16,16 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Sheet } from "@/components/ui/Sheet";
 import { Textarea } from "@/components/ui/Textarea";
+import { ToggleTabs } from "@/components/ui/ToggleTabs";
 import {
   useCreateReview,
   useDeal,
   useDealAction,
+  useDealMessages,
   useMe,
   useReviews,
 } from "@/api/hooks";
+import { DealChatPanel } from "@/pages/deals/DealChatPanel";
 import { formatAmount, relativeTime } from "@/lib/format";
 import { haptic, openTelegramLink } from "@/lib/tg";
 import { useToast } from "@/components/ui/Toast";
@@ -70,6 +73,8 @@ export default function DealDetailPage() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
+  const [activeTab, setActiveTab] = useState<"details" | "chat">("details");
+  const { data: messagesPage } = useDealMessages(dealId);
 
   const otherUser = deal && (deal.role === "buyer" ? deal.seller : deal.buyer);
   const { data: existingReviews } = useReviews(otherUser ?? undefined);
@@ -204,10 +209,47 @@ export default function DealDetailPage() {
       deal.status === "resolved_for_buyer" ||
       deal.status === "resolved_for_seller");
 
+  const chatReadOnly =
+    !isParticipant ||
+    deal.status === "cancelled" ||
+    deal.status === "cancelled_for_inactivity" ||
+    deal.status === "completed" ||
+    deal.status === "resolved_for_buyer" ||
+    deal.status === "resolved_for_seller";
+  const chatReadOnlyHint = !isParticipant
+    ? "Чат доступен только участникам и арбитру."
+    : "Сделка завершена. Чат закрыт.";
+  const unreadChat = messagesPage?.unread ?? 0;
+
   return (
     <Page showBack>
       <Header title={`Сделка #${deal.id}`} subtitle={statusInfo.text} />
-      <div className="px-4 space-y-3">
+      <div className="px-4 mb-3">
+        <ToggleTabs
+          value={activeTab}
+          onChange={setActiveTab}
+          options={[
+            { value: "details", label: "Детали" },
+            {
+              value: "chat",
+              label: "Чат",
+              count: unreadChat > 0 ? unreadChat : undefined,
+            },
+          ]}
+        />
+      </div>
+      {activeTab === "chat" && (
+        <div className="px-4">
+          <DealChatPanel
+            dealId={deal.id}
+            readOnly={chatReadOnly}
+            readOnlyHint={chatReadOnlyHint}
+          />
+        </div>
+      )}
+      <div
+        className={cn("px-4 space-y-3", activeTab !== "details" && "hidden")}
+      >
         <div className="bg-panel border border-border rounded-card p-4 space-y-2">
           <div className="text-sm text-text-muted">
             {deal.role === "buyer" ? "Продавец" : "Покупатель"}

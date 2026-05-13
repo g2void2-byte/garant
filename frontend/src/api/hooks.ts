@@ -7,6 +7,10 @@ import type {
   CategoryDto,
   CurrencyDto,
   DealDto,
+  DealMessageDto,
+  DealMessagesPageDto,
+  DealUnreadDto,
+  DealUnreadTotalDto,
   DepositDto,
   InvoiceDto,
   NotificationCountersDto,
@@ -327,6 +331,60 @@ export function useConfirmPinReset() {
     mutationFn: (body: { code: string; new_pin: string }) =>
       api.post("api/pin/reset/confirm", { json: body }).json<PinTokenDto>(),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pin"] }),
+  });
+}
+
+// ── Deal chat (PR-4) ───────────────────────────────
+
+export function useDealMessages(dealId: number | undefined) {
+  return useQuery<DealMessagesPageDto>({
+    queryKey: ["deals", dealId, "messages"],
+    queryFn: () => api.get(`api/deals/${dealId}/messages`).json(),
+    enabled: !!dealId,
+    staleTime: 5_000,
+  });
+}
+
+export function useSendDealMessage(dealId: number | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (bodyText: string) =>
+      api
+        .post(`api/deals/${dealId}/messages`, { json: { body: bodyText } })
+        .json<DealMessageDto>(),
+    onSuccess: (msg) => {
+      qc.setQueryData<DealMessagesPageDto>(
+        ["deals", dealId, "messages"],
+        (prev) => {
+          if (!prev) return { items: [msg], unread: 0 };
+          if (prev.items.some((it) => it.id === msg.id)) return prev;
+          return { ...prev, items: [...prev.items, msg] };
+        },
+      );
+    },
+  });
+}
+
+export function useMarkDealMessagesRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dealId: number) =>
+      api.post(`api/deals/${dealId}/messages/read`).json<DealUnreadDto>(),
+    onSuccess: (_data, dealId) => {
+      qc.setQueryData<DealMessagesPageDto>(
+        ["deals", dealId, "messages"],
+        (prev) => (prev ? { ...prev, unread: 0 } : prev),
+      );
+      qc.invalidateQueries({ queryKey: ["chat", "unread-total"] });
+    },
+  });
+}
+
+export function useDealUnreadTotal() {
+  return useQuery<DealUnreadTotalDto>({
+    queryKey: ["chat", "unread-total"],
+    queryFn: () => api.get("api/chat/unread-total").json(),
+    staleTime: 10_000,
   });
 }
 

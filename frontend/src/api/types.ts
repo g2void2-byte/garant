@@ -105,6 +105,40 @@ export interface NotificationCountersDto {
   unread: number;
 }
 
+// PR-4 — In-deal chat.
+
+export interface DealMessageAuthorDto {
+  id: number;
+  tg_user_id: number;
+  username: string | null;
+  display_name: string;
+  photo_url: string | null;
+}
+
+export interface DealMessageDto {
+  id: number;
+  deal_id: number;
+  kind: "user" | "system";
+  body: string;
+  attachments: unknown[];
+  created_at: string | null;
+  author: DealMessageAuthorDto | null;
+}
+
+export interface DealMessagesPageDto {
+  items: DealMessageDto[];
+  unread: number;
+}
+
+export interface DealUnreadDto {
+  deal_id: number;
+  unread: number;
+}
+
+export interface DealUnreadTotalDto {
+  unread: number;
+}
+
 export interface SupportPersonDto {
   id: number;
   user_id: number;
