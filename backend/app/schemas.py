@@ -179,6 +179,89 @@ class WithdrawReq(BaseModel):
     amount: float
 
 
+# ── Wallet (multi-currency) ────────────────────────────
+
+
+class CurrencyOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    network: str
+    icon_url: str
+    decimals: int
+    min_deposit: float
+    min_withdraw: float
+
+
+class WalletBalanceOut(BaseModel):
+    currency: CurrencyOut
+    amount: float
+    locked: float
+    total: float
+    updated_at: datetime | None
+
+
+class WalletDepositCreateReq(BaseModel):
+    currency_code: str
+    amount: float
+
+    @field_validator("amount")
+    @classmethod
+    def positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("Сумма должна быть больше нуля")
+        return v
+
+
+class WalletDepositOut(BaseModel):
+    id: int
+    currency: CurrencyOut
+    amount: float
+    status: str
+    pay_url: str
+    invoice_id: str
+    created_at: datetime
+    paid_at: datetime | None
+
+
+class WalletWithdrawCreateReq(BaseModel):
+    currency_code: str
+    amount: float
+    address: str
+
+    @field_validator("amount")
+    @classmethod
+    def positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("Сумма должна быть больше нуля")
+        return v
+
+    @field_validator("address")
+    @classmethod
+    def strip(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Адрес не может быть пустым")
+        return v
+
+
+class WalletWithdrawalOut(BaseModel):
+    id: int
+    currency: CurrencyOut
+    amount: float
+    address: str
+    status: str
+    locked_until: datetime | None
+    admin_note: str
+    created_at: datetime
+    processed_at: datetime | None
+
+
+class WalletAdminWithdrawDecision(BaseModel):
+    action: str  # "approve" | "reject" | "send"
+    note: str = ""
+
+
 # ── Support ────────────────────────────────────────────
 
 class SupportPersonOut(BaseModel):

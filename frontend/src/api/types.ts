@@ -120,3 +120,45 @@ export interface PinResetRequestDto {
   delivered: boolean;
   expires_at: string;
 }
+
+export interface CurrencyDto {
+  id: number;
+  code: string;
+  name: string;
+  network: string;
+  icon_url: string;
+  decimals: number;
+  min_deposit: number;
+  min_withdraw: number;
+}
+
+export interface WalletBalanceDto {
+  currency: CurrencyDto;
+  amount: number;
+  locked: number;
+  total: number;
+  updated_at: string | null;
+}
+
+export interface WalletDepositDto {
+  id: number;
+  currency: CurrencyDto;
+  amount: number;
+  status: "pending" | "paid" | "expired" | string;
+  pay_url: string;
+  invoice_id: string;
+  created_at: string;
+  paid_at: string | null;
+}
+
+export interface WalletWithdrawalDto {
+  id: number;
+  currency: CurrencyDto;
+  amount: number;
+  address: string;
+  status: "pending" | "approved" | "sent" | "rejected" | string;
+  locked_until: string | null;
+  admin_note: string;
+  created_at: string;
+  processed_at: string | null;
+}
