@@ -19,6 +19,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from ..config import settings
 from ..deps import CurrentUser, SessionDep
 from ..models import Media
+from ..rate_limit import RLMediaUpload
 from ..schemas import MediaOut
 
 router = APIRouter(prefix="/api/media", tags=["media"])
@@ -72,6 +73,7 @@ def _safe_extension(name: str, content_type: str) -> str:
 async def upload_media(
     user: CurrentUser,
     session: SessionDep,
+    _rl: RLMediaUpload,
     kind: str = Form(...),
     file: UploadFile = File(...),
 ):

@@ -17,6 +17,7 @@ from ..models import (
     WalletWithdrawal,
     WalletWithdrawStatus,
 )
+from ..rate_limit import RLWithdrawal
 from ..schemas import (
     CurrencyOut,
     WalletAdminWithdrawDecision,
@@ -151,7 +152,10 @@ async def get_deposit(deposit_id: int, user: CurrentUser, session: SessionDep):
 
 @router.post("/withdrawals", response_model=WalletWithdrawalOut)
 async def create_user_withdrawal(
-    body: WalletWithdrawCreateReq, user: CurrentUser, session: SessionDep
+    body: WalletWithdrawCreateReq,
+    user: CurrentUser,
+    session: SessionDep,
+    _rl: RLWithdrawal,
 ):
     w = await create_withdrawal(session, user, body.currency_code, body.amount, body.address)
     currency = await session.get(Currency, w.currency_id)

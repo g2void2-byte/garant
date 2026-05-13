@@ -20,6 +20,7 @@ from ..pin import (
     verify_pin,
     verify_reset_code,
 )
+from ..rate_limit import RLPin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/pin", tags=["pin"])
@@ -113,7 +114,9 @@ async def pin_status(user: CurrentUser) -> PinStatusOut:
 
 
 @router.post("/setup", response_model=PinTokenOut)
-async def pin_setup(body: PinSetupIn, user: CurrentUser, session: SessionDep) -> PinTokenOut:
+async def pin_setup(
+    body: PinSetupIn, user: CurrentUser, session: SessionDep, _rl: RLPin
+) -> PinTokenOut:
     if user.pin_hash:
         raise HTTPException(409, "PIN уже установлен")
     _ensure_format(body.pin)
@@ -128,7 +131,9 @@ async def pin_setup(body: PinSetupIn, user: CurrentUser, session: SessionDep) ->
 
 
 @router.post("/check", response_model=PinTokenOut)
-async def pin_check(body: PinCheckIn, user: CurrentUser, session: SessionDep) -> PinTokenOut:
+async def pin_check(
+    body: PinCheckIn, user: CurrentUser, session: SessionDep, _rl: RLPin
+) -> PinTokenOut:
     if not user.pin_hash:
         raise HTTPException(409, "PIN не установлен")
     _ensure_format(body.pin)
@@ -160,7 +165,9 @@ async def pin_check(body: PinCheckIn, user: CurrentUser, session: SessionDep) ->
 
 
 @router.post("/change", response_model=PinTokenOut)
-async def pin_change(body: PinChangeIn, user: CurrentUser, session: SessionDep) -> PinTokenOut:
+async def pin_change(
+    body: PinChangeIn, user: CurrentUser, session: SessionDep, _rl: RLPin
+) -> PinTokenOut:
     if not user.pin_hash:
         raise HTTPException(409, "PIN ещё не установлен")
     _ensure_format(body.old_pin)
@@ -180,7 +187,9 @@ async def pin_change(body: PinChangeIn, user: CurrentUser, session: SessionDep) 
 
 
 @router.post("/reset/request", response_model=PinResetRequestOut)
-async def pin_reset_request(user: CurrentUser, session: SessionDep) -> PinResetRequestOut:
+async def pin_reset_request(
+    user: CurrentUser, session: SessionDep, _rl: RLPin
+) -> PinResetRequestOut:
     code = generate_reset_code()
     user.pin_reset_code_hash = hash_reset_code(code)
     user.pin_reset_expires = _now() + timedelta(seconds=settings.pin_reset_code_ttl_seconds)
@@ -201,7 +210,10 @@ async def pin_reset_request(user: CurrentUser, session: SessionDep) -> PinResetR
 
 @router.post("/reset/confirm", response_model=PinTokenOut)
 async def pin_reset_confirm(
-    body: PinResetConfirmIn, user: CurrentUser, session: SessionDep
+    body: PinResetConfirmIn,
+    user: CurrentUser,
+    session: SessionDep,
+    _rl: RLPin,
 ) -> PinTokenOut:
     _ensure_format(body.new_pin)
     if not user.pin_reset_code_hash or not user.pin_reset_expires:

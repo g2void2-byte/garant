@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 
 from ..deps import CurrentUser, SessionDep
 from ..models import AppSettings, Category, Service, ServiceStatus, User
+from ..rate_limit import RLServiceCreate
 from ..schemas import (
     CategoryOut,
     ServiceCreate,
@@ -108,7 +109,9 @@ async def list_services(
 
 
 @router.post("", response_model=ServiceOut, status_code=201)
-async def create_service(body: ServiceCreate, user: CurrentUser, session: SessionDep):
+async def create_service(
+    body: ServiceCreate, user: CurrentUser, session: SessionDep, _rl: RLServiceCreate
+):
     title = (body.title or "").strip()
     if not title:
         raise HTTPException(400, "Введите название услуги")
