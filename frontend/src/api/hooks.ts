@@ -314,14 +314,6 @@ export function useCreateDeposit() {
   });
 }
 
-export function useWithdraw() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (amount: number) => api.post("api/payments/withdraw", { json: { amount } }).json(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
-  });
-}
-
 // ── PIN ─────────────────────────────────────────────────
 
 export function usePinStatus() {

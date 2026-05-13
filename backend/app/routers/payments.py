@@ -9,7 +9,7 @@ from ..config import settings
 from ..cryptopay import CryptoPay, CryptoPayError
 from ..deps import CurrentUser, SessionDep
 from ..models import Invoice, InvoiceProvider, InvoiceStatus
-from ..schemas import DepositReq, InvoiceCreateReq, InvoiceOut, InvoiceStatusOut, WithdrawReq
+from ..schemas import DepositReq, InvoiceCreateReq, InvoiceOut, InvoiceStatusOut
 from ..services import credit_invoice
 from ..services_payments import (
     handle_invoice_paid,
@@ -131,15 +131,6 @@ async def manual_deposit(body: DepositReq, user: CurrentUser, session: SessionDe
         created_at=inv.created_at,
         paid_at=inv.paid_at,
     )
-
-
-@router.post("/withdraw")
-async def withdraw(body: WithdrawReq, user: CurrentUser, session: SessionDep):
-    if float(user.balance) < body.amount:
-        raise HTTPException(400, "Недостаточно средств")
-    user.balance = float(user.balance) - body.amount
-    await session.commit()
-    return {"ok": True, "new_balance": float(user.balance)}
 
 
 @router.post("/webhook/cryptobot")
