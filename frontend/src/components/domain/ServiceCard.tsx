@@ -29,7 +29,7 @@ export function ServiceCard({
       className="bg-panel border border-border rounded-card p-3"
     >
       <div className="flex items-start gap-3">
-        <Link to={`/u/${service.owner_username}`} className="flex-1 min-w-0">
+        <Link to={`/users/${service.owner_username}`} className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <div className="text-[11px] uppercase tracking-wide text-text-muted">
               {service.category.name}

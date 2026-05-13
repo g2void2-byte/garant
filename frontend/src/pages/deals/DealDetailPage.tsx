@@ -214,7 +214,7 @@ export default function DealDetailPage() {
             {deal.role === "buyer" ? "Продавец" : "Покупатель"}
           </div>
           <button
-            onClick={() => otherUser && navigate(`/u/${otherUser}`)}
+            onClick={() => otherUser && navigate(`/users/${otherUser}`)}
             className="text-lg font-semibold text-accent active:opacity-80"
           >
             @{otherUser}

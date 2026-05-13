@@ -16,7 +16,7 @@ export function UserCard({ user, index = 0 }: { user: UserCardDto; index?: numbe
       transition={{ delay: Math.min(index * 0.03, 0.3), duration: 0.2 }}
     >
       <Link
-        to={`/u/${user.username}`}
+        to={`/users/${user.username}`}
         className="flex items-center gap-3 bg-panel border border-border rounded-card p-3 active:scale-[.99] transition-transform"
       >
         <div className="relative">

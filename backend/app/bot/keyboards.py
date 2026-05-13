@@ -98,7 +98,7 @@ def profile_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="👤 Мой профиль", web_app=_webapp("/profile"))],
             second_row,
-            [InlineKeyboardButton(text="💼 Депозит", web_app=_webapp("/profile/deposit"))],
+            [InlineKeyboardButton(text="💼 Депозит", web_app=_webapp("/deposit"))],
         ]
     )
 

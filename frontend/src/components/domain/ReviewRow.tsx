@@ -30,7 +30,7 @@ export function ReviewRow({ review, index = 0 }: Props) {
             />
           ))}
         </div>
-        <Link to={`/u/${review.author_username}`} className="text-text-muted hover:text-text">
+        <Link to={`/users/${review.author_username}`} className="text-text-muted hover:text-text">
           от @{review.author_username}
         </Link>
         {review.deal_id != null && (
