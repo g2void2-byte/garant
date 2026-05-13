@@ -65,13 +65,23 @@ Users are auto-created on first API call.
 
 ### Frontend (browser)
 
-Set `localStorage.dev_init_data` in browser console before refreshing:
+Set `localStorage.dev_init_data` in the browser console before refreshing:
 
 ```javascript
 localStorage.setItem('dev_init_data', 'user=%7B%22id%22%3A111%2C%22first_name%22%3A%22TestBuyer%22%2C%22username%22%3A%22testbuyer%22%7D&auth_date=1700000000&hash=dev');
 ```
 
 Then refresh the page. Without this, API calls from the frontend might return 422 (missing Authorization header).
+
+### PinGate on first visit
+
+`PinGate` wraps the entire app, so a fresh user with no PIN sees the "Создайте PIN" screen before any route renders. To unlock during testing:
+
+1. Click 4 digits (e.g. `1`, `2`, `3`, `4`) to set the PIN.
+2. The screen switches to "Подтвердите PIN" — click the same 4 digits again to confirm.
+3. The SPA now renders the requested route.
+
+If you re-create the DB between tests, you need to repeat PIN setup. The PIN is stored server-side in the `pin_hash` column on `users`.
 
 ## Setting User Balance for Deal Testing
 
@@ -123,6 +133,7 @@ wait_confirm → (both confirm) → confirmed → (buyer completes) → success
 | `/api/notifications` | GET | List notifications |
 | `/api/notifications/counters` | GET | Notification counts |
 | `/api/payments/deposit/invoice` | POST | CryptoBot invoice (needs real token) |
+| `/api/wallet/withdrawals` | POST | **Requires PIN session** (X-Pin-Token header) |
 | `/ws/notifications` | WS | Real-time notifications |
 
 ## Frontend Routes
@@ -131,13 +142,62 @@ wait_confirm → (both confirm) → confirmed → (buyer completes) → success
 |-------|------|
 | `/search` | User search with filters |
 | `/search/categories` | Categories grid |
-| `/deals` | Deals list with status filter |
+| `/search/categories/:slug` | Services in category |
+| `/u/:username` | Public user profile |
+| `/deals` | Deals list with role/status filter |
 | `/deals/new` | Create deal form |
 | `/deals/:id` | Deal detail with actions |
+| `/help` | Help page |
 | `/notifications` | Notifications with type tabs |
 | `/profile` | User profile, balance, services |
+| `/profile/services/new` | Add service |
 | `/profile/deposit` | CryptoBot deposit page |
-| `/u/:username` | Public user profile |
+| `/profile/transfer` | Account transfer |
+| `/wallet` | Wallet overview |
+| `/wallet/:code` | Single-currency wallet detail |
+| `*` | Catch-all — redirects to `/search` |
+
+### Routing gotchas
+
+- The catch-all (`*` → `/search`) means unknown paths silently land on the search hub. Be specific when testing bot URLs.
+- `/wallet/:code` **shadows** any `/wallet/<anything>` URL. A buggy URL like `/wallet/deposit` does **not** fall through to the catch-all — it matches `/wallet/:code` with `code="deposit"` and renders `WalletCurrencyPage`'s "Валюта не поддерживается" error. Always check the real route table when wiring up new external links.
+- There is **no** dedicated PIN settings page. `PinGate` handles PIN setup/unlock globally before any protected route renders, so links to PIN should just open any protected route (e.g. `/profile`) and let the gate trigger.
+
+## Testing the Bot (aiogram menu)
+
+The bot lives in `backend/app/bot/` (handlers, keyboards, sections, texts). It exposes a persistent reply keyboard with 4 sections and inline WebApp buttons that open the TMA at specific routes.
+
+### Verifying bot → TMA URL mapping without a real Telegram client
+
+A bot WebApp click only sends the `WebAppInfo.url` to Telegram, which opens it in the in-app browser. So verifying the URL→page mapping in a normal browser is equivalent proof for routing changes:
+
+1. **In-process check** — import the keyboard module and render each section, then read the `web_app.url` of every button:
+
+   ```python
+   from backend.app.bot import keyboards as k
+   for row in k.profile_keyboard().inline_keyboard:
+       for btn in row:
+           url = btn.web_app.url if btn.web_app else (btn.url or btn.callback_data)
+           print(btn.text, '->', url)
+   ```
+
+2. **Browser check** — navigate Chrome to each emitted URL on `localhost:5173` and confirm the expected page renders (not the search-hub fallback).
+
+This is much cheaper than driving an actual Telegram client and gives the same coverage for bot URL changes. The bot side (correct reply/inline keyboards, callback toggles) is already covered by the 15 unit tests in `tests/test_bot_menu.py` and doesn't need re-running per UI change.
+
+### Required env vars for bot menu external links
+
+Empty values hide the corresponding inline button — useful when testing without setting up real channels:
+
+```
+BOT_FORUMS_URL=
+BOT_COMMUNITY_CHAT_URL=
+BOT_ARBITRATION_URL=
+BOT_DOCS_URL=
+BOT_SUPPORT_USERNAME=  # without leading @
+```
+
+If you want to drive the bot end-to-end against real Telegram, set `RUN_BOT=1` and a real `BOT_TOKEN` (from @BotFather), then start the backend — aiogram will start polling. Don't store real tokens in plaintext in chat; request them via the Devin secrets panel.
 
 ## Known Limitations
 
@@ -145,3 +205,4 @@ wait_confirm → (both confirm) → confirmed → (buyer completes) → success
 - Telegram WebApp HapticFeedback/BackButton warnings appear in browser console — expected outside Telegram
 - WebSocket connection auto-reconnects with exponential backoff — may see connection closed/reopened in logs
 - The `arbitrate` endpoint uses a query parameter `reason`, not a request body
+- POST `/api/wallet/withdrawals` requires `X-Pin-Token` header from a PIN-verified session (PR #29). Without it the endpoint returns 401.
