@@ -193,11 +193,11 @@ async def test_deals_stats_counts_buys_sales_and_pending():
 async def test_on_search_sends_text_and_search_keyboard():
     msg = _fake_message()
     await handlers.on_search(msg)
-    msg.answer.assert_awaited_once()
-    args, kwargs = msg.answer.call_args
-    text = args[0]
+    # Banner files ship with the repo so the handler always uses ``answer_photo``.
+    msg.answer_photo.assert_awaited_once()
+    kwargs = msg.answer_photo.call_args.kwargs
+    assert "Поиск" in kwargs["caption"]
     kb = kwargs["reply_markup"]
-    assert "Поиск" in text
     assert kb is not None
     flat = [b for row in kb.inline_keyboard for b in row]
     assert len(flat) == 2
@@ -207,9 +207,8 @@ async def test_on_search_sends_text_and_search_keyboard():
 async def test_on_deals_creates_user_and_sends_stats():
     msg = _fake_message(tg_user_id=5050, username="newbie", first_name="Newbie")
     await handlers.on_deals(msg)
-    msg.answer.assert_awaited_once()
-    args, _ = msg.answer.call_args
-    body = args[0]
+    msg.answer_photo.assert_awaited_once()
+    body = msg.answer_photo.call_args.kwargs["caption"]
     # Fresh user has no deals — every bucket must be zero.
     assert "Покупок: <b>0</b>" in body
     assert "Продаж: <b>0</b>" in body
@@ -224,10 +223,9 @@ async def test_on_deals_creates_user_and_sends_stats():
 async def test_on_profile_renders_profile_card():
     msg = _fake_message(tg_user_id=5060, username="cara", first_name="Cara")
     await handlers.on_profile(msg)
-    msg.answer.assert_awaited_once()
-    args, kwargs = msg.answer.call_args
-    body = args[0]
-    assert "@cara" in body
+    msg.answer_photo.assert_awaited_once()
+    kwargs = msg.answer_photo.call_args.kwargs
+    assert "@cara" in kwargs["caption"]
     # Inline keyboard must always include the settings callback button.
     kb = kwargs["reply_markup"]
     callbacks = [b.callback_data for row in kb.inline_keyboard for b in row if b.callback_data]
@@ -238,9 +236,8 @@ async def test_on_profile_renders_profile_card():
 async def test_on_help_sends_help_caption():
     msg = _fake_message()
     await handlers.on_help(msg)
-    msg.answer.assert_awaited_once()
-    args, _ = msg.answer.call_args
-    assert "Помощь" in args[0]
+    msg.answer_photo.assert_awaited_once()
+    assert "Помощь" in msg.answer_photo.call_args.kwargs["caption"]
 
 
 # ── Callback toggles ─────────────────────────────────────────────────────
