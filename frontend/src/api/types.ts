@@ -100,5 +100,5 @@ export interface DepositDto {
   amount: number;
   status: string;
   created_at: string;
-  released_at: string | null;
+  paid_at: string | null;
 }

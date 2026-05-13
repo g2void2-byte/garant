@@ -3,18 +3,22 @@ import { Bell, Briefcase, Headphones, Search, User } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/cn";
 import { haptic } from "@/lib/tg";
+import { useNotificationCounters } from "@/api/hooks";
 
 const TABS = [
   { to: "/search", label: "Поиск", Icon: Search },
   { to: "/deals", label: "Сделки", Icon: Briefcase },
   { to: "/help", label: "Помощь", Icon: Headphones },
-  { to: "/notifications", label: "Оповещения", Icon: Bell },
+  { to: "/notifications", label: "Оповещения", Icon: Bell, badge: true },
   { to: "/profile", label: "Профиль", Icon: User },
 ];
 
 export function BottomNav() {
   const location = useLocation();
   const activeRoot = TABS.find((tab) => location.pathname === tab.to || location.pathname.startsWith(`${tab.to}/`))?.to;
+  const { data: counters } = useNotificationCounters();
+  const unread = counters?.unread ?? 0;
+
   return (
     <nav
       className={cn(
@@ -23,9 +27,9 @@ export function BottomNav() {
         "before:bg-gradient-to-t before:from-bg before:to-transparent before:pointer-events-none",
       )}
     >
-      <div className="mx-auto max-w-[460px] rounded-3xl border border-border bg-panel shadow-pop">
+      <div className="mx-auto max-w-[460px] rounded-3xl border border-border bg-panel shadow-navbar">
         <ul className="grid grid-cols-5 gap-1 p-1.5">
-          {TABS.map(({ to, label, Icon }) => {
+          {TABS.map(({ to, label, Icon, badge }) => {
             const active = activeRoot === to;
             return (
               <li key={to}>
@@ -45,7 +49,14 @@ export function BottomNav() {
                     />
                   )}
                   <span className="relative z-10 flex flex-col items-center gap-1">
-                    <Icon className="size-5" />
+                    <span className="relative">
+                      <Icon className="size-5" />
+                      {badge && unread > 0 && (
+                        <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center">
+                          {unread > 99 ? "99+" : unread}
+                        </span>
+                      )}
+                    </span>
                     <span>{label}</span>
                   </span>
                 </NavLink>

@@ -92,7 +92,7 @@ export default function ProfilePage() {
           <Button variant="primary" onClick={() => navigate("/profile/services/new")}>
             <Plus className="size-4" /> Услуга
           </Button>
-          <Button variant="secondary" onClick={() => setDepositOpen(true)}>
+          <Button variant="secondary" onClick={() => navigate("/profile/deposit")}>
             <Wallet className="size-4" /> Депозит
           </Button>
           <Button variant="secondary" onClick={() => setSettingsOpen(true)}>
