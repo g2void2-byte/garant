@@ -18,6 +18,38 @@ export interface ServiceDto {
   created_at?: string | null;
 }
 
+export interface ServiceOwnerDto {
+  id: number;
+  username: string | null;
+  display_name: string;
+  photo_url: string | null;
+  rating: number;
+  deals_count: number;
+  good: number;
+  bad: number;
+  is_admin: boolean;
+  is_arbiter: boolean;
+}
+
+export interface ServiceDetailDto extends ServiceDto {
+  owner: ServiceOwnerDto | null;
+  comments_count: number;
+  rating_avg: number | null;
+  rating_count: number;
+}
+
+export interface ServiceCommentDto {
+  id: number;
+  service_id: number;
+  author_id: number;
+  author_username: string | null;
+  author_display_name: string;
+  author_photo_url: string | null;
+  text: string;
+  rating: number | null;
+  created_at: string;
+}
+
 export interface UserCardDto {
   id: number;
   user_id: number;

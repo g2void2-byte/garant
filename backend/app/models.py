@@ -196,6 +196,28 @@ class Service(Base):
     category: Mapped[Category] = relationship(back_populates="services", lazy="selectin")
 
 
+class ServiceComment(Base):
+    """A short comment / mini-review left on a specific :class:`Service`.
+
+    Comments are public (visible to anyone who can see the service) and
+    can be deleted by their author, the service owner, or an admin.
+    A 1-5 ``rating`` is optional — Continental shows comments with and
+    without a star rating side-by-side.
+    """
+
+    __tablename__ = "service_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    service_id: Mapped[int] = mapped_column(ForeignKey("services.id"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    text: Mapped[str] = mapped_column(Text, default="")
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+    service: Mapped[Service] = relationship(foreign_keys=[service_id], lazy="selectin")
+    author: Mapped[User] = relationship(foreign_keys=[author_id], lazy="selectin")
+
+
 class Deal(Base):
     __tablename__ = "deals"
 
