@@ -1,10 +1,18 @@
 from __future__ import annotations
 
-from sqlalchemy import inspect, text
+import asyncio
+import logging
+from pathlib import Path
+
+from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
+from alembic import command
+
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 engine = create_async_engine(settings.database_url, echo=False)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -14,118 +22,42 @@ class Base(DeclarativeBase):
     pass
 
 
-async def create_tables() -> None:
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(_apply_lightweight_migrations)
+def _alembic_config() -> Config:
+    """Return the project's alembic config with the live DATABASE_URL injected.
 
-
-def _apply_lightweight_migrations(sync_conn) -> None:
-    """Add new nullable columns to existing tables without losing data.
-
-    SQLAlchemy's create_all is a no-op for existing tables, so any new
-    columns we add to Mapped models must be applied here. Only safe for
-    nullable / defaulted columns.
+    Picks up ``alembic.ini`` from the repository root irrespective of the
+    current working directory so this also works when uvicorn is launched
+    from elsewhere.
     """
-    inspector = inspect(sync_conn)
-    if inspector.has_table("users"):
-        existing = {col["name"] for col in inspector.get_columns("users")}
-        for col, ddl in [
-            ("pin_hash", "VARCHAR(255)"),
-            ("pin_attempts", "INTEGER NOT NULL DEFAULT 0"),
-            ("pin_locked_until", "DATETIME"),
-            ("pin_reset_code_hash", "VARCHAR(255)"),
-            ("pin_reset_expires", "DATETIME"),
-        ]:
-            if col not in existing:
-                sync_conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {ddl}"))
+    repo_root = Path(__file__).resolve().parents[2]
+    cfg = Config(str(repo_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(repo_root / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", settings.database_url)
+    return cfg
 
-    if inspector.has_table("deals"):
-        existing = {col["name"] for col in inspector.get_columns("deals")}
-        for col, ddl in [
-            ("currency_id", "INTEGER"),
-            ("amount", "NUMERIC(28, 8)"),
-            ("commission_amount", "NUMERIC(28, 8)"),
-            ("in_progress_at", "DATETIME"),
-            ("cancellation_initiator_id", "INTEGER"),
-            ("cancellation_reason", "TEXT"),
-            ("cancellation_requested_at", "DATETIME"),
-            ("arbitration_initiator_id", "INTEGER"),
-            ("arbitration_reason", "TEXT"),
-            ("arbitration_resolved_by", "INTEGER"),
-            ("arbitration_resolution", "VARCHAR(16)"),
-            ("arbitration_resolved_at", "DATETIME"),
-        ]:
-            if col not in existing:
-                sync_conn.execute(text(f"ALTER TABLE deals ADD COLUMN {col} {ddl}"))
 
-        # Map legacy statuses (5-state machine) onto the new 10-state machine
-        # in a single sweep. Idempotent: rows already migrated are no-ops.
-        sync_conn.execute(
-            text("UPDATE deals SET status = 'pending_confirmation' WHERE status = 'wait_confirm'")
-        )
-        sync_conn.execute(
-            text("UPDATE deals SET status = 'in_progress' WHERE status = 'confirmed'")
-        )
-        sync_conn.execute(text("UPDATE deals SET status = 'completed' WHERE status = 'success'"))
-        sync_conn.execute(text("UPDATE deals SET status = 'cancelled' WHERE status = 'failed'"))
-        sync_conn.execute(
-            text("UPDATE deals SET status = 'arbitration' WHERE status = 'arbitrage'")
-        )
+def _upgrade_to_head_sync() -> None:
+    command.upgrade(_alembic_config(), "head")
 
-    if inspector.has_table("app_settings"):
-        existing = {col["name"] for col in inspector.get_columns("app_settings")}
-        for col, ddl in [
-            (
-                "inactivity_pending_confirmation_days",
-                "INTEGER NOT NULL DEFAULT 7",
-            ),
-            (
-                "inactivity_pending_cancellation_days",
-                "INTEGER NOT NULL DEFAULT 3",
-            ),
-            (
-                "max_active_services_per_user",
-                "INTEGER NOT NULL DEFAULT 10",
-            ),
-        ]:
-            if col not in existing:
-                sync_conn.execute(text(f"ALTER TABLE app_settings ADD COLUMN {col} {ddl}"))
 
-    if inspector.has_table("services"):
-        existing = {col["name"] for col in inspector.get_columns("services")}
-        for col, ddl in [
-            ("status", "VARCHAR(16) NOT NULL DEFAULT 'active'"),
-            ("ban_reason", "TEXT"),
-        ]:
-            if col not in existing:
-                sync_conn.execute(text(f"ALTER TABLE services ADD COLUMN {col} {ddl}"))
+async def run_migrations() -> None:
+    """Run ``alembic upgrade head`` in a worker thread.
 
-    if inspector.has_table("users"):
-        existing = {col["name"] for col in inspector.get_columns("users")}
-        for col, ddl in [
-            ("dm_deals", "BOOLEAN NOT NULL DEFAULT 1"),
-            ("dm_deposits", "BOOLEAN NOT NULL DEFAULT 1"),
-            ("dm_system", "BOOLEAN NOT NULL DEFAULT 1"),
-            ("is_anonymous_deals", "BOOLEAN NOT NULL DEFAULT 0"),
-            ("is_hidden_profile", "BOOLEAN NOT NULL DEFAULT 0"),
-        ]:
-            if col not in existing:
-                sync_conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {ddl}"))
+    The alembic CLI is synchronous and opens its own async engine in
+    ``env.py``, so we cannot call it directly from a running event loop.
+    Off-loading to a thread keeps lifespan startup non-blocking.
+    """
+    logger.info("running alembic upgrade head against %s", _redact_dsn(settings.database_url))
+    await asyncio.to_thread(_upgrade_to_head_sync)
+    logger.info("alembic upgrade head complete")
 
-    # ``media`` and ``deal_messages`` are created from scratch by
-    # create_all() above; no DDL migration needed.
 
-    # P2 — add indexes on hot-path columns for existing tables. CREATE
-    # INDEX IF NOT EXISTS is idempotent so this is safe to re-run.
-    for ddl in (
-        "CREATE INDEX IF NOT EXISTS ix_deals_buyer_id ON deals(buyer_id)",
-        "CREATE INDEX IF NOT EXISTS ix_deals_seller_id ON deals(seller_id)",
-        "CREATE INDEX IF NOT EXISTS ix_deals_created_at ON deals(created_at)",
-        "CREATE INDEX IF NOT EXISTS ix_deals_status ON deals(status)",
-        "CREATE INDEX IF NOT EXISTS ix_reviews_author_id ON reviews(author_id)",
-        "CREATE INDEX IF NOT EXISTS ix_reviews_target_id ON reviews(target_id)",
-        "CREATE INDEX IF NOT EXISTS ix_notifications_is_read ON notifications(is_read)",
-        "CREATE INDEX IF NOT EXISTS ix_notifications_created_at ON notifications(created_at)",
-    ):
-        sync_conn.execute(text(ddl))
+def _redact_dsn(url: str) -> str:
+    """Strip the password from a database URL for safe logging."""
+    if "@" in url and "://" in url:
+        head, _, rest = url.partition("://")
+        creds, _, hostpart = rest.partition("@")
+        if ":" in creds:
+            user, _, _ = creds.partition(":")
+            return f"{head}://{user}:***@{hostpart}"
+    return url

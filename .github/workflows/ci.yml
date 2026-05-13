@@ -10,6 +10,28 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: garant
+          POSTGRES_PASSWORD: garant
+          POSTGRES_DB: garant
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U garant"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://garant:garant@localhost:5432/garant
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: garant
+      POSTGRES_PASSWORD: garant
+      POSTGRES_ADMIN_DB: postgres
+      POSTGRES_TEST_DB: garant_test
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +48,10 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Lint (ruff)
-        run: ruff check backend/ tests/
+        run: ruff check backend/ tests/ alembic/
+
+      - name: Alembic upgrade head (verify migrations apply cleanly)
+        run: alembic upgrade head
 
       - name: Tests (pytest)
         run: pytest -v

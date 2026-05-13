@@ -22,7 +22,7 @@ import hashlib
 import hmac
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import delete, or_, select
@@ -48,7 +48,9 @@ CODE_LEN = 6
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    # Tz-naive UTC to match ``DateTime`` columns in the DB. Postgres
+    # rejects tz-aware values written to ``TIMESTAMP WITHOUT TIME ZONE``.
+    return datetime.utcnow()
 
 
 def _generate_code() -> str:
