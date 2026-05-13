@@ -6,6 +6,7 @@ import { BadgePrefix } from "@/components/ui/BadgePrefix";
 import { openTelegramLink } from "@/lib/tg";
 
 export function SupportPersonRow({ person, index = 0 }: { person: SupportPersonDto; index?: number }) {
+  const name = person.display_name?.trim() || person.username || "—";
   return (
     <motion.button
       initial={{ opacity: 0, y: 6 }}
@@ -15,13 +16,13 @@ export function SupportPersonRow({ person, index = 0 }: { person: SupportPersonD
       onClick={() => openTelegramLink(`https://t.me/${person.username}`)}
       className="w-full flex items-center gap-3 bg-panel border border-border rounded-card p-3 text-left"
     >
-      <Avatar name={person.username} size={44} />
+      <Avatar name={person.username} src={person.photo_url} size={44} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <BadgePrefix prefix={person.prefix} />
-          <span className="font-semibold truncate">@{person.username}</span>
+          <span className="font-semibold truncate">{name}</span>
         </div>
-        <div className="mt-1 text-xs text-text-muted">{person.prefix === "admin" ? "Администратор" : "Арбитр"}</div>
+        <div className="mt-0.5 text-xs text-text-muted truncate">@{person.username}</div>
       </div>
       <ExternalLink className="size-4 text-text-muted" />
     </motion.button>

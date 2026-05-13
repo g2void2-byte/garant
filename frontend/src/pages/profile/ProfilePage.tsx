@@ -13,14 +13,13 @@ import { ProfileHeader } from "@/components/domain/ProfileHeader";
 import { ProfileStatsGrid } from "@/components/domain/ProfileStatsGrid";
 import { ServiceCard } from "@/components/domain/ServiceCard";
 import {
-  useCreateDepositInvoice,
   useMe,
   useReviews,
   useServices,
   useUpdateMe,
 } from "@/api/hooks";
-import { haptic, openTelegramLink } from "@/lib/tg";
-import { formatMoney, relativeTime } from "@/lib/format";
+import { haptic } from "@/lib/tg";
+import { relativeTime } from "@/lib/format";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -29,14 +28,11 @@ export default function ProfilePage() {
   const { data: services } = useServices({ owner: me?.username });
   const { data: reviews } = useReviews(me?.username);
 
-  const [depositOpen, setDepositOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [forumsOpen, setForumsOpen] = useState(false);
 
   const updateMe = useUpdateMe();
-  const createInvoice = useCreateDepositInvoice();
 
-  const [depositAmount, setDepositAmount] = useState("50");
   const [description, setDescription] = useState("");
   const [forumName, setForumName] = useState("");
   const [forumUrl, setForumUrl] = useState("");
@@ -45,27 +41,16 @@ export default function ProfilePage() {
     return (
       <Page>
         <div className="px-4 space-y-3 pt-3">
-          <Skeleton className="h-44" />
+          <Skeleton className="h-64" />
           <Skeleton className="h-32" />
         </div>
       </Page>
     );
   }
 
-  const handleDeposit = async () => {
-    const amount = parseFloat(depositAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      haptic("error");
-      return;
-    }
-    try {
-      const invoice = await createInvoice.mutateAsync(amount);
-      haptic("success");
-      if (invoice.pay_url) openTelegramLink(invoice.pay_url);
-      setDepositOpen(false);
-    } catch {
-      haptic("error");
-    }
+  const openSettings = () => {
+    setDescription(me.description || "");
+    setSettingsOpen(true);
   };
 
   const saveDescription = async () => {
@@ -90,25 +75,20 @@ export default function ProfilePage() {
       <div className="px-4 mt-3 space-y-3">
         <div className="grid grid-cols-2 gap-2">
           <Button variant="primary" onClick={() => navigate("/profile/services/new")}>
-            <Plus className="size-4" /> Услуга
+            <Plus className="size-4" /> Добавить услугу
           </Button>
-          <Button variant="secondary" onClick={() => navigate("/wallet")}>
-            <Wallet className="size-4" /> Кошелёк
+          <Button variant="primary" onClick={() => navigate("/wallet")}>
+            <Wallet className="size-4" /> Депозит
           </Button>
-          <Button variant="secondary" onClick={() => setSettingsOpen(true)}>
+          <Button variant="secondary" onClick={openSettings}>
             <SettingsIcon className="size-4" /> Настройки
           </Button>
-          <Button variant="ghost" onClick={() => setForumsOpen(true)}>
-            <Link2 className="size-4" /> Форумы
+          <Button variant="secondary" onClick={() => setForumsOpen(true)}>
+            <Link2 className="size-4" /> Добавить форумы
           </Button>
         </div>
 
-        <ProfileStatsGrid user={me} onDepositClick={() => setDepositOpen(true)} />
-
-        <div className="bg-panel border border-border rounded-card p-3 text-sm">
-          <div className="text-text-muted">Баланс</div>
-          <div className="mt-1 text-2xl font-bold text-accent">{formatMoney(me.balance)}</div>
-        </div>
+        <ProfileStatsGrid user={me} onDepositClick={() => navigate("/wallet")} />
 
         <ToggleTabs
           value={tab}
@@ -122,7 +102,7 @@ export default function ProfilePage() {
 
         {tab === "services" &&
           (!services || services.length === 0 ? (
-            <EmptyState title="Услуги отсутствуют" description="Нажмите «Услуга» чтобы добавить первую" />
+            <EmptyState title="Услуги отсутствуют" description="У этого пользователя пока нет услуг" />
           ) : (
             services.map((s, i) => <ServiceCard key={s.id} service={s} index={i} />)
           ))}
@@ -147,24 +127,6 @@ export default function ProfilePage() {
             ))
           ))}
       </div>
-
-      <Sheet open={depositOpen} onClose={() => setDepositOpen(false)} title="Пополнить депозит">
-        <div className="space-y-3">
-          <Input
-            label="Сумма (USDT)"
-            value={depositAmount}
-            onChange={(e) => setDepositAmount(e.target.value)}
-            type="number"
-            min={1}
-          />
-          <Button fullWidth onClick={handleDeposit} disabled={createInvoice.isPending}>
-            {createInvoice.isPending ? "Создаю..." : "Пополнить через CryptoBot"}
-          </Button>
-          <div className="text-xs text-text-muted">
-            Депозит-гарант — это сумма, замороженная на профиле как гарантия добропорядочности.
-          </div>
-        </div>
-      </Sheet>
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Настройки">
         <div className="space-y-3">

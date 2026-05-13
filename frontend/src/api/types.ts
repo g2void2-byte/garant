@@ -22,6 +22,8 @@ export interface UserCardDto {
   id: number;
   user_id: number;
   username: string;
+  display_name: string;
+  photo_url: string | null;
   balance: number;
   admin: number;
   prefix: "admin" | "arbiter" | null;
@@ -109,6 +111,8 @@ export interface SupportPersonDto {
   id: number;
   user_id: number;
   username: string;
+  display_name: string;
+  photo_url: string | null;
   admin: number;
   prefix: "admin" | "arbiter";
 }

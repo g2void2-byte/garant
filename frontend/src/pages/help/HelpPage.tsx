@@ -17,7 +17,7 @@ export default function HelpPage() {
 
   return (
     <Page>
-      <Header title="Помощь" subtitle="Свяжитесь с командой" />
+      <Header title="Поддержка" />
       <div className="px-4 space-y-3">
         <ToggleTabs
           value={tab}

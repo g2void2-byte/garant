@@ -18,7 +18,7 @@ const TABS: { value: "all" | "deals" | "deposits" | "system"; label: string }[] 
   { value: "all", label: "Все" },
   { value: "deals", label: "Сделки" },
   { value: "deposits", label: "Депозиты" },
-  { value: "system", label: "Система" },
+  { value: "system", label: "Системные" },
 ];
 
 export default function NotificationsPage() {
@@ -43,7 +43,7 @@ export default function NotificationsPage() {
     <Page>
       <Header
         title="Оповещения"
-        subtitle={counters ? `${counters.unread} непрочитанных` : undefined}
+        subtitle={counters && counters.unread > 0 ? `${counters.unread} непрочитанных` : undefined}
         right={
           counters && counters.unread > 0 ? (
             <Button size="sm" variant="ghost" onClick={() => markAll.mutate()}>
@@ -71,7 +71,7 @@ export default function NotificationsPage() {
             ))}
           </div>
         ) : !data || data.length === 0 ? (
-          <EmptyState title="Пока тихо" description="Сюда придут уведомления по сделкам и депозитам" />
+          <EmptyState title="Уведомлений нет" description="Уведомления будут появляться здесь" />
         ) : (
           <div className="space-y-4">
             {grouped.map(([day, items]) => (

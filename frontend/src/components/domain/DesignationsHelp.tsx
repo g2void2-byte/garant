@@ -1,7 +1,47 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { X } from "lucide-react";
+import { Star, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useUI } from "@/stores/ui";
+
+function ExampleCard({
+  withPrefix,
+  rating,
+  deposit,
+}: {
+  withPrefix?: boolean;
+  rating: string;
+  deposit: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 bg-panel-2 border border-border rounded-2xl p-3">
+      <div className="size-10 rounded-full bg-panel grid place-items-center text-text-muted font-bold">
+        C
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          {withPrefix && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-accent text-accent-fg text-[11px] font-semibold leading-none">
+              Арбитр
+            </span>
+          )}
+          <span className="font-semibold truncate">Nickname</span>
+          {withPrefix && <span className="size-2 rounded-full bg-success" />}
+        </div>
+        <div className="mt-0.5 text-xs text-text-muted">@username</div>
+      </div>
+      <div className="text-right shrink-0">
+        <div className="inline-flex items-center gap-2 text-xs">
+          <span className="text-accent font-semibold">{deposit}</span>
+          <span className="inline-flex items-center gap-1 text-accent">
+            <Star className="size-3" />
+            {rating}
+          </span>
+        </div>
+        <div className="mt-1 text-[11px] text-text-muted">150 сделок</div>
+      </div>
+    </div>
+  );
+}
 
 export function DesignationsHelp() {
   const hideDesignations = useUI((s) => s.hideDesignations);
@@ -26,29 +66,29 @@ export function DesignationsHelp() {
               <X className="size-4" />
             </button>
             <div className="font-semibold">Обозначения</div>
-            <ul className="mt-3 space-y-2 text-sm text-text-muted">
-              <li>
-                <span className="inline-flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-full bg-accent text-accent-fg text-[11px] font-bold">Префикс</span>
-                  <span>— роль (Арбитр, Админ)</span>
-                </span>
-              </li>
-              <li>
-                <span className="inline-flex items-center gap-2">
-                  <span className="size-2 rounded-full bg-success" />
-                  <span>— статус в сети (онлайн)</span>
-                </span>
-              </li>
-              <li>
-                <span className="inline-flex items-center gap-2 text-accent font-semibold">$1.2k+</span>
-                <span className="ml-2">— активный депозит-гарант</span>
-              </li>
-              <li>
-                <span className="inline-flex items-center gap-2 text-accent">★ 4.8</span>
-                <span className="ml-2">— средний рейтинг по отзывам</span>
-              </li>
-            </ul>
-            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setHide(true)}>
+            <p className="mt-1 text-sm text-text-muted">
+              Небольшая памятка по обозначениям в карточке пользователя
+            </p>
+
+            <div className="mt-4 grid grid-cols-4 gap-2 text-[11px] text-text-muted text-center">
+              <div>Префикс</div>
+              <div>Статус сети</div>
+              <div>Депозит</div>
+              <div>Рейтинг</div>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              <ExampleCard withPrefix rating="4.6" deposit="$4.8k+" />
+              <ExampleCard rating="4.5" deposit="$2.9k+" />
+            </div>
+
+            <Button
+              variant="primary"
+              size="md"
+              fullWidth
+              className="mt-4"
+              onClick={() => setHide(true)}
+            >
               Не показывать снова
             </Button>
           </div>

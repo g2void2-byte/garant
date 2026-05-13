@@ -33,8 +33,7 @@ export default function DealsPage() {
   return (
     <Page>
       <Header
-        title="Мои сделки"
-        subtitle="История и активные сделки"
+        title="Ваши сделки"
         right={
           <Button size="sm" onClick={() => navigate("/deals/new")}>
             <Plus className="size-4" /> Новая
