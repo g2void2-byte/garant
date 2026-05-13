@@ -1,0 +1,29 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from aiogram import Bot, Dispatcher
+
+from ..config import settings
+from .handlers import router
+
+logger = logging.getLogger(__name__)
+
+
+async def start_polling() -> None:
+    if not settings.bot_token or settings.bot_token.startswith("0000"):
+        logger.warning("BOT_TOKEN not configured, skipping bot polling")
+        return
+
+    bot = Bot(token=settings.bot_token)
+    dp = Dispatcher()
+    dp.include_router(router)
+
+    logger.info("Starting aiogram polling...")
+    try:
+        await dp.start_polling(bot)
+    except asyncio.CancelledError:
+        logger.info("Bot polling cancelled")
+    except Exception as e:
+        logger.error("Bot polling error: %s", e)
