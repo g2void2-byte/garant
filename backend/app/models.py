@@ -176,20 +176,22 @@ class Deal(Base):
     __tablename__ = "deals"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    buyer_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    buyer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     sum: Mapped[float] = mapped_column(Numeric(14, 2))
     description: Mapped[str] = mapped_column(Text, default="")
     pay_commission: Mapped[PayCommission] = mapped_column(
         Enum(PayCommission), default=PayCommission.buyer
     )
     status: Mapped[DealStatus] = mapped_column(
-        Enum(DealStatus), default=DealStatus.pending_confirmation
+        Enum(DealStatus), default=DealStatus.pending_confirmation, index=True
     )
     confirm_buyer: Mapped[bool] = mapped_column(Boolean, default=False)
     confirm_seller: Mapped[bool] = mapped_column(Boolean, default=False)
     arbitrage_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), index=True
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Multi-currency fields (PR-3). ``currency_id`` is nullable for legacy
@@ -260,8 +262,8 @@ class Review(Base):
     __tablename__ = "reviews"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    target_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     deal_id: Mapped[int | None] = mapped_column(ForeignKey("deals.id"), nullable=True)
     rating: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text, default="")
@@ -282,8 +284,10 @@ class Notification(Base):
     title: Mapped[str] = mapped_column(String(256))
     body: Mapped[str] = mapped_column(Text, default="")
     payload: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), index=True
+    )
 
     recipient: Mapped[User] = relationship(foreign_keys=[recipient_id], lazy="selectin")
 
