@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
-from ..deps import CurrentUser, SessionDep
+from ..deps import CurrentUser, PinUser, SessionDep
 from ..models import (
     Currency,
     WalletDeposit,
@@ -84,10 +84,14 @@ def _withdrawal_dto(w: WalletWithdrawal, c: Currency) -> WalletWithdrawalOut:
 @router.get("/currencies", response_model=list[CurrencyOut])
 async def list_currencies(session: SessionDep):
     rows = (
-        await session.execute(
-            select(Currency).where(Currency.is_active.is_(True)).order_by(Currency.sort_order)
+        (
+            await session.execute(
+                select(Currency).where(Currency.is_active.is_(True)).order_by(Currency.sort_order)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [_currency_dto(c) for c in rows]
 
 
@@ -153,7 +157,7 @@ async def get_deposit(deposit_id: int, user: CurrentUser, session: SessionDep):
 @router.post("/withdrawals", response_model=WalletWithdrawalOut)
 async def create_user_withdrawal(
     body: WalletWithdrawCreateReq,
-    user: CurrentUser,
+    user: PinUser,
     session: SessionDep,
     _rl: RLWithdrawal,
 ):
@@ -189,9 +193,11 @@ async def admin_list_withdrawals(user: CurrentUser, session: SessionDep):
         await session.execute(
             select(WalletWithdrawal, Currency)
             .join(Currency, Currency.id == WalletWithdrawal.currency_id)
-            .where(WalletWithdrawal.status.in_(
-                [WalletWithdrawStatus.pending, WalletWithdrawStatus.approved]
-            ))
+            .where(
+                WalletWithdrawal.status.in_(
+                    [WalletWithdrawStatus.pending, WalletWithdrawStatus.approved]
+                )
+            )
             .order_by(WalletWithdrawal.created_at.asc())
         )
     ).all()
