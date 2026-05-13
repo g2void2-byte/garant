@@ -178,6 +178,43 @@ export type DealActionPath =
   | "debate"
   | "resolve";
 
+export interface DealMessageDto {
+  id: number;
+  deal_id: number;
+  sender_id: number;
+  sender_username: string | null;
+  text: string;
+  attachments: MediaDto[];
+  created_at: string;
+}
+
+export function useDealMessages(dealId: number | undefined) {
+  return useQuery<DealMessageDto[]>({
+    queryKey: ["deal", dealId, "messages"],
+    queryFn: () => api.get(`api/deals/${dealId}/messages`).json(),
+    enabled: !!dealId,
+    staleTime: 10_000,
+  });
+}
+
+export function useSendDealMessage(dealId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { text: string; attachments: number[] }) =>
+      api.post(`api/deals/${dealId}/messages`, { json: body }).json<DealMessageDto>(),
+    onSuccess: (msg) => {
+      qc.setQueryData<DealMessageDto[] | undefined>(
+        ["deal", dealId, "messages"],
+        (prev) => {
+          if (!prev) return [msg];
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        },
+      );
+    },
+  });
+}
+
 export function useDealAction(action: DealActionPath) {
   const qc = useQueryClient();
   return useMutation({

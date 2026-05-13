@@ -87,6 +87,7 @@ app.add_middleware(
 from .routers import (  # noqa: E402
     account,
     categories,
+    deal_messages,
     deals,
     me,
     media,
@@ -109,6 +110,7 @@ for r in (
     services,
     users,
     deals,
+    deal_messages,
     reviews,
     notifications,
     payments,

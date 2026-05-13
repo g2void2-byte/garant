@@ -243,6 +243,38 @@ class MediaOut(BaseModel):
     created_at: datetime | None
 
 
+# ── Deal chat ──────────────────────────────────────────
+
+
+class DealMessageCreate(BaseModel):
+    text: str = ""
+    attachments: list[int] = []
+
+    @field_validator("text")
+    @classmethod
+    def _text_len(cls, v: str) -> str:
+        if len(v) > 4000:
+            raise ValueError("Сообщение слишком длинное (≤4000)")
+        return v
+
+    @field_validator("attachments")
+    @classmethod
+    def _attachments_len(cls, v: list[int]) -> list[int]:
+        if len(v) > 10:
+            raise ValueError("Не больше 10 вложений за сообщение")
+        return v
+
+
+class DealMessageOut(BaseModel):
+    id: int
+    deal_id: int
+    sender_id: int
+    sender_username: str | None
+    text: str
+    attachments: list[MediaOut]
+    created_at: datetime
+
+
 class ReviewCreate(BaseModel):
     target_username: str
     rating: int

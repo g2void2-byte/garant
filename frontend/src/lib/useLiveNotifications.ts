@@ -4,6 +4,7 @@ import { connectNotifications, type WsEvent } from "@/lib/ws";
 import { haptic } from "@/lib/tg";
 import { useToast } from "@/components/ui/Toast";
 import type { NotificationDto } from "@/api/types";
+import type { DealMessageDto } from "@/api/hooks";
 
 export function useLiveNotifications() {
   const qc = useQueryClient();
@@ -12,6 +13,19 @@ export function useLiveNotifications() {
   useEffect(() => {
     const disconnect = connectNotifications({
       onEvent: (event: WsEvent) => {
+        if (event.event === "deal_message" && event.data) {
+          const msg = event.data as DealMessageDto;
+          qc.setQueryData<DealMessageDto[] | undefined>(
+            ["deal", msg.deal_id, "messages"],
+            (prev) => {
+              if (!prev) return [msg];
+              if (prev.some((m) => m.id === msg.id)) return prev;
+              return [...prev, msg];
+            },
+          );
+          haptic("light");
+          return;
+        }
         if (event.event !== "notification" || !event.data) return;
         const notif = event.data as NotificationDto;
 
