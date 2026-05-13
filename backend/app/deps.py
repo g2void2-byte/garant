@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .db import async_session
 from .models import User
+from .pin import decode_session_token
 from .security import InitDataError, verify_init_data
 
 
@@ -56,5 +57,26 @@ async def get_current_user(
     return user
 
 
+async def require_pin_session(
+    user: User = Depends(get_current_user),
+    x_pin_token: Annotated[str | None, Header(alias="X-Pin-Token")] = None,
+) -> User:
+    """Require a valid PIN session token in addition to the Telegram initData.
+
+    Used to gate sensitive endpoints (wallet, deal payments, account
+    transfer). Endpoints that only need user identity stay on
+    `get_current_user`.
+    """
+    if not user.pin_hash:
+        raise HTTPException(403, "PIN не установлен")
+    if not x_pin_token:
+        raise HTTPException(401, "PIN-сессия отсутствует")
+    decoded = decode_session_token(x_pin_token)
+    if decoded != user.id:
+        raise HTTPException(401, "PIN-сессия недействительна")
+    return user
+
+
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
+PinUser = Annotated[User, Depends(require_pin_session)]

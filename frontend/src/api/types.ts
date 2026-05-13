@@ -102,3 +102,21 @@ export interface DepositDto {
   created_at: string;
   paid_at: string | null;
 }
+
+export interface PinStatusDto {
+  has_pin: boolean;
+  attempts_left: number;
+  locked_until: string | null;
+  max_attempts: number;
+  session_ttl_seconds: number;
+}
+
+export interface PinTokenDto {
+  token: string;
+  expires_at: string;
+}
+
+export interface PinResetRequestDto {
+  delivered: boolean;
+  expires_at: string;
+}

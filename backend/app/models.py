@@ -69,6 +69,11 @@ class User(Base):
     deals_arbitrage: Mapped[int] = mapped_column(Integer, default=0)
     good: Mapped[int] = mapped_column(Integer, default=0)
     bad: Mapped[int] = mapped_column(Integer, default=0)
+    pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pin_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    pin_locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    pin_reset_code_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pin_reset_expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     services: Mapped[list[Service]] = relationship(back_populates="owner", lazy="selectin")
