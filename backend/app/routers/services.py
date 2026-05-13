@@ -79,6 +79,7 @@ def _owner_out(user: User | None) -> ServiceOwnerOut | None:
         good=good,
         bad=bad,
         is_admin=bool(user.is_admin),
+        is_moderator=bool(user.is_moderator),
         is_arbiter=bool(user.is_arbiter),
     )
 
