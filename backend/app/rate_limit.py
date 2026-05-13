@@ -1,23 +1,25 @@
-"""In-process rate limiter for sensitive endpoints.
+"""Rate limiter for sensitive endpoints (P3.5: Redis-backed when configured).
 
-A lightweight fixed-window counter keyed by ``(scope, principal)`` where
-``principal`` is either the authenticated ``User.id`` (preferred) or the
-remote IP (fallback for unauthenticated endpoints). State lives in a
-plain dict guarded by ``asyncio.Lock``; works because the app runs on a
-single uvicorn worker today.
+A fixed-window counter keyed by ``(scope, principal)``:
 
-When the deployment moves to multiple workers / replicas we'll swap this
-out for the Redis-backed sliding window scheduled as P3.5 — same
-``RateLimit`` dependency interface, different backend.
+* When ``settings.redis_url`` is set and Redis is reachable, counters
+  live in Redis (``INCR`` + ``EXPIRE`` on a per-bucket key), so multiple
+  uvicorn workers / replicas share the same limit.
+* Otherwise we use the legacy in-process ``defaultdict`` (one window's
+  worth of timestamps per key) — same behaviour we had before P3.5.
 
-Limits intentionally err on the generous side. The goal is to stop the
-"100 requests per second from one user" griefing case, not to enforce
-business-level quotas (those belong in the routers).
+Both paths raise ``HTTPException(429)`` when the principal exceeds
+``limit`` calls within ``window`` seconds.
+
+Limits err on the generous side — the goal is griefer-protection
+("100 rps from one user"), not business quotas (those belong in the
+routers).
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections import defaultdict
 from typing import Annotated
@@ -26,13 +28,15 @@ from fastapi import Depends, HTTPException, Request
 
 from .deps import CurrentUser
 from .models import User
+from .redis_client import get_redis
+
+logger = logging.getLogger(__name__)
 
 _buckets: dict[tuple[str, str], list[float]] = defaultdict(list)
 _lock = asyncio.Lock()
 
 
-async def _hit(scope: str, key: str, *, limit: int, window: float) -> None:
-    """Record a hit; raise 429 if more than ``limit`` hits in ``window`` s."""
+async def _hit_inmemory(scope: str, key: str, *, limit: int, window: float) -> None:
     now = time.monotonic()
     cutoff = now - window
     async with _lock:
@@ -46,14 +50,49 @@ async def _hit(scope: str, key: str, *, limit: int, window: float) -> None:
             del bucket[:i]
         if len(bucket) >= limit:
             retry_after = max(0.0, bucket[0] + window - now)
-            raise HTTPException(
-                status_code=429,
-                detail=(
-                    f"Слишком много запросов, попробуйте позже (через ~{int(retry_after) + 1} с)"
-                ),
-                headers={"Retry-After": str(int(retry_after) + 1)},
-            )
+            _raise_429(retry_after)
         bucket.append(now)
+
+
+async def _hit_redis(scope: str, key: str, *, limit: int, window: float) -> None:
+    """Fixed-window INCR/EXPIRE counter on Redis.
+
+    The key embeds the bucket ordinal (``floor(epoch / window)``), so
+    keys expire naturally once their window passes. We only set EXPIRE
+    on the first INCR to avoid resetting TTL on every hit.
+    """
+    r = await get_redis()
+    if r is None:
+        await _hit_inmemory(scope, key, limit=limit, window=window)
+        return
+    try:
+        bucket_id = int(time.time() // window)
+        full_key = f"rl:{scope}:{key}:{bucket_id}"
+        count = await r.incr(full_key)
+        if count == 1:
+            await r.expire(full_key, int(window) + 1)
+        if count > limit:
+            ttl = await r.ttl(full_key)
+            retry_after = float(ttl) if ttl and ttl > 0 else window
+            _raise_429(retry_after)
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001
+        logger.exception("rate-limit: redis hit failed; falling back to in-memory")
+        await _hit_inmemory(scope, key, limit=limit, window=window)
+
+
+async def _hit(scope: str, key: str, *, limit: int, window: float) -> None:
+    """Record one hit, dispatching to Redis or the in-memory backend."""
+    await _hit_redis(scope, key, limit=limit, window=window)
+
+
+def _raise_429(retry_after: float) -> None:
+    raise HTTPException(
+        status_code=429,
+        detail=(f"Слишком много запросов, попробуйте позже (через ~{int(retry_after) + 1} с)"),
+        headers={"Retry-After": str(int(retry_after) + 1)},
+    )
 
 
 def _client_ip(request: Request) -> str:
@@ -91,7 +130,11 @@ def rate_limit_anon(scope: str, *, limit: int, window: float):
 
 
 def reset_state_for_tests() -> None:
-    """Drop all buckets — test fixtures call this between cases."""
+    """Drop in-memory buckets — test fixtures call this between cases.
+
+    The Redis backend isn't touched here because fakeredis fixtures
+    rebuild a fresh instance per test anyway.
+    """
     _buckets.clear()
 
 

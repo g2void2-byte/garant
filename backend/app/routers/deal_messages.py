@@ -171,6 +171,6 @@ async def create_message(
         "event": "deal_message",
         "data": out.model_dump(mode="json"),
     }
-    await manager.send_to_user(other_id, event)
+    await manager.publish(other_id, event)
 
     return out

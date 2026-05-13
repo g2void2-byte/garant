@@ -14,7 +14,9 @@ from sqlalchemy import text
 
 from .config import settings
 from .db import async_session, run_migrations
+from .redis_client import close_redis
 from .seed import run_seed
+from .ws import manager as ws_manager
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s: %(message)s")
@@ -54,6 +56,11 @@ async def lifespan(app: FastAPI):
     async with async_session() as session:
         await run_seed(session)
 
+    # P3.5 — when Redis is configured, subscribe to the WS broadcast
+    # channel so other backend instances' notifications reach our local
+    # sockets. A no-op when Redis is disabled.
+    await ws_manager.start_subscriber()
+
     if settings.run_bot:
         from .bot.runner import start_polling
 
@@ -71,6 +78,9 @@ async def lifespan(app: FastAPI):
                 await task
             except asyncio.CancelledError:
                 pass
+
+    await ws_manager.stop_subscriber()
+    await close_redis()
 
 
 app = FastAPI(title="Garant TMA", lifespan=lifespan)
