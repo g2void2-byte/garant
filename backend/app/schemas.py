@@ -217,7 +217,21 @@ class ReviewCreate(BaseModel):
     target_username: str
     rating: int
     text: str = ""
-    deal_id: int | None = None
+    deal_id: int
+
+    @field_validator("rating")
+    @classmethod
+    def _rating_range(cls, v: int) -> int:
+        if v < 1 or v > 5:
+            raise ValueError("Рейтинг должен быть от 1 до 5")
+        return v
+
+    @field_validator("text")
+    @classmethod
+    def _text_len(cls, v: str) -> str:
+        if len(v) > 1024:
+            raise ValueError("Текст отзыва слишком длинный (≤1024)")
+        return v
 
 
 class ReviewOut(BaseModel):

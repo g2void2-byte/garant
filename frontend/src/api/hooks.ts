@@ -203,7 +203,7 @@ export function useReviews(username: string | undefined) {
 export function useCreateReview() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { target_username: string; rating: number; text: string; deal_id?: number }) =>
+    mutationFn: (body: { target_username: string; rating: number; text: string; deal_id: number }) =>
       api.post("api/reviews", { json: body }).json<ReviewDto>(),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["reviews", vars.target_username] });
