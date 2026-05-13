@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Computed,
     DateTime,
     Enum,
     ForeignKey,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -141,6 +143,21 @@ class User(Base):
     is_hidden_profile: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    # P3.4 — full-text search vector. Computed by Postgres on INSERT/UPDATE.
+    # Weight A = username (more important), Weight B = display_name + description.
+    # NB: ``simple`` config is intentional — we serve a Russian/English mixed
+    # audience and don't want stemming on usernames.
+    search_vector: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed(
+            "setweight(to_tsvector('simple', coalesce(username, '')), 'A') || "
+            "setweight(to_tsvector('simple', coalesce(display_name, '')), 'B') || "
+            "setweight(to_tsvector('simple', coalesce(description, '')), 'C')",
+            persisted=True,
+        ),
+        nullable=True,
+    )
+
     services: Mapped[list[Service]] = relationship(back_populates="owner", lazy="selectin")
     forums: Mapped[list[Forum]] = relationship(back_populates="owner", lazy="selectin")
 
@@ -170,6 +187,17 @@ class Service(Base):
     )
     ban_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # P3.4 — full-text search vector. Title is weighted higher than description.
+    search_vector: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed(
+            "setweight(to_tsvector('simple', coalesce(title, '')), 'A') || "
+            "setweight(to_tsvector('simple', coalesce(description, '')), 'B')",
+            persisted=True,
+        ),
+        nullable=True,
+    )
 
     owner: Mapped[User] = relationship(back_populates="services", lazy="selectin")
     category: Mapped[Category] = relationship(back_populates="services", lazy="selectin")
