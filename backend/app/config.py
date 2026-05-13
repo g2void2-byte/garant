@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     media_max_bytes: int = 5 * 1024 * 1024  # 5 MiB
     media_allowed_kinds: str = "avatar,banner,deal"
 
+    # P3.5 — Redis. Empty disables Redis and all features fall back to
+    # in-process state (WS broadcasts stay local; rate-limit stays in-memory).
+    redis_url: str = ""
+
     # P3.2 — bot menu external links. Empty values hide the button.
     bot_forums_url: str = ""
     bot_community_chat_url: str = ""

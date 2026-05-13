@@ -34,6 +34,18 @@ npm install
 npm run dev                   # -> http://localhost:5173
 ```
 
+### Horizontal scale (optional)
+
+For multi-worker / multi-replica deployments, run Redis and point the backend at it:
+
+```bash
+docker run -d --name garant-redis -p 6379:6379 redis:7-alpine
+# then in .env:
+REDIS_URL=redis://localhost:6379/0
+```
+
+This makes WS notifications fan out across all backend instances (via `PUBLISH` on the `ws:notifications` channel) and replaces the in-process rate-limit counters with shared Redis counters. The backend stays functional if Redis goes down — it logs a warning and falls back to in-process state.
+
 ## Database migrations
 
 We use **Alembic** for schema changes. The app runs `alembic upgrade head`
@@ -60,6 +72,7 @@ does not detect column-rename or data-migration intent.
 | `WEBAPP_PORT` | `8080` | Backend listen port |
 | `ALLOWED_ORIGINS` | `http://localhost:5173` | CORS origins (comma-separated) |
 | `DATABASE_URL` | `postgresql+asyncpg://garant:garant@localhost:5432/garant` | SQLAlchemy async DB URL |
+| `REDIS_URL` | _empty_ | Optional. When set (e.g. `redis://localhost:6379/0`), WebSocket broadcasts go through Redis pub/sub and the rate limiter uses Redis counters. Empty keeps everything in-process. |
 | `RUN_BOT` | `1` | Start aiogram polling (set `0` to disable) |
 | `ALLOW_UNSIGNED_INIT_DATA` | `0` | Accept unsigned initData (dev only!) |
 

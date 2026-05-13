@@ -79,7 +79,7 @@ async def push(
     await session.commit()
     await session.refresh(notif)
 
-    await manager.send_to_user(
+    await manager.publish(
         recipient_id,
         {
             "event": "notification",
