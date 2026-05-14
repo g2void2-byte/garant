@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { MaintenanceBanner } from "@/components/MaintenanceBanner";
@@ -7,6 +7,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ToastProvider } from "@/components/ui/Toast";
 import { useLiveNotifications } from "@/lib/useLiveNotifications";
+import { queryClient } from "@/lib/queryClient";
 import { initTelegram } from "@/lib/tg";
 
 const SearchPage = lazy(() => import("@/pages/search/SearchPage"));
@@ -49,17 +50,6 @@ const AdminTaxonomyPage = lazy(() => import("@/pages/admin/AdminTaxonomyPage"));
 const AdminSystemPage = lazy(() => import("@/pages/admin/AdminSystemPage"));
 const AdminAuditPage = lazy(() => import("@/pages/admin/AdminAuditPage"));
 const AdminTwoFactorPage = lazy(() => import("@/pages/admin/AdminTwoFactorPage"));
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30_000,
-      gcTime: 5 * 60_000,
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-});
 
 function PageFallback() {
   return (

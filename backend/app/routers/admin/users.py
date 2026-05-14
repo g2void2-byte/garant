@@ -52,6 +52,7 @@ from ...schemas import (
     AdminUserListItem,
     AdminUserListOut,
 )
+from ...ws import manager as ws_manager
 
 # All admin/users/* endpoints share a single 600/min token-bucket. Apply
 # at the router level so we don't have to thread an ``RLAdmin`` dep
@@ -516,6 +517,16 @@ async def invalidate_sessions(
         dm_title="Сессия завершена",
         dm_body=body.reason or "Администратор завершил вашу активную сессию. Войдите снова.",
     )
+    # Bumping ``pin_session_epoch`` revokes future REST calls on the
+    # next request, but a socket that completed first-message auth
+    # before the bump keeps streaming notifications. Closing it here
+    # forces the now-untrusted device to reconnect and re-auth.
+    try:
+        await ws_manager.invalidate_user(target.id)
+    except Exception:  # noqa: BLE001
+        # WS fan-out is best-effort — a failure here must not roll back
+        # the admin action.
+        pass
     return _to_detail(target, has_pin=await _has_pin(target))
 
 

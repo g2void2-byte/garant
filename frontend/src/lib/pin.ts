@@ -5,10 +5,26 @@
  * passes PIN verification. It is attached to subsequent requests via the
  * `X-Pin-Token` header so sensitive endpoints can require it without
  * forcing the user to re-enter their PIN on every call.
+ *
+ * A custom ``garant:pin-token-changed`` event is dispatched on every
+ * mutation so React components (notably ``PinGate``) can react to the
+ * token being revoked from outside their tree — for example by the
+ * ky 401 interceptor in ``api/client.ts`` clearing the token after the
+ * server returned "PIN-сессия отозвана".
  */
 
 const STORAGE_KEY = "garant.pin_token";
 const EXPIRES_KEY = "garant.pin_token_expires";
+
+export const PIN_TOKEN_CHANGED_EVENT = "garant:pin-token-changed";
+
+function notifyTokenChanged() {
+  try {
+    window.dispatchEvent(new Event(PIN_TOKEN_CHANGED_EVENT));
+  } catch {
+    /* DOM unavailable (e.g. during SSR/tests) */
+  }
+}
 
 export function setPinToken(token: string, expiresAt: string) {
   try {
@@ -17,6 +33,7 @@ export function setPinToken(token: string, expiresAt: string) {
   } catch {
     /* storage unavailable */
   }
+  notifyTokenChanged();
 }
 
 export function clearPinToken() {
@@ -26,6 +43,7 @@ export function clearPinToken() {
   } catch {
     /* noop */
   }
+  notifyTokenChanged();
 }
 
 export function getPinToken(): string | null {
