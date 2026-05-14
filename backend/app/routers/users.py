@@ -34,7 +34,9 @@ _DEALS_BUCKETS: dict[str, tuple[int | None, int | None]] = {
 
 # Continental's "Префикс" radio. Keys are stringly-typed to match the
 # bundle's data attributes.
-_STATUS_KEYS = {"5", "4", "3", "2"}
+# Tier 4 (moderator) was retired with the role; keep the three
+# remaining levels so the existing filter UI keeps working unchanged.
+_STATUS_KEYS = {"5", "3", "2"}
 
 
 def _parse_date(value: str | None) -> datetime | None:
@@ -116,8 +118,6 @@ async def list_users(
             raise HTTPException(400, f"Неизвестный status: {status}")
         if status == "5":
             stmt = stmt.where(User.is_admin.is_(True))
-        elif status == "4":
-            stmt = stmt.where(User.is_moderator.is_(True))
         elif status == "3":
             stmt = stmt.where(User.is_arbiter.is_(True))
         elif status == "2":

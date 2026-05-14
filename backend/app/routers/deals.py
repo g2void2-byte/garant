@@ -87,6 +87,21 @@ async def _get(session, deal_id: int) -> Deal:
     return deal
 
 
+async def _get_locked(session, deal_id: int) -> Deal:
+    """Fetch a deal row with ``SELECT … FOR UPDATE``.
+
+    Used by every mutation endpoint so two concurrent calls on the
+    same deal can't both pass the status guard and double-spend the
+    locked balance.
+    """
+    deal = (
+        await session.execute(select(Deal).where(Deal.id == deal_id).with_for_update())
+    ).scalar_one_or_none()
+    if not deal:
+        raise HTTPException(404, "Сделка не найдена")
+    return deal
+
+
 @router.get("", response_model=list[DealOut])
 async def list_deals(
     user: CurrentUser,
@@ -147,7 +162,7 @@ async def create_deal_endpoint(
 
 @router.post("/{deal_id}/accept", response_model=DealOut)
 async def accept_deal_endpoint(deal_id: int, user: PinUser, session: SessionDep):
-    deal = await _get(session, deal_id)
+    deal = await _get_locked(session, deal_id)
     try:
         deal = await accept_deal(session, deal, user)
     except ValueError as e:
@@ -157,7 +172,7 @@ async def accept_deal_endpoint(deal_id: int, user: PinUser, session: SessionDep)
 
 @router.post("/{deal_id}/decline", response_model=DealOut)
 async def decline_deal_endpoint(deal_id: int, user: PinUser, session: SessionDep):
-    deal = await _get(session, deal_id)
+    deal = await _get_locked(session, deal_id)
     try:
         deal = await decline_deal(session, deal, user)
     except ValueError as e:
@@ -167,7 +182,7 @@ async def decline_deal_endpoint(deal_id: int, user: PinUser, session: SessionDep
 
 @router.post("/{deal_id}/finish", response_model=DealOut)
 async def finish_deal_endpoint(deal_id: int, user: PinUser, session: SessionDep):
-    deal = await _get(session, deal_id)
+    deal = await _get_locked(session, deal_id)
     try:
         deal = await finish_deal(session, deal, user)
     except ValueError as e:
@@ -182,7 +197,7 @@ async def cancel_request_endpoint(
     user: PinUser,
     session: SessionDep,
 ):
-    deal = await _get(session, deal_id)
+    deal = await _get_locked(session, deal_id)
     try:
         deal = await request_cancel(session, deal, user, body.reason)
     except ValueError as e:
@@ -192,7 +207,7 @@ async def cancel_request_endpoint(
 
 @router.post("/{deal_id}/cancel_request/revoke", response_model=DealOut)
 async def cancel_revoke_endpoint(deal_id: int, user: PinUser, session: SessionDep):
-    deal = await _get(session, deal_id)
+    deal = await _get_locked(session, deal_id)
     try:
         deal = await revoke_cancel(session, deal, user)
     except ValueError as e:
@@ -202,7 +217,7 @@ async def cancel_revoke_endpoint(deal_id: int, user: PinUser, session: SessionDe
 
 @router.post("/{deal_id}/cancel_request/accept", response_model=DealOut)
 async def cancel_accept_endpoint(deal_id: int, user: PinUser, session: SessionDep):
-    deal = await _get(session, deal_id)
+    deal = await _get_locked(session, deal_id)
     try:
         deal = await accept_cancel(session, deal, user)
     except ValueError as e:
@@ -217,7 +232,7 @@ async def debate_endpoint(
     user: PinUser,
     session: SessionDep,
 ):
-    deal = await _get(session, deal_id)
+    deal = await _get_locked(session, deal_id)
     try:
         deal = await start_arbitration(session, deal, user, body.reason)
     except ValueError as e:
@@ -232,7 +247,7 @@ async def resolve_endpoint(
     user: PinUser,
     session: SessionDep,
 ):
-    deal = await _get(session, deal_id)
+    deal = await _get_locked(session, deal_id)
     try:
         deal = await resolve_arbitration(session, deal, user, body.winner, body.note)
     except ValueError as e:

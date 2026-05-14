@@ -121,11 +121,9 @@ async def require_admin(
 ) -> User:
     """Gate an endpoint behind ``is_admin``.
 
-    Used by every ``/api/admin/*`` route. The bot has only two privileged
-    roles surfaced through the admin panel: ``admin`` (full) and
-    ``arbiter`` (only the arbitration tab). The ``is_moderator`` flag
-    still exists on the model as a soft tag but is *not* recognised by
-    the admin panel — the role was deliberately removed from the spec.
+    Used by every ``/api/admin/*`` route. The two privileged roles are
+    ``admin`` (full access) and ``arbiter`` (only the arbitration tab,
+    handled by its own dep).
     """
     if not user.is_admin:
         raise HTTPException(403, "Доступ запрещён")

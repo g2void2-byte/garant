@@ -56,7 +56,6 @@ class UserOut(BaseModel):
     description: str
     prefix: str | None
     is_admin: bool
-    is_moderator: bool = False
     is_arbiter: bool
     is_vip: bool = False
     is_banned: bool = False
@@ -203,7 +202,6 @@ class ServiceOwnerOut(BaseModel):
     good: int
     bad: int
     is_admin: bool
-    is_moderator: bool = False
     is_arbiter: bool
 
 
@@ -570,7 +568,6 @@ class AdminUserListItem(BaseModel):
     photo_url: str | None
     prefix: str | None
     is_admin: bool
-    is_moderator: bool
     is_arbiter: bool
     is_vip: bool
     is_banned: bool
@@ -618,7 +615,6 @@ class AdminUserDetailOut(BaseModel):
     deals_failed: int
     deals_arbitrage: int
     is_admin: bool
-    is_moderator: bool
     is_arbiter: bool
     is_vip: bool
     is_banned: bool
@@ -660,10 +656,8 @@ class AdminReasonIn(BaseModel):
 class AdminSetRoleIn(BaseModel):
     """Body for ``POST /admin/users/:id/role``.
 
-    Exactly one of the role flags may be true; pass all false to revoke
-    privileges. ``is_moderator`` is intentionally unsupported per the
-    spec — the field is still there in the DB but the admin panel does
-    not grant it.
+    Pass any combination of the three role flags. The moderator role
+    was dropped from the spec and is not supported here.
     """
 
     is_admin: bool = False
