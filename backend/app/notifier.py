@@ -68,6 +68,15 @@ async def push(
     body: str = "",
     payload: dict[str, Any] | None = None,
 ) -> Notification:
+    """Persist a notification, publish it on WS, fire a DM.
+
+    The caller **owns the transaction**: we ``flush()`` so the notif
+    row has a primary key for WS/DM dispatch, but the commit happens
+    in the caller (M-17). That makes the in-app notification atomic
+    with whatever state transition triggered it — if the caller's
+    commit later raises, neither the state change nor the notif is
+    visible to anyone.
+    """
     notif = Notification(
         recipient_id=recipient_id,
         type=type_,
@@ -76,8 +85,7 @@ async def push(
         payload=json.dumps(payload) if payload else None,
     )
     session.add(notif)
-    await session.commit()
-    await session.refresh(notif)
+    await session.flush()
 
     await manager.publish(
         recipient_id,

@@ -179,28 +179,40 @@ async def pin_change(
     _ensure_format(body.new_pin)
     if _is_locked(user):
         raise HTTPException(423, "Слишком много попыток. Попробуйте позже.")
-    if not verify_pin(body.old_pin, user.pin_hash):
-        user.pin_attempts = (user.pin_attempts or 0) + 1
-        if user.pin_attempts >= settings.pin_max_attempts:
-            user.pin_locked_until = _now() + timedelta(minutes=settings.pin_lock_minutes)
-            user.pin_attempts = 0
+    # M-10 — make sure any unexpected DB error rolls the transaction
+    # back; without it a half-applied update (e.g. attempts++ but
+    # pin_hash unchanged) could leak across the request boundary if a
+    # later session.commit() ever succeeds in the same request.
+    try:
+        if not verify_pin(body.old_pin, user.pin_hash):
+            user.pin_attempts = (user.pin_attempts or 0) + 1
+            if user.pin_attempts >= settings.pin_max_attempts:
+                user.pin_locked_until = _now() + timedelta(minutes=settings.pin_lock_minutes)
+                user.pin_attempts = 0
+                await session.commit()
+                raise HTTPException(
+                    423,
+                    f"Слишком много попыток. Блокировка на {settings.pin_lock_minutes} мин.",
+                )
             await session.commit()
+            attempts_left = _attempts_left(user)
             raise HTTPException(
-                423,
-                f"Слишком много попыток. Блокировка на {settings.pin_lock_minutes} мин.",
+                401,
+                f"Старый PIN неверен. Осталось попыток: {attempts_left}",
             )
+        user.pin_hash = hash_pin(body.new_pin)
+        user.pin_attempts = 0
+        user.pin_locked_until = None
         await session.commit()
-        attempts_left = _attempts_left(user)
-        raise HTTPException(
-            401,
-            f"Старый PIN неверен. Осталось попыток: {attempts_left}",
-        )
-    user.pin_hash = hash_pin(body.new_pin)
-    user.pin_attempts = 0
-    user.pin_locked_until = None
-    await session.commit()
-    await session.refresh(user)
-    return _token_response(user)
+        await session.refresh(user)
+        return _token_response(user)
+    except HTTPException:
+        # Already-handled flow control (wrong PIN, lockout). Commits
+        # above are intentional and must persist.
+        raise
+    except Exception:
+        await session.rollback()
+        raise
 
 
 # Per-user PIN-reset throttle. Without this the endpoint could be used
@@ -257,6 +269,8 @@ async def pin_reset_confirm(
     _rl: RLPin,
 ) -> PinTokenOut:
     _ensure_format(body.new_pin)
+    if _is_locked(user):
+        raise HTTPException(423, "Слишком много попыток. Попробуйте позже.")
     if not user.pin_reset_code_hash or not user.pin_reset_expires:
         raise HTTPException(400, "Сначала запросите код сброса")
     if user.pin_reset_expires < _now():
@@ -265,7 +279,24 @@ async def pin_reset_confirm(
         await session.commit()
         raise HTTPException(400, "Срок действия кода истёк")
     if not verify_reset_code(body.code, user.pin_reset_code_hash):
-        raise HTTPException(401, "Неверный код")
+        # M-7 — brute-force protection: every wrong code counts the
+        # same as a wrong PIN on /check, otherwise an attacker can
+        # enumerate the 10⁶-keyspace by spamming /reset/confirm.
+        user.pin_attempts = (user.pin_attempts or 0) + 1
+        if user.pin_attempts >= settings.pin_max_attempts:
+            user.pin_locked_until = _now() + timedelta(minutes=settings.pin_lock_minutes)
+            user.pin_attempts = 0
+            await session.commit()
+            raise HTTPException(
+                423,
+                f"Слишком много попыток. Блокировка на {settings.pin_lock_minutes} мин.",
+            )
+        await session.commit()
+        attempts_left = _attempts_left(user)
+        raise HTTPException(
+            401,
+            f"Неверный код. Осталось попыток: {attempts_left}",
+        )
 
     user.pin_hash = hash_pin(body.new_pin)
     user.pin_attempts = 0

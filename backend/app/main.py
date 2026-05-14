@@ -51,6 +51,24 @@ async def _inactivity_loop(interval_seconds: int) -> None:
 async def lifespan(app: FastAPI):
     global _bot_task, _inactivity_task
 
+    # M-8 — Redis-backed rate limit is the only way to share counters
+    # across uvicorn workers / replicas. With ``REDIS_URL`` empty the
+    # limiter silently falls back to per-process buckets, so the
+    # effective limit becomes ``N × configured`` for ``N`` workers.
+    # Refuse to boot in production/staging; loud WARNING in dev/test so
+    # local runs aren't blocked.
+    if not settings.redis_url:
+        if settings.environment in ("production", "staging"):
+            raise RuntimeError(
+                "REDIS_URL must be set when ENVIRONMENT is "
+                f"'{settings.environment}'; in-memory rate-limit "
+                "counters are per-process and unsafe with multiple workers."
+            )
+        logger.warning(
+            "REDIS_URL is empty — rate-limit counters are per-process; "
+            "this is OK for development only.",
+        )
+
     await run_migrations()
 
     async with async_session() as session:

@@ -223,9 +223,9 @@ async def _audit_and_notify(
         payload=payload,
         request=request,
     )
-    await session.commit()
     if dm_title is not None:
-        # Also append an in-app notification so the user sees a badge.
+        # M-17 — single commit covers the audit row AND the in-app
+        # notification, so neither shows up without the other.
         try:
             await notifier.push(
                 session,
@@ -236,6 +236,8 @@ async def _audit_and_notify(
             )
         except Exception:  # noqa: BLE001
             pass
+    await session.commit()
+    if dm_title is not None:
         await _dm(target, dm_title, dm_body or "")
 
 

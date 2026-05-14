@@ -554,8 +554,6 @@ async def force_release(
             "payout": str(payout),
         },
     )
-    await session.commit()
-    await session.refresh(deal)
     await _notify_party(
         session,
         deal.seller_id,
@@ -570,6 +568,8 @@ async def force_release(
         f"Сделка #{deal.id} завершена в пользу продавца.",
         deal.id,
     )
+    await session.commit()
+    await session.refresh(deal)
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -614,8 +614,6 @@ async def force_refund(
             "refunded": str(refunded),
         },
     )
-    await session.commit()
-    await session.refresh(deal)
     await _notify_party(
         session,
         deal.buyer_id,
@@ -630,6 +628,8 @@ async def force_refund(
         f"Сделка #{deal.id} закрыта в пользу покупателя.",
         deal.id,
     )
+    await session.commit()
+    await session.refresh(deal)
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -682,8 +682,6 @@ async def split_deal(
             "locked": str(locked),
         },
     )
-    await session.commit()
-    await session.refresh(deal)
     await _notify_party(
         session,
         deal.buyer_id,
@@ -698,6 +696,8 @@ async def split_deal(
         f"По сделке #{deal.id} вам начислено {seller_share} {currency.code}.",
         deal.id,
     )
+    await session.commit()
+    await session.refresh(deal)
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -730,8 +730,6 @@ async def force_arbitration(
         reason=body.reason,
         payload={"before_status": before, "after_status": deal.status.value},
     )
-    await session.commit()
-    await session.refresh(deal)
     for recipient_id in (deal.buyer_id, deal.seller_id):
         await _notify_party(
             session,
@@ -740,6 +738,8 @@ async def force_arbitration(
             f"По сделке #{deal.id} открыт арбитраж администратором.",
             deal.id,
         )
+    await session.commit()
+    await session.refresh(deal)
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -777,8 +777,6 @@ async def assign_arbiter(
         reason=None,
         payload={"before": before, "after": body.arbiter_id},
     )
-    await session.commit()
-    await session.refresh(deal)
     if body.arbiter_id is not None:
         await _notify_party(
             session,
@@ -787,6 +785,8 @@ async def assign_arbiter(
             f"Вам назначена сделка #{deal.id} для арбитража.",
             deal.id,
         )
+    await session.commit()
+    await session.refresh(deal)
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -871,7 +871,7 @@ async def delete_deal(
         payload=snapshot,
     )
     await session.delete(deal)
-    await session.commit()
+    await session.flush()
 
     for recipient_id, role in ((buyer_id, "buyer"), (seller_id, "seller")):
         body_text = f"Сделка #{deal_id_local} удалена администратором." + (
@@ -880,6 +880,7 @@ async def delete_deal(
             else ""
         )
         await _notify_party(session, recipient_id, "Сделка удалена", body_text, deal_id_local)
+    await session.commit()
 
     return {
         "deleted": True,

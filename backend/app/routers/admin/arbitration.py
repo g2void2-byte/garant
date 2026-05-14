@@ -158,7 +158,6 @@ async def claim_arbitration(
         payload={"arbiter_id": user.id},
         request=request,
     )
-    await session.commit()
     for recipient_id in (deal.buyer_id, deal.seller_id):
         try:
             await notifier.push(
@@ -171,6 +170,7 @@ async def claim_arbitration(
             )
         except Exception:  # noqa: BLE001
             pass
+    await session.commit()
 
     return {
         "claimed": True,
