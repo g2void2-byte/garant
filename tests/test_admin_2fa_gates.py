@@ -20,6 +20,11 @@ still proving the dependency is wired on every router:
 * ``POST /api/admin/withdrawals/:id/decide``            (withdrawals router)
 * ``POST /api/admin/wallets/:user_id/adjust``           (wallets router)
 * ``POST /api/admin/deposits/:id/mark-paid``            (deposits router)
+* ``POST /api/admin/broadcasts``                        (broadcasts router)
+* ``PATCH /api/admin/settings``                         (settings router)
+* ``POST /api/admin/services/:id/delete``               (content router)
+* ``PUT /api/admin/categories``                         (taxonomy router)
+* ``POST /api/admin/users/:id/unban``                   (users.unban — symmetric to ban)
 """
 
 from __future__ import annotations
@@ -31,8 +36,10 @@ from sqlalchemy import select
 from backend.app.auth_2fa import totp_now
 from backend.app.db import async_session
 from backend.app.models import (
+    Category,
     Currency,
     DealStatus,
+    Service,
     User,
     UserBalance,
     WalletDeposit,
@@ -330,6 +337,205 @@ async def test_deposits_mark_paid_requires_2fa(client):
     async with async_session() as session:
         d = await session.get(WalletDeposit, dep_id)
         assert d.status == WalletDepositStatus.paid
+
+
+# ── 6. broadcasts router — create ──────────────────────────────────────
+
+
+async def test_broadcasts_create_requires_2fa(client):
+    admin_init, admin_id = await _make_admin(client, tg=1)
+    # Need at least one recipient so the handler has something to do.
+    await _bootstrap(client, tg_user_id=2, username="bob")
+    payload = {"body": "Hello", "dispatch_inapp": True, "dispatch_dm": False}
+
+    resp = await client.post(
+        "/api/admin/broadcasts",
+        json=payload,
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 403, resp.text
+
+    secret = await _enrol_2fa(client, admin_init)
+
+    resp = await client.post(
+        "/api/admin/broadcasts",
+        json=payload,
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 401, resp.text
+
+    resp = await client.post(
+        "/api/admin/broadcasts",
+        json=payload,
+        headers={**auth_headers(admin_init), "X-Totp-Code": "000000"},
+    )
+    assert resp.status_code == 401, resp.text
+
+    await _reset_replay(admin_id)
+    headers = await _real_totp_headers(client, admin_init, secret)
+    resp = await client.post(
+        "/api/admin/broadcasts",
+        json=payload,
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+
+
+# ── 7. settings router — update ────────────────────────────────────────
+
+
+async def test_settings_update_requires_2fa(client):
+    admin_init, admin_id = await _make_admin(client, tg=1)
+    payload = {"deal_commission_percent": 3.5}
+
+    resp = await client.patch(
+        "/api/admin/settings",
+        json=payload,
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 403, resp.text
+
+    secret = await _enrol_2fa(client, admin_init)
+
+    resp = await client.patch(
+        "/api/admin/settings",
+        json=payload,
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 401, resp.text
+
+    await _reset_replay(admin_id)
+    headers = await _real_totp_headers(client, admin_init, secret)
+    resp = await client.patch(
+        "/api/admin/settings",
+        json=payload,
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+
+
+# ── 8. content router — delete_service ─────────────────────────────────
+
+
+async def _seed_service(owner_id: int) -> int:
+    async with async_session() as session:
+        cat = (await session.execute(select(Category))).scalars().first()
+        assert cat is not None
+        s = Service(
+            owner_id=owner_id,
+            category_id=cat.id,
+            title="t",
+            description="d",
+            price=10,
+        )
+        session.add(s)
+        await session.commit()
+        await session.refresh(s)
+        return s.id
+
+
+async def test_content_delete_service_requires_2fa(client):
+    admin_init, admin_id = await _make_admin(client, tg=1)
+    owner_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    sid = await _seed_service(owner_id)
+
+    resp = await client.post(
+        f"/api/admin/services/{sid}/delete",
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 403, resp.text
+
+    secret = await _enrol_2fa(client, admin_init)
+
+    resp = await client.post(
+        f"/api/admin/services/{sid}/delete",
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 401, resp.text
+
+    await _reset_replay(admin_id)
+    headers = await _real_totp_headers(client, admin_init, secret)
+    resp = await client.post(
+        f"/api/admin/services/{sid}/delete",
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    async with async_session() as session:
+        assert await session.get(Service, sid) is None
+
+
+# ── 9. taxonomy router — upsert_category ───────────────────────────────
+
+
+async def test_taxonomy_upsert_category_requires_2fa(client):
+    admin_init, admin_id = await _make_admin(client, tg=1)
+    payload = {"slug": "gated-cat", "name": "Gated", "icon": "🔒"}
+
+    resp = await client.put(
+        "/api/admin/categories",
+        json=payload,
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 403, resp.text
+
+    secret = await _enrol_2fa(client, admin_init)
+
+    resp = await client.put(
+        "/api/admin/categories",
+        json=payload,
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 401, resp.text
+
+    await _reset_replay(admin_id)
+    headers = await _real_totp_headers(client, admin_init, secret)
+    resp = await client.put(
+        "/api/admin/categories",
+        json=payload,
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+
+
+# ── 10. users router — unban (symmetric to ban) ────────────────────────
+
+
+async def test_users_unban_requires_2fa(client):
+    admin_init, admin_id = await _make_admin(client, tg=1)
+    target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    async with async_session() as session:
+        u = await session.get(User, target_id)
+        u.is_banned = True
+        u.ban_reason = "Спам"
+        await session.commit()
+
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/unban",
+        json={},
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 403, resp.text
+
+    secret = await _enrol_2fa(client, admin_init)
+
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/unban",
+        json={},
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 401, resp.text
+
+    await _reset_replay(admin_id)
+    headers = await _real_totp_headers(client, admin_init, secret)
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/unban",
+        json={},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    async with async_session() as session:
+        target = await session.get(User, target_id)
+        assert target.is_banned is False
 
 
 # Local imports to keep DealStatus referenced when fixtures grow (silences

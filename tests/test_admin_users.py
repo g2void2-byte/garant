@@ -260,7 +260,7 @@ async def test_unban_clears_state(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/unban",
         json={},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -413,7 +413,7 @@ async def test_set_rating_override(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/rating",
         json={"rating": 4.7},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -432,7 +432,7 @@ async def test_set_rating_clear_override(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/rating",
         json={"rating": None},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -449,7 +449,7 @@ async def test_set_rating_out_of_range_rejected(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/rating",
         json={"rating": 7.0},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 422
 
@@ -467,7 +467,7 @@ async def test_set_stats_partial_update(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/stats",
         json={"deals_total": 25, "good": 20},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -487,7 +487,7 @@ async def test_set_stats_rejects_negative(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/stats",
         json={"deals_total": -1},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 422
 
@@ -502,7 +502,7 @@ async def test_set_stats_deposit_total(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/stats",
         json={"deposit_total": 1250.50},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
     assert resp.json()["deposit_total"] == 1250.50

@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...admin_audit import log_admin_action
+from ...auth_2fa import TotpUser
 from ...deps import AdminUser, SessionDep
 from ...models import (
     Category,
@@ -131,7 +132,7 @@ async def list_user_services(
 async def update_service(
     service_id: int,
     body: AdminServiceUpdateIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminServiceItemOut:
@@ -212,7 +213,7 @@ async def update_service(
 @router.post("/services/{service_id}/delete", status_code=200)
 async def delete_service(
     service_id: int,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> dict:
@@ -273,7 +274,7 @@ async def list_user_reviews(
 @router.post("/reviews", response_model=AdminReviewItemOut, status_code=201)
 async def create_review(
     body: AdminReviewUpsertIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminReviewItemOut:
@@ -327,7 +328,7 @@ async def create_review(
 async def update_review(
     review_id: int,
     body: AdminReviewUpsertIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminReviewItemOut:
@@ -365,7 +366,7 @@ async def update_review(
 @router.post("/reviews/{review_id}/delete", status_code=200)
 async def delete_review(
     review_id: int,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> dict:
@@ -449,7 +450,7 @@ async def list_service_comments(
 async def update_comment(
     comment_id: int,
     body: AdminCommentUpdateIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminCommentItemOut:
@@ -492,7 +493,7 @@ async def update_comment(
 @router.post("/comments/{comment_id}/delete", status_code=200)
 async def delete_comment(
     comment_id: int,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> dict:

@@ -22,6 +22,7 @@ from sqlalchemy import and_, func, select
 
 from ... import notifier
 from ...admin_audit import log_admin_action
+from ...auth_2fa import TotpUser
 from ...bot.notify import send_dm as bot_send_dm
 from ...deps import AdminUser, SessionDep
 from ...models import Broadcast, NotificationType, User
@@ -103,7 +104,7 @@ async def preview_audience(body: AdminBroadcastCreateIn, _admin: AdminUser, sess
 @router.post("", response_model=AdminBroadcastOut)
 async def create_broadcast(
     body: AdminBroadcastCreateIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ):
@@ -210,7 +211,7 @@ async def list_broadcasts(
 @router.delete("/{broadcast_id}")
 async def delete_broadcast(
     broadcast_id: int,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ):
