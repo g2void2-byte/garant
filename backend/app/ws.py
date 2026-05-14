@@ -36,7 +36,9 @@ class ConnectionManager:
         self._pubsub: Any = None
 
     async def connect(self, user_id: int, websocket: WebSocket) -> None:
-        await websocket.accept()
+        # The caller is expected to have already called ``websocket.accept()``
+        # — the notifications endpoint accepts up-front so it can run a
+        # first-message auth handshake before registering the socket.
         self._connections.setdefault(user_id, []).append(websocket)
         logger.info(
             "WS connected: user_id=%d (total=%d)", user_id, len(self._connections.get(user_id, []))
