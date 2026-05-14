@@ -6,11 +6,11 @@ import { Header } from "@/components/layout/Header";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { BadgePrefix } from "@/components/ui/BadgePrefix";
 import { useAdminUsers } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
 import type {
   AdminListUsersQuery,
   AdminUserListItemDto,
 } from "@/api/types";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 const ROLES: Array<{ value: NonNullable<AdminListUsersQuery["role"]>; label: string }> = [
   { value: "any", label: "Все" },
@@ -36,7 +36,6 @@ const STATUSES: Array<{ value: NonNullable<AdminListUsersQuery["status"]>; label
  */
 export default function AdminUsersPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const [searchParams, setSearchParams] = useSearchParams();
   const [draftQ, setDraftQ] = useState(searchParams.get("q") ?? "");
   const [showFilters, setShowFilters] = useState(false);
@@ -49,10 +48,8 @@ export default function AdminUsersPage() {
   const query: AdminListUsersQuery = { q, role, status, page, page_size: 20 };
   const { data, isLoading } = useAdminUsers(query);
 
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
 
   const update = (next: Partial<AdminListUsersQuery>) => {
     const sp = new URLSearchParams(searchParams);

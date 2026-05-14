@@ -7,12 +7,11 @@ import { Header } from "@/components/layout/Header";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Input } from "@/components/ui/Input";
 import { useAdminAuditLog } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
 import type { AdminAuditLogDto } from "@/api/types";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 export default function AdminAuditPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const [action, setAction] = useState("");
   const [actorId, setActorId] = useState("");
   const [showFilters, setShowFilters] = useState(false);
@@ -24,10 +23,8 @@ export default function AdminAuditPage() {
     page_size: 50,
   });
 
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>

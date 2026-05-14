@@ -10,8 +10,8 @@ import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
 import { useAdminSettings, useAdminUpdateSettings } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
 import type { AdminSettingsDto } from "@/api/types";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 /**
  * `/admin/settings` — global app configuration.
@@ -23,7 +23,6 @@ import type { AdminSettingsDto } from "@/api/types";
  */
 export default function AdminSettingsPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const { data, isLoading } = useAdminSettings();
   const update = useAdminUpdateSettings();
   const toast = useToast();
@@ -33,10 +32,8 @@ export default function AdminSettingsPage() {
     if (data && !form) setForm(data);
   }, [data, form]);
 
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
 
   if (isLoading || !form) {
     return (

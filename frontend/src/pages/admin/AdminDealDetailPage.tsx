@@ -36,6 +36,7 @@ import { parseDecimal } from "@/lib/format";
 import type { AdminDealDetailDto, AdminBalanceSnapshotDto } from "@/api/types";
 import { api } from "@/api/client";
 import { haptic } from "@/lib/tg";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 const STATUS_LABEL: Record<string, string> = {
   cancelled: "Отменена",
@@ -87,10 +88,8 @@ export default function AdminDealDetailPage() {
     Number.isFinite(dealId) ? dealId : undefined,
   );
 
-  if (me && !me.is_admin && !me.is_arbiter) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect({ allowArbiter: true });
+  if (!__guard.shouldRender) return null;
 
   if (!Number.isFinite(dealId)) {
     return (

@@ -9,10 +9,10 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { useAdminArbitration, useAdminClaimArbitration } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
 import { parseDecimal } from "@/lib/format";
 import type { AdminDealListItemDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 type Queue = "new" | "in_progress" | "closed";
 
@@ -35,16 +35,13 @@ const QUEUE_TABS: Array<{ key: Queue; label: string; icon: LucideIcon }> = [
  */
 export default function AdminArbitrationPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const [queue, setQueue] = useState<Queue>("new");
   const { data, isLoading } = useAdminArbitration(queue);
   const toast = useToast();
   const claim = useAdminClaimArbitration();
 
-  if (me && !me.is_admin && !me.is_arbiter) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect({ allowArbiter: true });
+  if (!__guard.shouldRender) return null;
 
   const items = data?.items ?? [];
   const counters = data?.counters ?? { new: 0, in_progress: 0, closed: 0 };

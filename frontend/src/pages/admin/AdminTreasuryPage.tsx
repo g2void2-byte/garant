@@ -14,8 +14,8 @@ import {
   useAdminTreasuryWithdraw,
   useAdminTreasuryWithdrawals,
 } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
 import { parseDecimal } from "@/lib/format";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 /**
  * `/admin/treasury` — global commission accumulator + external payout.
@@ -27,15 +27,12 @@ import { parseDecimal } from "@/lib/format";
  */
 export default function AdminTreasuryPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const { data, isLoading } = useAdminTreasury();
   const { data: history } = useAdminTreasuryWithdrawals();
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>

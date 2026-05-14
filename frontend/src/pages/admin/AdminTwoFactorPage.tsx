@@ -13,7 +13,7 @@ import {
   useAdmin2faSetup,
   useAdmin2faStatus,
 } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 /**
  * `/admin/2fa` — TOTP enrolment for admins.
@@ -28,7 +28,6 @@ import { useMe } from "@/api/hooks";
  */
 export default function AdminTwoFactorPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const status = useAdmin2faStatus();
   const setup = useAdmin2faSetup();
   const enable = useAdmin2faEnable();
@@ -39,10 +38,8 @@ export default function AdminTwoFactorPage() {
   const [code, setCode] = useState("");
   const [disableCode, setDisableCode] = useState("");
 
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
 
   const enabled = status.data?.enabled ?? false;
 

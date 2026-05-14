@@ -16,8 +16,13 @@ services:
       POSTGRES_USER: garant
       POSTGRES_PASSWORD: garant
       POSTGRES_DB: garant
+    # Bound to 127.0.0.1 so a dev's Postgres isn't reachable from
+    # other machines on their LAN (and especially not from the wider
+    # internet if compose ever runs on a server). Use
+    # ``DOCKER_HOST_IFACE=0.0.0.0`` in your shell if you really need
+    # to share the DB.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -28,8 +33,9 @@ services:
 
   redis:
     image: redis:7-alpine
+    # See note on postgres above — bound to localhost-only by default.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -62,8 +68,11 @@ services:
       BOT_ARBITRATION_URL: ${BOT_ARBITRATION_URL:-}
       BOT_DOCS_URL: ${BOT_DOCS_URL:-}
       BOT_SUPPORT_USERNAME: ${BOT_SUPPORT_USERNAME:-}
+    # Localhost-only. The TMA is opened in a Telegram client that
+    # tunnels through the local browser, so a public port isn't
+    # needed for dev.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./backend:/app/backend
       - ./alembic:/app/alembic
@@ -87,7 +96,7 @@ services:
       # avoids needing to rewrite vite.config.ts proxy target.
       VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html

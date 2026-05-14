@@ -17,8 +17,8 @@ import {
   useAdminCreateBroadcast,
   useAdminDeleteBroadcast,
 } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
 import type { AdminBroadcastCreateBody } from "@/api/types";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 const ROLES: Array<{ value: "" | "admin" | "arbiter" | "vip" | "regular"; label: string }> = [
   { value: "", label: "Все" },
@@ -30,16 +30,13 @@ const ROLES: Array<{ value: "" | "admin" | "arbiter" | "vip" | "regular"; label:
 
 export default function AdminBroadcastsPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const { data, isLoading } = useAdminBroadcasts();
   const del = useAdminDeleteBroadcast();
   const toast = useToast();
   const [composerOpen, setComposerOpen] = useState(false);
 
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>

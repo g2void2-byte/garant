@@ -22,7 +22,7 @@ import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useAdminDashboard } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 /**
  * Continental admin home page.
@@ -32,15 +32,12 @@ import { useMe } from "@/api/hooks";
  */
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const { data, isLoading, error } = useAdminDashboard();
 
   // Defence-in-depth: server returns 403 too, but redirect early so the
   // page never flashes its scaffolding to a non-admin.
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
 
   return (
     <Page showBack onBack={() => navigate("/profile")}>

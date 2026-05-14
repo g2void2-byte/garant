@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { useAdminFlushRedis, useAdminSystemStatus } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 /**
  * `/admin/system` — service-health introspection.
@@ -18,15 +18,12 @@ import { useMe } from "@/api/hooks";
  */
 export default function AdminSystemPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const { data, isLoading } = useAdminSystemStatus();
   const flush = useAdminFlushRedis();
   const toast = useToast();
 
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>
