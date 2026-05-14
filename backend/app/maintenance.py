@@ -31,6 +31,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
+from .config import settings
 from .db import async_session
 from .models import AppSettings
 
@@ -114,10 +115,16 @@ async def _get_maintenance() -> tuple[bool, str]:
             enabled, message = await _load_from_db()
         except Exception:
             logger.exception("maintenance middleware: settings lookup failed")
-            # Fail open: don't block writes if the DB is down. The
-            # entry is still cached briefly so we don't hammer a
-            # failing DB; pick a short TTL on error so recovery is
-            # quick.
+            # Default policy is fail-open: don't block writes if the
+            # DB is down. ``settings.maintenance_fail_closed=true``
+            # flips this to fail-closed for stricter deploys — see
+            # the doc comment on the config field. Either way the
+            # entry is cached briefly so we don't hammer a failing
+            # DB; pick a short TTL on error so recovery is quick.
+            if settings.maintenance_fail_closed:
+                fallback_msg = "Сервис временно недоступен (проверка статуса не удалась)."
+                _cache = (time.monotonic() + 1.0, True, fallback_msg)
+                return True, fallback_msg
             _cache = (time.monotonic() + 1.0, False, "")
             return False, ""
         _cache = (time.monotonic() + _TTL_SECONDS, enabled, message)
