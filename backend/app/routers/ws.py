@@ -1,5 +1,29 @@
+"""Notification WebSocket endpoint.
+
+The legacy entry point read ``initData`` from the query string —
+``ws://.../ws/notifications?initData=<HMAC-signed Telegram blob>``.
+That value lands in every upstream access log (nginx, ingress, CDN,
+APM probes), so anybody with log access can replay it for the rest of
+the ``auth_date`` window. The audit flagged this as a Medium-severity
+PII sink.
+
+The fix is the standard "auth via first message" pattern:
+  1. Server accepts the socket so the client can stream a body.
+  2. Client sends ``{"type":"auth","init_data":"<…>"}`` as its first
+     frame.
+  3. Server verifies the blob; on failure it closes with code 4001.
+  4. On success the server ACKs with ``{"type":"auth","ok":true}`` and
+     proceeds to the normal message loop.
+
+A bounded ``receive_text`` timeout (``WS_AUTH_TIMEOUT_SECONDS``) and
+payload-size cap (``WS_AUTH_MAX_BYTES``) keep the endpoint from being
+used as a slow-loris / memory-amplifier vector.
+"""
+
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -14,12 +38,53 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ws"])
 
+# Tunables. Kept module-level so tests can patch them.
+WS_AUTH_TIMEOUT_SECONDS = 5.0
+WS_AUTH_MAX_BYTES = 8 * 1024  # initData is normally well under 2 KB.
+
+
+async def _read_auth_frame(websocket: WebSocket) -> str | None:
+    """Read the client's first frame and extract ``init_data``.
+
+    Returns the raw initData string on success, or ``None`` after
+    closing the socket with the appropriate ``4001`` reason.
+    """
+    try:
+        raw = await asyncio.wait_for(websocket.receive_text(), timeout=WS_AUTH_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        await websocket.close(code=4001, reason="Auth timeout")
+        return None
+    except WebSocketDisconnect:
+        return None
+
+    if len(raw) > WS_AUTH_MAX_BYTES:
+        await websocket.close(code=4001, reason="Auth payload too large")
+        return None
+
+    try:
+        payload = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        await websocket.close(code=4001, reason="Auth: invalid JSON")
+        return None
+
+    if not isinstance(payload, dict) or payload.get("type") != "auth":
+        await websocket.close(code=4001, reason="Auth: bad envelope")
+        return None
+
+    init_data = payload.get("init_data")
+    if not isinstance(init_data, str) or not init_data:
+        await websocket.close(code=4001, reason="Auth: missing init_data")
+        return None
+
+    return init_data
+
 
 @router.websocket("/ws/notifications")
 async def websocket_endpoint(websocket: WebSocket):
-    init_data = websocket.query_params.get("initData", "")
-    if not init_data:
-        await websocket.close(code=4001, reason="Missing initData")
+    await websocket.accept()
+
+    init_data = await _read_auth_frame(websocket)
+    if init_data is None:
         return
 
     try:
@@ -51,6 +116,13 @@ async def websocket_endpoint(websocket: WebSocket):
             await session.commit()
             await session.refresh(user)
         user_id = user.id
+
+    # ACK so the client knows the channel is live and can flip its UI
+    # state (badges, "connected" indicator, etc.).
+    try:
+        await websocket.send_text(json.dumps({"type": "auth", "ok": True}))
+    except WebSocketDisconnect:
+        return
 
     await manager.connect(user_id, websocket)
     try:

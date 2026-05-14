@@ -107,6 +107,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Security response headers. Cheap defence-in-depth on every HTTP
+# response — they don't replace input validation but they shrink the
+# blast radius if something goes wrong elsewhere (MIME-confusion, leaky
+# referrers across third-party redirects, etc.). Set as a middleware
+# rather than per-route so static + media + SPA fallback responses are
+# covered too.
+@app.middleware("http")
+async def _security_headers(request, call_next):
+    response = await call_next(request)
+    # Stop browsers from second-guessing our Content-Type — relevant
+    # for the /media/ mount, where a confused sniffer used to be how
+    # uploaded HTML got executed.
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    # Don't leak Garant URLs (which encode user IDs in paths) to
+    # third-party origins users navigate to from inside the TMA.
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    # Stop other origins from framing the app. Telegram embeds via its
+    # native WebView, not an iframe, so ``DENY`` is safe.
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    return response
+
+
 # Admin PR-CDE — global maintenance switch. Reads ``AppSettings`` once
 # per request and short-circuits state-changing calls when on.
 from .maintenance import maintenance_middleware  # noqa: E402

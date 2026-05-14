@@ -400,3 +400,17 @@ async def test_manual_deposit_rate_limited(client):
         headers=auth_headers(init),
     )
     assert resp.status_code == 429, resp.text
+
+
+# ── 9. Security response headers on every HTTP reply ──────────────────────
+
+
+async def test_security_response_headers_present(client):
+    """All HTTP responses must carry the defence-in-depth security
+    headers added by the global middleware (MIME-sniff, referrer,
+    frame-ancestors)."""
+    resp = await client.get("/health")
+    assert resp.status_code == 200
+    assert resp.headers["x-content-type-options"] == "nosniff"
+    assert resp.headers["referrer-policy"] == "no-referrer"
+    assert resp.headers["x-frame-options"] == "DENY"

@@ -14,18 +14,19 @@ export interface WsHandlers {
 const MIN_BACKOFF = 1_000;
 const MAX_BACKOFF = 30_000;
 
-function buildWsUrl(initData: string): string {
+// Plain URL — initData no longer rides in the query string. The
+// backend authenticates via the first JSON frame after ``accept()``
+// (see backend/app/routers/ws.py for the matching server flow).
+function buildWsUrl(): string {
   const apiUrl = import.meta.env.VITE_API_URL as string | undefined;
   if (apiUrl) {
     const u = new URL(apiUrl);
     u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
     u.pathname = (u.pathname.replace(/\/$/, "") || "") + "/ws/notifications";
-    if (initData) u.searchParams.set("initData", initData);
     return u.toString();
   }
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const params = initData ? `?initData=${encodeURIComponent(initData)}` : "";
-  return `${proto}//${window.location.host}/ws/notifications${params}`;
+  return `${proto}//${window.location.host}/ws/notifications`;
 }
 
 export function connectNotifications(handlers: WsHandlers): () => void {
@@ -33,6 +34,11 @@ export function connectNotifications(handlers: WsHandlers): () => void {
   let backoff = MIN_BACKOFF;
   let stopped = false;
   let reconnectTimer: number | null = null;
+  // Each new socket starts un-authed; the auth ACK from the server
+  // flips this true and only *then* do we surface ``onOpen`` to the
+  // caller so consumers don't optimistically treat a 4001-closed
+  // socket as "connected".
+  let authed = false;
 
   const open = () => {
     if (stopped) return;
@@ -41,23 +47,51 @@ export function connectNotifications(handlers: WsHandlers): () => void {
       reconnectTimer = window.setTimeout(open, MAX_BACKOFF);
       return;
     }
+    authed = false;
     try {
-      socket = new WebSocket(buildWsUrl(initData));
+      socket = new WebSocket(buildWsUrl());
     } catch {
       scheduleReconnect();
       return;
     }
     socket.addEventListener("open", () => {
-      backoff = MIN_BACKOFF;
-      handlers.onOpen?.();
+      // The transport is up; send auth and wait for the server ACK
+      // before announcing ``onOpen`` to the caller.
+      try {
+        socket?.send(JSON.stringify({ type: "auth", init_data: initData }));
+      } catch {
+        try {
+          socket?.close();
+        } catch {
+          /* ignore */
+        }
+      }
     });
     socket.addEventListener("message", (msg) => {
+      let parsed: any;
       try {
-        const event: WsEvent = JSON.parse(msg.data);
-        handlers.onEvent(event);
+        parsed = JSON.parse(msg.data);
       } catch {
-        /* ignore non-JSON frames */
+        return; // ignore non-JSON frames
       }
+      if (!authed) {
+        // The first frame must be the auth ACK. Anything else means
+        // the server changed shape or we reconnected against an old
+        // build — close and let backoff retry.
+        if (parsed && parsed.type === "auth" && parsed.ok === true) {
+          authed = true;
+          backoff = MIN_BACKOFF;
+          handlers.onOpen?.();
+        } else {
+          try {
+            socket?.close();
+          } catch {
+            /* ignore */
+          }
+        }
+        return;
+      }
+      handlers.onEvent(parsed as WsEvent);
     });
     socket.addEventListener("close", () => {
       handlers.onClose?.();
