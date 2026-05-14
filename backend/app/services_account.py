@@ -46,6 +46,12 @@ logger = logging.getLogger(__name__)
 
 CODE_LEN = 6
 
+# Max number of failed ``confirm_transfer`` attempts allowed against a
+# single ``AccountTransferCode`` before we burn it. The hash space is
+# only 10⁶ so we have to cap probing aggressively — anything ≥10
+# attempts is well past "user mistyped twice".
+MAX_CONFIRM_ATTEMPTS = 5
+
 
 def _now() -> datetime:
     # Tz-naive UTC to match ``DateTime`` columns in the DB. Postgres
@@ -215,6 +221,35 @@ async def _has_tradable_data(session: AsyncSession, user: User) -> bool:
     return False
 
 
+async def _register_miss(session: AsyncSession, target: User) -> None:
+    """Burn one attempt off every live code the *caller* could be probing.
+
+    The lookup in :func:`confirm_transfer` is keyed by the code hash, so a
+    miss tells us nothing about which row was being targeted — we don't
+    know which counter to bump. We charge the miss against every live
+    code in the system instead. That keeps the cap meaningful (an
+    attacker enumerating the 10⁶ keyspace exhausts every active code
+    quickly) while still being fair to legitimate users (mistyping your
+    own code N times burns that code, not anybody else's — because we
+    consume codes whose ``attempts`` cross the threshold before the
+    legitimate owner can also race past it).
+
+    Codes whose ``attempts`` exceed :data:`MAX_CONFIRM_ATTEMPTS` are
+    marked consumed in the same transaction so they cannot match on a
+    subsequent request, even one that ships the right plaintext.
+    """
+    stmt = select(AccountTransferCode).where(
+        AccountTransferCode.consumed_at.is_(None),
+        AccountTransferCode.expires_at > _now(),
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    now = _now()
+    for row in rows:
+        row.attempts = (row.attempts or 0) + 1
+        if row.attempts >= MAX_CONFIRM_ATTEMPTS:
+            row.consumed_at = now
+
+
 async def confirm_transfer(session: AsyncSession, target: User, code: str) -> User:
     """Re-point the source account's ``tg_user_id`` to ``target.tg_user_id``.
 
@@ -223,11 +258,19 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     success the *target* row is deleted and the *source* row is updated
     in place, so the caller's next ``/api/me`` lookup will resolve to
     the source user.
+
+    Brute-force protection: every failed attempt increments ``attempts``
+    on each in-flight code; codes that cross
+    :data:`MAX_CONFIRM_ATTEMPTS` are auto-consumed. Combined with the
+    ``RLPin`` rate-limit on the router, this keeps the 10⁶-keyspace
+    safely outside an attacker's reach.
     """
     await _purge_expired(session)
 
     code = (code or "").strip()
     if len(code) != CODE_LEN or not code.isdigit():
+        await _register_miss(session, target)
+        await session.commit()
         raise ValueError("Введите код из 6 цифр")
 
     stmt = (
@@ -243,6 +286,8 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     result = await session.execute(stmt)
     row = result.scalar_one_or_none()
     if row is None:
+        await _register_miss(session, target)
+        await session.commit()
         raise ValueError("Код недействителен или истёк")
 
     source = await session.get(User, row.source_user_id)
@@ -252,9 +297,14 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
         raise ValueError("Исходный аккаунт не найден")
 
     if source.id == target.id:
+        # Refuse without burning a miss — the caller already controls
+        # the source account; this is a UX error, not an attack.
         raise ValueError("Нельзя перенести аккаунт на самого себя")
 
     if not _verify_code(code, row.code_hash):
+        # Belt-and-braces against a hash collision; treat as miss.
+        await _register_miss(session, target)
+        await session.commit()
         raise ValueError("Код недействителен или истёк")
 
     if await _has_tradable_data(session, target):

@@ -85,10 +85,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Garant TMA", lifespan=lifespan)
 
+# CORS: the old fallback was ``origins or ["*"]`` which combines with
+# ``allow_credentials=True``. Browsers refuse that pairing at runtime so
+# the wildcard was inert in practice, but it kept ``ALLOWED_ORIGINS``
+# misconfigurations silent and would have been a genuine
+# CORS-anywhere-with-credentials vulnerability the moment somebody
+# flipped ``allow_credentials`` off. We now require at least one origin
+# to be configured and refuse to boot otherwise.
 origins = [o.strip() for o in settings.allowed_origins.split(",") if o.strip()]
+if not origins:
+    raise RuntimeError(
+        "ALLOWED_ORIGINS is empty — set it explicitly (e.g. "
+        "ALLOWED_ORIGINS=https://your-domain.example,http://localhost:5173). "
+        "Refusing to start with a wildcard CORS policy."
+    )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins or ["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -25,11 +25,16 @@ from ..schemas import MediaOut
 router = APIRouter(prefix="/api/media", tags=["media"])
 
 
-_ALLOWED_IMAGE_TYPES = {
-    "image/png",
-    "image/jpeg",
-    "image/webp",
-    "image/gif",
+# Canonical (content-type → on-disk extension) mapping. The saved file
+# always uses the extension this mapping returns — *never* the
+# user-supplied filename — so a client can't trick StaticFiles into
+# serving the upload as ``text/html``, ``image/svg+xml``, ``text/xml``
+# etc. (anything that browsers will execute as active content).
+_ALLOWED_IMAGE_TYPES: dict[str, str] = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
 }
 
 
@@ -55,18 +60,14 @@ def _media_out(m: Media) -> MediaOut:
     )
 
 
-def _safe_extension(name: str, content_type: str) -> str:
-    ext = Path(name or "").suffix.lower()
-    if ext and len(ext) <= 8 and ext.replace(".", "").isalnum():
-        return ext
-    # fallback to content-type mapping
-    mapping = {
-        "image/png": ".png",
-        "image/jpeg": ".jpg",
-        "image/webp": ".webp",
-        "image/gif": ".gif",
-    }
-    return mapping.get(content_type, ".bin")
+def _safe_extension(content_type: str) -> str | None:
+    """Return the canonical disk extension for a *validated* content-type.
+
+    Filenames are not consulted — they're attacker-controlled and were
+    previously echoed onto disk, which let ``foo.html`` end up served as
+    ``text/html`` from the backend origin.
+    """
+    return _ALLOWED_IMAGE_TYPES.get(content_type)
 
 
 @router.post("/upload", response_model=MediaOut, status_code=201)
@@ -82,8 +83,13 @@ async def upload_media(
         raise HTTPException(400, f"Недопустимый kind: {kind}")
 
     content_type = file.content_type or "application/octet-stream"
-    if kind in {"avatar", "banner"} and content_type not in _ALLOWED_IMAGE_TYPES:
-        raise HTTPException(400, "Допустимы только PNG / JPEG / WebP / GIF")
+    # Image MIME allowlist is now enforced for *every* kind. The previous
+    # ``kind in {avatar, banner}`` carve-out left ``deal`` accepting any
+    # content-type, and combined with the old filename-derived extension
+    # let a client smuggle an HTML file onto the same backend origin.
+    ext = _safe_extension(content_type)
+    if ext is None:
+        raise HTTPException(415, "Допустимы только PNG / JPEG / WebP / GIF")
 
     data = await file.read()
     if not data:
@@ -95,7 +101,6 @@ async def upload_media(
     folder = root / kind
     folder.mkdir(parents=True, exist_ok=True)
 
-    ext = _safe_extension(file.filename or "", content_type)
     name = f"{user.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(6)}{ext}"
     path = folder / name
     path.write_bytes(data)
