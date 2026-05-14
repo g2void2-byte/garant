@@ -17,6 +17,8 @@ PR-B coverage:
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlalchemy import select
 
 from backend.app.db import async_session
@@ -161,7 +163,7 @@ async def test_admin_deal_detail_balance_snapshot(client):
     assert detail["status"] == DealStatus.in_progress.value
     assert detail["buyer"]["currency_code"] == "USDT"
     # buyer-pays commission ⇒ locked = 100 + 5% = 105
-    assert detail["buyer"]["locked"] == 105.0
+    assert Decimal(detail["buyer"]["locked"]) == Decimal("105")
     assert any(ev["kind"] == "in_progress" for ev in detail["events"])
 
 
@@ -179,7 +181,7 @@ async def test_admin_force_release(client):
     assert resp.status_code == 200, resp.text
     detail = resp.json()["deal"]
     assert detail["status"] == DealStatus.resolved_for_seller.value
-    assert detail["seller"]["amount"] == 100.0  # commission retained
+    assert Decimal(detail["seller"]["amount"]) == Decimal("100")  # commission retained
     rows = await _audit_rows("deal.force_release")
     assert len(rows) == 1
 
@@ -211,7 +213,7 @@ async def test_admin_force_refund(client):
     assert resp.status_code == 200, resp.text
     detail = resp.json()["deal"]
     assert detail["status"] == DealStatus.resolved_for_buyer.value
-    assert detail["buyer"]["locked"] == 0.0
+    assert Decimal(detail["buyer"]["locked"]) == Decimal(0)
     # buyer got the principal back, commission (5) retained by platform.
     async with async_session() as session:
         usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
@@ -240,8 +242,8 @@ async def test_admin_split_deal(client):
     assert resp.status_code == 200, resp.text
     detail = resp.json()["deal"]
     # 60% to buyer, 40% to seller; commission (5) retained by platform
-    assert detail["buyer"]["amount"] >= 60.0
-    assert detail["seller"]["amount"] == 40.0
+    assert Decimal(detail["buyer"]["amount"]) >= Decimal("60")
+    assert Decimal(detail["seller"]["amount"]) == Decimal("40")
 
 
 async def test_admin_split_percent_out_of_range(client):
@@ -355,7 +357,7 @@ async def test_admin_delete_deal_refunds_buyer(client):
     body = resp.json()
     assert body["deleted"] is True
     assert body["deal_id"] == deal_id
-    assert body["refunded"] == 105.0
+    assert Decimal(body["refunded"]) == Decimal("105")
 
     async with async_session() as session:
         assert await session.get(Deal, deal_id) is None

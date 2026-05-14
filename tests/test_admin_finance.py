@@ -113,7 +113,7 @@ async def test_wallets_list_returns_users(client):
     assert body["total"] >= 1
     bob_row = next(it for it in body["items"] if it["user_id"] == bob_id)
     usdt = next(b for b in bob_row["balances"] if b["currency_code"] == "USDT")
-    assert usdt["amount"] == pytest.approx(100.0)
+    assert float(usdt["amount"]) == pytest.approx(100.0)
 
 
 async def test_wallet_adjust_credits_and_audits(client):
@@ -127,7 +127,7 @@ async def test_wallet_adjust_credits_and_audits(client):
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["amount"] == pytest.approx(50.5)
+    assert float(body["amount"]) == pytest.approx(50.5)
     assert body["currency_code"] == "USDT"
 
     async with async_session() as session:
@@ -165,7 +165,7 @@ async def test_wallet_adjust_debit_signed(client):
         headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["amount"] == pytest.approx(70.0)
+    assert float(resp.json()["amount"]) == pytest.approx(70.0)
 
 
 # ── Deposits ────────────────────────────────────────────────────────────

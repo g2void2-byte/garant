@@ -32,6 +32,7 @@ import {
   useAdminSplitDeal,
 } from "@/api/admin/hooks";
 import { useMe } from "@/api/hooks";
+import { parseDecimal } from "@/lib/format";
 import type { AdminDealDetailDto, AdminBalanceSnapshotDto } from "@/api/types";
 import { api } from "@/api/client";
 import { haptic } from "@/lib/tg";
@@ -167,8 +168,8 @@ function BalanceSnapshotCard({
 }: {
   buyer: AdminBalanceSnapshotDto;
   seller: AdminBalanceSnapshotDto;
-  sum: number;
-  commission: number | null;
+  sum: string;
+  commission: string | null;
 }) {
   return (
     <section className="grid grid-cols-2 gap-3">
@@ -178,14 +179,14 @@ function BalanceSnapshotCard({
         <div className="flex items-center gap-2">
           <DollarSign size={14} className="text-text-muted" /> Сумма сделки
         </div>
-        <div className="font-semibold">${sum.toFixed(2)}</div>
+        <div className="font-semibold">${parseDecimal(sum).toFixed(2)}</div>
       </div>
       {commission !== null && (
         <div className="col-span-2 bg-panel rounded-card p-3 flex items-center justify-between text-sm">
           <div className="flex items-center gap-2">
             <Lock size={14} className="text-text-muted" /> Комиссия
           </div>
-          <div className="font-semibold">{commission.toFixed(2)}</div>
+          <div className="font-semibold">{parseDecimal(commission).toFixed(2)}</div>
         </div>
       )}
     </section>
@@ -199,11 +200,11 @@ function PartyCard({ side, snap }: { side: string; snap: AdminBalanceSnapshotDto
       <div className="mt-1 font-semibold truncate">{snap.display_name}</div>
       <div className="text-xs text-text-muted truncate">@{snap.username ?? "—"} · id {snap.user_id}</div>
       <div className="mt-2 text-xs text-text-muted">
-        Свободно <span className="text-text font-medium">{snap.amount.toFixed(4)}</span>{" "}
+        Свободно <span className="text-text font-medium">{parseDecimal(snap.amount).toFixed(4)}</span>{" "}
         {snap.currency_code ?? "USD"}
       </div>
       <div className="text-xs text-text-muted">
-        В сделке <span className="text-text font-medium">{snap.locked.toFixed(4)}</span>{" "}
+        В сделке <span className="text-text font-medium">{parseDecimal(snap.locked).toFixed(4)}</span>{" "}
         {snap.currency_code ?? "USD"}
       </div>
     </div>

@@ -15,6 +15,7 @@ import {
   useAdminWallets,
 } from "@/api/admin/hooks";
 import { useMe } from "@/api/hooks";
+import { parseDecimal } from "@/lib/format";
 import type { AdminWalletListItemDto } from "@/api/types";
 
 /**
@@ -105,24 +106,28 @@ export default function AdminWalletsPage() {
               </div>
               <div className="mt-3 grid grid-cols-2 gap-1.5">
                 {it.balances
-                  .filter((b) => b.total > 0)
+                  .filter((b) => parseDecimal(b.total) > 0)
                   .slice(0, 4)
-                  .map((b) => (
-                    <div
-                      key={b.currency_id}
-                      className="text-xs bg-panel-2 rounded-button px-2 py-1.5"
-                    >
-                      <div className="text-text-muted">{b.currency_code}</div>
-                      <div className="font-mono">
-                        {b.amount.toFixed(b.decimals)}
-                        {b.locked > 0 && (
-                          <span className="text-warning ml-1">
-                            (+{b.locked.toFixed(b.decimals)} лок.)
-                          </span>
-                        )}
+                  .map((b) => {
+                    const amt = parseDecimal(b.amount);
+                    const locked = parseDecimal(b.locked);
+                    return (
+                      <div
+                        key={b.currency_id}
+                        className="text-xs bg-panel-2 rounded-button px-2 py-1.5"
+                      >
+                        <div className="text-text-muted">{b.currency_code}</div>
+                        <div className="font-mono">
+                          {amt.toFixed(b.decimals)}
+                          {locked > 0 && (
+                            <span className="text-warning ml-1">
+                              (+{locked.toFixed(b.decimals)} лок.)
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             </motion.button>
           ))
@@ -149,7 +154,7 @@ function AdjustForm({
 }) {
   const { data: currencies } = useAdminCurrencies();
   const [currency, setCurrency] = useState(
-    target.balances.find((b) => b.total > 0)?.currency_code ?? "USDT",
+    target.balances.find((b) => parseDecimal(b.total) > 0)?.currency_code ?? "USDT",
   );
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");

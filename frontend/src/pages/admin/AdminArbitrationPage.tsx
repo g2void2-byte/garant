@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { useAdminArbitration, useAdminClaimArbitration } from "@/api/admin/hooks";
 import { useMe } from "@/api/hooks";
+import { parseDecimal } from "@/lib/format";
 import type { AdminDealListItemDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 
@@ -171,7 +172,10 @@ function ArbRow({
         </div>
         <div className="mt-0.5 text-xs text-text-muted flex items-center gap-2 flex-wrap">
           <span className="font-medium text-text">
-            {deal.amount?.toFixed(2) ?? deal.sum.toFixed(2)} {deal.currency_code ?? "USD"}
+            {deal.amount !== null && deal.amount !== undefined
+              ? parseDecimal(deal.amount).toFixed(2)
+              : parseDecimal(deal.sum).toFixed(2)}{" "}
+            {deal.currency_code ?? "USD"}
           </span>
           <span>·</span>
           <span>Арбитраж</span>

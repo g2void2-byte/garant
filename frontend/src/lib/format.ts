@@ -1,6 +1,18 @@
-export function formatCurrency(value: number, code: string, decimals = 2): string {
-  if (!Number.isFinite(value)) return `0 ${code}`;
-  const fixed = value.toLocaleString("en-US", {
+export function parseDecimal(value: string | number | null | undefined): number {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function formatCurrency(
+  value: number | string | null | undefined,
+  code: string,
+  decimals = 2,
+): string {
+  const n = parseDecimal(value);
+  if (!Number.isFinite(n)) return `0 ${code}`;
+  const fixed = n.toLocaleString("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: decimals,
   });
@@ -20,10 +32,14 @@ const DEFAULT_DECIMALS: Record<string, number> = {
   SOL: 6,
 };
 
-export function formatAmount(value: number | null | undefined, code: string): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "0";
+export function formatAmount(
+  value: number | string | null | undefined,
+  code: string,
+): string {
+  const n = parseDecimal(value);
+  if (!Number.isFinite(n)) return "0";
   const decimals = DEFAULT_DECIMALS[code.toUpperCase()] ?? 2;
-  return value.toLocaleString("en-US", {
+  return n.toLocaleString("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: decimals,
   });

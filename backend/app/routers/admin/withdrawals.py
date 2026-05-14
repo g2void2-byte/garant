@@ -62,7 +62,7 @@ def _to_out(w: WalletWithdrawal, c: Currency | None, u: User | None) -> AdminWit
         username=u.username if u else None,
         display_name=u.display_name if u else "",
         currency_code=c.code if c else "",
-        amount=float(w.amount),
+        amount=w.amount,
         address=w.address,
         status=w.status.value,
         admin_note=w.admin_note,
@@ -218,7 +218,7 @@ async def decide_withdrawal(
             payload={
                 "user_id": w.user_id,
                 "currency": currency.code if currency else None,
-                "amount": float(w.amount),
+                "amount": str(w.amount),
                 "auto": auto,
                 "cryptobot_transfer_id": transfer_id,
             },
@@ -266,7 +266,7 @@ async def decide_withdrawal(
             payload={
                 "user_id": w.user_id,
                 "currency": currency.code if currency else None,
-                "amount": float(w.amount),
+                "amount": str(w.amount),
             },
             request=request,
         )
@@ -308,7 +308,7 @@ async def decide_withdrawal(
             payload={
                 "user_id": w.user_id,
                 "currency": currency.code if currency else None,
-                "amount": float(w.amount),
+                "amount": str(w.amount),
             },
             request=request,
         )

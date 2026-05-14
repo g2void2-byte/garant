@@ -86,9 +86,10 @@ async def test_admin_wallet_total_uses_decimal_arithmetic(client):
     usdt_row = next(r for r in rows if r["currency_code"] == "USDT")
     # If the server used float arithmetic, ``total`` would surface as
     # 0.30000000000000004 — Pydantic happily serialises that.
-    assert usdt_row["total"] == 0.3
-    assert usdt_row["amount"] == 0.1
-    assert usdt_row["locked"] == 0.2
+    # Decimal is serialised as a string in Pydantic v2 JSON output.
+    assert Decimal(usdt_row["total"]) == Decimal("0.30")
+    assert Decimal(usdt_row["amount"]) == Decimal("0.10")
+    assert Decimal(usdt_row["locked"]) == Decimal("0.20")
 
 
 async def test_admin_wallet_total_handles_missing_balance(client):
@@ -102,9 +103,9 @@ async def test_admin_wallet_total_handles_missing_balance(client):
     assert resp.status_code == 200, resp.text
     rows = resp.json()
     for row in rows:
-        assert row["amount"] == 0.0
-        assert row["locked"] == 0.0
-        assert row["total"] == 0.0
+        assert Decimal(row["amount"]) == Decimal(0)
+        assert Decimal(row["locked"]) == Decimal(0)
+        assert Decimal(row["total"]) == Decimal(0)
 
 
 # ── M-23: admin delete-deal writes Decimals to Numeric(18,8) columns ────────
