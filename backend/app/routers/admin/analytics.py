@@ -23,6 +23,7 @@ from sqlalchemy import case, func, select
 
 from ...deps import AdminUser, SessionDep
 from ...models import (
+    Currency,
     Deal,
     DealStatus,
     User,
@@ -53,6 +54,26 @@ _DONE_STATUSES = (
     DealStatus.resolved_for_seller,
 )
 
+# Financial KPIs (``deals_volume_usd_30d``, deposits/withdrawals
+# time-series) are reported in a single currency so we don't naively
+# sum BTC + ETH + USDT amounts as if they were comparable numbers.
+# USDT is the canonical pegged-to-USD asset on CryptoBot, so we use
+# it as the proxy for "dollar volume" in the dashboard. Deals and
+# wallet rows in other currencies still appear in the count metrics
+# but contribute zero to the volume sums.
+_PRIMARY_CURRENCY_CODE = "USDT"
+
+
+async def _primary_currency_id(session) -> int | None:
+    """Return the ``currencies.id`` of the primary (USDT) row, or
+    ``None`` if the seed never ran. Callers gate the financial sums on
+    this so an unseeded DB produces zeros instead of mixed-currency
+    garbage.
+    """
+    return (
+        await session.execute(select(Currency.id).where(Currency.code == _PRIMARY_CURRENCY_CODE))
+    ).scalar_one_or_none()
+
 
 @router.get("/kpi", response_model=AdminAnalyticsKpiOut)
 async def kpi(_admin: AdminUser, session: SessionDep):
@@ -71,13 +92,18 @@ async def kpi(_admin: AdminUser, session: SessionDep):
     new_7d = await _count(select(func.count()).select_from(User).where(User.created_at >= d7))
     deals_24h = await _count(select(func.count()).select_from(Deal).where(Deal.created_at >= h24))
     deals_7d = await _count(select(func.count()).select_from(Deal).where(Deal.created_at >= d7))
-    volume_30d = (
-        await session.execute(
-            select(func.coalesce(func.sum(Deal.amount), 0))
-            .where(Deal.status.in_(_DONE_STATUSES))
-            .where(Deal.completed_at >= d30)
+    primary_cur_id = await _primary_currency_id(session)
+    volume_stmt = (
+        select(func.coalesce(func.sum(Deal.amount), 0))
+        .where(Deal.status.in_(_DONE_STATUSES))
+        .where(Deal.completed_at >= d30)
+        .where(Deal.currency_id == primary_cur_id)
+        if primary_cur_id is not None
+        else select(func.coalesce(func.sum(Deal.amount), 0)).where(
+            Deal.id.is_(None)  # noqa: E711 — force zero result when no primary currency seeded
         )
-    ).scalar_one() or 0
+    )
+    volume_30d = (await session.execute(volume_stmt)).scalar_one() or 0
     open_arb = await _count(
         select(func.count()).select_from(Deal).where(Deal.status == DealStatus.arbitration)
     )
@@ -129,13 +155,27 @@ async def _series(session, expr, start: datetime) -> list[AdminAnalyticsSeriesPo
 @router.get("/series", response_model=AdminAnalyticsSeriesOut)
 async def series(_admin: AdminUser, session: SessionDep):
     start = datetime.utcnow() - timedelta(days=30)
+    primary_cur_id = await _primary_currency_id(session)
+    # Filter every financial sum to the primary currency (USDT) so we
+    # never naively add BTC + ETH amounts. Count series (deals_count_30d,
+    # new_users_30d) include every currency / row.
+    cur_match = primary_cur_id if primary_cur_id is not None else -1
     deals_count = await _series(session, (Deal.created_at, func.count(), Deal), start)
     deals_volume = await _series(
         session,
         (
             Deal.completed_at,
             func.coalesce(
-                func.sum(case((Deal.status.in_(_DONE_STATUSES), Deal.amount), else_=0)), 0
+                func.sum(
+                    case(
+                        (
+                            (Deal.status.in_(_DONE_STATUSES)) & (Deal.currency_id == cur_match),
+                            Deal.amount,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
             ),
             Deal,
         ),
@@ -149,7 +189,11 @@ async def series(_admin: AdminUser, session: SessionDep):
             func.coalesce(
                 func.sum(
                     case(
-                        (WalletDeposit.status == WalletDepositStatus.paid, WalletDeposit.amount),
+                        (
+                            (WalletDeposit.status == WalletDepositStatus.paid)
+                            & (WalletDeposit.currency_id == cur_match),
+                            WalletDeposit.amount,
+                        ),
                         else_=0,
                     )
                 ),
@@ -167,7 +211,8 @@ async def series(_admin: AdminUser, session: SessionDep):
                 func.sum(
                     case(
                         (
-                            WalletWithdrawal.status == WalletWithdrawStatus.sent,
+                            (WalletWithdrawal.status == WalletWithdrawStatus.sent)
+                            & (WalletWithdrawal.currency_id == cur_match),
                             WalletWithdrawal.amount,
                         ),
                         else_=0,
@@ -190,6 +235,8 @@ async def series(_admin: AdminUser, session: SessionDep):
 
 @router.get("/top", response_model=AdminAnalyticsTopListsOut)
 async def top(_admin: AdminUser, session: SessionDep):
+    primary_cur_id = await _primary_currency_id(session)
+    cur_match = primary_cur_id if primary_cur_id is not None else -1
     top_sellers_rows = (
         await session.execute(
             select(
@@ -200,6 +247,7 @@ async def top(_admin: AdminUser, session: SessionDep):
             )
             .join(Deal, Deal.seller_id == User.id)
             .where(Deal.status.in_(_DONE_STATUSES))
+            .where(Deal.currency_id == cur_match)
             .group_by(User.id)
             .order_by(func.coalesce(func.sum(Deal.amount), 0).desc())
             .limit(10)
@@ -215,6 +263,7 @@ async def top(_admin: AdminUser, session: SessionDep):
             )
             .join(Deal, Deal.buyer_id == User.id)
             .where(Deal.status.in_(_DONE_STATUSES))
+            .where(Deal.currency_id == cur_match)
             .group_by(User.id)
             .order_by(func.coalesce(func.sum(Deal.amount), 0).desc())
             .limit(10)

@@ -161,6 +161,12 @@ class User(Base):
     # confirmed a code; resetting drops both fields back to NULL.
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Review pass 3 — RFC 6238 §5.2 replay protection. Stores the
+    # ``int(time.time()) // 30`` counter of the most recently accepted
+    # code; any code at or below this counter is rejected so a leaked
+    # 6-digit code can't be reused inside its 30-second window.
+    # ``-1`` means "no code accepted yet".
+    totp_last_counter: Mapped[int] = mapped_column(BigInteger, default=-1, server_default="-1")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # P3.4 — full-text search vector. Computed by Postgres on INSERT/UPDATE.
