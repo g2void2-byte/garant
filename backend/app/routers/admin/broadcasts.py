@@ -22,6 +22,7 @@ from sqlalchemy import and_, func, select
 
 from ... import notifier
 from ...admin_audit import log_admin_action
+from ...bot.notify import send_dm as bot_send_dm
 from ...deps import AdminUser, SessionDep
 from ...models import Broadcast, NotificationType, User
 from ...rate_limit import rate_limit
@@ -125,6 +126,17 @@ async def create_broadcast(
                     body.body,
                     {"deeplink": body.deeplink} if body.deeplink else None,
                 )
+            if body.dispatch_dm and u.tg_user_id:
+                title = body.title or "Сообщение от администрации"
+                dm_text = f"<b>{title}</b>\n\n{body.body}"
+                if body.deeplink:
+                    dm_text += f"\n\n{body.deeplink}"
+                ok = await bot_send_dm(u.tg_user_id, dm_text)
+                if not ok:
+                    # In-app counted as delivered; DM-only failure shouldn't
+                    # negate that, but we record it as a partial failure.
+                    failed += 1
+                    continue
             delivered += 1
         except Exception:  # noqa: BLE001
             logger.exception("broadcast: delivery failed for user_id=%s", u.id)

@@ -75,8 +75,13 @@ def _q(value: Decimal | float | int, decimals: int) -> Decimal:
     return Decimal(str(value)).quantize(quant)
 
 
-async def _get_deal_or_404(session: AsyncSession, deal_id: int) -> Deal:
-    deal = await session.get(Deal, deal_id)
+async def _get_deal_or_404(session: AsyncSession, deal_id: int, *, lock: bool = False) -> Deal:
+    if lock:
+        deal = (
+            await session.execute(select(Deal).where(Deal.id == deal_id).with_for_update())
+        ).scalar_one_or_none()
+    else:
+        deal = await session.get(Deal, deal_id)
     if deal is None:
         raise HTTPException(404, "Сделка не найдена")
     return deal
@@ -443,17 +448,29 @@ async def _release_locked_to_seller(
     return locked, payout
 
 
-async def _refund_locked_to_buyer(session: AsyncSession, deal: Deal, currency: Currency) -> Decimal:
-    """Return locked funds (incl. buyer-paid commission) to the buyer."""
+async def _refund_locked_to_buyer(
+    session: AsyncSession, deal: Deal, currency: Currency
+) -> tuple[Decimal, Decimal]:
+    """Unlock locked funds and credit *only the principal* back to the buyer.
+
+    Per spec, commission is charged on every deal regardless of outcome,
+    so a buyer-paid commission stays in the platform pool on refund.
+    Returns ``(locked_pot, refunded_principal)``.
+    """
     decimals = currency.decimals
     amt = _q(Decimal(str(deal.amount or 0)), decimals)
     commission = _q(Decimal(str(deal.commission_amount or 0)), decimals)
-    locked = amt + commission if deal.pay_commission == PayCommission.buyer else amt
+    if deal.pay_commission == PayCommission.buyer:
+        locked = amt + commission
+        refunded = amt
+    else:
+        locked = amt
+        refunded = amt
 
     buyer_balance = await get_or_create_balance(session, deal.buyer_id, currency.id)
     buyer_balance.locked = float(max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked))
-    buyer_balance.amount = float(Decimal(str(buyer_balance.amount)) + locked)
-    return locked
+    buyer_balance.amount = float(Decimal(str(buyer_balance.amount)) + refunded)
+    return locked, refunded
 
 
 async def _split_locked(
@@ -470,6 +487,8 @@ async def _split_locked(
     amt = _q(Decimal(str(deal.amount or 0)), decimals)
     commission = _q(Decimal(str(deal.commission_amount or 0)), decimals)
     locked = amt + commission if deal.pay_commission == PayCommission.buyer else amt
+    # ``amt`` already excludes commission; split principal between
+    # parties. The buyer-paid commission portion stays on the platform.
     buyer_share = _q(amt * Decimal(str(buyer_percent)) / Decimal(100), decimals)
     seller_share = amt - buyer_share
 
@@ -500,7 +519,7 @@ async def force_release(
     session: SessionDep,
     request: Request,
 ) -> AdminDealActionResult:
-    deal = await _get_deal_or_404(session, deal_id)
+    deal = await _get_deal_or_404(session, deal_id, lock=True)
     if _is_terminal(deal.status):
         raise HTTPException(400, "Сделка уже завершена")
     if deal.currency_id is None or deal.amount is None:
@@ -559,7 +578,7 @@ async def force_refund(
     session: SessionDep,
     request: Request,
 ) -> AdminDealActionResult:
-    deal = await _get_deal_or_404(session, deal_id)
+    deal = await _get_deal_or_404(session, deal_id, lock=True)
     if _is_terminal(deal.status):
         raise HTTPException(400, "Сделка уже завершена")
     if deal.currency_id is None or deal.amount is None:
@@ -568,7 +587,7 @@ async def force_refund(
     assert currency is not None
 
     before_status = deal.status.value
-    locked = await _refund_locked_to_buyer(session, deal, currency)
+    locked, refunded = await _refund_locked_to_buyer(session, deal, currency)
     deal.status = DealStatus.resolved_for_buyer
     deal.completed_at = datetime.utcnow()
     deal.arbitration_resolved_by = admin.id
@@ -587,7 +606,8 @@ async def force_refund(
             "before_status": before_status,
             "after_status": deal.status.value,
             "currency": currency.code,
-            "refunded": float(locked),
+            "locked": float(locked),
+            "refunded": float(refunded),
         },
     )
     await session.commit()
@@ -596,7 +616,7 @@ async def force_refund(
         session,
         deal.buyer_id,
         "Сделка возвращена администратором",
-        f"Сделка #{deal.id} закрыта в вашу пользу, возвращено {locked} {currency.code}.",
+        f"Сделка #{deal.id} закрыта в вашу пользу, возвращено {refunded} {currency.code} (комиссия удержана).",
         deal.id,
     )
     await _notify_party(
@@ -617,7 +637,7 @@ async def split_deal(
     session: SessionDep,
     request: Request,
 ) -> AdminDealActionResult:
-    deal = await _get_deal_or_404(session, deal_id)
+    deal = await _get_deal_or_404(session, deal_id, lock=True)
     if _is_terminal(deal.status):
         raise HTTPException(400, "Сделка уже завершена")
     if deal.currency_id is None or deal.amount is None:
@@ -684,7 +704,7 @@ async def force_arbitration(
     session: SessionDep,
     request: Request,
 ) -> AdminDealActionResult:
-    deal = await _get_deal_or_404(session, deal_id)
+    deal = await _get_deal_or_404(session, deal_id, lock=True)
     if _is_terminal(deal.status):
         raise HTTPException(400, "Сделка уже завершена")
     if deal.status == DealStatus.arbitration:
@@ -726,7 +746,7 @@ async def assign_arbiter(
     session: SessionDep,
     request: Request,
 ) -> AdminDealActionResult:
-    deal = await _get_deal_or_404(session, deal_id)
+    deal = await _get_deal_or_404(session, deal_id, lock=True)
     if deal.status != DealStatus.arbitration:
         raise HTTPException(400, "Назначить арбитра можно только для сделки в арбитраже")
 
@@ -781,7 +801,7 @@ async def delete_deal(
     the deleted deal so the action remains visible after the row is
     gone.
     """
-    deal = await _get_deal_or_404(session, deal_id)
+    deal = await _get_deal_or_404(session, deal_id, lock=True)
     currency = await session.get(Currency, deal.currency_id) if deal.currency_id else None
 
     snapshot = {
@@ -800,7 +820,23 @@ async def delete_deal(
     }
     refunded: Decimal | None = None
     if currency is not None and _is_active_for_money_movement(deal.status):
-        refunded = await _refund_locked_to_buyer(session, deal, currency)
+        # Delete is the admin nuclear option — returns the full locked
+        # pot (including any commission share) because the deal row
+        # disappears from the treasury accrual query too. This is the
+        # one path that does NOT retain commission.
+        decimals = currency.decimals
+        amt = _q(Decimal(str(deal.amount or 0)), decimals)
+        commission = _q(Decimal(str(deal.commission_amount or 0)), decimals)
+        if deal.pay_commission == PayCommission.buyer:
+            locked_pot = amt + commission
+        else:
+            locked_pot = amt
+        buyer_balance = await get_or_create_balance(session, deal.buyer_id, currency.id)
+        buyer_balance.locked = float(
+            max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked_pot)
+        )
+        buyer_balance.amount = float(Decimal(str(buyer_balance.amount)) + locked_pot)
+        refunded = locked_pot
         snapshot["refunded"] = float(refunded)
 
     # Clean up dependent rows: messages reference the deal via FK.

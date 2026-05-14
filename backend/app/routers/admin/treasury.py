@@ -46,15 +46,23 @@ router = APIRouter(
 )
 
 
+# Statuses where the platform commission has actually been collected.
+# Per spec, commission is charged on every terminal deal (including
+# refunds / cancellations / inactivity sweeps), so all terminal
+# statuses contribute. Only the explicit admin "delete" path returns
+# the full locked pot to the buyer — and a deleted deal is removed
+# from this query because the row no longer exists.
 _DONE_STATUSES = (
     DealStatus.completed,
+    DealStatus.cancelled,
+    DealStatus.cancelled_for_inactivity,
     DealStatus.resolved_for_buyer,
     DealStatus.resolved_for_seller,
 )
 
 
 async def _accrued_by_currency(session) -> dict[int, Decimal]:
-    """Sum commission collected on every completed/resolved deal."""
+    """Sum commission collected on every terminal deal."""
     rows = (
         await session.execute(
             select(Deal.currency_id, func.coalesce(func.sum(Deal.commission_amount), 0))

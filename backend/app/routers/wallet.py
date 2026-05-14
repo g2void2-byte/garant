@@ -15,12 +15,10 @@ from ..models import (
     Currency,
     WalletDeposit,
     WalletWithdrawal,
-    WalletWithdrawStatus,
 )
 from ..rate_limit import RLWithdrawal
 from ..schemas import (
     CurrencyOut,
-    WalletAdminWithdrawDecision,
     WalletBalanceOut,
     WalletDepositCreateReq,
     WalletDepositOut,
@@ -30,7 +28,6 @@ from ..schemas import (
 from ..services_wallet import (
     create_deposit_invoice,
     create_withdrawal,
-    decide_withdrawal,
     list_balances,
     poll_deposit_status,
 )
@@ -182,40 +179,7 @@ async def list_user_withdrawals(user: CurrentUser, session: SessionDep):
     return [_withdrawal_dto(w, c) for w, c in rows]
 
 
-# ── Admin: withdrawal queue ────────────────────────────
-
-
-@router.get("/admin/withdrawals", response_model=list[WalletWithdrawalOut])
-async def admin_list_withdrawals(user: CurrentUser, session: SessionDep):
-    if not user.is_admin:
-        raise HTTPException(403, "Доступ только для администратора")
-    rows = (
-        await session.execute(
-            select(WalletWithdrawal, Currency)
-            .join(Currency, Currency.id == WalletWithdrawal.currency_id)
-            .where(
-                WalletWithdrawal.status.in_(
-                    [WalletWithdrawStatus.pending, WalletWithdrawStatus.approved]
-                )
-            )
-            .order_by(WalletWithdrawal.created_at.asc())
-        )
-    ).all()
-    return [_withdrawal_dto(w, c) for w, c in rows]
-
-
-@router.post("/admin/withdrawals/{withdrawal_id}", response_model=WalletWithdrawalOut)
-async def admin_decide_withdrawal(
-    withdrawal_id: int,
-    body: WalletAdminWithdrawDecision,
-    user: CurrentUser,
-    session: SessionDep,
-):
-    w = await session.get(WalletWithdrawal, withdrawal_id)
-    if w is None:
-        raise HTTPException(404, "Заявка не найдена")
-    w = await decide_withdrawal(session, user, w, body.action, body.note)
-    currency = await session.get(Currency, w.currency_id)
-    if currency is None:
-        raise HTTPException(500, "currency vanished")
-    return _withdrawal_dto(w, currency)
+# Admin withdrawal management lives at ``/api/admin/withdrawals`` and is
+# implemented in ``backend.app.routers.admin.withdrawals``. The legacy
+# duplicates that used to live here were removed because they bypassed
+# the audit log and could race with the canonical implementation.

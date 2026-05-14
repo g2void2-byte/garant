@@ -520,9 +520,9 @@ class WalletWithdrawalOut(BaseModel):
     processed_at: datetime | None
 
 
-class WalletAdminWithdrawDecision(BaseModel):
-    action: str  # "approve" | "reject" | "send"
-    note: str = ""
+# ``WalletAdminWithdrawDecision`` was removed alongside the legacy
+# ``/api/wallet/admin/withdrawals`` endpoints. Use
+# ``AdminWithdrawalDecideIn`` from the admin module instead.
 
 
 # ── Support ────────────────────────────────────────────

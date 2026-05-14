@@ -9,6 +9,7 @@ from aiogram.enums import ParseMode
 
 from ..config import settings
 from .handlers import router
+from .maintenance import MaintenanceMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,8 @@ async def start_polling() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher()
+    dp.message.outer_middleware(MaintenanceMiddleware())
+    dp.callback_query.outer_middleware(MaintenanceMiddleware())
     dp.include_router(router)
 
     logger.info("Starting aiogram polling...")

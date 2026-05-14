@@ -69,7 +69,8 @@ async def test_arbitration_resolved_for_buyer_refunds(client):
     assert resolve_resp.status_code == 200, resolve_resp.text
     assert resolve_resp.json()["status"] == DealStatus.resolved_for_buyer.value
 
-    # Buyer refunded fully (20 sum + 1 commission).
+    # Buyer refunded the 20 principal; the 1 commission is retained by
+    # the platform per spec (commission charged on every terminal deal).
     async with async_session() as session:
         usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         bal = (
@@ -80,7 +81,7 @@ async def test_arbitration_resolved_for_buyer_refunds(client):
                 )
             )
         ).scalar_one()
-        assert float(bal.amount) == 100.0
+        assert float(bal.amount) == 99.0
         assert float(bal.locked) == 0.0
 
 
