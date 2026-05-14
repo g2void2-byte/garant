@@ -78,6 +78,11 @@ class WalletDepositStatus(str, enum.Enum):
     pending = "pending"
     paid = "paid"
     expired = "expired"
+    # PR-H (M-16) — admin-initiated reversal of a credited deposit.
+    # ``expired`` is reserved for CryptoBot-side expiry of an
+    # unpaid invoice; a refund is a distinct state and is what the
+    # admin badge / analytics filter want to see.
+    refunded = "refunded"
 
 
 class WalletWithdrawStatus(str, enum.Enum):
@@ -155,7 +160,7 @@ class User(Base):
     # Admin PR-A — passive connection fingerprint, refreshed by
     # ``get_current_user`` on every authenticated request.
     last_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     # "Sessions seen by the API" — bumped on the first authenticated
     # request after a quiet window of ``deps._LAST_LOGIN_DEBOUNCE``
     # (5 min). NOT a literal Telegram login event nor a per-request
@@ -293,7 +298,7 @@ class Deal(Base):
     confirm_seller: Mapped[bool] = mapped_column(Boolean, default=False)
     arbitrage_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     # Multi-currency fields (PR-3). ``currency_id`` is nullable for legacy
     # rows that lived on the old ``User.balance`` USD column. New deals
@@ -318,7 +323,7 @@ class Deal(Base):
     )
     arbitration_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     arbitration_resolved_by: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True
+        ForeignKey("users.id"), nullable=True, index=True
     )
     arbitration_resolution: Mapped[str | None] = mapped_column(String(16), nullable=True)
     arbitration_resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -659,6 +664,11 @@ class Broadcast(Base):
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    # PR-H (L-10) — soft-delete tombstone. ``None`` means live;
+    # ``DELETE /api/admin/broadcasts/:id`` stamps ``utcnow()`` and
+    # the list endpoint filters those rows out. Keeping the row
+    # preserves the FK target the admin audit log points at.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     actor: Mapped[User] = relationship(foreign_keys=[actor_id], lazy="selectin")
 
