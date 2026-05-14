@@ -23,7 +23,7 @@ High-level transitions:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
 from sqlalchemy import or_, select
@@ -41,6 +41,7 @@ from .models import (
     UserBalance,
 )
 from .services_wallet import get_currency_by_code, get_or_create_balance, lock_user_balance
+from .time_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -216,7 +217,7 @@ async def accept_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         raise ValueError("Сделку нельзя принять в текущем статусе")
 
     deal.status = DealStatus.in_progress
-    deal.in_progress_at = datetime.utcnow()
+    deal.in_progress_at = utcnow()
     deal.confirm_buyer = True
     deal.confirm_seller = True
     await notifier.push(
@@ -255,7 +256,7 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         await _refund(session, deal.buyer_id, currency.id, amt)
 
     deal.status = DealStatus.cancelled
-    deal.completed_at = datetime.utcnow()
+    deal.completed_at = utcnow()
     await notifier.push(
         session,
         deal.buyer_id,
@@ -292,7 +293,7 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     await _release_to(session, deal.buyer_id, deal.seller_id, currency.id, locked, payout)
 
     deal.status = DealStatus.completed
-    deal.completed_at = datetime.utcnow()
+    deal.completed_at = utcnow()
     buyer = await session.get(User, deal.buyer_id)
     seller = await session.get(User, deal.seller_id)
     if buyer:
@@ -324,7 +325,7 @@ async def request_cancel(session: AsyncSession, deal: Deal, user: User, reason: 
     deal.status = DealStatus.pending_cancellation
     deal.cancellation_initiator_id = user.id
     deal.cancellation_reason = reason
-    deal.cancellation_requested_at = datetime.utcnow()
+    deal.cancellation_requested_at = utcnow()
     other_id = deal.seller_id if user.id == deal.buyer_id else deal.buyer_id
     await notifier.push(
         session,
@@ -388,7 +389,7 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
         await _refund(session, deal.buyer_id, currency.id, amt)
 
     deal.status = DealStatus.cancelled
-    deal.completed_at = datetime.utcnow()
+    deal.completed_at = utcnow()
     await notifier.push(
         session,
         deal.cancellation_initiator_id or deal.buyer_id,
@@ -498,8 +499,8 @@ async def resolve_arbitration(
 
     deal.arbitration_resolved_by = admin.id
     deal.arbitration_resolution = winner
-    deal.arbitration_resolved_at = datetime.utcnow()
-    deal.completed_at = datetime.utcnow()
+    deal.arbitration_resolved_at = utcnow()
+    deal.completed_at = utcnow()
     if note:
         deal.arbitration_reason = (
             f"{deal.arbitration_reason or ''}\n— Решение арбитра: {note}".strip()
@@ -542,7 +543,7 @@ async def sweep_inactivity(session: AsyncSession) -> int:
     Returns the number of deals affected.
     """
     settings = await _settings(session)
-    now = datetime.utcnow()
+    now = utcnow()
     pc_cutoff = now - timedelta(days=int(settings.inactivity_pending_confirmation_days))
     pcanc_cutoff = now - timedelta(days=int(settings.inactivity_pending_cancellation_days))
 

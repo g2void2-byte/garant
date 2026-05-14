@@ -21,6 +21,7 @@ from ..pin import (
     verify_reset_code,
 )
 from ..rate_limit import RLPin
+from ..time_utils import utcnow
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/pin", tags=["pin"])
@@ -71,7 +72,7 @@ class PinResetRequestOut(BaseModel):
 def _now() -> datetime:
     # Tz-naive UTC to match ``DateTime`` columns in the DB. Postgres
     # rejects tz-aware values written to ``TIMESTAMP WITHOUT TIME ZONE``.
-    return datetime.utcnow()
+    return utcnow()
 
 
 def _is_locked(user) -> bool:

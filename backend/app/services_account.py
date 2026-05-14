@@ -41,6 +41,7 @@ from .models import (
     WalletDeposit,
     WalletWithdrawal,
 )
+from .time_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ MAX_CONFIRM_ATTEMPTS = 5
 def _now() -> datetime:
     # Tz-naive UTC to match ``DateTime`` columns in the DB. Postgres
     # rejects tz-aware values written to ``TIMESTAMP WITHOUT TIME ZONE``.
-    return datetime.utcnow()
+    return utcnow()
 
 
 def _generate_code() -> str:

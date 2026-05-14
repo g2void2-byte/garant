@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -11,6 +11,7 @@ from ...deps import AdminUser, SessionDep
 from ...models import Deal, DealStatus, Service, ServiceStatus, User
 from ...rate_limit import rate_limit
 from ...schemas import AdminDashboardOut
+from ...time_utils import utcnow
 
 router = APIRouter(
     prefix="/api/admin",
@@ -27,7 +28,7 @@ async def dashboard(_admin: AdminUser, session: SessionDep) -> AdminDashboardOut
     fans out to ~10 SELECT COUNT(*) calls; on a normal-sized board this
     completes in milliseconds.
     """
-    now = datetime.utcnow()
+    now = utcnow()
     h24 = now - timedelta(hours=24)
     d7 = now - timedelta(days=7)
     m5 = now - timedelta(minutes=5)

@@ -8,7 +8,7 @@ review or during the cool-down window).
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -29,6 +29,7 @@ from .models import (
     WalletWithdrawal,
     WalletWithdrawStatus,
 )
+from .time_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,7 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
     # to-end instead of round-tripping through ``float``.
     bal.amount = Decimal(str(bal.amount)) + Decimal(str(deposit.amount))
     deposit.status = WalletDepositStatus.paid
-    deposit.paid_at = datetime.utcnow()
+    deposit.paid_at = utcnow()
 
     currency = await session.get(Currency, deposit.currency_id)
     if currency:
@@ -255,7 +256,7 @@ async def create_withdrawal(
         amount=amount,
         address=address,
         status=WalletWithdrawStatus.pending,
-        locked_until=datetime.utcnow() + timedelta(hours=WITHDRAW_LOCK_HOURS),
+        locked_until=utcnow() + timedelta(hours=WITHDRAW_LOCK_HOURS),
     )
     session.add(withdrawal)
     await session.commit()
@@ -285,7 +286,7 @@ async def create_withdrawal(
             )
         else:
             withdrawal.status = WalletWithdrawStatus.sent
-            withdrawal.processed_at = datetime.utcnow()
+            withdrawal.processed_at = utcnow()
             withdrawal.admin_note = f"cryptobot_transfer_id={tr.transfer_id}"
             bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - amount_d)
             await notifier.push(

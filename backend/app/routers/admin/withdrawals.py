@@ -18,7 +18,6 @@ deduplicates server-side.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -46,6 +45,7 @@ from ...schemas import (
     AdminWithdrawalOut,
 )
 from ...sql_filters import escape_like_wildcards
+from ...time_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +199,7 @@ async def decide_withdrawal(
             if bal is not None:
                 bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - Decimal(str(w.amount)))
             w.status = WalletWithdrawStatus.sent
-            w.processed_at = datetime.utcnow()
+            w.processed_at = utcnow()
         else:
             w.status = WalletWithdrawStatus.approved
         w.admin_note = body.note or ""
@@ -252,7 +252,7 @@ async def decide_withdrawal(
             bal.amount = Decimal(str(bal.amount)) + Decimal(str(w.amount))
         w.status = WalletWithdrawStatus.rejected
         w.admin_note = body.note or ""
-        w.processed_at = datetime.utcnow()
+        w.processed_at = utcnow()
         if currency and user:
             await notifier.push(
                 session,
@@ -294,7 +294,7 @@ async def decide_withdrawal(
             bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - Decimal(str(w.amount)))
         w.status = WalletWithdrawStatus.sent
         w.admin_note = body.note or w.admin_note
-        w.processed_at = datetime.utcnow()
+        w.processed_at = utcnow()
         if currency and user:
             await notifier.push(
                 session,

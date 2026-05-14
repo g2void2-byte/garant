@@ -15,7 +15,7 @@ sub-second; we don't fan out to ``len(users)`` row-by-row.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, func, select
@@ -33,6 +33,7 @@ from ...schemas import (
     AdminBroadcastOut,
     AdminBroadcastPreviewOut,
 )
+from ...time_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ def _audience_filter(body: AdminBroadcastCreateIn):
             )
         )
     if body.audience_active_days is not None:
-        since = datetime.utcnow() - timedelta(days=body.audience_active_days)
+        since = utcnow() - timedelta(days=body.audience_active_days)
         clauses.append(User.last_login_at >= since)
     if body.audience_min_deals is not None:
         clauses.append(User.deals_total >= body.audience_min_deals)
@@ -157,7 +158,7 @@ async def create_broadcast(
         total_recipients=len(recipients),
         delivered_count=delivered,
         failed_count=failed,
-        sent_at=datetime.utcnow(),
+        sent_at=utcnow(),
     )
     session.add(bcast)
     await session.flush()

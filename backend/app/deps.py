@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request
@@ -13,6 +13,7 @@ from .db import async_session
 from .models import User
 from .pin import decode_session_token
 from .security import InitDataError, verify_init_data
+from .time_utils import utcnow
 
 _trusted_networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] | None = None
 
@@ -97,7 +98,7 @@ async def get_current_user(
     user = result.scalar_one_or_none()
 
     ip = _client_ip(request)
-    now = datetime.utcnow()
+    now = utcnow()
 
     if user is None:
         user = User(

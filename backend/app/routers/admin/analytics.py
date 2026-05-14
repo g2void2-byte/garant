@@ -40,6 +40,7 @@ from ...schemas import (
     AdminAnalyticsTopListsOut,
     AdminAnalyticsTopUserOut,
 )
+from ...time_utils import utcnow
 
 router = APIRouter(
     prefix="/api/admin/analytics",
@@ -77,7 +78,7 @@ async def _primary_currency_id(session) -> int | None:
 
 @router.get("/kpi", response_model=AdminAnalyticsKpiOut)
 async def kpi(_admin: AdminUser, session: SessionDep):
-    now = datetime.utcnow()
+    now = utcnow()
     h24 = now - timedelta(hours=24)
     d7 = now - timedelta(days=7)
     d30 = now - timedelta(days=30)
@@ -141,7 +142,7 @@ async def _series(session, expr, start: datetime) -> list[AdminAnalyticsSeriesPo
     by_day = {row[0].date().isoformat(): float(row[1] or 0) for row in rows if row[0]}
     out: list[AdminAnalyticsSeriesPoint] = []
     cursor = start.date()
-    today = datetime.utcnow().date()
+    today = utcnow().date()
     while cursor <= today:
         out.append(
             AdminAnalyticsSeriesPoint(
@@ -154,7 +155,7 @@ async def _series(session, expr, start: datetime) -> list[AdminAnalyticsSeriesPo
 
 @router.get("/series", response_model=AdminAnalyticsSeriesOut)
 async def series(_admin: AdminUser, session: SessionDep):
-    start = datetime.utcnow() - timedelta(days=30)
+    start = utcnow() - timedelta(days=30)
     primary_cur_id = await _primary_currency_id(session)
     # Filter every financial sum to the primary currency (USDT) so we
     # never naively add BTC + ETH amounts. Count series (deals_count_30d,
