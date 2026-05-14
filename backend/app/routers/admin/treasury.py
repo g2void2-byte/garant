@@ -137,9 +137,9 @@ async def treasury_overview(_admin: AdminUser, session: SessionDep):
                 currency_code=c.code,
                 currency_name=c.name,
                 decimals=c.decimals,
-                accrued=float(a),
-                withdrawn=float(w),
-                available=float(a - w),
+                accrued=a,
+                withdrawn=w,
+                available=a - w,
             )
         )
     return AdminTreasuryOverviewOut(balances=balances, total_withdrawals=int(total_count))
@@ -150,7 +150,7 @@ def _withdrawal_to_out(w: TreasuryWithdrawal, c: Currency | None) -> AdminTreasu
         id=w.id,
         actor_id=w.actor_id,
         currency_code=c.code if c else "",
-        amount=float(w.amount),
+        amount=w.amount,
         address=w.address,
         status=w.status,
         note=w.note,
@@ -255,7 +255,7 @@ async def treasury_withdraw(
                 reason=body.note,
                 payload={
                     "currency": currency.code,
-                    "amount": float(body.amount),
+                    "amount": str(body.amount),
                     "address": body.address,
                     "error": str(e),
                 },
@@ -276,7 +276,7 @@ async def treasury_withdraw(
         reason=body.note,
         payload={
             "currency": currency.code,
-            "amount": float(body.amount),
+            "amount": str(body.amount),
             "address": body.address,
             "cryptobot_transfer_id": transfer_id,
         },

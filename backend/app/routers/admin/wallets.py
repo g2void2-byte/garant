@@ -43,12 +43,6 @@ router = APIRouter(
 
 
 def _balance_row(user: User, currency: Currency, bal: UserBalance | None) -> AdminUserBalanceOut:
-    # M-20: keep arithmetic in ``Decimal`` so the ``total`` doesn't pick
-    # up float surface errors (e.g. 0.1 + 0.2 surfacing as
-    # 0.30000000000000004) before it hits the schema. The schema itself
-    # still declares ``float`` for backwards compatibility with the
-    # frontend wire format — changing the schema to ``Decimal`` /
-    # string is tracked separately (M-3 + M-9).
     amount = Decimal(str(bal.amount)) if bal else Decimal(0)
     locked = Decimal(str(bal.locked)) if bal else Decimal(0)
     return AdminUserBalanceOut(
@@ -120,7 +114,7 @@ async def list_wallets(
         # Very rough USD estimate: pretend 1:1 for stables, else multiply
         # by 1.0 (we don't have rates wired up yet; the field is shown
         # in the UI as an approximation only).
-        usd = sum(b.total for b in per_currency)
+        usd = sum((b.total for b in per_currency), Decimal(0))
         items.append(
             AdminWalletListItem(
                 user_id=u.id,

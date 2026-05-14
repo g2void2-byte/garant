@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, field_validator
@@ -753,10 +754,10 @@ class AdminDealListItem(BaseModel):
 
     id: int
     status: str
-    sum: float
+    sum: Decimal
     currency_code: str | None
-    amount: float | None
-    commission_amount: float | None
+    amount: Decimal | None
+    commission_amount: Decimal | None
     buyer_id: int
     buyer_username: str | None
     seller_id: int
@@ -783,9 +784,9 @@ class AdminBalanceSnapshot(BaseModel):
     username: str | None
     display_name: str
     currency_code: str | None
-    amount: float
-    locked: float
-    total: float
+    amount: Decimal
+    locked: Decimal
+    total: Decimal
 
 
 class AdminDealEventItem(BaseModel):
@@ -808,10 +809,10 @@ class AdminDealDetailOut(BaseModel):
     id: int
     status: str
     description: str
-    sum: float
+    sum: Decimal
     currency_code: str | None
-    amount: float | None
-    commission_amount: float | None
+    amount: Decimal | None
+    commission_amount: Decimal | None
     pay_commission: str
     buyer: AdminBalanceSnapshot
     seller: AdminBalanceSnapshot
@@ -1087,9 +1088,9 @@ class AdminUserBalanceOut(BaseModel):
     currency_code: str
     currency_name: str
     decimals: int
-    amount: float
-    locked: float
-    total: float
+    amount: Decimal
+    locked: Decimal
+    total: Decimal
     updated_at: datetime | None
 
 
@@ -1106,7 +1107,7 @@ class AdminWalletListItem(BaseModel):
     is_banned: bool
     is_frozen: bool
     balances: list[AdminUserBalanceOut]
-    total_usd_estimate: float
+    total_usd_estimate: Decimal
 
 
 class AdminWalletListOut(BaseModel):
@@ -1168,7 +1169,7 @@ class AdminDepositOut(BaseModel):
     username: str | None
     display_name: str
     currency_code: str
-    amount: float
+    amount: Decimal
     status: str
     provider_invoice_id: str
     pay_url: str
@@ -1192,7 +1193,7 @@ class AdminWithdrawalOut(BaseModel):
     username: str | None
     display_name: str
     currency_code: str
-    amount: float
+    amount: Decimal
     address: str
     status: str
     admin_note: str
@@ -1240,9 +1241,9 @@ class AdminTreasuryBalanceOut(BaseModel):
     currency_code: str
     currency_name: str
     decimals: int
-    accrued: float
-    withdrawn: float
-    available: float
+    accrued: Decimal
+    withdrawn: Decimal
+    available: Decimal
 
 
 class AdminTreasuryOverviewOut(BaseModel):
@@ -1293,7 +1294,7 @@ class AdminTreasuryWithdrawOut(BaseModel):
     id: int
     actor_id: int
     currency_code: str
-    amount: float
+    amount: Decimal
     address: str
     status: str
     note: str

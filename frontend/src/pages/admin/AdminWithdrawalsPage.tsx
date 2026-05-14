@@ -12,6 +12,7 @@ import {
   useAdminWithdrawals,
 } from "@/api/admin/hooks";
 import { useMe } from "@/api/hooks";
+import { parseDecimal } from "@/lib/format";
 
 const STATUSES = ["pending", "approved", "rejected", "sent"] as const;
 type Status = (typeof STATUSES)[number];
@@ -88,7 +89,7 @@ export default function AdminWithdrawalsPage() {
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium">
-                    {w.amount.toFixed(8)} {w.currency_code}
+                    {parseDecimal(w.amount).toFixed(8)} {w.currency_code}
                   </div>
                   <div className="text-xs text-text-muted">
                     @{w.username ?? "—"} ({w.display_name}) · #{w.id}

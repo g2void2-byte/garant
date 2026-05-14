@@ -52,7 +52,7 @@ def _to_out(d: WalletDeposit, c: Currency | None, u: User | None) -> AdminDeposi
         username=u.username if u else None,
         display_name=u.display_name if u else "",
         currency_code=c.code if c else "",
-        amount=float(d.amount),
+        amount=d.amount,
         status=d.status.value,
         provider_invoice_id=d.provider_invoice_id,
         pay_url=d.pay_url,
@@ -153,7 +153,7 @@ async def mark_paid(
         payload={
             "user_id": d.user_id,
             "currency": currency.code,
-            "amount": float(d.amount),
+            "amount": str(d.amount),
         },
         request=request,
     )
@@ -224,7 +224,7 @@ async def refund_deposit(
         payload={
             "user_id": d.user_id,
             "currency": currency.code,
-            "amount": float(d.amount),
+            "amount": str(d.amount),
         },
         request=request,
     )

@@ -13,6 +13,7 @@ import {
   useAdminDeposits,
 } from "@/api/admin/hooks";
 import { useMe } from "@/api/hooks";
+import { parseDecimal } from "@/lib/format";
 
 const STATUSES = ["any", "pending", "paid", "refunded", "expired"] as const;
 type StatusFilter = (typeof STATUSES)[number];
@@ -78,7 +79,7 @@ export default function AdminDepositsPage() {
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium">
-                    {d.amount.toFixed(2)} {d.currency_code}
+                    {parseDecimal(d.amount).toFixed(2)} {d.currency_code}
                   </div>
                   <div className="text-xs text-text-muted truncate">
                     @{d.username ?? "—"} ({d.display_name}) · #{d.id}

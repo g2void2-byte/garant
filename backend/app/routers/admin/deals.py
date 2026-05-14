@@ -234,12 +234,10 @@ async def _to_detail(session: AsyncSession, deal: Deal) -> AdminDealDetailOut:
         id=deal.id,
         status=deal.status.value,
         description=deal.description,
-        sum=float(deal.sum),
+        sum=deal.sum,
         currency_code=currency.code if currency else None,
-        amount=float(deal.amount) if deal.amount is not None else None,
-        commission_amount=(
-            float(deal.commission_amount) if deal.commission_amount is not None else None
-        ),
+        amount=deal.amount,
+        commission_amount=deal.commission_amount,
         pay_commission=deal.pay_commission.value,
         buyer=buyer_snap,
         seller=seller_snap,
@@ -266,12 +264,10 @@ def _to_list_item(deal: Deal) -> AdminDealListItem:
     return AdminDealListItem(
         id=deal.id,
         status=deal.status.value,
-        sum=float(deal.sum),
+        sum=deal.sum,
         currency_code=deal.currency.code if deal.currency else None,
-        amount=float(deal.amount) if deal.amount is not None else None,
-        commission_amount=(
-            float(deal.commission_amount) if deal.commission_amount is not None else None
-        ),
+        amount=deal.amount,
+        commission_amount=deal.commission_amount,
         buyer_id=deal.buyer_id,
         buyer_username=deal.buyer.username if deal.buyer else None,
         seller_id=deal.seller_id,
@@ -888,5 +884,5 @@ async def delete_deal(
     return {
         "deleted": True,
         "deal_id": deal_id_local,
-        "refunded": float(refunded) if refunded is not None else None,
+        "refunded": str(refunded) if refunded is not None else None,
     }

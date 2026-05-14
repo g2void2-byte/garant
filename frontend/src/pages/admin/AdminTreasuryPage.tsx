@@ -15,6 +15,7 @@ import {
   useAdminTreasuryWithdrawals,
 } from "@/api/admin/hooks";
 import { useMe } from "@/api/hooks";
+import { parseDecimal } from "@/lib/format";
 
 /**
  * `/admin/treasury` — global commission accumulator + external payout.
@@ -69,11 +70,11 @@ export default function AdminTreasuryPage() {
                   <span className="text-xs text-text-muted">{b.currency_code}</span>
                 </div>
                 <div className="text-lg font-bold">
-                  {b.available.toFixed(b.decimals)}
+                  {parseDecimal(b.available).toFixed(b.decimals)}
                 </div>
                 <div className="text-[11px] text-text-muted">
-                  Накоплено: {b.accrued.toFixed(b.decimals)} · Выведено:{" "}
-                  {b.withdrawn.toFixed(b.decimals)}
+                  Накоплено: {parseDecimal(b.accrued).toFixed(b.decimals)} · Выведено:{" "}
+                  {parseDecimal(b.withdrawn).toFixed(b.decimals)}
                 </div>
               </motion.div>
             ))}
@@ -95,7 +96,7 @@ export default function AdminTreasuryPage() {
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="font-medium">
-                      {h.amount.toFixed(8)} {h.currency_code}
+                      {parseDecimal(h.amount).toFixed(8)} {h.currency_code}
                     </div>
                     <div className="text-xs text-text-muted truncate">
                       → {h.address}
@@ -152,7 +153,7 @@ function WithdrawForm({ onClose }: { onClose: () => void }) {
                   : "bg-panel-2 text-text-muted"
               }`}
             >
-              {b.currency_code} · {b.available.toFixed(b.decimals)}
+              {b.currency_code} · {parseDecimal(b.available).toFixed(b.decimals)}
             </button>
           ))}
         </div>

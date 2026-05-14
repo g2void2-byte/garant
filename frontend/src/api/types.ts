@@ -348,10 +348,10 @@ export interface AdminListUsersQuery {
 export interface AdminDealListItemDto {
   id: number;
   status: DealStatus | string;
-  sum: number;
+  sum: string;
   currency_code: string | null;
-  amount: number | null;
-  commission_amount: number | null;
+  amount: string | null;
+  commission_amount: string | null;
   buyer_id: number;
   buyer_username: string | null;
   seller_id: number;
@@ -376,9 +376,9 @@ export interface AdminBalanceSnapshotDto {
   username: string | null;
   display_name: string;
   currency_code: string | null;
-  amount: number;
-  locked: number;
-  total: number;
+  amount: string;
+  locked: string;
+  total: string;
 }
 
 export interface AdminDealEventDto {
@@ -392,10 +392,10 @@ export interface AdminDealDetailDto {
   id: number;
   status: DealStatus | string;
   description: string;
-  sum: number;
+  sum: string;
   currency_code: string | null;
-  amount: number | null;
-  commission_amount: number | null;
+  amount: string | null;
+  commission_amount: string | null;
   pay_commission: string;
   buyer: AdminBalanceSnapshotDto;
   seller: AdminBalanceSnapshotDto;
@@ -533,9 +533,9 @@ export interface AdminUserBalanceDto {
   currency_code: string;
   currency_name: string;
   decimals: number;
-  amount: number;
-  locked: number;
-  total: number;
+  amount: string;
+  locked: string;
+  total: string;
   updated_at: string | null;
 }
 
@@ -550,7 +550,7 @@ export interface AdminWalletListItemDto {
   is_banned: boolean;
   is_frozen: boolean;
   balances: AdminUserBalanceDto[];
-  total_usd_estimate: number;
+  total_usd_estimate: string;
 }
 
 export interface AdminWalletListDto {
@@ -572,7 +572,7 @@ export interface AdminDepositDto {
   username: string | null;
   display_name: string;
   currency_code: string;
-  amount: number;
+  amount: string;
   status: string;
   provider_invoice_id: string;
   pay_url: string;
@@ -593,7 +593,7 @@ export interface AdminWithdrawalDto {
   username: string | null;
   display_name: string;
   currency_code: string;
-  amount: number;
+  amount: string;
   address: string;
   status: string;
   admin_note: string;
@@ -616,9 +616,9 @@ export interface AdminTreasuryBalanceDto {
   currency_code: string;
   currency_name: string;
   decimals: number;
-  accrued: number;
-  withdrawn: number;
-  available: number;
+  accrued: string;
+  withdrawn: string;
+  available: string;
 }
 
 export interface AdminTreasuryOverviewDto {
@@ -638,7 +638,7 @@ export interface AdminTreasuryWithdrawDto {
   id: number;
   actor_id: number;
   currency_code: string;
-  amount: number;
+  amount: string;
   address: string;
   status: string;
   note: string;

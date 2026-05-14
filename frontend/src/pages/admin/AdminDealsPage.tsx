@@ -10,6 +10,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { useAdminDeals } from "@/api/admin/hooks";
 import { useMe } from "@/api/hooks";
+import { parseDecimal } from "@/lib/format";
 import type { AdminDealListItemDto, AdminListDealsQuery } from "@/api/types";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -354,7 +355,11 @@ function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen: () => v
         </div>
         <div className="mt-0.5 text-xs text-text-muted flex items-center gap-2 flex-wrap">
           <span className="font-medium text-text">
-            {deal.amount?.toFixed(deal.currency_code === "USDT" || deal.currency_code === "USDC" ? 2 : 6) ?? deal.sum.toFixed(2)}{" "}
+            {deal.amount !== null && deal.amount !== undefined
+              ? parseDecimal(deal.amount).toFixed(
+                  deal.currency_code === "USDT" || deal.currency_code === "USDC" ? 2 : 6,
+                )
+              : parseDecimal(deal.sum).toFixed(2)}{" "}
             {deal.currency_code ?? "USD"}
           </span>
           <span>·</span>
