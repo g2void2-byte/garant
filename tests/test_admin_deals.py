@@ -35,6 +35,7 @@ from tests.helpers import (
     get_user_id_by_tg,
     setup_pin,
     signed_init_data,
+    with_totp,
 )
 
 
@@ -173,7 +174,7 @@ async def test_admin_force_release(client):
     resp = await client.post(
         f"/api/admin/deals/{deal_id}/force-release",
         json={"reason": "release after dispute"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     detail = resp.json()["deal"]
@@ -194,7 +195,7 @@ async def test_admin_force_release_rejects_terminal(client):
     resp = await client.post(
         f"/api/admin/deals/{deal_id}/force-release",
         json={},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 400
 
@@ -205,7 +206,7 @@ async def test_admin_force_refund(client):
     resp = await client.post(
         f"/api/admin/deals/{deal_id}/force-refund",
         json={"reason": "refund"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     detail = resp.json()["deal"]
@@ -234,7 +235,7 @@ async def test_admin_split_deal(client):
     resp = await client.post(
         f"/api/admin/deals/{deal_id}/split",
         json={"buyer_percent": 60, "reason": "split"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     detail = resp.json()["deal"]
@@ -249,7 +250,7 @@ async def test_admin_split_percent_out_of_range(client):
     resp = await client.post(
         f"/api/admin/deals/{deal_id}/split",
         json={"buyer_percent": 150},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 422
 
@@ -263,7 +264,7 @@ async def test_admin_force_arbitration(client):
     resp = await client.post(
         f"/api/admin/deals/{deal_id}/force-arbitration",
         json={"reason": "forced"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["deal"]["status"] == DealStatus.arbitration.value
@@ -278,14 +279,14 @@ async def test_admin_force_arbitration_idempotent(client):
     r1 = await client.post(
         f"/api/admin/deals/{deal_id}/force-arbitration",
         json={"reason": "first"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert r1.status_code == 200
     # second call should be no-op (no new audit row)
     r2 = await client.post(
         f"/api/admin/deals/{deal_id}/force-arbitration",
         json={"reason": "second"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert r2.status_code == 200
     rows = await _audit_rows("deal.force_arbitration")
@@ -299,7 +300,7 @@ async def test_admin_assign_arbiter(client):
     await client.post(
         f"/api/admin/deals/{deal_id}/force-arbitration",
         json={},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     # create arbiter user
     arb_init = signed_init_data(3001, "arb1")
@@ -314,7 +315,7 @@ async def test_admin_assign_arbiter(client):
     resp = await client.post(
         f"/api/admin/deals/{deal_id}/assign-arbiter",
         json={"arbiter_id": arb_id},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["deal"]["arbitration_resolved_by_id"] == arb_id
@@ -326,7 +327,7 @@ async def test_admin_assign_arbiter_rejects_non_arbiter(client):
     await client.post(
         f"/api/admin/deals/{deal_id}/force-arbitration",
         json={},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     nobody_init = signed_init_data(3002, "nobody")
     resp = await client.get("/api/me", headers=auth_headers(nobody_init))
@@ -334,7 +335,7 @@ async def test_admin_assign_arbiter_rejects_non_arbiter(client):
     resp = await client.post(
         f"/api/admin/deals/{deal_id}/assign-arbiter",
         json={"arbiter_id": nobody_id},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 400
 
@@ -348,7 +349,7 @@ async def test_admin_delete_deal_refunds_buyer(client):
     resp = await client.post(
         f"/api/admin/deals/{deal_id}/delete",
         json={"reason": "spam"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -372,7 +373,7 @@ async def test_admin_delete_deal_writes_audit(client):
     await client.post(
         f"/api/admin/deals/{deal_id}/delete",
         json={"reason": "spam"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     rows = await _audit_rows("deal.delete")
     assert len(rows) == 1

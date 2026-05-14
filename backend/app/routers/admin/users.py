@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ... import notifier
 from ...admin_audit import log_admin_action
+from ...auth_2fa import TotpUser
 from ...deps import AdminUser, SessionDep
 from ...models import NotificationType, User
 from ...rate_limit import rate_limit
@@ -328,7 +329,7 @@ async def get_user(user_id: int, _admin: AdminUser, session: SessionDep) -> Admi
 async def ban_user(
     user_id: int,
     body: AdminReasonIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:
@@ -391,7 +392,7 @@ async def unban_user(
 async def freeze_user(
     user_id: int,
     body: AdminReasonIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:
@@ -452,7 +453,7 @@ async def unfreeze_user(
 async def reset_pin(
     user_id: int,
     body: AdminReasonIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:
@@ -490,19 +491,20 @@ async def reset_pin(
 async def invalidate_sessions(
     user_id: int,
     body: AdminReasonIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:
-    """Bump the user's session epoch so existing PIN tokens are rejected.
+    """Revoke all of the target user's active PIN sessions.
 
-    Implementation note: we currently store PIN tokens as opaque JWTs
-    issued with a static secret + the user's id. To invalidate them we
-    would either need a per-user epoch column or a Redis blacklist. For
-    PR-A we log the request and forward a DM; full invalidation will
-    land in PR-C alongside the broader session-management work.
+    Every PIN token embeds the user's ``pin_session_epoch`` at issue
+    time; ``require_pin_session`` compares the claim against the live
+    column on every privileged request. Incrementing the column here
+    therefore invalidates every token previously issued for this user
+    on the next request — no Redis blacklist, no JWT-TTL wait.
     """
     target = await _get_user_or_404(session, user_id)
+    target.pin_session_epoch = (target.pin_session_epoch or 0) + 1
     await _audit_and_notify(
         session=session,
         request=request,
@@ -510,7 +512,7 @@ async def invalidate_sessions(
         target=target,
         action="user.invalidate_sessions",
         reason=body.reason,
-        payload=None,
+        payload={"pin_session_epoch": int(target.pin_session_epoch)},
         dm_title="Сессия завершена",
         dm_body=body.reason or "Администратор завершил вашу активную сессию. Войдите снова.",
     )
@@ -521,7 +523,7 @@ async def invalidate_sessions(
 async def set_role(
     user_id: int,
     body: AdminSetRoleIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:

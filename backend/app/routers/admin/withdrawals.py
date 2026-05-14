@@ -26,6 +26,7 @@ from sqlalchemy import or_, select
 
 from ... import notifier
 from ...admin_audit import log_admin_action
+from ...auth_2fa import TotpUser
 from ...config import settings as app_settings_env
 from ...cryptopay import CryptoPay, CryptoPayError
 from ...deps import AdminUser, SessionDep
@@ -125,7 +126,7 @@ async def list_withdrawals(
 async def decide_withdrawal(
     withdrawal_id: int,
     body: AdminWithdrawalDecisionIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ):

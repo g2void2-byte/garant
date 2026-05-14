@@ -105,14 +105,24 @@ async def require_pin_session(
     Used to gate sensitive endpoints (wallet, deal payments, account
     transfer). Endpoints that only need user identity stay on
     `get_current_user`.
+
+    The token embeds the user's ``pin_session_epoch`` at issue time; if
+    an admin has since bumped that column (``invalidate-sessions``), the
+    token's epoch no longer matches and the session is rejected without
+    waiting for the JWT TTL.
     """
     if not user.pin_hash:
         raise HTTPException(403, "PIN не установлен")
     if not x_pin_token:
         raise HTTPException(401, "PIN-сессия отсутствует")
     decoded = decode_session_token(x_pin_token)
-    if decoded != user.id:
+    if decoded is None:
         raise HTTPException(401, "PIN-сессия недействительна")
+    token_user_id, token_epoch = decoded
+    if token_user_id != user.id:
+        raise HTTPException(401, "PIN-сессия недействительна")
+    if token_epoch != (user.pin_session_epoch or 0):
+        raise HTTPException(401, "PIN-сессия отозвана")
     return user
 
 

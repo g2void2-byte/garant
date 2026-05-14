@@ -217,3 +217,186 @@ def test_main_refuses_empty_allowed_origins(monkeypatch):
     # Reload back to the conftest default so other tests stay healthy.
     monkeypatch.setattr(config.settings, "allowed_origins", "http://localhost:5173")
     importlib.reload(main_module)
+
+
+# ── 5. PIN session epoch — admin invalidate-sessions revokes tokens ───────
+
+
+async def test_invalidate_sessions_revokes_active_pin_token(client):
+    """An admin calling ``invalidate-sessions`` must immediately make every
+    previously-issued PIN token fail the ``epoch`` check on
+    ``require_pin_session`` — no JWT TTL wait, no Redis blacklist."""
+    from backend.app.db import async_session
+    from backend.app.models import User
+
+    # Bootstrap a normal user with an active PIN session.
+    user_init = signed_init_data(9401, "victim")
+    pin_token = await setup_pin(client, user_init)
+
+    # Sanity-check: token works on a PIN-gated endpoint (account
+    # transfer cancel is PIN-gated and idempotent — runs even when
+    # there's no active code).
+    probe = await client.post(
+        "/api/account/transfer/cancel",
+        headers={**auth_headers(user_init), "X-Pin-Token": pin_token},
+    )
+    assert probe.status_code == 200, probe.text
+
+    # Bootstrap an admin and call ``invalidate-sessions`` against the user.
+    admin_init = signed_init_data(9402, "admin9402")
+    await client.get("/api/me", headers=auth_headers(admin_init))
+    async with async_session() as session:
+        admin = (await session.execute(select(User).where(User.tg_user_id == 9402))).scalar_one()
+        admin.is_admin = True
+        target = (await session.execute(select(User).where(User.tg_user_id == 9401))).scalar_one()
+        target_id = target.id
+        epoch_before = target.pin_session_epoch or 0
+        await session.commit()
+
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/invalidate-sessions",
+        json={"reason": "leaked device"},
+        headers={
+            **auth_headers(admin_init),
+            "X-Totp-Code": "test-totp-bypass-do-not-use-in-prod",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+    async with async_session() as session:
+        target = await session.get(User, target_id)
+        assert (target.pin_session_epoch or 0) == epoch_before + 1
+
+    # The old token must now be rejected.
+    revoked = await client.post(
+        "/api/account/transfer/cancel",
+        headers={**auth_headers(user_init), "X-Pin-Token": pin_token},
+    )
+    assert revoked.status_code == 401, revoked.text
+
+    # A fresh PIN check mints a token bound to the new epoch and works.
+    refreshed = await client.post(
+        "/api/pin/check", json={"pin": "1234"}, headers=auth_headers(user_init)
+    )
+    assert refreshed.status_code == 200, refreshed.text
+    fresh_token = refreshed.json()["token"]
+    final = await client.post(
+        "/api/account/transfer/cancel",
+        headers={**auth_headers(user_init), "X-Pin-Token": fresh_token},
+    )
+    assert final.status_code == 200, final.text
+
+
+# ── 6. PIN reset throttle — 3 per 24h per user ────────────────────────────
+
+
+async def test_pin_reset_request_throttled_after_three(client, monkeypatch):
+    """Each user may request at most 3 PIN-reset codes per rolling 24h
+    window. The 4th request returns 429 with a ``Retry-After`` header."""
+    import backend.app.routers.pin as pin_mod
+    from backend.app.rate_limit import reset_state_for_tests
+    from backend.app.routers.pin import PIN_RESET_MAX_PER_WINDOW
+
+    # The endpoint awaits ``send_dm`` which spins up a real aiogram bot
+    # and aiohttp session — that session is bound to the event loop the
+    # bot was first instantiated on, so reusing it across pytest's
+    # per-test loop raises "Event loop is closed". Tests that hit this
+    # endpoint stub the call out.
+    async def _noop(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(pin_mod, "send_dm", _noop)
+
+    user_init = signed_init_data(9501, "resetter")
+    await setup_pin(client, user_init)
+
+    # Each request also burns one slot of the per-user pin RLPin (5/min)
+    # — three requests fit comfortably. After the throttle blocks at 3
+    # we don't go to a 4th here because of that ambiguity; instead we
+    # explicitly reset RLPin and prove the throttle is the gate.
+    reset_state_for_tests()
+    for i in range(PIN_RESET_MAX_PER_WINDOW):
+        resp = await client.post(
+            "/api/pin/reset/request",
+            headers=auth_headers(user_init),
+        )
+        assert resp.status_code == 200, f"hit {i}: {resp.text}"
+
+    # 4th attempt: reset the in-memory RLPin bucket to isolate the
+    # throttle. ``pin_reset_attempts`` is now at the cap.
+    reset_state_for_tests()
+    resp = await client.post(
+        "/api/pin/reset/request",
+        headers=auth_headers(user_init),
+    )
+    assert resp.status_code == 429, resp.text
+    assert resp.headers.get("Retry-After") is not None
+
+
+# ── 7. CryptoBot webhook stays reachable during maintenance ───────────────
+
+
+async def test_webhook_bypasses_maintenance_mode(client):
+    """When the global maintenance toggle is on, the CryptoBot webhook
+    must still accept POSTs (signature verification handles auth) so
+    deposits don't silently drop. The endpoint returns 401 because we
+    don't sign the body — but it must NOT return the 503 maintenance
+    response, which would tell the audit it's gated by the middleware."""
+    from backend.app.db import async_session
+    from backend.app.models import AppSettings
+
+    async with async_session() as session:
+        s = (
+            await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
+        ).scalar_one()
+        s.maintenance_enabled = True
+        await session.commit()
+
+    try:
+        resp = await client.post(
+            "/api/payments/webhook/cryptobot",
+            content=b"{}",
+            headers={"Content-Type": "application/json"},
+        )
+        # Maintenance middleware would 503; the webhook handler 401s on
+        # missing/invalid signature. Either passes the maintenance gate
+        # — the discriminator is that 503 must NOT come from this route.
+        assert resp.status_code != 503, resp.text
+    finally:
+        async with async_session() as session:
+            s = (
+                await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
+            ).scalar_one()
+            s.maintenance_enabled = False
+            await session.commit()
+
+
+# ── 8. /api/payments/deposit is rate-limited ──────────────────────────────
+
+
+async def test_manual_deposit_rate_limited(client):
+    """The legacy USD invoice endpoint capped at 10 calls per minute per
+    user. The 11th call must 429."""
+    from backend.app.rate_limit import reset_state_for_tests
+
+    init = signed_init_data(9601, "depositor")
+    await client.get("/api/me", headers=auth_headers(init))
+
+    reset_state_for_tests()
+
+    # Vary the amount so the ``provider_invoice_id = manual-{uid}-{amt}``
+    # unique constraint doesn't collide between attempts.
+    for i in range(10):
+        resp = await client.post(
+            "/api/payments/deposit",
+            json={"amount": float(i + 1)},
+            headers=auth_headers(init),
+        )
+        assert resp.status_code == 200, f"hit {i}: {resp.text}"
+
+    resp = await client.post(
+        "/api/payments/deposit",
+        json={"amount": 999.0},
+        headers=auth_headers(init),
+    )
+    assert resp.status_code == 429, resp.text

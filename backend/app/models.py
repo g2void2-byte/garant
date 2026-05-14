@@ -127,6 +127,15 @@ class User(Base):
     pin_locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     pin_reset_code_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pin_reset_expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Session epoch — every PIN token embeds this value; admin
+    # ``invalidate-sessions`` bumps it so existing tokens stop
+    # decoding to a valid (user, epoch) pair before their TTL.
+    pin_session_epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Reset-request throttle (per-user, 3 codes per 24h). The window
+    # opens on the first request after a quiet period and closes after
+    # 24h, at which point the counter resets.
+    pin_reset_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    pin_reset_window_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # PR-G — DM notification preferences (one toggle per NotificationType bucket).
     dm_deals: Mapped[bool] = mapped_column(Boolean, default=True)
     dm_deposits: Mapped[bool] = mapped_column(Boolean, default=True)

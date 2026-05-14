@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 
 from ..config import settings
 from ..cryptopay import CryptoPay, CryptoPayError
 from ..deps import CurrentUser, SessionDep
 from ..models import Invoice, InvoiceProvider, InvoiceStatus
+from ..rate_limit import rate_limit
 from ..schemas import DepositReq, InvoiceCreateReq, InvoiceOut, InvoiceStatusOut
 from ..services import credit_invoice
 from ..services_payments import (
@@ -16,6 +17,12 @@ from ..services_payments import (
     verify_webhook_signature,
     webhook_secret,
 )
+
+# Legacy USD-invoice creation. Keeping it ungated previously let any
+# authenticated user spam thousands of pending ``Invoice`` rows; cap to
+# a few per minute per user. The cap is intentionally generous because
+# the surface is only kept for backward-compat with the old DepositPage.
+_LIMIT_MANUAL_DEPOSIT = rate_limit("manual-deposit", limit=10, window=60)
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +119,11 @@ async def check_invoice(invoice_id: int, user: CurrentUser, session: SessionDep)
     )
 
 
-@router.post("/deposit", response_model=InvoiceStatusOut)
+@router.post(
+    "/deposit",
+    response_model=InvoiceStatusOut,
+    dependencies=[Depends(_LIMIT_MANUAL_DEPOSIT)],
+)
 async def manual_deposit(body: DepositReq, user: CurrentUser, session: SessionDep):
     inv = Invoice(
         owner_id=user.id,

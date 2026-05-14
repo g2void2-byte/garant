@@ -99,8 +99,14 @@ def _status(user) -> PinStatusOut:
     )
 
 
-def _token_response(user_id: int) -> PinTokenOut:
-    token, expires = issue_session_token(user_id)
+def _token_response(user) -> PinTokenOut:
+    """Issue a fresh PIN session JWT bound to the user's current epoch.
+
+    The caller is expected to have committed any change to
+    ``pin_session_epoch`` before calling this so the issued token's
+    claim matches the persisted value.
+    """
+    token, expires = issue_session_token(user.id, int(user.pin_session_epoch or 0))
     return PinTokenOut(token=token, expires_at=expires)
 
 
@@ -126,7 +132,7 @@ async def pin_setup(
     user.pin_reset_expires = None
     await session.commit()
     await session.refresh(user)
-    return _token_response(user.id)
+    return _token_response(user)
 
 
 @router.post("/check", response_model=PinTokenOut)
@@ -160,7 +166,7 @@ async def pin_check(
     user.pin_locked_until = None
     await session.commit()
     await session.refresh(user)
-    return _token_response(user.id)
+    return _token_response(user)
 
 
 @router.post("/change", response_model=PinTokenOut)
@@ -182,16 +188,40 @@ async def pin_change(
     user.pin_locked_until = None
     await session.commit()
     await session.refresh(user)
-    return _token_response(user.id)
+    return _token_response(user)
+
+
+# Per-user PIN-reset throttle. Without this the endpoint could be used
+# to either spam DMs at a user or amplify a brute-force against the
+# 6-digit code (each new request mints a fresh code, so calling it
+# repeatedly multiplies the keyspace explored before lockout).
+PIN_RESET_WINDOW_SECONDS = 24 * 60 * 60
+PIN_RESET_MAX_PER_WINDOW = 3
 
 
 @router.post("/reset/request", response_model=PinResetRequestOut)
 async def pin_reset_request(
     user: CurrentUser, session: SessionDep, _rl: RLPin
 ) -> PinResetRequestOut:
+    now = _now()
+    window_start = user.pin_reset_window_started_at
+    elapsed = (now - window_start).total_seconds() if window_start else None
+    if window_start is None or (elapsed is not None and elapsed >= PIN_RESET_WINDOW_SECONDS):
+        user.pin_reset_window_started_at = now
+        user.pin_reset_attempts = 0
+    if (user.pin_reset_attempts or 0) >= PIN_RESET_MAX_PER_WINDOW:
+        # Compute retry-after so the client can render a friendly message.
+        wait_for = int(PIN_RESET_WINDOW_SECONDS - (elapsed or 0))
+        raise HTTPException(
+            429,
+            "Достигнут лимит сбросов PIN. Повторите позже.",
+            headers={"Retry-After": str(max(wait_for, 60))},
+        )
+    user.pin_reset_attempts = (user.pin_reset_attempts or 0) + 1
+
     code = generate_reset_code()
     user.pin_reset_code_hash = hash_reset_code(code)
-    user.pin_reset_expires = _now() + timedelta(seconds=settings.pin_reset_code_ttl_seconds)
+    user.pin_reset_expires = now + timedelta(seconds=settings.pin_reset_code_ttl_seconds)
     await session.commit()
     await session.refresh(user)
 
@@ -232,4 +262,4 @@ async def pin_reset_confirm(
     user.pin_reset_expires = None
     await session.commit()
     await session.refresh(user)
-    return _token_response(user.id)
+    return _token_response(user)

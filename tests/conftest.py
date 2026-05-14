@@ -43,6 +43,12 @@ os.environ["INACTIVITY_SWEEP_SECONDS"] = "0"
 os.environ["PIN_JWT_SECRET"] = "test-pin-secret-fixed-value-do-not-use-in-prod"
 os.environ["MEDIA_ROOT"] = str(_media_root)
 os.environ["ALLOW_UNSIGNED_INIT_DATA"] = "false"
+# Admin-side TOTP gate: pick a sentinel that the test helpers know
+# about so tests can hit 2FA-gated endpoints without going through the
+# full enrolment flow. The real TOTP-rejection tests in
+# ``test_admin_misc.py`` continue to exercise the production path —
+# they don't send this header, they enrol a fresh secret.
+os.environ.setdefault("ADMIN_TOTP_BYPASS", "test-totp-bypass-do-not-use-in-prod")
 
 
 # ── 2. Provision the test database (once per session) ─────────────────────

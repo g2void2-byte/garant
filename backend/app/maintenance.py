@@ -32,9 +32,15 @@ _READONLY_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 # Routes that *must* keep working during maintenance (read-only auth
 # probes, the maintenance toggle itself, the WebSocket lifecycle, the
 # bot webhook etc).
+#
+# ``/api/payments/webhook/`` belongs here too: CryptoBot retries on
+# non-2xx with exponential backoff and after enough failures drops the
+# update entirely, which would silently lose deposit credits across
+# the maintenance window.
 _ALWAYS_ALLOWED_PREFIXES = (
     "/api/admin/",
     "/api/auth/",
+    "/api/payments/webhook/",
     "/api/settings/maintenance",
     "/health",
     "/assets/",
