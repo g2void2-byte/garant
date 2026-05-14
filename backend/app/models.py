@@ -112,7 +112,6 @@ class User(Base):
     photo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     banner_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     balance: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
-    frozen_balance: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
     description: Mapped[str] = mapped_column(Text, default="")
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     is_arbiter: Mapped[bool] = mapped_column(Boolean, default=False)

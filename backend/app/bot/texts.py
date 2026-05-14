@@ -86,9 +86,8 @@ def profile_summary(
 ) -> str:
     username = f"@{user.username}" if user.username else "—"
     name = escape(user.display_name) if user.display_name else "—"
-    deposit_str = (
-        _format_money(float(user.frozen_balance)) if float(user.frozen_balance) > 0 else "—"
-    )
+    deposit_value = float(user.deposit_total)
+    deposit_str = _format_money(deposit_value) if deposit_value > 0 else "—"
     return (
         f"🎖 <b>Мой профиль:</b> {username}\n\n"
         f"👤 <b>Имя</b> [<code>{user.tg_user_id}</code>]: {name}\n"

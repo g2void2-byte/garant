@@ -111,7 +111,12 @@ async def list_users(
             stmt = stmt.where(User.deals_total <= d_hi)
 
     if deposit_min is not None and deposit_min > 0:
-        stmt = stmt.where(User.frozen_balance >= deposit_min)
+        # Continental's "Депозит ≥ N" filter targets the user's
+        # lifetime deposit aggregate. The legacy ``frozen_balance``
+        # column it used to sit on was retired in favour of
+        # ``deposit_total`` (the actively-maintained admin-panel
+        # value).
+        stmt = stmt.where(User.deposit_total >= deposit_min)
 
     if status is not None:
         if status not in _STATUS_KEYS:

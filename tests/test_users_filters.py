@@ -24,7 +24,7 @@ async def _make_user(
     good: int = 0,
     bad: int = 0,
     deals_total: int = 0,
-    frozen_balance: float = 0.0,
+    deposit_total: float = 0.0,
     is_admin: bool = False,
     is_arbiter: bool = False,
     created_at: datetime | None = None,
@@ -37,7 +37,7 @@ async def _make_user(
             good=good,
             bad=bad,
             deals_total=deals_total,
-            frozen_balance=frozen_balance,
+            deposit_total=deposit_total,
             is_admin=is_admin,
             is_arbiter=is_arbiter,
         )
@@ -112,8 +112,8 @@ async def test_deals_bucket_101_plus(client):
 
 @pytest.mark.asyncio
 async def test_deposit_min(client):
-    await _make_user(600, "broke", frozen_balance=0)
-    await _make_user(601, "rich", frozen_balance=1000.50)
+    await _make_user(600, "broke", deposit_total=0)
+    await _make_user(601, "rich", deposit_total=1000.50)
     names = await _usernames(client, deposit_min=500)
     assert names == ["rich"]
 

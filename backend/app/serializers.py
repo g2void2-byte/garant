@@ -18,9 +18,11 @@ def user_to_out(
 ) -> UserOut:
     """Convert a :class:`User` ORM row into a :class:`UserOut` DTO.
 
-    ``deposit`` defaults to ``user.frozen_balance`` for backwards compat
-    with the old USD column. Pass an explicit value when the caller has
-    a per-currency aggregate to surface instead.
+    ``deposit`` defaults to ``user.deposit_total`` — the lifetime
+    deposit aggregate maintained by the admin panel. Pass an explicit
+    value when the caller has a per-currency aggregate to surface
+    instead. (The legacy ``frozen_balance`` column was dropped in
+    favour of ``deposit_total``; see ``alembic/versions/9f3c1a0b8e21``.)
     """
     reviews_count = user.good + user.bad
     total = reviews_count or 1
@@ -59,7 +61,7 @@ def user_to_out(
         photo_url=user.photo_url,
         banner_url=user.banner_url,
         balance=float(user.balance),
-        deposit=float(deposit if deposit is not None else user.frozen_balance),
+        deposit=float(deposit if deposit is not None else user.deposit_total),
         description=user.description,
         prefix=prefix,
         is_admin=user.is_admin,

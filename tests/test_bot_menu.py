@@ -140,7 +140,7 @@ def test_profile_summary_text_uses_username_and_status():
         is_arbiter=True,
         good=4,
         bad=1,
-        frozen_balance=12.0,
+        deposit_total=12.0,
     )
     body = texts.profile_summary(
         user,
