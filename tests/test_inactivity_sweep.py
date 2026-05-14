@@ -65,6 +65,8 @@ async def test_sweep_cancels_stale_pending_confirmation(client):
                 )
             )
         ).scalar_one()
-        # Full refund of 30 + 1.5 commission.
-        assert float(bal.amount) == 100.0
+        # Buyer is refunded the 30 principal; the 1.5 commission is
+        # retained by the platform per spec (commission charged on every
+        # terminal deal including inactivity sweeps).
+        assert float(bal.amount) == 98.5
         assert float(bal.locked) == 0.0

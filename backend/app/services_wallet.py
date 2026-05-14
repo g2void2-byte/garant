@@ -18,6 +18,7 @@ from . import notifier
 from .config import settings
 from .cryptopay import CryptoPay, CryptoPayError
 from .models import (
+    AppSettings,
     Currency,
     NotificationType,
     User,
@@ -183,6 +184,18 @@ async def poll_deposit_status(session: AsyncSession, deposit: WalletDeposit) -> 
 # ── Withdrawals ────────────────────────────────────────
 
 
+async def _auto_withdraw_enabled(session: AsyncSession) -> bool:
+    row = (
+        await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
+    ).scalar_one_or_none()
+    return bool(row and row.auto_withdraw_enabled)
+
+
+def _cryptopay_configured() -> bool:
+    token = settings.cryptobot_token or ""
+    return bool(token) and not token.startswith("000")
+
+
 async def create_withdrawal(
     session: AsyncSession, user: User, currency_code: str, amount: float, address: str
 ) -> WalletWithdrawal:
@@ -211,7 +224,46 @@ async def create_withdrawal(
     await session.commit()
     await session.refresh(withdrawal)
 
-    # Notify admins
+    # If auto-mode is on and CryptoBot is configured, fire the transfer
+    # immediately so the user doesn't wait on an admin. Failures here
+    # leave the withdrawal in ``pending`` so admins can still approve
+    # manually.
+    if await _auto_withdraw_enabled(session) and _cryptopay_configured():
+        try:
+            async with CryptoPay(
+                settings.cryptobot_token, testnet=settings.cryptobot_testnet
+            ) as cp:
+                tr = await cp.transfer(
+                    user_id=user.tg_user_id,
+                    asset=currency.code,
+                    amount=str(amount),
+                    spend_id=f"wd:{withdrawal.id}",
+                    comment=f"Garant withdrawal #{withdrawal.id}",
+                )
+        except CryptoPayError as e:
+            logger.warning(
+                "auto-withdraw #%s CryptoBot transfer failed: %s — leaving pending",
+                withdrawal.id,
+                e,
+            )
+        else:
+            withdrawal.status = WalletWithdrawStatus.sent
+            withdrawal.processed_at = datetime.utcnow()
+            withdrawal.admin_note = f"cryptobot_transfer_id={tr.transfer_id}"
+            bal.locked = float(max(0.0, float(bal.locked) - float(amount)))
+            await session.commit()
+            await session.refresh(withdrawal)
+            await notifier.push(
+                session,
+                user.id,
+                NotificationType.deposits,
+                "Вывод выполнен",
+                f"-{amount} {currency.code} отправлены на {address}",
+                {"withdrawal_id": withdrawal.id},
+            )
+            return withdrawal
+
+    # Manual mode (or auto failed): queue for admin review.
     admins = (await session.execute(select(User).where(User.is_admin.is_(True)))).scalars().all()
     for admin in admins:
         await notifier.push(
@@ -226,56 +278,8 @@ async def create_withdrawal(
     return withdrawal
 
 
-async def decide_withdrawal(
-    session: AsyncSession,
-    admin: User,
-    withdrawal: WalletWithdrawal,
-    action: str,
-    note: str = "",
-) -> WalletWithdrawal:
-    if not admin.is_admin:
-        raise HTTPException(403, "Только администратор может обрабатывать заявки")
-    if withdrawal.status not in (WalletWithdrawStatus.pending, WalletWithdrawStatus.approved):
-        raise HTTPException(409, "Заявка уже обработана")
-
-    bal = await get_or_create_balance(session, withdrawal.user_id, withdrawal.currency_id)
-    currency = await session.get(Currency, withdrawal.currency_id)
-
-    if action == "approve":
-        withdrawal.status = WalletWithdrawStatus.approved
-        withdrawal.admin_note = note
-    elif action == "reject":
-        bal.locked = max(0.0, float(bal.locked) - float(withdrawal.amount))
-        bal.amount = float(bal.amount) + float(withdrawal.amount)
-        withdrawal.status = WalletWithdrawStatus.rejected
-        withdrawal.admin_note = note
-        withdrawal.processed_at = datetime.utcnow()
-        if currency:
-            await notifier.push(
-                session,
-                withdrawal.user_id,
-                NotificationType.deposits,
-                "Заявка на вывод отклонена",
-                f"{withdrawal.amount} {currency.code} возвращены на баланс. {note}".strip(),
-                {"withdrawal_id": withdrawal.id},
-            )
-    elif action == "send":
-        bal.locked = max(0.0, float(bal.locked) - float(withdrawal.amount))
-        withdrawal.status = WalletWithdrawStatus.sent
-        withdrawal.admin_note = note
-        withdrawal.processed_at = datetime.utcnow()
-        if currency:
-            await notifier.push(
-                session,
-                withdrawal.user_id,
-                NotificationType.deposits,
-                "Вывод выполнен",
-                f"-{withdrawal.amount} {currency.code} отправлены на {withdrawal.address}",
-                {"withdrawal_id": withdrawal.id},
-            )
-    else:
-        raise HTTPException(400, "Неизвестное действие")
-
-    await session.commit()
-    await session.refresh(withdrawal)
-    return withdrawal
+# NOTE: the legacy ``decide_withdrawal`` service was removed — the
+# canonical admin decide flow now lives in
+# ``backend.app.routers.admin.withdrawals.decide_withdrawal`` which
+# writes audit rows, holds row locks, and handles auto-mode
+# CryptoBot transfers.

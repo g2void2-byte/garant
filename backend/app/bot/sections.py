@@ -238,11 +238,29 @@ async def render_settings(user: User) -> tuple[str, InlineKeyboardMarkup]:
     return texts.settings_summary(user), keyboards.settings_keyboard(user)
 
 
+async def _load_user(session: AsyncSession, tg_user_id: int) -> User:
+    """Fetch the user row, falling back to a fresh upsert when missing.
+
+    Callback queries can fire before the user has interacted with /start
+    (rare but possible if Telegram replays a stale callback), so we
+    never raise on a missing row — we create a minimal user record so
+    the handler can keep going.
+    """
+    user = (
+        await session.execute(select(User).where(User.tg_user_id == tg_user_id))
+    ).scalar_one_or_none()
+    if user is not None:
+        return user
+    user = User(tg_user_id=tg_user_id, username=None, display_name="")
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
 async def toggle_anonymous(tg_user_id: int) -> User:
     async with async_session() as session:
-        user = (
-            await session.execute(select(User).where(User.tg_user_id == tg_user_id))
-        ).scalar_one()
+        user = await _load_user(session, tg_user_id)
         user.is_anonymous_deals = not user.is_anonymous_deals
         await session.commit()
         await session.refresh(user)
@@ -251,9 +269,7 @@ async def toggle_anonymous(tg_user_id: int) -> User:
 
 async def toggle_hidden(tg_user_id: int) -> User:
     async with async_session() as session:
-        user = (
-            await session.execute(select(User).where(User.tg_user_id == tg_user_id))
-        ).scalar_one()
+        user = await _load_user(session, tg_user_id)
         user.is_hidden_profile = not user.is_hidden_profile
         await session.commit()
         await session.refresh(user)
@@ -262,16 +278,12 @@ async def toggle_hidden(tg_user_id: int) -> User:
 
 async def load_user(tg_user_id: int) -> User:
     async with async_session() as session:
-        return (
-            await session.execute(select(User).where(User.tg_user_id == tg_user_id))
-        ).scalar_one()
+        return await _load_user(session, tg_user_id)
 
 
 async def load_profile_payload(tg_user_id: int) -> tuple[str, InlineKeyboardMarkup]:
     async with async_session() as session:
-        user = (
-            await session.execute(select(User).where(User.tg_user_id == tg_user_id))
-        ).scalar_one()
+        user = await _load_user(session, tg_user_id)
         stats = await _deals_stats(session, user.id)
     body = texts.profile_summary(
         user,

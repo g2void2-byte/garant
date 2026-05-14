@@ -14,6 +14,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 
+from ... import version as app_version
 from ...config import settings as app_settings_env
 from ...deps import AdminUser, SessionDep
 from ...rate_limit import rate_limit
@@ -65,7 +66,7 @@ async def status(_admin: AdminUser, session: SessionDep):
         bot_configured=bool(
             app_settings_env.bot_token and not app_settings_env.bot_token.startswith("0000")
         ),
-        backend_version=getattr(app_settings_env, "version", "dev"),
+        backend_version=app_version.BACKEND_VERSION,
         started_at=_STARTED_AT,
         uptime_seconds=(datetime.utcnow() - _STARTED_AT).total_seconds(),
     )

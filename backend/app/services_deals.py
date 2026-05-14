@@ -92,6 +92,27 @@ async def _refund(
     return bal
 
 
+async def _refund_principal_keep_commission(
+    session: AsyncSession,
+    user_id: int,
+    currency_id: int,
+    locked: Decimal,
+    principal: Decimal,
+) -> UserBalance:
+    """Unlock the full ``locked`` amount but credit only ``principal`` back.
+
+    The difference (``locked - principal``) is the commission share kept
+    by the platform — per spec, commission is retained on every deal
+    even if it doesn't complete successfully. Used for buyer-side
+    refunds (decline / accept_cancel / sweep / arbitration-for-buyer
+    / admin force-refund).
+    """
+    bal = await get_or_create_balance(session, user_id, currency_id)
+    bal.locked = float(max(Decimal(0), Decimal(str(bal.locked)) - locked))
+    bal.amount = float(Decimal(str(bal.amount)) + principal)
+    return bal
+
+
 async def _release_to(
     session: AsyncSession,
     payer_id: int,
@@ -211,8 +232,12 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals) or _commission(
         amt, settings.deal_commission_percent, currency.decimals
     )
-    locked = amt + commission if deal.pay_commission == PayCommission.buyer else amt
-    await _refund(session, deal.buyer_id, currency.id, locked)
+    if deal.pay_commission == PayCommission.buyer:
+        await _refund_principal_keep_commission(
+            session, deal.buyer_id, currency.id, amt + commission, amt
+        )
+    else:
+        await _refund(session, deal.buyer_id, currency.id, amt)
 
     deal.status = DealStatus.cancelled
     deal.completed_at = datetime.utcnow()
@@ -224,7 +249,7 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         deal.buyer_id,
         NotificationType.deals,
         "Сделка отклонена",
-        f"Продавец отклонил сделку #{deal.id}. Средства возвращены.",
+        f"Продавец отклонил сделку #{deal.id}. Сумма возвращена; комиссия удержана.",
         {"deal_id": deal.id},
     )
     return deal
@@ -344,8 +369,12 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
     commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals) or _commission(
         amt, settings.deal_commission_percent, currency.decimals
     )
-    locked = amt + commission if deal.pay_commission == PayCommission.buyer else amt
-    await _refund(session, deal.buyer_id, currency.id, locked)
+    if deal.pay_commission == PayCommission.buyer:
+        await _refund_principal_keep_commission(
+            session, deal.buyer_id, currency.id, amt + commission, amt
+        )
+    else:
+        await _refund(session, deal.buyer_id, currency.id, amt)
 
     deal.status = DealStatus.cancelled
     deal.completed_at = datetime.utcnow()
@@ -357,7 +386,7 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
         deal.cancellation_initiator_id or deal.buyer_id,
         NotificationType.deals,
         "Сделка отменена",
-        f"По сделке #{deal.id} отмена согласована. Средства возвращены.",
+        f"По сделке #{deal.id} отмена согласована. Сумма возвращена; комиссия удержана.",
         {"deal_id": deal.id},
     )
     return deal
@@ -437,9 +466,15 @@ async def resolve_arbitration(
     commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals)
 
     if winner == "buyer":
-        # Refund the buyer in full (incl. their commission contribution).
-        locked = amt + commission if deal.pay_commission == PayCommission.buyer else amt
-        await _refund(session, deal.buyer_id, currency.id, locked)
+        # Refund the buyer's principal but retain commission on the
+        # platform side — commission is charged on every deal regardless
+        # of outcome (per spec).
+        if deal.pay_commission == PayCommission.buyer:
+            await _refund_principal_keep_commission(
+                session, deal.buyer_id, currency.id, amt + commission, amt
+            )
+        else:
+            await _refund(session, deal.buyer_id, currency.id, amt)
         deal.status = DealStatus.resolved_for_buyer
     else:
         if deal.pay_commission == PayCommission.buyer:
@@ -528,8 +563,12 @@ async def sweep_inactivity(session: AsyncSession) -> int:
             continue
         amt = _q(Decimal(str(deal.amount)), currency.decimals)
         commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals)
-        locked = amt + commission if deal.pay_commission == PayCommission.buyer else amt
-        await _refund(session, deal.buyer_id, currency.id, locked)
+        if deal.pay_commission == PayCommission.buyer:
+            await _refund_principal_keep_commission(
+                session, deal.buyer_id, currency.id, amt + commission, amt
+            )
+        else:
+            await _refund(session, deal.buyer_id, currency.id, amt)
         target_status = (
             DealStatus.cancelled_for_inactivity
             if deal.status == DealStatus.pending_confirmation

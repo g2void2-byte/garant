@@ -211,7 +211,7 @@ async def test_admin_force_refund(client):
     detail = resp.json()["deal"]
     assert detail["status"] == DealStatus.resolved_for_buyer.value
     assert detail["buyer"]["locked"] == 0.0
-    # buyer got the principal + buyer-paid commission back
+    # buyer got the principal back, commission (5) retained by platform.
     async with async_session() as session:
         usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         buyer_id = await get_user_id_by_tg(session, 2001)
@@ -223,8 +223,9 @@ async def test_admin_force_refund(client):
                 )
             )
         ).scalar_one()
-        # started with 1000, locked 105 in the deal, refund => back to 1000
-        assert float(bal.amount) == 1000.0
+        # started with 1000, locked 105 (100 + 5 commission). Refund returns
+        # only the 100 principal; the 5 commission stays on the platform.
+        assert float(bal.amount) == 995.0
 
 
 async def test_admin_split_deal(client):

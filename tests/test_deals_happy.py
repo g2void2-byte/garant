@@ -130,8 +130,10 @@ async def test_decline_refunds_buyer(client):
                 )
             )
         ).scalar_one()
-        # Buyer refunded fully: original 50 restored.
-        assert float(buyer_bal.amount) == 50.0
+        # Commission (5% of 20 = 1) is retained even on decline per spec;
+        # buyer gets back only the 20 principal => 30 + 20 = 50, but the 1
+        # commission stays on the platform, so final spendable = 49.
+        assert float(buyer_bal.amount) == 49.0
         assert float(buyer_bal.locked) == 0.0
 
 
