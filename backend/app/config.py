@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     # PR-3 — periodic sweep of stale deals (0 disables).
     inactivity_sweep_seconds: int = 600
 
+    # PR-G (L-6) — if the maintenance-flag DB lookup fails the
+    # middleware normally falls open (treats maintenance as off and
+    # lets writes through) so a flaky DB doesn't lock the whole API.
+    # Setting this to ``true`` flips the policy to fail-closed: write
+    # endpoints are blocked with the maintenance message while the
+    # lookup is broken. Useful in stricter prod deploys where it's
+    # better to refuse writes than serve them without a maintenance
+    # check.
+    maintenance_fail_closed: bool = False
+
     # PR-CA — TTL for account-transfer one-time codes.
     account_transfer_code_ttl_seconds: int = 15 * 60
 
