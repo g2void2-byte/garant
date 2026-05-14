@@ -27,6 +27,12 @@ from .redis_client import get_redis
 logger = logging.getLogger(__name__)
 
 WS_CHANNEL = "ws:notifications"
+WS_INVALIDATE_CHANNEL = "ws:invalidate"
+# Close code reported to clients whose sessions have been revoked
+# (admin pressed ``invalidate-sessions``). Matches the ``4001`` code
+# already used for first-message auth rejections so the frontend's
+# generic 4001 handler picks it up without a special case.
+WS_INVALIDATE_CLOSE_CODE = 4001
 
 
 class ConnectionManager:
@@ -69,6 +75,26 @@ class ConnectionManager:
             logger.exception("WS publish failed; falling back to local delivery")
             await self._send_local(user_id, data)
 
+    async def invalidate_user(self, user_id: int) -> None:
+        """Close every active socket for ``user_id``.
+
+        Mirrors :meth:`publish`: with Redis we PUBLISH on
+        ``ws:invalidate`` so every backend instance closes its local
+        sockets; without Redis we just close the ones we hold. Called
+        when the admin panel revokes a user's sessions so the user's
+        notifications stop fanning out to a now-untrusted device.
+        """
+        r = await get_redis()
+        if r is None:
+            await self._close_local(user_id)
+            return
+        envelope = json.dumps({"user_id": user_id})
+        try:
+            await r.publish(WS_INVALIDATE_CHANNEL, envelope)
+        except Exception:  # noqa: BLE001
+            logger.exception("WS invalidate publish failed; falling back to local close")
+            await self._close_local(user_id)
+
     # ``send_to_user`` is kept for direct local delivery (used by the
     # pub/sub listener); routers should call ``publish`` instead.
     async def send_to_user(self, user_id: int, data: dict[str, Any]) -> None:
@@ -86,6 +112,22 @@ class ConnectionManager:
         for ws in dead:
             self.disconnect(user_id, ws)
 
+    async def _close_local(self, user_id: int) -> None:
+        """Close every socket attached to ``user_id`` on this instance.
+
+        Snapshots the list first so iteration is stable while the socket
+        handler (which holds the receive loop) removes itself via
+        :meth:`disconnect` on the way out.
+        """
+        conns = list(self._connections.get(user_id, []))
+        for ws in conns:
+            try:
+                await ws.close(code=WS_INVALIDATE_CLOSE_CODE, reason="Session revoked")
+            except Exception:  # noqa: BLE001
+                logger.debug("WS close on invalidate failed", exc_info=True)
+            finally:
+                self.disconnect(user_id, ws)
+
     async def start_subscriber(self) -> None:
         """Subscribe to ``ws:notifications`` if Redis is available.
 
@@ -100,7 +142,7 @@ class ConnectionManager:
             return
         try:
             ps = r.pubsub()
-            await ps.subscribe(WS_CHANNEL)
+            await ps.subscribe(WS_CHANNEL, WS_INVALIDATE_CHANNEL)
         except Exception:  # noqa: BLE001
             logger.exception("WS subscriber: subscribe failed; staying local-only")
             return
@@ -120,7 +162,7 @@ class ConnectionManager:
                 pass
         if ps is not None:
             try:
-                await ps.unsubscribe(WS_CHANNEL)
+                await ps.unsubscribe(WS_CHANNEL, WS_INVALIDATE_CHANNEL)
                 await ps.aclose()
             except Exception:  # noqa: BLE001
                 logger.exception("WS subscriber: error during shutdown")
@@ -129,6 +171,22 @@ class ConnectionManager:
         try:
             async for message in ps.listen():
                 if message is None or message.get("type") != "message":
+                    continue
+                channel = message.get("channel")
+                if channel == WS_INVALIDATE_CHANNEL:
+                    try:
+                        envelope = json.loads(message["data"])
+                        user_id = int(envelope["user_id"])
+                    except (KeyError, ValueError, TypeError):
+                        logger.warning(
+                            "WS subscriber: malformed invalidate envelope %r",
+                            message.get("data"),
+                        )
+                        continue
+                    try:
+                        await self._close_local(user_id)
+                    except Exception:  # noqa: BLE001
+                        logger.exception("WS subscriber: local invalidate failed")
                     continue
                 try:
                     envelope = json.loads(message["data"])

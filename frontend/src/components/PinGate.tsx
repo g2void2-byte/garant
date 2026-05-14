@@ -1,7 +1,7 @@
-import { lazy, Suspense, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { usePinStatus } from "@/api/hooks";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { hasValidPinToken } from "@/lib/pin";
+import { PIN_TOKEN_CHANGED_EVENT, hasValidPinToken } from "@/lib/pin";
 
 const PinPage = lazy(() => import("@/pages/pin/PinPage"));
 
@@ -24,6 +24,21 @@ function FullScreenLoader() {
 export function PinGate({ children }: { children: ReactNode }) {
   const status = usePinStatus();
   const [unlocked, setUnlocked] = useState(hasValidPinToken());
+
+  // Re-sync ``unlocked`` whenever the token is mutated from outside
+  // this component. The ky 401 interceptor in ``api/client.ts`` calls
+  // ``clearPinToken()`` when the server returns "PIN-сессия отозвана";
+  // without this listener the UI would stay in the authenticated tree
+  // until the next reload.
+  useEffect(() => {
+    const onChange = () => setUnlocked(hasValidPinToken());
+    window.addEventListener(PIN_TOKEN_CHANGED_EVENT, onChange);
+    window.addEventListener("storage", onChange);
+    return () => {
+      window.removeEventListener(PIN_TOKEN_CHANGED_EVENT, onChange);
+      window.removeEventListener("storage", onChange);
+    };
+  }, []);
 
   if (status.isLoading || !status.data) return <FullScreenLoader />;
   if (status.isError) {

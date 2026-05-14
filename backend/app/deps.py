@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request
@@ -33,6 +33,14 @@ def _client_ip(request: Request) -> str | None:
 async def get_session():
     async with async_session() as session:
         yield session
+
+
+# Minimum gap between two ``last_login_at`` updates for the same user.
+# 5 min is short enough that the admin "last seen" column stays fresh
+# (the panel auto-refreshes on a similar cadence) but long enough that
+# a user pulling-to-refresh in the deals list doesn't generate a
+# write per call. Module-level so tests can patch it.
+_LAST_LOGIN_DEBOUNCE = timedelta(minutes=5)
 
 
 async def get_current_user(
@@ -78,17 +86,19 @@ async def get_current_user(
         if tg_user.get("username") and user.username != tg_user["username"]:
             user.username = tg_user["username"]
             dirty = True
-        # Track every authenticated request as a "session ping" so the
-        # admin panel can show "last seen" / "last ip" without a separate
-        # WS heartbeat. We deliberately update on every call (no debounce)
-        # because the audit value of an exact timestamp outweighs the
-        # write cost on Postgres.
         if user.last_ip != ip:
             user.last_ip = ip
             dirty = True
-        user.last_login_at = now
-        user.login_count = (user.login_count or 0) + 1
-        dirty = True
+        # "Session ping": stamp ``last_login_at`` / bump ``login_count``
+        # for the admin panel's "last seen" column. Debounced to at
+        # most once per ``_LAST_LOGIN_DEBOUNCE`` so we don't UPDATE the
+        # row on every API call — a single active user paging the deal
+        # list otherwise generates hundreds of writes/hour, drowning
+        # WAL and conflicting with admin updates on the same row.
+        if user.last_login_at is None or (now - user.last_login_at) >= _LAST_LOGIN_DEBOUNCE:
+            user.last_login_at = now
+            user.login_count = (user.login_count or 0) + 1
+            dirty = True
         if dirty:
             await session.commit()
             await session.refresh(user)
