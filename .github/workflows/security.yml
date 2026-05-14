@@ -42,12 +42,15 @@ jobs:
 
       # pip-audit: checks every installed package against the PyPI
       # advisory database. We install the project (without dev extras)
-      # to limit the scan to the runtime dependency set.
+      # to limit the scan to the runtime dependency set, and
+      # ``--skip-editable`` tells pip-audit to ignore the local
+      # ``garant`` package itself (not published on PyPI, so the
+      # advisory lookup would error out).
       - name: pip-audit (warn-only)
         continue-on-error: true
         run: |
           pip install -e .
-          pip-audit --strict --progress-spinner=off || true
+          pip-audit --strict --skip-editable --progress-spinner=off || true
 
   frontend-security:
     runs-on: ubuntu-latest
