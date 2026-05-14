@@ -407,10 +407,40 @@ async def test_manual_deposit_rate_limited(client):
 
 async def test_security_response_headers_present(client):
     """All HTTP responses must carry the defence-in-depth security
-    headers added by the global middleware (MIME-sniff, referrer,
-    frame-ancestors)."""
+    headers added by the global middleware: MIME-sniff, referrer,
+    frame-ancestors, and a full Content-Security-Policy that only
+    allows ``'self'`` plus the one cross-origin script the TMA needs
+    (``telegram-web-app.js`` from ``telegram.org``).
+
+    The CSP assertion is broken into per-directive substring checks so
+    that whitespace changes inside the policy string don't make the
+    test brittle — what matters is that each directive carries the
+    expected sources, not that the serialisation is byte-identical.
+    """
     resp = await client.get("/health")
     assert resp.status_code == 200
     assert resp.headers["x-content-type-options"] == "nosniff"
     assert resp.headers["referrer-policy"] == "no-referrer"
     assert resp.headers["x-frame-options"] == "DENY"
+
+    csp = resp.headers["content-security-policy"]
+    # Default fallback locks every fetch directive to same-origin
+    # unless explicitly broadened below.
+    assert "default-src 'self'" in csp
+    # The only cross-origin script the TMA loads is Telegram's SDK.
+    assert "script-src 'self' https://telegram.org" in csp
+    # React + Framer Motion set inline ``style=`` attributes at runtime;
+    # ``'unsafe-inline'`` is intentional and documented in main.py.
+    assert "style-src 'self' 'unsafe-inline'" in csp
+    # Avatars/screenshots come from ``/media/`` (same origin); ``data:``
+    # covers tiny placeholder SVGs Vite may inline, ``blob:`` covers
+    # client-side previews of uploads before submit.
+    assert "img-src 'self' data: blob:" in csp
+    # REST + WebSocket are same-origin only.
+    assert "connect-src 'self'" in csp
+    # Modern equivalent of ``X-Frame-Options: DENY`` (kept for legacy).
+    assert "frame-ancestors 'none'" in csp
+    # Lock down plugins and form posts to defence-in-depth defaults.
+    assert "object-src 'none'" in csp
+    assert "form-action 'self'" in csp
+    assert "base-uri 'self'" in csp

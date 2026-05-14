@@ -114,6 +114,35 @@ app.add_middleware(
 # referrers across third-party redirects, etc.). Set as a middleware
 # rather than per-route so static + media + SPA fallback responses are
 # covered too.
+#
+# CSP rationale — the TMA loads exactly one cross-origin script
+# (``telegram-web-app.js`` from ``telegram.org``), talks to its own
+# backend only (REST + WebSocket on the same origin), and renders
+# user-uploaded avatars/screenshots from ``/media/`` (same origin).
+# Everything else collapses to ``'self'``. ``style-src 'unsafe-inline'``
+# is the one compromise — React + Framer Motion set element ``style=``
+# attributes at runtime which CSP3 still treats as inline styles, and
+# nonce-tagging every React render would be a sizeable refactor for
+# little incremental value over the existing XSS protections (no
+# server-rendered user HTML, strict ``X-Content-Type-Options``, MIME
+# allowlist on uploads). ``frame-ancestors 'none'`` duplicates the
+# legacy ``X-Frame-Options: DENY`` for modern browsers that prefer the
+# CSP3 directive.
+_CSP_DIRECTIVES = (
+    "default-src 'self'; "
+    "script-src 'self' https://telegram.org; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; "
+    "font-src 'self' data:; "
+    "connect-src 'self'; "
+    "worker-src 'self' blob:; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "object-src 'none'"
+)
+
+
 @app.middleware("http")
 async def _security_headers(request, call_next):
     response = await call_next(request)
@@ -127,6 +156,8 @@ async def _security_headers(request, call_next):
     # Stop other origins from framing the app. Telegram embeds via its
     # native WebView, not an iframe, so ``DENY`` is safe.
     response.headers.setdefault("X-Frame-Options", "DENY")
+    # Full CSP — closes the gap flagged as Info in the security audit.
+    response.headers.setdefault("Content-Security-Policy", _CSP_DIRECTIVES)
     return response
 
 
