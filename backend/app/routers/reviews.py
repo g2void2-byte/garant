@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from ..deps import CurrentUser, SessionDep
 from ..models import Review, User
+from ..rate_limit import RLReviewsList
 from ..schemas import ReviewCreate, ReviewOut
 from ..services import post_review
 
@@ -24,12 +25,27 @@ def _review_out(r: Review) -> ReviewOut:
 
 
 @router.get("", response_model=list[ReviewOut])
-async def list_reviews(session: SessionDep, user: str = Query(...)):
+async def list_reviews(
+    session: SessionDep,
+    _viewer: CurrentUser,
+    _rl: RLReviewsList,
+    user: str = Query(...),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    # Cap the page at 100 to avoid an attacker (or a misbehaving
+    # client) walking every review on a popular profile in one shot.
+    # The frontend's ``useReviews`` doesn't pass ``limit``/``offset``
+    # yet — it receives the first 50 rows which is enough for the
+    # current profile UI; pagination params let admins/tools page
+    # through the rest without DoS-ing the DB.
     stmt = (
         select(Review)
         .join(Review.target)
         .where(User.username == user)
         .order_by(Review.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     result = await session.execute(stmt)
     return [_review_out(r) for r in result.scalars().all()]

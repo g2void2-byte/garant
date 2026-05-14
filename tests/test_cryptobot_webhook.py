@@ -49,7 +49,9 @@ async def test_webhook_credits_pending_deposit_and_is_idempotent(client):
         )
         await session.commit()
 
-    body = json.dumps({"update_type": "invoice_paid", "payload": {"invoice_id": "cb-789", "status": "paid"}}).encode()
+    body = json.dumps(
+        {"update_type": "invoice_paid", "payload": {"invoice_id": "cb-789", "status": "paid"}}
+    ).encode()
     sig = _sign(body)
     headers = {
         "crypto-pay-api-signature": sig,

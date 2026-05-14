@@ -38,7 +38,16 @@ def verify_init_data(init_data: str) -> dict:
 
     auth_date_str = parsed.get("auth_date", [None])[0]
     if auth_date_str:
-        auth_date = int(auth_date_str)
+        # ``int()`` on a non-numeric ``auth_date`` would raise
+        # ``ValueError`` and surface as HTTP 500 to the caller. A
+        # malformed (or absent) ``auth_date`` is functionally the
+        # same as a forged token from our point of view: we cannot
+        # decide whether it's recent. Treat it as a normal auth
+        # failure so deps.py maps it to 401, not 500.
+        try:
+            auth_date = int(auth_date_str)
+        except (TypeError, ValueError):
+            raise InitDataError("init data auth_date is not numeric")
         now = time.time()
         # Reject ``auth_date`` that's far in the future too. HMAC
         # makes a forgery impossible from a malicious actor, but a
