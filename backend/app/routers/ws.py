@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
@@ -79,6 +80,23 @@ async def _read_auth_frame(websocket: WebSocket) -> str | None:
     return init_data
 
 
+def _parse_auth_date(init_data: str) -> int | None:
+    """Extract ``auth_date`` from a verified initData blob.
+
+    Returns ``None`` if the field is missing or non-numeric — the
+    age-check reaper just skips sockets without an ``auth_date`` so
+    older clients / unsigned-dev-data don't get spuriously closed.
+    """
+    try:
+        parsed = parse_qs(init_data, keep_blank_values=True)
+        raw = parsed.get("auth_date", [None])[0]
+        if raw is None:
+            return None
+        return int(raw)
+    except (ValueError, TypeError):
+        return None
+
+
 @router.websocket("/ws/notifications")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -124,7 +142,10 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         return
 
-    await manager.connect(user_id, websocket)
+    # Pass ``auth_date`` to the manager so the per-socket age-check
+    # reaper can evict sockets whose initData has aged past the cap
+    # (see backend/app/ws.py: WS_MAX_AGE_SECONDS).
+    await manager.connect(user_id, websocket, auth_date_epoch=_parse_auth_date(init_data))
     try:
         while True:
             await websocket.receive_text()
