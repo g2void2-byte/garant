@@ -20,7 +20,7 @@ from backend.app.models import (
     Category,
     User,
 )
-from tests.helpers import auth_headers, signed_init_data
+from tests.helpers import auth_headers, signed_init_data, with_totp
 
 
 async def _bootstrap(client, *, tg_user_id: int, username: str) -> int:
@@ -58,7 +58,7 @@ async def test_settings_patch_persists_and_audits(client):
     resp = await client.patch(
         "/api/admin/settings",
         json={"deal_commission_percent": 7.5, "auto_withdraw_enabled": True},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["deal_commission_percent"] == 7.5
@@ -112,7 +112,7 @@ async def test_maintenance_blocks_non_admin_writes(client):
     resp = await client.patch(
         "/api/admin/settings",
         json={"maintenance_enabled": True, "maintenance_message": "be back soon"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
 
@@ -128,7 +128,7 @@ async def test_maintenance_blocks_non_admin_writes(client):
     ok = await client.patch(
         "/api/admin/settings",
         json={"maintenance_enabled": False},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert ok.status_code == 200
 
@@ -141,7 +141,7 @@ async def test_taxonomy_categories_crud(client):
     resp = await client.put(
         "/api/admin/categories",
         json={"slug": "new-cat", "name": "New", "icon": "✨"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     cat_id = resp.json()["id"]
@@ -150,7 +150,7 @@ async def test_taxonomy_categories_crud(client):
     assert any(c["id"] == cat_id for c in listing.json())
 
     delete = await client.delete(
-        f"/api/admin/categories/{cat_id}", headers=auth_headers(admin_init)
+        f"/api/admin/categories/{cat_id}", headers=with_totp(auth_headers(admin_init))
     )
     assert delete.status_code in (200, 204)
 
@@ -174,7 +174,7 @@ async def test_taxonomy_currencies_upsert(client):
             "min_withdraw": 0.2,
             "is_active": True,
         },
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["code"] == "JET"
@@ -211,7 +211,7 @@ async def test_broadcasts_preview_and_send(client):
     send = await client.post(
         "/api/admin/broadcasts",
         json={"body": "Hello", "dispatch_inapp": True, "dispatch_dm": False},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert send.status_code == 200, send.text
     assert send.json()["total_recipients"] == count
@@ -496,7 +496,7 @@ async def test_audit_log_lists_actions(client):
     await client.patch(
         "/api/admin/settings",
         json={"deal_commission_percent": 4.0},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     resp = await client.get(
         "/api/admin/audit?action=settings.update", headers=auth_headers(admin_init)

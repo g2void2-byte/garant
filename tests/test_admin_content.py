@@ -13,7 +13,7 @@ from backend.app.models import (
     ServiceComment,
     User,
 )
-from tests.helpers import auth_headers, signed_init_data
+from tests.helpers import auth_headers, signed_init_data, with_totp
 
 
 async def _make_admin(client, tg_id: int = 9001, username: str = "admin") -> str:
@@ -90,7 +90,7 @@ async def test_update_service_changes_fields_and_writes_audit(client):
             "rating_manual": 4.5,
             "status": "paused",
         },
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -118,7 +118,7 @@ async def test_update_service_validates_rating_range(client):
     resp = await client.post(
         f"/api/admin/services/{sid}",
         json={"rating_manual": 10},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 422
 
@@ -131,7 +131,7 @@ async def test_update_service_no_change_no_audit_row(client):
     resp = await client.post(
         f"/api/admin/services/{sid}",
         json={"title": "Same"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
     async with async_session() as session:
@@ -149,7 +149,10 @@ async def test_delete_service(client):
     owner_id = await _bootstrap_user(client, 100, "owner")
     sid = await _create_service(owner_id)
     admin_init = await _make_admin(client)
-    resp = await client.post(f"/api/admin/services/{sid}/delete", headers=auth_headers(admin_init))
+    resp = await client.post(
+        f"/api/admin/services/{sid}/delete",
+        headers=with_totp(auth_headers(admin_init)),
+    )
     assert resp.status_code == 200
     async with async_session() as session:
         assert await session.get(Service, sid) is None
@@ -170,7 +173,7 @@ async def test_create_review_as_admin(client):
             "rating": 5,
             "text": "great",
         },
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
@@ -185,7 +188,7 @@ async def test_create_review_rejects_self_review(client):
     resp = await client.post(
         "/api/admin/reviews",
         json={"author_id": a_id, "target_id": a_id, "rating": 5, "text": ""},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 400
 
@@ -197,20 +200,23 @@ async def test_update_and_delete_review(client):
     create = await client.post(
         "/api/admin/reviews",
         json={"author_id": a_id, "target_id": b_id, "rating": 4, "text": "ok"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     rid = create.json()["id"]
 
     upd = await client.post(
         f"/api/admin/reviews/{rid}",
         json={"rating": 2, "text": "actually bad"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert upd.status_code == 200
     assert upd.json()["rating"] == 2
     assert upd.json()["text"] == "actually bad"
 
-    rm = await client.post(f"/api/admin/reviews/{rid}/delete", headers=auth_headers(admin_init))
+    rm = await client.post(
+        f"/api/admin/reviews/{rid}/delete",
+        headers=with_totp(auth_headers(admin_init)),
+    )
     assert rm.status_code == 200
     async with async_session() as session:
         assert await session.get(Review, rid) is None
@@ -250,7 +256,7 @@ async def test_update_comment_text_and_rating(client):
     resp = await client.post(
         f"/api/admin/comments/{cid}",
         json={"text": "edited", "rating": 1},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
     assert resp.json()["text"] == "edited"
@@ -263,7 +269,10 @@ async def test_delete_comment(client):
     sid = await _create_service(owner_id)
     cid = await _create_comment(author_id, sid)
     admin_init = await _make_admin(client)
-    resp = await client.post(f"/api/admin/comments/{cid}/delete", headers=auth_headers(admin_init))
+    resp = await client.post(
+        f"/api/admin/comments/{cid}/delete",
+        headers=with_totp(auth_headers(admin_init)),
+    )
     assert resp.status_code == 200
     async with async_session() as session:
         assert await session.get(ServiceComment, cid) is None

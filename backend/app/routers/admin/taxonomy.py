@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 
 from ...admin_audit import log_admin_action
+from ...auth_2fa import TotpUser
 from ...deps import AdminUser, SessionDep
 from ...models import Category, Currency, Service
 from ...rate_limit import rate_limit
@@ -47,7 +48,7 @@ async def list_categories(_admin: AdminUser, session: SessionDep):
 @router.put("/categories", response_model=AdminCategoryOut)
 async def upsert_category(
     body: AdminCategoryUpsertIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ):
@@ -87,7 +88,7 @@ async def upsert_category(
 @router.delete("/categories/{category_id}")
 async def delete_category(
     category_id: int,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ):
@@ -146,7 +147,7 @@ async def list_currencies_admin(_admin: AdminUser, session: SessionDep):
 @router.put("/currencies", response_model=AdminCurrencyOut)
 async def upsert_currency(
     body: AdminCurrencyUpsertIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ):

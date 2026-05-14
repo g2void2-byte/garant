@@ -365,7 +365,7 @@ async def ban_user(
 async def unban_user(
     user_id: int,
     body: AdminReasonIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:
@@ -426,7 +426,7 @@ async def freeze_user(
 async def unfreeze_user(
     user_id: int,
     body: AdminReasonIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:
@@ -594,7 +594,7 @@ def _role_change_body(before: dict, after: dict) -> str:
 async def set_rating(
     user_id: int,
     body: AdminSetRatingIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:
@@ -632,7 +632,7 @@ async def set_rating(
 async def set_stats(
     user_id: int,
     body: AdminSetStatsIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:
