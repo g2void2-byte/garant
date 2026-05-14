@@ -12,6 +12,7 @@ Deal lifecycle moved to :mod:`backend.app.services_deals` (multi-currency,
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -133,7 +134,7 @@ async def credit_invoice(
 
     owner = await session.get(User, invoice.owner_id)
     if owner:
-        owner.balance = float(owner.balance) + float(invoice.amount)
+        owner.balance = Decimal(str(owner.balance)) + Decimal(str(invoice.amount))
 
     await session.commit()
     await session.refresh(invoice)

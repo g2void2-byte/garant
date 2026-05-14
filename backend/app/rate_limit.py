@@ -96,13 +96,11 @@ def _raise_429(retry_after: float) -> None:
 
 
 def _client_ip(request: Request) -> str:
-    """Best-effort client IP. Honours X-Forwarded-For if set by the proxy."""
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
-    if request.client is None:
-        return "unknown"
-    return request.client.host or "unknown"
+    """Best-effort client IP. Delegates to ``deps._client_ip`` for
+    consistent trusted-proxy handling, falling back to ``"unknown"``."""
+    from .deps import _client_ip as _dep_client_ip
+
+    return _dep_client_ip(request) or "unknown"
 
 
 def rate_limit(scope: str, *, limit: int, window: float):

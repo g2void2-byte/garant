@@ -222,32 +222,20 @@ async def _has_tradable_data(session: AsyncSession, user: User) -> bool:
 
 
 async def _register_miss(session: AsyncSession, target: User) -> None:
-    """Burn one attempt off every live code the *caller* could be probing.
+    """Record a failed confirmation attempt for brute-force tracking.
 
-    The lookup in :func:`confirm_transfer` is keyed by the code hash, so a
-    miss tells us nothing about which row was being targeted — we don't
-    know which counter to bump. We charge the miss against every live
-    code in the system instead. That keeps the cap meaningful (an
-    attacker enumerating the 10⁶ keyspace exhausts every active code
-    quickly) while still being fair to legitimate users (mistyping your
-    own code N times burns that code, not anybody else's — because we
-    consume codes whose ``attempts`` cross the threshold before the
-    legitimate owner can also race past it).
+    Previously this incremented ``attempts`` on EVERY active code in the
+    system, allowing a trivial DoS: an attacker sending random codes
+    would burn all legitimate users' transfer codes in ~5 requests.
 
-    Codes whose ``attempts`` exceed :data:`MAX_CONFIRM_ATTEMPTS` are
-    marked consumed in the same transaction so they cannot match on a
-    subsequent request, even one that ships the right plaintext.
+    Now a no-op — brute-force protection relies on the per-IP rate
+    limiter (``RLPin``, 5 req/min) at the endpoint level, which caps
+    total probing to ~50 attempts over the 15-min code TTL. With a
+    10⁶ keyspace this gives a ≤0.005% success probability per code.
+
+    Individual codes still have per-code attempt tracking when there
+    IS a hash match (belt-and-braces in ``confirm_transfer``).
     """
-    stmt = select(AccountTransferCode).where(
-        AccountTransferCode.consumed_at.is_(None),
-        AccountTransferCode.expires_at > _now(),
-    )
-    rows = (await session.execute(stmt)).scalars().all()
-    now = _now()
-    for row in rows:
-        row.attempts = (row.attempts or 0) + 1
-        if row.attempts >= MAX_CONFIRM_ATTEMPTS:
-            row.consumed_at = now
 
 
 async def confirm_transfer(session: AsyncSession, target: User, code: str) -> User:

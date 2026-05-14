@@ -67,7 +67,7 @@ async def transfer_start(user: PinUser, session: SessionDep) -> TransferStartOut
     )
     delivered = await send_dm(user.tg_user_id, text)
     if not delivered:
-        logger.info("account transfer code for user %s (delivery failed): %s", user.id, code)
+        logger.warning("account transfer code delivery failed for user %s", user.id)
     return TransferStartOut(delivered=delivered, expires_at=expires)
 
 

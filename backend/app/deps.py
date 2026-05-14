@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 from datetime import datetime, timedelta
 from typing import Annotated
 
@@ -7,26 +8,56 @@ from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .config import settings
 from .db import async_session
 from .models import User
 from .pin import decode_session_token
 from .security import InitDataError, verify_init_data
 
+_trusted_networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] | None = None
+
+
+def _get_trusted_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    global _trusted_networks
+    if _trusted_networks is None:
+        nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+        for part in settings.trusted_proxies.split(","):
+            part = part.strip()
+            if part:
+                nets.append(ipaddress.ip_network(part, strict=False))
+        _trusted_networks = nets
+    return _trusted_networks
+
+
+def _is_trusted_peer(request: Request) -> bool:
+    """Check if the direct peer is in the trusted proxy list."""
+    nets = _get_trusted_networks()
+    if not nets:
+        return True
+    peer = request.client.host if request.client else None
+    if not peer:
+        return False
+    try:
+        addr = ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    return any(addr in net for net in nets)
+
 
 def _client_ip(request: Request) -> str | None:
     """Best-effort extraction of the originating IP.
 
-    Honours the standard reverse-proxy headers (``X-Forwarded-For`` /
-    ``X-Real-IP``) and falls back to the direct socket peer. Trust here
-    is fine because the API is fronted by a single proxy in production
-    and the IP is only used for forensics/auditing — never authorisation.
+    Only honours ``X-Forwarded-For`` / ``X-Real-IP`` when the direct
+    peer is in ``TRUSTED_PROXIES``. When that list is empty (default),
+    all peers are trusted for backwards compatibility.
     """
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    real = request.headers.get("x-real-ip")
-    if real:
-        return real.strip()
+    if _is_trusted_peer(request):
+        fwd = request.headers.get("x-forwarded-for")
+        if fwd:
+            return fwd.split(",")[0].strip()
+        real = request.headers.get("x-real-ip")
+        if real:
+            return real.strip()
     return request.client.host if request.client else None
 
 

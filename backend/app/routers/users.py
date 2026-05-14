@@ -67,7 +67,7 @@ async def list_users(
     / ``deposit_min`` / ``status`` / ``reg_from`` / ``reg_to`` correspond
     1:1 to the bottom-sheet sections in Continental's TMA bundle.
     """
-    stmt = select(User)
+    stmt = select(User).where(User.is_hidden_profile.is_(False))
     ts_q = build_prefix_tsquery(q) if q else None
     if ts_q:
         tsq = func.to_tsquery("simple", ts_q)
@@ -147,6 +147,6 @@ async def get_user(username: str, session: SessionDep):
     stmt = select(User).where(User.username == username)
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
-    if not user:
+    if not user or user.is_hidden_profile:
         raise HTTPException(404, "Пользователь не найден")
     return user_to_out(user)
