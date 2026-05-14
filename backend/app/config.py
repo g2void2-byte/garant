@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     media_max_bytes: int = 5 * 1024 * 1024  # 5 MiB
     media_allowed_kinds: str = "avatar,banner,deal"
 
+    # Comma-separated list of trusted proxy IPs/CIDRs. When set, X-Forwarded-For
+    # is only honoured if the direct peer is in this list. Empty = trust all
+    # (backwards-compatible, suitable for single-proxy setups).
+    trusted_proxies: str = ""
+
     # P3.5 — Redis. Empty disables Redis and all features fall back to
     # in-process state (WS broadcasts stay local; rate-limit stays in-memory).
     redis_url: str = ""

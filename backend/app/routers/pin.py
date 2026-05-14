@@ -245,7 +245,7 @@ async def pin_reset_request(
     )
     delivered = await send_dm(user.tg_user_id, text)
     if not delivered:
-        logger.info("PIN reset code for user %s (delivery failed): %s", user.id, code)
+        logger.warning("PIN reset code delivery failed for user %s", user.id)
     return PinResetRequestOut(delivered=delivered, expires_at=user.pin_reset_expires)
 
 

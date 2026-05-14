@@ -161,6 +161,7 @@ async def list_services(
         stmt = stmt.order_by(fts_rank.desc(), Service.created_at.desc())
     else:
         stmt = stmt.order_by(Service.created_at.desc())
+    stmt = stmt.limit(200)
     result = await session.execute(stmt)
     return [_service_out(s) for s in result.scalars().all()]
 

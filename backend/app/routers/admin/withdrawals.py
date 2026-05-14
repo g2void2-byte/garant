@@ -139,7 +139,11 @@ async def decide_withdrawal(
         raise HTTPException(404, "Заявка не найдена")
 
     currency = await session.get(Currency, w.currency_id)
+    if not currency:
+        raise HTTPException(404, "Валюта не найдена")
     user = await session.get(User, w.user_id)
+    if not user:
+        raise HTTPException(404, "Пользователь не найден")
 
     if body.action == "approve":
         if w.status != WalletWithdrawStatus.pending:
@@ -162,8 +166,8 @@ async def decide_withdrawal(
                     testnet=app_settings_env.cryptobot_testnet,
                 ) as cp:
                     tr = await cp.transfer(
-                        user_id=user.tg_user_id if user else 0,
-                        asset=currency.code if currency else "",
+                        user_id=user.tg_user_id,
+                        asset=currency.code,
                         amount=str(w.amount),
                         spend_id=f"wd:{w.id}",
                         comment=f"Garant withdrawal #{w.id}",

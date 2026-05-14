@@ -77,6 +77,9 @@ async def handle_invoice_paid(session: AsyncSession, payload: dict[str, Any]) ->
 
     Returns a small status dict so the webhook router can echo it back.
     """
+    if payload.get("status") != "paid":
+        return {"ok": False, "reason": "status is not paid"}
+
     invoice_id = payload.get("invoice_id")
     if invoice_id is None:
         return {"ok": False, "reason": "missing invoice_id"}

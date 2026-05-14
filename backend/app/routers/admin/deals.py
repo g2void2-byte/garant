@@ -443,9 +443,9 @@ async def _release_locked_to_seller(
         payout = amt - commission
 
     buyer_balance = await get_or_create_balance(session, deal.buyer_id, currency.id)
-    buyer_balance.locked = float(max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked))
+    buyer_balance.locked = max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked)
     seller_balance = await get_or_create_balance(session, deal.seller_id, currency.id)
-    seller_balance.amount = float(Decimal(str(seller_balance.amount)) + payout)
+    seller_balance.amount = Decimal(str(seller_balance.amount)) + payout
     return locked, payout
 
 
@@ -469,8 +469,8 @@ async def _refund_locked_to_buyer(
         refunded = amt
 
     buyer_balance = await get_or_create_balance(session, deal.buyer_id, currency.id)
-    buyer_balance.locked = float(max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked))
-    buyer_balance.amount = float(Decimal(str(buyer_balance.amount)) + refunded)
+    buyer_balance.locked = max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked)
+    buyer_balance.amount = Decimal(str(buyer_balance.amount)) + refunded
     return locked, refunded
 
 
@@ -494,10 +494,10 @@ async def _split_locked(
     seller_share = amt - buyer_share
 
     buyer_balance = await get_or_create_balance(session, deal.buyer_id, currency.id)
-    buyer_balance.locked = float(max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked))
-    buyer_balance.amount = float(Decimal(str(buyer_balance.amount)) + buyer_share)
+    buyer_balance.locked = max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked)
+    buyer_balance.amount = Decimal(str(buyer_balance.amount)) + buyer_share
     seller_balance = await get_or_create_balance(session, deal.seller_id, currency.id)
-    seller_balance.amount = float(Decimal(str(seller_balance.amount)) + seller_share)
+    seller_balance.amount = Decimal(str(seller_balance.amount)) + seller_share
     return locked, buyer_share, seller_share
 
 

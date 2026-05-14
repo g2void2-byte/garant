@@ -6,8 +6,12 @@ each ship a near-identical ``_user_out`` (and accidentally drift).
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from .models import User
 from .schemas import ForumOut, UserOut
+
+_ONLINE_THRESHOLD = timedelta(minutes=5)
 
 
 def user_to_out(
@@ -76,7 +80,11 @@ def user_to_out(
         reviews_count=reviews_count,
         deals_count=user.deals_total,
         deals_sum=deals_sum,
-        online=True,
+        online=bool(
+            user.last_login_at is not None
+            and (datetime.now(timezone.utc) - user.last_login_at.replace(tzinfo=timezone.utc))
+            < _ONLINE_THRESHOLD
+        ),
         forums=[ForumOut(name=f.name, url=f.url) for f in user.forums],
         dm_deals=bool(user.dm_deals),
         dm_deposits=bool(user.dm_deposits),

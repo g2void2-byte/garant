@@ -52,21 +52,25 @@ async def _issue_transfer_code(client, source_init: str, tg_user_id: int) -> str
 
 
 async def test_transfer_confirm_burns_code_after_few_misses(client):
-    """Brute-forcing wrong codes must invalidate every live code quickly."""
+    """Wrong codes must not burn other users' codes (DoS prevention).
+
+    After the H-4 fix, ``_register_miss`` is a no-op — brute-force
+    protection relies on the per-IP rate limiter (RLPin 5/min).
+    This test verifies that failed attempts from an attacker do NOT
+    increment ``attempts`` on the legitimate user's code.
+    """
     from backend.app.db import async_session
     from backend.app.models import AccountTransferCode
-    from backend.app.services_account import MAX_CONFIRM_ATTEMPTS
 
     source_init = signed_init_data(9101, "source")
     real_code = await _issue_transfer_code(client, source_init, 9101)
 
     attacker_init = signed_init_data(9102, "attacker")
-    # Bootstrap the attacker user row.
     resp = await client.get("/api/me", headers=auth_headers(attacker_init))
     assert resp.status_code == 200
 
-    # Burn just under the cap with wrong codes — code must still be live.
-    for i in range(MAX_CONFIRM_ATTEMPTS - 1):
+    # Send a few wrong codes from the attacker.
+    for i in range(3):
         wrong = f"{(int(real_code) + i + 1) % 1_000_000:06d}"
         if wrong == real_code:
             wrong = "000000" if real_code != "000000" else "111111"
@@ -77,37 +81,12 @@ async def test_transfer_confirm_burns_code_after_few_misses(client):
         )
         assert resp.status_code == 400
 
+    # The legitimate code must remain untouched — attempts == 0,
+    # not consumed. This proves the DoS vector is closed.
     async with async_session() as session:
         row = (await session.execute(select(AccountTransferCode))).scalar_one()
-        assert row.consumed_at is None
-        assert row.attempts == MAX_CONFIRM_ATTEMPTS - 1
-
-    # One more miss crosses the threshold and burns the code.
-    bad = "000000" if real_code != "000000" else "111111"
-    resp = await client.post(
-        "/api/account/transfer/confirm",
-        json={"code": bad},
-        headers=auth_headers(attacker_init),
-    )
-    assert resp.status_code == 400
-
-    async with async_session() as session:
-        row = (await session.execute(select(AccountTransferCode))).scalar_one()
-        assert row.consumed_at is not None, "code must be consumed after threshold"
-
-    # Reset the per-caller rate-limit window before the last probe so we
-    # exercise the in-DB consumption check and not the RLPin 429.
-    from backend.app.rate_limit import reset_state_for_tests
-
-    reset_state_for_tests()
-
-    # Even the correct code now bounces because the row is no longer live.
-    resp = await client.post(
-        "/api/account/transfer/confirm",
-        json={"code": real_code},
-        headers=auth_headers(attacker_init),
-    )
-    assert resp.status_code == 400
+        assert row.consumed_at is None, "code must NOT be consumed by attacker misses"
+        assert row.attempts == 0, "attacker misses must not increment other codes"
 
 
 async def test_transfer_confirm_rate_limit_applied(client):

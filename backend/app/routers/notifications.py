@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from ..deps import CurrentUser, SessionDep
 from ..models import Notification, NotificationType
@@ -30,18 +30,39 @@ async def list_notifications(
 
 @router.get("/counters", response_model=NotificationCountersOut)
 async def get_counters(user: CurrentUser, session: SessionDep):
-    base = select(func.count(Notification.id)).where(Notification.recipient_id == user.id)
-    all_count = (await session.execute(base)).scalar() or 0
-    unread = (await session.execute(base.where(Notification.is_read.is_(False)))).scalar() or 0
-
+    base_filter = Notification.recipient_id == user.id
+    all_count = (
+        await session.execute(
+            select(func.count(Notification.id)).where(base_filter)
+        )
+    ).scalar() or 0
+    unread = (
+        await session.execute(
+            select(func.count(Notification.id)).where(
+                base_filter, Notification.is_read.is_(False)
+            )
+        )
+    ).scalar() or 0
     deals = (
-        await session.execute(base.where(Notification.type == NotificationType.deals))
+        await session.execute(
+            select(func.count(Notification.id)).where(
+                base_filter, Notification.type == NotificationType.deals
+            )
+        )
     ).scalar() or 0
     deposits = (
-        await session.execute(base.where(Notification.type == NotificationType.deposits))
+        await session.execute(
+            select(func.count(Notification.id)).where(
+                base_filter, Notification.type == NotificationType.deposits
+            )
+        )
     ).scalar() or 0
     system = (
-        await session.execute(base.where(Notification.type == NotificationType.system))
+        await session.execute(
+            select(func.count(Notification.id)).where(
+                base_filter, Notification.type == NotificationType.system
+            )
+        )
     ).scalar() or 0
 
     return NotificationCountersOut(
@@ -79,12 +100,13 @@ async def mark_read(notif_id: int, user: CurrentUser, session: SessionDep):
 
 @router.post("/read-all")
 async def mark_all_read(user: CurrentUser, session: SessionDep):
-    stmt = select(Notification).where(
-        Notification.recipient_id == user.id,
-        Notification.is_read.is_(False),
+    await session.execute(
+        update(Notification)
+        .where(
+            Notification.recipient_id == user.id,
+            Notification.is_read.is_(False),
+        )
+        .values(is_read=True)
     )
-    result = await session.execute(stmt)
-    for n in result.scalars().all():
-        n.is_read = True
     await session.commit()
     return {"ok": True}
