@@ -181,8 +181,20 @@ async def pin_change(
         raise HTTPException(423, "Слишком много попыток. Попробуйте позже.")
     if not verify_pin(body.old_pin, user.pin_hash):
         user.pin_attempts = (user.pin_attempts or 0) + 1
+        if user.pin_attempts >= settings.pin_max_attempts:
+            user.pin_locked_until = _now() + timedelta(minutes=settings.pin_lock_minutes)
+            user.pin_attempts = 0
+            await session.commit()
+            raise HTTPException(
+                423,
+                f"Слишком много попыток. Блокировка на {settings.pin_lock_minutes} мин.",
+            )
         await session.commit()
-        raise HTTPException(401, "Старый PIN неверен")
+        attempts_left = _attempts_left(user)
+        raise HTTPException(
+            401,
+            f"Старый PIN неверен. Осталось попыток: {attempts_left}",
+        )
     user.pin_hash = hash_pin(body.new_pin)
     user.pin_attempts = 0
     user.pin_locked_until = None

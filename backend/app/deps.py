@@ -103,6 +103,11 @@ async def get_current_user(
             await session.commit()
             await session.refresh(user)
 
+    if user.is_banned:
+        raise HTTPException(403, "Аккаунт заблокирован")
+    if user.is_frozen:
+        raise HTTPException(403, "Аккаунт заморожен")
+
     return user
 
 

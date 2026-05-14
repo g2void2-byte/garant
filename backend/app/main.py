@@ -276,9 +276,13 @@ async def health():
 if FRONTEND_DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
+    _FRONTEND_DIST_RESOLVED = FRONTEND_DIST.resolve()
+
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):
-        file = FRONTEND_DIST / full_path
+        file = (FRONTEND_DIST / full_path).resolve()
+        if not file.is_relative_to(_FRONTEND_DIST_RESOLVED):
+            return FileResponse(FRONTEND_DIST / "index.html")
         if file.is_file():
             return FileResponse(file)
         return FileResponse(FRONTEND_DIST / "index.html")

@@ -13,10 +13,11 @@ The number of simultaneously-active services per user is capped by
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 
-from ..deps import CurrentUser, SessionDep
+from ..auth_2fa import TotpUser
+from ..deps import AdminUser, CurrentUser, SessionDep
 from ..models import (
     AppSettings,
     Category,
@@ -25,7 +26,7 @@ from ..models import (
     ServiceStatus,
     User,
 )
-from ..rate_limit import RLServiceComment, RLServiceCreate
+from ..rate_limit import RLServiceComment, RLServiceCreate, rate_limit
 from ..schemas import (
     CategoryOut,
     ServiceCommentCreate,
@@ -396,18 +397,20 @@ async def delete_service(service_id: int, user: CurrentUser, session: SessionDep
 # ── Admin moderation ──────────────────────────────────
 
 
-admin_router = APIRouter(prefix="/api/admin/services", tags=["services-admin"])
+admin_router = APIRouter(
+    prefix="/api/admin/services",
+    tags=["admin"],
+    dependencies=[Depends(rate_limit("admin", limit=600, window=60))],
+)
 
 
 @admin_router.get("", response_model=list[ServiceOut])
 async def admin_list_services(
-    user: CurrentUser,
+    _admin: AdminUser,
     session: SessionDep,
     status: str | None = Query(None),
     q: str | None = Query(None),
 ):
-    if not user.is_admin:
-        raise HTTPException(403, "Только для администратора")
     stmt = select(Service)
     if status:
         try:
@@ -433,11 +436,9 @@ async def admin_list_services(
 async def admin_moderate(
     service_id: int,
     body: ServiceModerationDecision,
-    user: CurrentUser,
+    admin: TotpUser,
     session: SessionDep,
 ):
-    if not user.is_admin:
-        raise HTTPException(403, "Только для администратора")
     service = await session.get(Service, service_id)
     if not service:
         raise HTTPException(404, "Услуга не найдена")
