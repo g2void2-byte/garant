@@ -57,7 +57,15 @@ def verify_reset_code(code: str, code_hash: str) -> bool:
     return hmac.compare_digest(hash_reset_code(code), code_hash)
 
 
-def issue_session_token(user_id: int) -> tuple[str, datetime]:
+def issue_session_token(user_id: int, epoch: int = 0) -> tuple[str, datetime]:
+    """Issue a PIN session JWT bound to ``(user_id, epoch)``.
+
+    The ``epoch`` claim mirrors ``users.pin_session_epoch`` at issue
+    time. An admin can bump that column via ``invalidate-sessions`` and
+    every previously-issued token will fail the equality check in
+    :func:`decode_session_token` / ``require_pin_session`` instantly,
+    without waiting for the JWT ``exp`` to expire.
+    """
     now = datetime.now(timezone.utc)
     expires = now + timedelta(seconds=settings.pin_session_ttl_seconds)
     payload = {
@@ -66,12 +74,21 @@ def issue_session_token(user_id: int) -> tuple[str, datetime]:
         "iat": int(now.timestamp()),
         "exp": int(expires.timestamp()),
         "jti": secrets.token_hex(8),
+        "epoch": int(epoch),
     }
     token = jwt.encode(payload, pin_secret(), algorithm=JWT_ALGORITHM)
     return token, expires
 
 
-def decode_session_token(token: str) -> int | None:
+def decode_session_token(token: str) -> tuple[int, int] | None:
+    """Return ``(user_id, epoch)`` for a valid token, or ``None``.
+
+    The caller compares ``epoch`` against the user's current
+    ``pin_session_epoch`` to enforce admin-initiated invalidation.
+    Tokens minted before the epoch claim was introduced default to
+    ``epoch=0`` (matching the column's server default), so they keep
+    working until natural TTL expiry on existing deployments.
+    """
     try:
         payload = jwt.decode(
             token,
@@ -85,6 +102,12 @@ def decode_session_token(token: str) -> int | None:
     if not sub:
         return None
     try:
-        return int(sub)
+        user_id = int(sub)
     except (TypeError, ValueError):
         return None
+    raw_epoch = payload.get("epoch", 0)
+    try:
+        epoch = int(raw_epoch)
+    except (TypeError, ValueError):
+        return None
+    return user_id, epoch
