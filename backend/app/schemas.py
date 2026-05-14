@@ -1652,6 +1652,12 @@ class Admin2faSetupOut(BaseModel):
 class Admin2faConfirmIn(BaseModel):
     secret: str
     code: str
+    # Review pass 3 — when rotating an already-enabled 2FA, the caller
+    # must prove ownership of the *current* secret by also sending its
+    # code. Without this, a stolen admin session could silently swap
+    # the 2FA secret to one the attacker controls. Optional on first
+    # enrolment (no previous secret to verify).
+    current_code: str | None = None
 
     @field_validator("secret")
     @classmethod
@@ -1665,6 +1671,16 @@ class Admin2faConfirmIn(BaseModel):
     @classmethod
     def _code_ok(cls, v: str) -> str:
         v = (v or "").strip()
+        if not v.isdigit() or len(v) not in (6, 8):
+            raise ValueError("Код должен состоять из 6 или 8 цифр")
+        return v
+
+    @field_validator("current_code")
+    @classmethod
+    def _current_code_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
         if not v.isdigit() or len(v) not in (6, 8):
             raise ValueError("Код должен состоять из 6 или 8 цифр")
         return v

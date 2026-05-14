@@ -1,9 +1,14 @@
-"""``/api/admin/system`` \u2014 service-health introspection.
+"""``/api/admin/system`` — service-health introspection.
 
 Returns liveness of the major dependencies (Postgres, Redis) with
 latency probes plus a snapshot of process state. Used by the admin
 "System" page to colour-code the green/yellow/red lamps and surface
 configuration warnings (e.g. no CryptoBot token configured).
+
+The destructive ``POST /redis/flush`` endpoint is 2FA-gated and writes
+an entry to the admin audit log — wiping Redis loses all rate-limit
+counters, WS pub/sub state, and any other in-memory metadata, so we
+treat it as a privileged action on par with treasury withdrawals.
 """
 
 from __future__ import annotations
@@ -11,12 +16,15 @@ from __future__ import annotations
 import time
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 
 from ... import version as app_version
+from ...admin_audit import log_admin_action
+from ...auth_2fa import require_totp
 from ...config import settings as app_settings_env
 from ...deps import AdminUser, SessionDep
+from ...models import User
 from ...rate_limit import rate_limit
 from ...redis_client import get_redis
 from ...schemas import AdminSystemStatusOut
@@ -73,9 +81,32 @@ async def status(_admin: AdminUser, session: SessionDep):
 
 
 @router.post("/redis/flush")
-async def flush_redis(_admin: AdminUser):
+async def flush_redis(
+    request: Request,
+    session: SessionDep,
+    admin: User = Depends(require_totp),
+):
+    """Wipe the Redis database used by the backend.
+
+    Gated behind 2FA + audit log because a flush clears every key in
+    the DB — including shared rate-limit counters and WS pub/sub
+    state. The action is recorded under ``system.redis_flush`` so an
+    operator can always trace who triggered it.
+    """
     r = await get_redis()
-    if r is None:
+    redis_configured = r is not None
+    if redis_configured:
+        await r.flushdb()
+    await log_admin_action(
+        session,
+        actor=admin,
+        action="system.redis_flush",
+        target_type="system",
+        target_id=None,
+        payload={"redis_configured": redis_configured},
+        request=request,
+    )
+    await session.commit()
+    if not redis_configured:
         return {"ok": False, "message": "Redis не настроен"}
-    await r.flushdb()
     return {"ok": True}

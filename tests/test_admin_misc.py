@@ -348,6 +348,145 @@ async def test_2fa_enable_rejects_wrong_code(client):
     assert resp.status_code in (400, 401)
 
 
+async def test_2fa_rotation_requires_current_code(client):
+    """Once 2FA is on, swapping the secret must require the current code.
+
+    Without this guard a stolen admin session could silently replace
+    the secret with one the attacker controls.
+    """
+    admin_init, admin_id = await _make_admin(client, tg=1)
+    # Initial enrolment — no current_code required.
+    setup = await client.post("/api/admin/2fa/setup", headers=auth_headers(admin_init))
+    secret_a = setup.json()["secret"]
+    enable = await client.post(
+        "/api/admin/2fa/enable",
+        json={"secret": secret_a, "code": totp_now(secret_a)},
+        headers=auth_headers(admin_init),
+    )
+    assert enable.status_code == 200, enable.text
+
+    # Attempt rotation WITHOUT current_code — must fail 401.
+    secret_b = generate_secret()
+    resp = await client.post(
+        "/api/admin/2fa/enable",
+        json={"secret": secret_b, "code": totp_now(secret_b)},
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 401, resp.text
+    async with async_session() as session:
+        u = await session.get(User, admin_id)
+        assert u.totp_secret == secret_a  # unchanged
+
+    # Rotation WITH the wrong current_code — must still fail.
+    resp = await client.post(
+        "/api/admin/2fa/enable",
+        json={"secret": secret_b, "code": totp_now(secret_b), "current_code": "000000"},
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 401
+
+    # Rotation WITH a valid current_code — must succeed and persist
+    # the new secret. Reset the replay counter so the test isn't bound
+    # to wall-clock 30-second windows; in production the admin would
+    # simply wait for the next code before rotating.
+    async with async_session() as session:
+        u = await session.get(User, admin_id)
+        u.totp_last_counter = -1
+        await session.commit()
+    resp = await client.post(
+        "/api/admin/2fa/enable",
+        json={
+            "secret": secret_b,
+            "code": totp_now(secret_b),
+            "current_code": totp_now(secret_a),
+        },
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 200, resp.text
+    async with async_session() as session:
+        u = await session.get(User, admin_id)
+        assert u.totp_secret == secret_b
+
+
+async def test_2fa_replay_protection(client):
+    """The same TOTP code cannot be used twice within its 30s window."""
+    admin_init, _ = await _make_admin(client, tg=1)
+    setup = await client.post("/api/admin/2fa/setup", headers=auth_headers(admin_init))
+    secret = setup.json()["secret"]
+    code = totp_now(secret)
+    enable = await client.post(
+        "/api/admin/2fa/enable",
+        json={"secret": secret, "code": code},
+        headers=auth_headers(admin_init),
+    )
+    assert enable.status_code == 200
+
+    # Try to disable using the same code that just enabled — replay
+    # must be rejected.
+    resp = await client.post(
+        "/api/admin/2fa/disable",
+        json={"code": code},
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 401, resp.text
+
+
+# ── System: redis flush 2FA guard ───────────────────────────────────────
+
+
+async def test_redis_flush_requires_2fa(client):
+    """``POST /api/admin/system/redis/flush`` is gated by ``require_totp``.
+
+    Without 2FA configured the dependency raises 403; with 2FA on it
+    raises 401 when the header is missing or invalid.
+    """
+    admin_init, admin_id = await _make_admin(client, tg=1)
+    # 2FA not configured yet → 403.
+    resp = await client.post(
+        "/api/admin/system/redis/flush",
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 403, resp.text
+
+    # Enable 2FA, then try without header → 401.
+    setup = await client.post("/api/admin/2fa/setup", headers=auth_headers(admin_init))
+    secret = setup.json()["secret"]
+    await client.post(
+        "/api/admin/2fa/enable",
+        json={"secret": secret, "code": totp_now(secret)},
+        headers=auth_headers(admin_init),
+    )
+    resp = await client.post(
+        "/api/admin/system/redis/flush",
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 401, resp.text
+
+    # Reset the replay counter so the test isn't bound to wall-clock
+    # 30-second windows. In production the user would simply wait for
+    # the next 30s window and submit a fresh code.
+    async with async_session() as session:
+        u = await session.get(User, admin_id)
+        u.totp_last_counter = -1
+        await session.commit()
+    headers = {**auth_headers(admin_init), "X-Totp-Code": totp_now(secret)}
+    resp = await client.post("/api/admin/system/redis/flush", headers=headers)
+    assert resp.status_code == 200, resp.text
+    # Action is audit-logged.
+    async with async_session() as session:
+        audits = (
+            (
+                await session.execute(
+                    select(AdminAuditLog).where(AdminAuditLog.action == "system.redis_flush")
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(audits) == 1
+        assert audits[0].actor_id == admin_id
+
+
 # ── Audit ───────────────────────────────────────────────────────────────
 
 

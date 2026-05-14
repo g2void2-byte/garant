@@ -32,8 +32,9 @@ from typing import Annotated
 from urllib.parse import quote
 
 from fastapi import Depends, Header, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from .deps import AdminUser
+from .deps import AdminUser, SessionDep
 from .models import User
 
 # Default RFC 6238 parameters (we keep them in sync with the popular
@@ -82,21 +83,38 @@ def verify_totp(secret: str, code: str, *, at: float | None = None) -> bool:
 
     Accepts the previous, current and next 30s windows (``±_DRIFT_WINDOWS``)
     to tolerate clock skew.
+
+    Does **not** prevent replay — use :func:`verify_totp_and_counter` for
+    that, which also returns the accepted counter so the caller can
+    persist it and reject reuse.
+    """
+    return verify_totp_and_counter(secret, code, at=at) is not None
+
+
+def verify_totp_and_counter(secret: str, code: str, *, at: float | None = None) -> int | None:
+    """Return the counter for the matching window, or ``None`` if the
+    code doesn't verify.
+
+    The caller is expected to compare the returned counter against the
+    user's stored high-water mark (``users.totp_last_counter``) and
+    reject codes ``<=`` that to prevent replay within the same 30-second
+    window (per RFC 6238 §5.2).
     """
     if not secret or not code:
-        return False
+        return None
     code = code.strip()
     if not code.isdigit() or len(code) != _DIGITS:
-        return False
+        return None
     if at is None:
         at = time.time()
     counter = int(at) // _PERIOD
     key = _b32decode_padded(secret)
     for delta in range(-_DRIFT_WINDOWS, _DRIFT_WINDOWS + 1):
-        candidate = _hotp(key, counter + delta)
+        candidate_counter = counter + delta
+        candidate = _hotp(key, candidate_counter)
         if hmac.compare_digest(candidate, code):
-            return True
-    return False
+            return candidate_counter
+    return None
 
 
 def otpauth_url(secret: str, *, account: str, issuer: str = "Garant") -> str:
@@ -117,25 +135,51 @@ def otpauth_url(secret: str, *, account: str, issuer: str = "Garant") -> str:
 _TOTP_BYPASS = os.environ.get("ADMIN_TOTP_BYPASS") or ""
 
 
+async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> None:
+    """Verify ``code`` against ``user.totp_secret`` and atomically bump
+    ``totp_last_counter`` so the same code can't be replayed inside its
+    30-second window.
+
+    Raises 401 on missing/invalid code, 403 if TOTP isn't configured.
+    The bypass env var (``ADMIN_TOTP_BYPASS``) short-circuits both
+    checks for e2e tests.
+    """
+    if _TOTP_BYPASS and code == _TOTP_BYPASS:
+        return
+    if not user.totp_enabled or not user.totp_secret:
+        raise HTTPException(403, "2FA не настроен — пройдите настройку 2FA")
+    if not code:
+        raise HTTPException(401, "Введите код 2FA")
+    matched = verify_totp_and_counter(user.totp_secret, code)
+    if matched is None:
+        raise HTTPException(401, "Неверный код 2FA")
+    if matched <= (user.totp_last_counter or -1):
+        # Replay: code already accepted in this (or an earlier) window.
+        raise HTTPException(401, "Код 2FA уже использован — дождитесь следующего")
+    user.totp_last_counter = matched
+    session.add(user)
+
+
 async def require_totp(
     user: AdminUser,
+    session: SessionDep,
     x_totp_code: Annotated[str | None, Header(alias="X-Totp-Code")] = None,
 ) -> User:
     """FastAPI dependency that gates a route behind a valid TOTP code.
 
     Returns the resolved admin ``User`` so handlers don't have to
     re-declare ``AdminUser``. Raises 403 if TOTP isn't configured for
-    the actor; 401 if the code is wrong / missing.
+    the actor; 401 if the code is wrong, missing, or already used.
+
+    The accepted code's counter is persisted on ``user.totp_last_counter``
+    so the same 6-digit value can't be reused within its 30-second
+    window. The change is staged on the dependency-injected session
+    and committed by the route handler at the end of the transaction;
+    if the handler raises, the bump rolls back, leaving the code
+    consumable again — that's intentional (we only burn the code on
+    success).
     """
-    if _TOTP_BYPASS:
-        if x_totp_code == _TOTP_BYPASS:
-            return user
-    if not user.totp_enabled or not user.totp_secret:
-        raise HTTPException(403, "2FA не настроен — пройдите настройку 2FA")
-    if not x_totp_code:
-        raise HTTPException(401, "Введите код 2FA")
-    if not verify_totp(user.totp_secret, x_totp_code):
-        raise HTTPException(401, "Неверный код 2FA")
+    await _consume_totp(session, user, x_totp_code)
     return user
 
 

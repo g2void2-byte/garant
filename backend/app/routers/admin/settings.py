@@ -46,10 +46,15 @@ def _to_out(row: AppSettings) -> AdminSettingsOut:
     )
 
 
-async def _get_settings(session) -> AppSettings:
-    row = (
-        await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
-    ).scalar_one_or_none()
+async def _get_settings(session, *, for_update: bool = False) -> AppSettings:
+    stmt = select(AppSettings).order_by(AppSettings.id).limit(1)
+    if for_update:
+        # Row-level lock so two admins editing the singleton concurrently
+        # serialise — without this the second commit's audit-log
+        # ``before`` snapshot can mismatch the value the user actually
+        # saw on the form, even if the final DB state is fine.
+        stmt = stmt.with_for_update()
+    row = (await session.execute(stmt)).scalar_one_or_none()
     if row is None:
         # Defensive: seed should create it, but if a fresh deployment
         # misses the seed we create a row here so the admin doesn't see
@@ -72,7 +77,7 @@ async def update_settings(
     session: SessionDep,
     request: Request,
 ):
-    row = await _get_settings(session)
+    row = await _get_settings(session, for_update=True)
     fields = body.model_dump(exclude_unset=True)
     if not fields:
         raise HTTPException(400, "Нет изменений")
