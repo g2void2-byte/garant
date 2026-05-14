@@ -65,8 +65,11 @@ export function initTelegram() {
   try {
     tg.ready();
     tg.expand();
-  } catch {
-    /* noop */
+  } catch (err) {
+    // Swallowing this used to mask Telegram-side regressions
+    // entirely: surface it to the browser console so operators can
+    // notice when ``ready`` / ``expand`` start failing in production.
+    console.warn("initTelegram: Telegram.WebApp call failed", err);
   }
 }
 
@@ -76,8 +79,10 @@ export function haptic(kind: "light" | "medium" | "heavy" | "success" | "error" 
     if (kind === "select") tg.HapticFeedback.selectionChanged();
     else if (kind === "success" || kind === "error" || kind === "warning") tg.HapticFeedback.notificationOccurred(kind);
     else tg.HapticFeedback.impactOccurred(kind);
-  } catch {
-    /* noop */
+  } catch (err) {
+    // Haptics are best-effort — old Telegram clients don't support
+    // them — but we still want a console trail when they fail.
+    console.warn("haptic: Telegram.WebApp call failed", kind, err);
   }
 }
 

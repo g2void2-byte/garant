@@ -37,6 +37,7 @@ from ...models import (
 from ...rate_limit import rate_limit
 from ...schemas import AdminDepositListOut, AdminDepositOut, AdminReasonIn
 from ...services_wallet import get_or_create_balance
+from ...sql_filters import escape_like_wildcards
 
 router = APIRouter(
     prefix="/api/admin/deposits",
@@ -84,8 +85,13 @@ async def list_deposits(
     if currency:
         stmt = stmt.where(Currency.code == currency.upper())
     if q:
-        like = f"%{q}%"
-        stmt = stmt.where(or_(User.username.ilike(like), User.display_name.ilike(like)))
+        like = f"%{escape_like_wildcards(q)}%"
+        stmt = stmt.where(
+            or_(
+                User.username.ilike(like, escape="\\"),
+                User.display_name.ilike(like, escape="\\"),
+            )
+        )
 
     total = (await session.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     rows = (

@@ -31,6 +31,27 @@ router = APIRouter(
     dependencies=[Depends(rate_limit("admin", limit=600, window=60))],
 )
 
+# Defence-in-depth: only ``AppSettings`` columns named here are allowed
+# to be mutated by the PATCH endpoint, regardless of what Pydantic
+# accepts. Keeps an accidental new ``Optional`` field on
+# :class:`AdminSettingsUpdateIn` from silently exposing an arbitrary
+# attribute on the ORM model.
+_EDITABLE_FIELDS: frozenset[str] = frozenset(
+    {
+        "deal_commission_percent",
+        "invoice_commission_percent",
+        "vip_commission_percent",
+        "min_deposit",
+        "min_withdraw",
+        "inactivity_pending_confirmation_days",
+        "inactivity_pending_cancellation_days",
+        "max_active_services_per_user",
+        "maintenance_enabled",
+        "maintenance_message",
+        "auto_withdraw_enabled",
+    }
+)
+
 
 def _to_out(row: AppSettings) -> AdminSettingsOut:
     return AdminSettingsOut(
@@ -88,6 +109,11 @@ async def update_settings(
     after: dict[str, Any] = {}
     changed = False
     for key, new in fields.items():
+        if key not in _EDITABLE_FIELDS:
+            # Pydantic already filters unknown fields out, so this is
+            # only reachable if the schema and the allowlist drift
+            # apart. Reject loudly rather than silently writing.
+            raise HTTPException(400, f"Поле '{key}' не редактируется")
         old = getattr(row, key)
         old_cmp = float(old) if isinstance(old, (int, float, Decimal)) else old
         new_cmp = float(new) if isinstance(new, (int, float, Decimal)) else new

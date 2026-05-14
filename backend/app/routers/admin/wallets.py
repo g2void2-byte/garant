@@ -34,6 +34,7 @@ from ...schemas import (
     AdminWalletListItem,
     AdminWalletListOut,
 )
+from ...sql_filters import escape_like_wildcards
 
 router = APIRouter(
     prefix="/api/admin/wallets",
@@ -81,8 +82,13 @@ async def list_wallets(
 
     stmt = select(User)
     if q:
-        like = f"%{q}%"
-        stmt = stmt.where(or_(User.username.ilike(like), User.display_name.ilike(like)))
+        like = f"%{escape_like_wildcards(q)}%"
+        stmt = stmt.where(
+            or_(
+                User.username.ilike(like, escape="\\"),
+                User.display_name.ilike(like, escape="\\"),
+            )
+        )
 
     total = (await session.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
 

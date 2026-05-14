@@ -17,7 +17,11 @@ const PIN_SESSION_INVALID_DETAILS = new Set([
 
 export const api = ky.create({
   prefixUrl: baseURL ? `${baseURL.replace(/\/$/, "")}/` : "/",
-  timeout: 15_000,
+  // 30s accommodates slow mobile networks and the occasional cold
+  // Postgres connection without prematurely cancelling legitimate
+  // requests. ky still enforces a finite timeout — we don't disable
+  // it — so a hung backend won't leave the UI spinning forever.
+  timeout: 30_000,
   hooks: {
     beforeRequest: [
       (req) => {

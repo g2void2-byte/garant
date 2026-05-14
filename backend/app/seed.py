@@ -22,20 +22,19 @@ CURRENCIES: list[tuple[str, str, str, int, float, float, int]] = [
 
 CATEGORIES = [
     ("avia-i-oteli", "Авиа и отели", "plane"),
-    ("akkaunty-kriptobirzh-i-eps", "Аккаунты криптобирж и ЭПС", "bitcoin"),
-    ("anonimnost-i-bezopasnost", "Анонимность и безопасность", "shield"),
-    ("brutfors", "Брутфорс", "key"),
+    ("akkaunty-i-podpiski", "Аккаунты и подписки", "user"),
     ("verifikaciya", "Верификация", "check-circle"),
-    ("vzlom", "Взлом", "unlock"),
     ("vizy-shengen", "Визы/шенген", "globe"),
     ("debetovye-karty", "Дебетовые карты", "credit-card"),
     ("dizajn", "Дизайн", "palette"),
-    ("izgotovlenie-dokumentov", "Изготовление документов", "file-text"),
-    ("izgotovlenie-pechatej-i-shtampov", "Изготовление печатей и штампов", "stamp"),
+    ("konsultacii", "Консультации", "message-square"),
     ("kopirajting", "Копирайтинг", "pen-tool"),
-    ("kredity", "Кредиты", "dollar-sign"),
     ("obmenniki", "Обменники", "repeat"),
-    ("obnal-servisy", "Обнал сервисы", "briefcase"),
+    ("obuchenie-i-kursy", "Обучение и курсы", "book-open"),
+    ("perevody-tekstov", "Переводы текстов", "languages"),
+    ("razrabotka", "Разработка", "code"),
+    ("smm-i-reklama", "SMM и реклама", "megaphone"),
+    ("yuridicheskie-uslugi", "Юридические услуги", "scale"),
     ("prochee", "Прочее", "more-horizontal"),
 ]
 

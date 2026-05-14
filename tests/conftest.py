@@ -48,6 +48,17 @@ os.environ["ALLOW_UNSIGNED_INIT_DATA"] = "false"
 # full enrolment flow. The real TOTP-rejection tests in
 # ``test_admin_misc.py`` continue to exercise the production path —
 # they don't send this header, they enrol a fresh secret.
+#
+# Guard against an accidental ``pytest`` invocation against a deployed
+# environment: the bypass sentinel must never reach a process whose
+# ``ENVIRONMENT`` is production/staging.
+_env_value = os.environ.get("ENVIRONMENT", "test").lower()
+if _env_value in ("production", "staging"):
+    raise RuntimeError(
+        f"Refusing to run tests with ENVIRONMENT='{_env_value}'; "
+        "ADMIN_TOTP_BYPASS is a test-only escape hatch and must never be "
+        "configured against a production/staging deployment."
+    )
 os.environ.setdefault("ADMIN_TOTP_BYPASS", "test-totp-bypass-do-not-use-in-prod")
 
 
