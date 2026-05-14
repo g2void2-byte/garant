@@ -83,8 +83,15 @@ export function haptic(kind: "light" | "medium" | "heavy" | "success" | "error" 
 
 export function getInitData(): string {
   if (tg?.initData) return tg.initData;
-  // Dev fallback so the UI renders outside of Telegram.
-  if (typeof window !== "undefined") {
+  // Dev-only fallback so the UI renders outside of Telegram during
+  // local development. The ``import.meta.env.DEV`` check is replaced
+  // with a literal ``false`` by Vite's build pipeline in production,
+  // so dead-code elimination strips the localStorage read from the
+  // shipped bundle entirely. Without the guard a stale or attacker-
+  // controlled ``dev_init_data`` value would let a compromised JS
+  // context bypass server-side auth whenever the backend has
+  // ``allow_unsigned_init_data`` enabled.
+  if (import.meta.env.DEV && typeof window !== "undefined") {
     const stored = window.localStorage.getItem("dev_init_data");
     if (stored) return stored;
   }
