@@ -626,6 +626,10 @@ class AdminUserDetailOut(BaseModel):
     has_pin: bool
     last_ip: str | None
     last_login_at: datetime | None
+    # Bumped on the first authenticated API request per
+    # ``deps._LAST_LOGIN_DEBOUNCE`` window (5 min), not per-request.
+    # Effectively counts "API sessions seen" rather than literal
+    # Telegram logins.
     login_count: int
     created_at: datetime
 

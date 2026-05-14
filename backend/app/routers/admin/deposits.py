@@ -130,7 +130,7 @@ async def mark_paid(
         raise HTTPException(500, "Валюта не найдена")
 
     bal = await get_or_create_balance(session, d.user_id, d.currency_id)
-    bal.amount = float(Decimal(str(bal.amount)) + Decimal(str(d.amount)))
+    bal.amount = Decimal(str(bal.amount)) + Decimal(str(d.amount))
     d.status = WalletDepositStatus.paid
     d.paid_at = datetime.utcnow()
 
@@ -201,7 +201,7 @@ async def refund_deposit(
     if bal is None or Decimal(str(bal.amount)) < Decimal(str(d.amount)):
         raise HTTPException(400, "Недостаточно средств у пользователя для возврата")
 
-    bal.amount = float(Decimal(str(bal.amount)) - Decimal(str(d.amount)))
+    bal.amount = Decimal(str(bal.amount)) - Decimal(str(d.amount))
     d.status = WalletDepositStatus.expired
     d.paid_at = None
 

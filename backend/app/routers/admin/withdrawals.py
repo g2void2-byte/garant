@@ -187,9 +187,7 @@ async def decide_withdrawal(
                 )
             ).scalar_one_or_none()
             if bal is not None:
-                bal.locked = float(
-                    max(Decimal(0), Decimal(str(bal.locked)) - Decimal(str(w.amount)))
-                )
+                bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - Decimal(str(w.amount)))
             w.status = WalletWithdrawStatus.sent
             w.processed_at = datetime.utcnow()
         else:
@@ -240,8 +238,8 @@ async def decide_withdrawal(
             )
         ).scalar_one_or_none()
         if bal is not None:
-            bal.locked = float(max(Decimal(0), Decimal(str(bal.locked)) - Decimal(str(w.amount))))
-            bal.amount = float(Decimal(str(bal.amount)) + Decimal(str(w.amount)))
+            bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - Decimal(str(w.amount)))
+            bal.amount = Decimal(str(bal.amount)) + Decimal(str(w.amount))
         w.status = WalletWithdrawStatus.rejected
         w.admin_note = body.note or ""
         w.processed_at = datetime.utcnow()
@@ -283,7 +281,7 @@ async def decide_withdrawal(
             )
         ).scalar_one_or_none()
         if bal is not None:
-            bal.locked = float(max(Decimal(0), Decimal(str(bal.locked)) - Decimal(str(w.amount))))
+            bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - Decimal(str(w.amount)))
         w.status = WalletWithdrawStatus.sent
         w.admin_note = body.note or w.admin_note
         w.processed_at = datetime.utcnow()

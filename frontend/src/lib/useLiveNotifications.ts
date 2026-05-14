@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { connectNotifications, type WsEvent } from "@/lib/ws";
 import { haptic } from "@/lib/tg";
 import { useToast } from "@/components/ui/Toast";
@@ -9,6 +9,15 @@ import type { DealMessageDto } from "@/api/hooks";
 export function useLiveNotifications() {
   const qc = useQueryClient();
   const toast = useToast();
+  // Keep ``toast`` reachable from the WS callback without tying the
+  // effect's dependency array to its identity. ``ToastProvider``
+  // memoises the current shape today, but any future state added to
+  // the provider would re-create the object and the previous deps
+  // ``[qc, toast]`` would tear the socket down + re-open it on every
+  // render. Refs are read at call time so the latest provider shape
+  // is always used.
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
   useEffect(() => {
     const disconnect = connectNotifications({
@@ -52,7 +61,7 @@ export function useLiveNotifications() {
         }
 
         haptic("light");
-        toast.show({
+        toastRef.current.show({
           kind: notif.type === "deals" ? "info" : notif.type === "deposits" ? "success" : "info",
           title: notif.title,
           body: notif.body,
@@ -60,5 +69,5 @@ export function useLiveNotifications() {
       },
     });
     return disconnect;
-  }, [qc, toast]);
+  }, [qc]);
 }
