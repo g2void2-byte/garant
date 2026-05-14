@@ -107,9 +107,6 @@ async def post_review(
 
     await _recompute_user_rating(session, target)
 
-    await session.commit()
-    await session.refresh(review)
-
     await notifier.push(
         session,
         target.id,
@@ -118,6 +115,8 @@ async def post_review(
         f"@{author.username} оставил отзыв ({rating}/5)",
         {"review_id": review.id},
     )
+    await session.commit()
+    await session.refresh(review)
 
     return review
 
@@ -136,9 +135,6 @@ async def credit_invoice(
     if owner:
         owner.balance = Decimal(str(owner.balance)) + Decimal(str(invoice.amount))
 
-    await session.commit()
-    await session.refresh(invoice)
-
     if owner:
         await notifier.push(
             session,
@@ -147,5 +143,8 @@ async def credit_invoice(
             "Депозит зачислен",
             f"${float(invoice.amount):.2f} зачислено на баланс",
         )
+
+    await session.commit()
+    await session.refresh(invoice)
 
     return invoice

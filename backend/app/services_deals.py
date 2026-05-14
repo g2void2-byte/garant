@@ -195,9 +195,7 @@ async def create_deal(
     session.add(deal)
     buyer.deals_total += 1
     seller.deals_total += 1
-    await session.commit()
-    await session.refresh(deal)
-
+    await session.flush()
     await notifier.push(
         session,
         seller.id,
@@ -206,6 +204,8 @@ async def create_deal(
         f"@{buyer.username or buyer.tg_user_id} создал сделку #{deal.id} на {amt} {currency.code}",
         {"deal_id": deal.id},
     )
+    await session.commit()
+    await session.refresh(deal)
     return deal
 
 
@@ -219,9 +219,6 @@ async def accept_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     deal.in_progress_at = datetime.utcnow()
     deal.confirm_buyer = True
     deal.confirm_seller = True
-    await session.commit()
-    await session.refresh(deal)
-
     await notifier.push(
         session,
         deal.buyer_id,
@@ -230,6 +227,8 @@ async def accept_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         f"Продавец принял сделку #{deal.id}",
         {"deal_id": deal.id},
     )
+    await session.commit()
+    await session.refresh(deal)
     return deal
 
 
@@ -257,9 +256,6 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
 
     deal.status = DealStatus.cancelled
     deal.completed_at = datetime.utcnow()
-    await session.commit()
-    await session.refresh(deal)
-
     await notifier.push(
         session,
         deal.buyer_id,
@@ -268,6 +264,8 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         f"Продавец отклонил сделку #{deal.id}. Сумма возвращена; комиссия удержана.",
         {"deal_id": deal.id},
     )
+    await session.commit()
+    await session.refresh(deal)
     return deal
 
 
@@ -301,9 +299,6 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         buyer.deals_success += 1
     if seller:
         seller.deals_success += 1
-    await session.commit()
-    await session.refresh(deal)
-
     await notifier.push(
         session,
         deal.seller_id,
@@ -312,6 +307,8 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         f"Вы получили {payout} {currency.code} по сделке #{deal.id}",
         {"deal_id": deal.id},
     )
+    await session.commit()
+    await session.refresh(deal)
     return deal
 
 
@@ -328,9 +325,6 @@ async def request_cancel(session: AsyncSession, deal: Deal, user: User, reason: 
     deal.cancellation_initiator_id = user.id
     deal.cancellation_reason = reason
     deal.cancellation_requested_at = datetime.utcnow()
-    await session.commit()
-    await session.refresh(deal)
-
     other_id = deal.seller_id if user.id == deal.buyer_id else deal.buyer_id
     await notifier.push(
         session,
@@ -340,6 +334,8 @@ async def request_cancel(session: AsyncSession, deal: Deal, user: User, reason: 
         f"По сделке #{deal.id} запрошена отмена: {reason or '—'}",
         {"deal_id": deal.id},
     )
+    await session.commit()
+    await session.refresh(deal)
     return deal
 
 
@@ -353,9 +349,6 @@ async def revoke_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
     deal.cancellation_initiator_id = None
     deal.cancellation_reason = None
     deal.cancellation_requested_at = None
-    await session.commit()
-    await session.refresh(deal)
-
     other_id = deal.seller_id if user.id == deal.buyer_id else deal.buyer_id
     await notifier.push(
         session,
@@ -365,6 +358,8 @@ async def revoke_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
         f"По сделке #{deal.id} запрос отмены отозван",
         {"deal_id": deal.id},
     )
+    await session.commit()
+    await session.refresh(deal)
     return deal
 
 
@@ -394,9 +389,6 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
 
     deal.status = DealStatus.cancelled
     deal.completed_at = datetime.utcnow()
-    await session.commit()
-    await session.refresh(deal)
-
     await notifier.push(
         session,
         deal.cancellation_initiator_id or deal.buyer_id,
@@ -405,6 +397,8 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
         f"По сделке #{deal.id} отмена согласована. Сумма возвращена; комиссия удержана.",
         {"deal_id": deal.id},
     )
+    await session.commit()
+    await session.refresh(deal)
     return deal
 
 
@@ -437,8 +431,6 @@ async def start_arbitration(session: AsyncSession, deal: Deal, user: User, reaso
         buyer.deals_arbitrage += 1
     if seller:
         seller.deals_arbitrage += 1
-    await session.commit()
-    await session.refresh(deal)
 
     arbiters = (
         (await session.execute(select(User).where(User.is_arbiter.is_(True)))).scalars().all()
@@ -457,6 +449,8 @@ async def start_arbitration(session: AsyncSession, deal: Deal, user: User, reaso
             f"Сделка #{deal.id} передана в арбитраж: {reason}",
             {"deal_id": deal.id},
         )
+    await session.commit()
+    await session.refresh(deal)
     return deal
 
 
@@ -511,9 +505,6 @@ async def resolve_arbitration(
             f"{deal.arbitration_reason or ''}\n— Решение арбитра: {note}".strip()
         )
 
-    await session.commit()
-    await session.refresh(deal)
-
     winner_id = deal.buyer_id if winner == "buyer" else deal.seller_id
     loser_id = deal.seller_id if winner == "buyer" else deal.buyer_id
     await notifier.push(
@@ -532,6 +523,8 @@ async def resolve_arbitration(
         f"Арбитр вынес решение по сделке #{deal.id}",
         {"deal_id": deal.id},
     )
+    await session.commit()
+    await session.refresh(deal)
     return deal
 
 
@@ -604,8 +597,6 @@ async def sweep_inactivity(session: AsyncSession) -> int:
         notifications.append((deal.id, deal.seller_id))
         affected += 1
 
-    await session.commit()
-
     for deal_id, recipient_id in notifications:
         await notifier.push(
             session,
@@ -615,4 +606,5 @@ async def sweep_inactivity(session: AsyncSession) -> int:
             f"Сделка #{deal_id} автоматически закрыта.",
             {"deal_id": deal_id},
         )
+    await session.commit()
     return affected

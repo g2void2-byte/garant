@@ -20,6 +20,7 @@ from aiogram.types import (
     Message,
 )
 from sqlalchemy import func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import async_session
@@ -47,31 +48,42 @@ def _static_banner(name: str) -> FSInputFile | None:
 async def _get_or_create_user(
     session: AsyncSession, tg_user_id: int, *, username: str | None, first_name: str | None
 ) -> User:
-    user = (
-        await session.execute(select(User).where(User.tg_user_id == tg_user_id))
-    ).scalar_one_or_none()
-    if user is not None:
-        # Keep cached username/display_name fresh — same logic as deps.get_current_user.
-        changed = False
-        if username and user.username != username:
-            user.username = username
-            changed = True
-        if first_name and not user.display_name:
-            user.display_name = first_name
-            changed = True
-        if changed:
-            await session.commit()
-            await session.refresh(user)
-        return user
+    """Return the ``User`` for ``tg_user_id``, inserting one if missing.
 
-    user = User(
-        tg_user_id=tg_user_id,
-        username=username,
-        display_name=first_name or "",
+    M-4 — two concurrent Telegram callbacks from the same user can hit
+    this function at the same time; the old check-then-insert pattern
+    raced and one of them bubbled an ``IntegrityError`` to the bot.
+    The fix is an ``INSERT ... ON CONFLICT DO NOTHING`` so at most one
+    request creates the row and the loser falls through to a fresh
+    ``SELECT``. The username/display_name refresh stays in a separate
+    statement because we don't want to clobber a non-empty display name
+    with an empty Telegram ``first_name``.
+    """
+    stmt = (
+        pg_insert(User)
+        .values(
+            tg_user_id=tg_user_id,
+            username=username,
+            display_name=first_name or "",
+        )
+        .on_conflict_do_nothing(index_elements=[User.tg_user_id])
     )
-    session.add(user)
+    await session.execute(stmt)
     await session.commit()
-    await session.refresh(user)
+
+    user = (await session.execute(select(User).where(User.tg_user_id == tg_user_id))).scalar_one()
+
+    # Keep cached username/display_name fresh — same logic as deps.get_current_user.
+    changed = False
+    if username and user.username != username:
+        user.username = username
+        changed = True
+    if first_name and not user.display_name:
+        user.display_name = first_name
+        changed = True
+    if changed:
+        await session.commit()
+        await session.refresh(user)
     return user
 
 

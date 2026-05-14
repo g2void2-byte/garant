@@ -184,6 +184,13 @@ async def create_service(
     if not cat:
         raise HTTPException(404, "Категория не найдена")
 
+    # M-22 — lock the owner row before counting active services so two
+    # concurrent POSTs can't both pass the ``active < max`` check and
+    # leave the user with ``max + 1`` active services. The user row is
+    # a natural serialization point because every active-service mutation
+    # already touches the same user; the lock is released on commit.
+    await session.execute(select(User.id).where(User.id == user.id).with_for_update())
+
     active_now = await _count_active(session, user.id)
     max_active = await _get_max_active(session)
     if active_now >= max_active:

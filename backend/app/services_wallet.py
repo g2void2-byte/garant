@@ -165,8 +165,6 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
     bal.amount = Decimal(str(bal.amount)) + Decimal(str(deposit.amount))
     deposit.status = WalletDepositStatus.paid
     deposit.paid_at = datetime.utcnow()
-    await session.commit()
-    await session.refresh(deposit)
 
     currency = await session.get(Currency, deposit.currency_id)
     if currency:
@@ -178,6 +176,9 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
             f"+{deposit.amount} {currency.code} зачислены на ваш баланс",
             {"deposit_id": deposit.id, "currency": currency.code},
         )
+
+    await session.commit()
+    await session.refresh(deposit)
 
     return deposit
 
@@ -287,8 +288,6 @@ async def create_withdrawal(
             withdrawal.processed_at = datetime.utcnow()
             withdrawal.admin_note = f"cryptobot_transfer_id={tr.transfer_id}"
             bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - amount_d)
-            await session.commit()
-            await session.refresh(withdrawal)
             await notifier.push(
                 session,
                 user.id,
@@ -297,6 +296,8 @@ async def create_withdrawal(
                 f"-{amount} {currency.code} отправлены на {address}",
                 {"withdrawal_id": withdrawal.id},
             )
+            await session.commit()
+            await session.refresh(withdrawal)
             return withdrawal
 
     # Manual mode (or auto failed): queue for admin review.
@@ -310,6 +311,8 @@ async def create_withdrawal(
             f"@{user.username or user.tg_user_id}: {amount} {currency.code} → {address[:12]}…",
             {"withdrawal_id": withdrawal.id},
         )
+    if admins:
+        await session.commit()
 
     return withdrawal
 
