@@ -24,6 +24,7 @@ from sqlalchemy import func, or_, select
 
 from ... import notifier
 from ...admin_audit import log_admin_action
+from ...auth_2fa import TotpUser
 from ...deps import AdminUser, SessionDep
 from ...models import (
     Currency,
@@ -106,7 +107,7 @@ async def list_deposits(
 async def mark_paid(
     deposit_id: int,
     body: AdminReasonIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ):
@@ -167,7 +168,7 @@ async def mark_paid(
 async def refund_deposit(
     deposit_id: int,
     body: AdminReasonIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ):

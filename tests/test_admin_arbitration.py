@@ -12,6 +12,7 @@ from tests.helpers import (
     get_user_id_by_tg,
     setup_pin,
     signed_init_data,
+    with_totp,
 )
 
 
@@ -111,7 +112,7 @@ async def test_arbitration_queue_in_progress_after_assignment(client):
     await client.post(
         f"/api/admin/deals/{deal_id}/assign-arbiter",
         json={"arbiter_id": arb_id},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     resp = await client.get(
         "/api/admin/arbitration?queue=in_progress", headers=auth_headers(admin_init)

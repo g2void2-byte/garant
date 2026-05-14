@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ... import notifier
 from ...admin_audit import log_admin_action
+from ...auth_2fa import TotpUser
 from ...deps import AdminUser, SessionDep
 from ...models import NotificationType, User
 from ...rate_limit import rate_limit
@@ -328,7 +329,7 @@ async def get_user(user_id: int, _admin: AdminUser, session: SessionDep) -> Admi
 async def ban_user(
     user_id: int,
     body: AdminReasonIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:
@@ -391,7 +392,7 @@ async def unban_user(
 async def freeze_user(
     user_id: int,
     body: AdminReasonIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:
@@ -452,7 +453,7 @@ async def unfreeze_user(
 async def reset_pin(
     user_id: int,
     body: AdminReasonIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:
@@ -490,7 +491,7 @@ async def reset_pin(
 async def invalidate_sessions(
     user_id: int,
     body: AdminReasonIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:
@@ -521,7 +522,7 @@ async def invalidate_sessions(
 async def set_role(
     user_id: int,
     body: AdminSetRoleIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminUserDetailOut:

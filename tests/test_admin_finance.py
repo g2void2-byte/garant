@@ -29,7 +29,7 @@ from backend.app.models import (
     WalletDeposit,
     WalletWithdrawal,
 )
-from tests.helpers import auth_headers, signed_init_data
+from tests.helpers import auth_headers, signed_init_data, with_totp
 
 
 async def _bootstrap(client, *, tg_user_id: int, username: str) -> int:
@@ -123,7 +123,7 @@ async def test_wallet_adjust_credits_and_audits(client):
     resp = await client.post(
         f"/api/admin/wallets/{bob_id}/adjust",
         json={"currency_code": "USDT", "amount": 50.5, "reason": "manual top-up"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -162,7 +162,7 @@ async def test_wallet_adjust_debit_signed(client):
     resp = await client.post(
         f"/api/admin/wallets/{bob_id}/adjust",
         json={"currency_code": "USDT", "amount": -30.0},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["amount"] == pytest.approx(70.0)
@@ -200,7 +200,7 @@ async def test_deposits_mark_paid_idempotent(client):
     r1 = await client.post(
         f"/api/admin/deposits/{dep_id}/mark-paid",
         json={},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert r1.status_code == 200, r1.text
     assert r1.json()["status"] == "paid"
@@ -208,7 +208,7 @@ async def test_deposits_mark_paid_idempotent(client):
     r2 = await client.post(
         f"/api/admin/deposits/{dep_id}/mark-paid",
         json={},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert r2.status_code in (200, 400)
     async with async_session() as session:
@@ -250,7 +250,7 @@ async def test_withdrawals_decide_reject_returns_funds(client):
     resp = await client.post(
         f"/api/admin/withdrawals/{wd_id}/decide",
         json={"action": "reject", "note": "wrong address"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "rejected"

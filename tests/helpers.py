@@ -38,6 +38,20 @@ def auth_headers(init_data: str) -> dict[str, str]:
     return {"Authorization": f"tma {init_data}"}
 
 
+# Pre-shared sentinel that the conftest installs as ``ADMIN_TOTP_BYPASS``.
+# Sending it as ``X-Totp-Code`` short-circuits ``require_totp`` so tests
+# can hit 2FA-gated admin endpoints without provisioning a real secret.
+# Tests in ``test_admin_misc.py`` that exercise the *real* TOTP flow
+# avoid this helper and go through ``/api/admin/2fa/enable`` instead.
+TOTP_BYPASS_CODE = "test-totp-bypass-do-not-use-in-prod"
+
+
+def with_totp(headers: dict[str, str]) -> dict[str, str]:
+    """Augment ``headers`` with the TOTP-bypass header for tests that
+    hit a now-2FA-gated admin endpoint."""
+    return {**headers, "X-Totp-Code": TOTP_BYPASS_CODE}
+
+
 async def setup_pin(client: AsyncClient, init_data: str, pin: str = "1234") -> str:
     """Bootstrap a user (POST /api/pin/setup creates the User row) and
     return the X-Pin-Token for PIN-gated endpoints."""

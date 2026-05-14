@@ -20,7 +20,7 @@ from sqlalchemy import select
 
 from backend.app.db import async_session
 from backend.app.models import AdminAuditLog, User
-from tests.helpers import auth_headers, signed_init_data
+from tests.helpers import auth_headers, signed_init_data, with_totp
 
 
 async def _make_admin(tg_user_id: int = 1, username: str = "admin") -> str:
@@ -209,7 +209,7 @@ async def test_ban_user_writes_audit_and_dms(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/ban",
         json={"reason": "Спам"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -230,7 +230,7 @@ async def test_ban_user_idempotent(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/ban",
         json={"reason": "Спам"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
     assert await _audit_count("user.ban") == 0
@@ -244,7 +244,7 @@ async def test_ban_self_forbidden(client):
     resp = await client.post(
         f"/api/admin/users/{admin_id}/ban",
         json={"reason": "self"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 400
 
@@ -281,7 +281,7 @@ async def test_freeze_user(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/freeze",
         json={"reason": "Подозрительная активность"},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -303,7 +303,7 @@ async def test_reset_pin_clears_hash(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/reset-pin",
         json={},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -321,7 +321,7 @@ async def test_reset_pin_no_op_when_no_pin(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/reset-pin",
         json={},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
     # No PIN → no audit row.
@@ -341,7 +341,7 @@ async def test_set_role_grants_vip(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/role",
         json={"is_vip": True},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -358,7 +358,7 @@ async def test_set_role_self_demotion_forbidden(client):
     resp = await client.post(
         f"/api/admin/users/{admin_id}/role",
         json={"is_admin": False},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 400
 
@@ -377,7 +377,7 @@ async def test_set_role_cannot_remove_last_admin(client):
     resp = await client.post(
         f"/api/admin/users/{bob_id}/role",
         json={"is_admin": False},
-        headers=auth_headers(admin_init),
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
     assert resp.json()["is_admin"] is False
@@ -394,7 +394,7 @@ async def test_set_role_cannot_remove_last_admin(client):
     resp = await client.post(
         f"/api/admin/users/{bob_id}/role",
         json={"is_admin": False},
-        headers=auth_headers(bob_init),
+        headers=with_totp(auth_headers(bob_init)),
     )
     # Self-demotion guard fires first (400).
     assert resp.status_code == 400

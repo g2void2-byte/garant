@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ... import notifier
 from ...admin_audit import log_admin_action
+from ...auth_2fa import TotpUser
 from ...deps import AdminUser, SessionDep
 from ...models import (
     Currency,
@@ -515,7 +516,7 @@ def _is_active_for_money_movement(status: DealStatus) -> bool:
 async def force_release(
     deal_id: int,
     body: AdminDealForceOut,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminDealActionResult:
@@ -574,7 +575,7 @@ async def force_release(
 async def force_refund(
     deal_id: int,
     body: AdminDealForceOut,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminDealActionResult:
@@ -633,7 +634,7 @@ async def force_refund(
 async def split_deal(
     deal_id: int,
     body: AdminDealSplitIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminDealActionResult:
@@ -700,7 +701,7 @@ async def split_deal(
 async def force_arbitration(
     deal_id: int,
     body: AdminDealForceOut,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminDealActionResult:
@@ -742,7 +743,7 @@ async def force_arbitration(
 async def assign_arbiter(
     deal_id: int,
     body: AdminDealAssignArbiterIn,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> AdminDealActionResult:
@@ -789,7 +790,7 @@ async def assign_arbiter(
 async def delete_deal(
     deal_id: int,
     body: AdminDealForceOut,
-    admin: AdminUser,
+    admin: TotpUser,
     session: SessionDep,
     request: Request,
 ) -> dict:
