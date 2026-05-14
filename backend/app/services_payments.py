@@ -103,6 +103,50 @@ async def handle_invoice_paid(session: AsyncSession, payload: dict[str, Any]) ->
     return {"ok": False, "reason": "unknown invoice"}
 
 
+async def handle_invoice_expired(session: AsyncSession, payload: dict[str, Any]) -> dict[str, Any]:
+    """I-3 — terminal-state a pending invoice the user never paid.
+
+    Crypto Pay emits ``update_type=invoice_expired`` (and sometimes
+    ``invoice_paid`` with ``status="expired"`` mid-funnel) when an
+    invoice ages past its ``allow_anonymous`` window without payment.
+    Pre-fix we ignored that and the row sat in ``pending`` until the
+    M-6 sweep eventually closed it. Handling the webhook directly is
+    cheaper and faster — the moment Crypto Pay decides the invoice is
+    dead we mirror that state locally, so the user-facing list and
+    the admin queue stop showing the row immediately.
+    """
+    invoice_id = payload.get("invoice_id")
+    if invoice_id is None:
+        return {"ok": False, "reason": "missing invoice_id"}
+    provider_id = str(invoice_id)
+
+    wallet = await _find_wallet_deposit(session, provider_id)
+    if wallet is not None:
+        # Terminal states are sticky — never flip ``paid`` back to
+        # ``expired`` even if Crypto Pay sends a stale update; that
+        # would silently de-credit the user.
+        if wallet.status in (
+            WalletDepositStatus.paid,
+            WalletDepositStatus.expired,
+            WalletDepositStatus.refunded,
+        ):
+            return {"ok": True, "already_terminal": True, "kind": "wallet"}
+        wallet.status = WalletDepositStatus.expired
+        await session.commit()
+        return {"ok": True, "kind": "wallet", "expired": True}
+
+    legacy = await _find_legacy_invoice(session, provider_id)
+    if legacy is not None:
+        if legacy.status in (InvoiceStatus.paid, InvoiceStatus.expired):
+            return {"ok": True, "already_terminal": True, "kind": "legacy"}
+        legacy.status = InvoiceStatus.expired
+        await session.commit()
+        return {"ok": True, "kind": "legacy", "expired": True}
+
+    logger.info("CryptoBot webhook expire for unknown invoice_id=%s", provider_id)
+    return {"ok": False, "reason": "unknown invoice"}
+
+
 def webhook_secret() -> str:
     """Secret used to verify Crypto Pay webhook signatures."""
     return settings.cryptobot_token or ""

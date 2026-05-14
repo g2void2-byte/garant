@@ -40,6 +40,10 @@ os.environ["DATABASE_URL"] = (
 )
 os.environ["RUN_BOT"] = "false"
 os.environ["INACTIVITY_SWEEP_SECONDS"] = "0"
+# M-6 — disable the deposit-expiry background loop in tests; the
+# explicit sweep test calls ``sweep_expired_deposits`` directly so the
+# loop just adds nondeterminism otherwise.
+os.environ["WALLET_DEPOSIT_SWEEP_SECONDS"] = "0"
 os.environ["PIN_JWT_SECRET"] = "test-pin-secret-fixed-value-do-not-use-in-prod"
 os.environ["MEDIA_ROOT"] = str(_media_root)
 os.environ["ALLOW_UNSIGNED_INIT_DATA"] = "false"

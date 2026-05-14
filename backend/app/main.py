@@ -22,6 +22,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s: %(messa
 
 _bot_task: asyncio.Task | None = None
 _inactivity_task: asyncio.Task | None = None
+_deposit_expiry_task: asyncio.Task | None = None
 
 
 async def _inactivity_loop(interval_seconds: int) -> None:
@@ -46,9 +47,33 @@ async def _inactivity_loop(interval_seconds: int) -> None:
         await asyncio.sleep(interval_seconds)
 
 
+async def _deposit_expiry_loop(interval_seconds: int) -> None:
+    """M-6 — periodically expire stale ``pending`` wallet deposits.
+
+    Mirrors :func:`_inactivity_loop`: fresh session per iteration,
+    cancelled cleanly during shutdown. Without this loop a deposit
+    that the user never paid would sit in ``pending`` forever because
+    CryptoBot doesn't keep emitting webhooks once the invoice has
+    expired on their side.
+    """
+    from .services_wallet import sweep_expired_deposits
+
+    while True:
+        try:
+            async with async_session() as session:
+                affected = await sweep_expired_deposits(session)
+            if affected:
+                logger.info("deposit-expiry sweep: marked %d deposit(s) expired", affected)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("deposit-expiry sweep failed")
+        await asyncio.sleep(interval_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _bot_task, _inactivity_task
+    global _bot_task, _inactivity_task, _deposit_expiry_task
 
     # M-8 — Redis-backed rate limit is the only way to share counters
     # across uvicorn workers / replicas. With ``REDIS_URL`` empty the
@@ -98,9 +123,14 @@ async def lifespan(app: FastAPI):
     if settings.inactivity_sweep_seconds > 0:
         _inactivity_task = asyncio.create_task(_inactivity_loop(settings.inactivity_sweep_seconds))
 
+    if settings.wallet_deposit_sweep_seconds > 0:
+        _deposit_expiry_task = asyncio.create_task(
+            _deposit_expiry_loop(settings.wallet_deposit_sweep_seconds)
+        )
+
     yield
 
-    for task in (_bot_task, _inactivity_task):
+    for task in (_bot_task, _inactivity_task, _deposit_expiry_task):
         if task and not task.done():
             task.cancel()
             try:
@@ -148,15 +178,29 @@ app.add_middleware(
 # (``telegram-web-app.js`` from ``telegram.org``), talks to its own
 # backend only (REST + WebSocket on the same origin), and renders
 # user-uploaded avatars/screenshots from ``/media/`` (same origin).
-# Everything else collapses to ``'self'``. ``style-src 'unsafe-inline'``
-# is the one compromise — React + Framer Motion set element ``style=``
-# attributes at runtime which CSP3 still treats as inline styles, and
-# nonce-tagging every React render would be a sizeable refactor for
-# little incremental value over the existing XSS protections (no
-# server-rendered user HTML, strict ``X-Content-Type-Options``, MIME
-# allowlist on uploads). ``frame-ancestors 'none'`` duplicates the
-# legacy ``X-Frame-Options: DENY`` for modern browsers that prefer the
-# CSP3 directive.
+# Everything else collapses to ``'self'``. ``frame-ancestors 'none'``
+# duplicates the legacy ``X-Frame-Options: DENY`` for modern browsers
+# that prefer the CSP3 directive.
+#
+# L-2 — ``style-src 'unsafe-inline'`` is the one compromise. React +
+# Framer Motion set element ``style=`` attributes at runtime and CSP3
+# nonces ONLY apply to ``<style>`` tags / ``<link rel=stylesheet>`` —
+# inline ``style=`` attributes can't be nonced at all (see
+# https://www.w3.org/TR/CSP3/#allow-all-inline). The only way to drop
+# ``'unsafe-inline'`` safely is to migrate every component off
+# inline-style attributes and onto stylesheet classes, which is a
+# multi-package refactor (Framer Motion in particular targets
+# ``style=`` on purpose for animation perf).
+#
+# The interim mitigation flagged in the audit is wiring up
+# ``report-uri``/``report-to`` so we can SEE what would actually break
+# if we tightened the policy, before flipping the switch. That's what
+# the trailing ``report-uri`` directive does: violations get POSTed to
+# ``/api/csp-report`` (defined below), where we rate-limit them and
+# log at INFO level. Browsers also accept ``report-to`` but it needs a
+# matching ``Report-To`` header naming an endpoint group — sticking
+# with the legacy ``report-uri`` is enough for the telemetry pass and
+# avoids the extra header.
 _CSP_DIRECTIVES = (
     "default-src 'self'; "
     "script-src 'self' https://telegram.org; "
@@ -168,7 +212,8 @@ _CSP_DIRECTIVES = (
     "frame-ancestors 'none'; "
     "base-uri 'self'; "
     "form-action 'self'; "
-    "object-src 'none'"
+    "object-src 'none'; "
+    "report-uri /api/csp-report"
 )
 
 
@@ -200,6 +245,7 @@ from .routers import (  # noqa: E402
     account,
     arbitration,
     categories,
+    csp_report,
     deal_messages,
     deals,
     me,
@@ -233,6 +279,7 @@ for r in (
     arbitration,
     media,
     ws,
+    csp_report,
 ):
     app.include_router(r.router)
 

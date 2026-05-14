@@ -12,6 +12,7 @@ Bot handlers stay thin — they just decide which section to dispatch to.
 from __future__ import annotations
 
 import pathlib
+from typing import Any
 
 from aiogram.types import (
     BufferedInputFile,
@@ -24,7 +25,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import async_session
-from ..models import Deal, DealStatus, User
+from ..models import Currency, Deal, DealStatus, User
 from . import banners, keyboards, texts
 
 # Section-specific banner images. Drop a PNG/JPG next to this file under
@@ -90,11 +91,22 @@ async def _get_or_create_user(
 # ── Stats ─────────────────────────────────────────────────────────────────
 
 
-async def _deals_stats(session: AsyncSession, user_id: int) -> dict[str, float | int]:
-    """Aggregate counts/volume for the user's deal history.
+async def _deals_stats(session: AsyncSession, user_id: int) -> dict[str, Any]:
+    """Aggregate counts + per-currency completed volume for a user.
 
-    Counts every deal the user participates in (buyer OR seller). The
-    "volume" is the sum of ``Deal.sum`` across completed deals only.
+    Counts every deal the user participates in (buyer OR seller).
+
+    M-5 — after the multi-currency rewrite ``Deal.amount`` is
+    denominated in ``Deal.currency_id``. Summing it across mixed
+    currencies (e.g. USDT + TON + BTC) produces a single number with
+    no real meaning. ``by_currency`` is the per-currency breakdown
+    used by the bot text renderer; counts stay aggregate because
+    "how many deals did the user finish" is currency-neutral.
+
+    Legacy rows have ``currency_id IS NULL`` (pre-multi-currency
+    deals stored on the old USD ``Deal.sum`` column). Those rows are
+    folded into a synthetic ``USD`` bucket so the legacy volume
+    still surfaces in the UI.
     """
     total_count = (
         await session.execute(
@@ -111,24 +123,10 @@ async def _deals_stats(session: AsyncSession, user_id: int) -> dict[str, float |
             )
         )
     ).scalar_one()
-    buys_sum = (
-        await session.execute(
-            select(func.coalesce(func.sum(Deal.sum), 0)).where(
-                Deal.buyer_id == user_id, Deal.status == DealStatus.completed
-            )
-        )
-    ).scalar_one()
 
     sales_count = (
         await session.execute(
             select(func.count(Deal.id)).where(
-                Deal.seller_id == user_id, Deal.status == DealStatus.completed
-            )
-        )
-    ).scalar_one()
-    sales_sum = (
-        await session.execute(
-            select(func.coalesce(func.sum(Deal.sum), 0)).where(
                 Deal.seller_id == user_id, Deal.status == DealStatus.completed
             )
         )
@@ -143,14 +141,102 @@ async def _deals_stats(session: AsyncSession, user_id: int) -> dict[str, float |
         )
     ).scalar_one()
 
+    # Per-currency completed volume. Buys + sales tracked separately
+    # because the profile card surfaces them on different lines.
+    by_currency: dict[str, dict[str, float | int]] = {}
+
+    currencies = (await session.execute(select(Currency))).scalars().all()
+    by_id = {c.id: c for c in currencies}
+
+    buys_rows = (
+        await session.execute(
+            select(Deal.currency_id, func.coalesce(func.sum(Deal.amount), 0))
+            .where(
+                Deal.buyer_id == user_id,
+                Deal.status == DealStatus.completed,
+                Deal.currency_id.is_not(None),
+            )
+            .group_by(Deal.currency_id)
+        )
+    ).all()
+    sales_rows = (
+        await session.execute(
+            select(Deal.currency_id, func.coalesce(func.sum(Deal.amount), 0))
+            .where(
+                Deal.seller_id == user_id,
+                Deal.status == DealStatus.completed,
+                Deal.currency_id.is_not(None),
+            )
+            .group_by(Deal.currency_id)
+        )
+    ).all()
+
+    # Legacy rows (``currency_id IS NULL``) used the old USD ``Deal.sum``
+    # column. Bucket them under "USD" so the historical volume isn't
+    # silently dropped from the report.
+    legacy_buys = (
+        await session.execute(
+            select(func.coalesce(func.sum(Deal.sum), 0)).where(
+                Deal.buyer_id == user_id,
+                Deal.status == DealStatus.completed,
+                Deal.currency_id.is_(None),
+            )
+        )
+    ).scalar_one()
+    legacy_sales = (
+        await session.execute(
+            select(func.coalesce(func.sum(Deal.sum), 0)).where(
+                Deal.seller_id == user_id,
+                Deal.status == DealStatus.completed,
+                Deal.currency_id.is_(None),
+            )
+        )
+    ).scalar_one()
+
+    def _bucket(code: str, decimals: int) -> dict[str, float | int]:
+        return by_currency.setdefault(
+            code, {"code": code, "decimals": decimals, "buys_sum": 0.0, "sales_sum": 0.0}
+        )
+
+    for currency_id, amount in buys_rows:
+        cur = by_id.get(currency_id)
+        if cur is None:
+            continue
+        b = _bucket(cur.code, cur.decimals)
+        b["buys_sum"] = float(b["buys_sum"]) + float(amount or 0)
+
+    for currency_id, amount in sales_rows:
+        cur = by_id.get(currency_id)
+        if cur is None:
+            continue
+        b = _bucket(cur.code, cur.decimals)
+        b["sales_sum"] = float(b["sales_sum"]) + float(amount or 0)
+
+    if float(legacy_buys or 0) > 0:
+        b = _bucket("USD", 2)
+        b["buys_sum"] = float(b["buys_sum"]) + float(legacy_buys or 0)
+    if float(legacy_sales or 0) > 0:
+        b = _bucket("USD", 2)
+        b["sales_sum"] = float(b["sales_sum"]) + float(legacy_sales or 0)
+
+    # Stable sort: largest combined-volume first, then code asc, so the
+    # most relevant currency shows at the top regardless of insertion order.
+    by_currency_list = sorted(
+        by_currency.values(),
+        key=lambda b: (-(float(b["buys_sum"]) + float(b["sales_sum"])), str(b["code"])),
+    )
+
     return {
         "total_count": int(total_count),
         "buys_count": int(buys_count),
-        "buys_sum": float(buys_sum or 0),
         "sales_count": int(sales_count),
-        "sales_sum": float(sales_sum or 0),
         "pending_payment_count": int(pending_payment_count),
-        "total_volume": float((buys_sum or 0) + (sales_sum or 0)),
+        "by_currency": by_currency_list,
+        # Banner thumbnail is currency-neutral: shows the count of
+        # completed deals so the headline number can't lie when the
+        # user trades across multiple assets. Text body carries the
+        # per-currency breakdown.
+        "completed_count": int(buys_count) + int(sales_count),
     }
 
 
@@ -189,7 +275,7 @@ async def send_deals(
         stats = await _deals_stats(session, user.id)
 
     body = texts.deals_summary(
-        total_volume=stats["total_volume"],
+        by_currency=stats["by_currency"],
         total_count=stats["total_count"],
         buys_count=stats["buys_count"],
         sales_count=stats["sales_count"],
@@ -202,7 +288,7 @@ async def send_deals(
     )
     photo = BufferedInputFile(
         banners.render_deals(
-            total_volume=stats["total_volume"],
+            total_volume=float(stats["completed_count"]),
             deal_count=stats["total_count"],
             sale_count=stats["sales_count"],
         ),
@@ -223,9 +309,8 @@ async def send_profile(
     body = texts.profile_summary(
         user,
         buys_count=stats["buys_count"],
-        buys_sum=stats["buys_sum"],
         sales_count=stats["sales_count"],
-        sales_sum=stats["sales_sum"],
+        by_currency=stats["by_currency"],
     )
     photo = BufferedInputFile(
         banners.render_profile(username=user.username, deposit=float(user.balance or 0)),
@@ -300,8 +385,7 @@ async def load_profile_payload(tg_user_id: int) -> tuple[str, InlineKeyboardMark
     body = texts.profile_summary(
         user,
         buys_count=stats["buys_count"],
-        buys_sum=stats["buys_sum"],
         sales_count=stats["sales_count"],
-        sales_sum=stats["sales_sum"],
+        by_currency=stats["by_currency"],
     )
     return body, keyboards.profile_keyboard()

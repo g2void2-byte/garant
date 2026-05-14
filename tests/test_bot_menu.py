@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from backend.app.bot import handlers, keyboards, sections, texts
 from backend.app.db import async_session
-from backend.app.models import Deal, DealStatus, User
+from backend.app.models import Currency, Deal, DealStatus, User
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -60,9 +60,32 @@ async def _seed_deal(
     seller_id: int,
     sum_: float = 100.0,
     status: DealStatus = DealStatus.completed,
+    currency_code: str | None = "USDT",
+    amount: float | None = None,
 ) -> Deal:
+    """Insert a Deal, optionally pinned to a specific currency.
+
+    Post-M-5, ``Deal.amount`` + ``Deal.currency_id`` are what the bot
+    stats query reads; ``Deal.sum`` is only kept for legacy rows.
+    Tests that want to exercise the per-currency branch pass
+    ``amount`` + ``currency_code``; legacy-coverage tests omit
+    ``currency_code`` (set to ``None``) to leave ``currency_id`` NULL.
+    """
     async with async_session() as session:
-        d = Deal(buyer_id=buyer_id, seller_id=seller_id, sum=sum_, status=status)
+        currency_id: int | None = None
+        if currency_code:
+            cur = (
+                await session.execute(select(Currency).where(Currency.code == currency_code))
+            ).scalar_one()
+            currency_id = cur.id
+        d = Deal(
+            buyer_id=buyer_id,
+            seller_id=seller_id,
+            sum=sum_,
+            status=status,
+            currency_id=currency_id,
+            amount=amount if amount is not None else (sum_ if currency_id else None),
+        )
         session.add(d)
         await session.commit()
         await session.refresh(d)
@@ -118,17 +141,34 @@ def test_settings_keyboard_marks_active_toggles():
 
 def test_deals_summary_text_contains_all_metrics():
     body = texts.deals_summary(
-        total_volume=42.5,
+        by_currency=[
+            {"code": "USDT", "decimals": 2, "buys_sum": 20.5, "sales_sum": 22.0},
+            {"code": "TON", "decimals": 4, "buys_sum": 0.0, "sales_sum": 5.25},
+        ],
         total_count=4,
         buys_count=2,
         sales_count=2,
         pending_payment_count=1,
     )
     assert "Сумма сделок" in body
-    assert "$42.5" in body
+    # USDT line: 20.5 + 22.0 = 42.5 with 2 decimals, trailing zero stripped
+    assert "42.5 USDT" in body
+    # TON line: 0.0 + 5.25 with 4 decimals (trailing zeros stripped)
+    assert "5.25 TON" in body
     assert "Покупок: <b>2</b>" in body
     assert "Продаж: <b>2</b>" in body
     assert "Ожидающие оплаты: <b>1</b>" in body
+
+
+def test_deals_summary_with_no_completed_deals_shows_dash():
+    body = texts.deals_summary(
+        by_currency=[],
+        total_count=0,
+        buys_count=0,
+        sales_count=0,
+        pending_payment_count=0,
+    )
+    assert "Сумма сделок: <b>—</b>" in body
 
 
 def test_profile_summary_text_uses_username_and_status():
@@ -145,15 +185,45 @@ def test_profile_summary_text_uses_username_and_status():
     body = texts.profile_summary(
         user,
         buys_count=3,
-        buys_sum=300.0,
         sales_count=2,
-        sales_sum=200.0,
+        by_currency=[
+            {"code": "USDT", "decimals": 2, "buys_sum": 300.0, "sales_sum": 200.0},
+        ],
     )
     assert "@bob" in body
     assert "Арбитр" in body
     assert "4.0/5.0 (5)" in body
     assert "$12" in body
     assert "Покупок:</b> 3" in body
+    assert "300 USDT" in body
+    assert "200 USDT" in body
+
+
+def test_profile_summary_with_multi_currency():
+    """Multi-currency users see one ``amount CODE`` entry per currency
+    that has non-zero buys / sales; empty buckets are hidden."""
+    user = SimpleNamespace(
+        tg_user_id=99,
+        username="alice",
+        display_name="Alice",
+        is_admin=False,
+        is_arbiter=False,
+        good=0,
+        bad=0,
+        deposit_total=0.0,
+    )
+    body = texts.profile_summary(
+        user,
+        buys_count=2,
+        sales_count=1,
+        by_currency=[
+            {"code": "USDT", "decimals": 2, "buys_sum": 125.5, "sales_sum": 0.0},
+            {"code": "TON", "decimals": 4, "buys_sum": 0.0, "sales_sum": 3.0},
+        ],
+    )
+    # Buys line shows only USDT (TON buys is 0), sales line shows only TON.
+    assert "Покупок:</b> 2 шт, на сумму: 125.5 USDT" in body
+    assert "Продаж:</b> 1 шт, на сумму: 3 TON" in body
 
 
 # ── DB-backed stats ──────────────────────────────────────────────────────
@@ -164,14 +234,18 @@ async def test_deals_stats_counts_buys_sales_and_pending():
     alice = await _seed_user(5001, username="alice")
     bob = await _seed_user(5002, username="bob")
 
-    # Two completed deals where alice buys from bob, one in-progress one
-    # where alice sells to bob, and one pending_payment one where bob is
-    # the buyer (so it should not count toward alice's pending bucket).
-    await _seed_deal(buyer_id=alice.id, seller_id=bob.id, sum_=50, status=DealStatus.completed)
-    await _seed_deal(buyer_id=alice.id, seller_id=bob.id, sum_=75, status=DealStatus.completed)
-    await _seed_deal(buyer_id=bob.id, seller_id=alice.id, sum_=200, status=DealStatus.completed)
+    # Two completed deals where alice buys from bob, one completed
+    # one where alice sells to bob, and one pending_payment one where
+    # alice is also a participant.
+    await _seed_deal(buyer_id=alice.id, seller_id=bob.id, currency_code="USDT", amount=50.0)
+    await _seed_deal(buyer_id=alice.id, seller_id=bob.id, currency_code="USDT", amount=75.0)
+    await _seed_deal(buyer_id=bob.id, seller_id=alice.id, currency_code="USDT", amount=200.0)
     await _seed_deal(
-        buyer_id=alice.id, seller_id=bob.id, sum_=10, status=DealStatus.pending_confirmation
+        buyer_id=alice.id,
+        seller_id=bob.id,
+        currency_code="USDT",
+        amount=10.0,
+        status=DealStatus.pending_confirmation,
     )
 
     async with async_session() as session:
@@ -179,11 +253,44 @@ async def test_deals_stats_counts_buys_sales_and_pending():
 
     assert stats["buys_count"] == 2
     assert stats["sales_count"] == 1
-    assert stats["buys_sum"] == 125.0
-    assert stats["sales_sum"] == 200.0
     assert stats["pending_payment_count"] == 1
     assert stats["total_count"] == 4
-    assert stats["total_volume"] == 325.0
+    # All deals are USDT in this test, so the single bucket carries both
+    # buys + sales.
+    by = stats["by_currency"]
+    assert len(by) == 1
+    assert by[0]["code"] == "USDT"
+    assert by[0]["buys_sum"] == 125.0
+    assert by[0]["sales_sum"] == 200.0
+
+
+@pytest.mark.asyncio
+async def test_deals_stats_groups_volume_by_currency():
+    """M-5 — completed deals across multiple currencies must show up as
+    distinct buckets in ``by_currency`` and never be summed across them."""
+    alice = await _seed_user(6001, username="alice_mc")
+    bob = await _seed_user(6002, username="bob_mc")
+
+    # 100 USDT buy + 200 USDT sale + 5 TON buy + 1.5 TON sale.
+    await _seed_deal(buyer_id=alice.id, seller_id=bob.id, currency_code="USDT", amount=100.0)
+    await _seed_deal(buyer_id=bob.id, seller_id=alice.id, currency_code="USDT", amount=200.0)
+    await _seed_deal(buyer_id=alice.id, seller_id=bob.id, currency_code="TON", amount=5.0)
+    await _seed_deal(buyer_id=bob.id, seller_id=alice.id, currency_code="TON", amount=1.5)
+
+    async with async_session() as session:
+        stats = await sections._deals_stats(session, alice.id)
+
+    assert stats["buys_count"] == 2
+    assert stats["sales_count"] == 2
+    by = {b["code"]: b for b in stats["by_currency"]}
+    assert {"USDT", "TON"} <= set(by)
+    assert by["USDT"]["buys_sum"] == 100.0
+    assert by["USDT"]["sales_sum"] == 200.0
+    assert by["TON"]["buys_sum"] == 5.0
+    assert by["TON"]["sales_sum"] == 1.5
+    # Sort order: USDT (combined 300) before TON (combined 6.5).
+    codes_in_order = [b["code"] for b in stats["by_currency"]]
+    assert codes_in_order.index("USDT") < codes_in_order.index("TON")
 
 
 # ── Handler dispatch ─────────────────────────────────────────────────────
