@@ -26,7 +26,6 @@ async def _make_user(
     deals_total: int = 0,
     frozen_balance: float = 0.0,
     is_admin: bool = False,
-    is_moderator: bool = False,
     is_arbiter: bool = False,
     created_at: datetime | None = None,
 ) -> int:
@@ -40,7 +39,6 @@ async def _make_user(
             deals_total=deals_total,
             frozen_balance=frozen_balance,
             is_admin=is_admin,
-            is_moderator=is_moderator,
             is_arbiter=is_arbiter,
         )
         session.add(u)
@@ -124,25 +122,21 @@ async def test_deposit_min(client):
 async def test_status_admin(client):
     await _make_user(700, "alice")
     await _make_user(701, "admin1", is_admin=True)
-    await _make_user(702, "mod1", is_moderator=True)
     await _make_user(703, "arb1", is_arbiter=True)
     assert await _usernames(client, status="5") == ["admin1"]
 
 
 @pytest.mark.asyncio
-async def test_status_moderator(client):
-    await _make_user(800, "alice")
-    await _make_user(801, "admin1", is_admin=True)
-    await _make_user(802, "mod1", is_moderator=True)
-    await _make_user(803, "arb1", is_arbiter=True)
-    assert await _usernames(client, status="4") == ["mod1"]
+async def test_status_moderator_retired(client):
+    """Tier 4 (moderator) was dropped; the API rejects it as unknown."""
+    resp = await client.get("/api/users", params={"status": "4"})
+    assert resp.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_status_arbiter(client):
     await _make_user(900, "alice")
     await _make_user(901, "admin1", is_admin=True)
-    await _make_user(902, "mod1", is_moderator=True)
     await _make_user(903, "arb1", is_arbiter=True)
     assert await _usernames(client, status="3") == ["arb1"]
 
@@ -178,14 +172,15 @@ async def test_filters_compose(client):
 
 
 @pytest.mark.asyncio
-async def test_user_out_exposes_moderator_flag(client):
-    await _make_user(1200, "mod1", is_moderator=True)
+async def test_user_out_no_moderator_field(client):
+    """After the moderator role retirement, no row reports the flag."""
+    await _make_user(1200, "alice", is_admin=True)
     resp = await client.get("/api/users")
     assert resp.status_code == 200
     by_name = {u["username"]: u for u in resp.json()}
-    assert by_name["mod1"]["is_moderator"] is True
-    assert by_name["mod1"]["prefix"] == "moderator"
-    assert by_name["mod1"]["admin"] == 4
+    assert "is_moderator" not in by_name["alice"]
+    assert by_name["alice"]["prefix"] == "admin"
+    assert by_name["alice"]["admin"] == 5
 
 
 @pytest.mark.asyncio

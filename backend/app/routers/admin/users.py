@@ -67,8 +67,6 @@ router = APIRouter(
 def _prefix_for(user: User) -> str | None:
     if user.is_admin:
         return "admin"
-    if user.is_moderator:
-        return "moderator"
     if user.is_arbiter:
         return "arbiter"
     if user.is_vip:
@@ -105,7 +103,6 @@ def _to_detail(user: User, *, has_pin: bool) -> AdminUserDetailOut:
         deals_failed=user.deals_failed,
         deals_arbitrage=user.deals_arbitrage,
         is_admin=user.is_admin,
-        is_moderator=user.is_moderator,
         is_arbiter=user.is_arbiter,
         is_vip=user.is_vip,
         is_banned=user.is_banned,
@@ -131,7 +128,6 @@ def _to_list_item(user: User) -> AdminUserListItem:
         photo_url=user.photo_url,
         prefix=_prefix_for(user),
         is_admin=user.is_admin,
-        is_moderator=user.is_moderator,
         is_arbiter=user.is_arbiter,
         is_vip=user.is_vip,
         is_banned=user.is_banned,
@@ -249,9 +245,7 @@ async def list_users(
     _admin: AdminUser,
     session: SessionDep,
     q: Annotated[str | None, Query(description="search by @username/tg_id")] = None,
-    role: Annotated[
-        Literal["admin", "moderator", "arbiter", "vip", "regular", "any"], Query()
-    ] = "any",
+    role: Annotated[Literal["admin", "arbiter", "vip", "regular", "any"], Query()] = "any",
     status: Annotated[Literal["any", "active", "banned", "frozen"], Query()] = "any",
     sort: Annotated[
         Literal["created_desc", "created_asc", "rating", "deals", "deposit"], Query()
@@ -276,15 +270,9 @@ async def list_users(
 
     role_filter = {
         "admin": User.is_admin.is_(True),
-        "moderator": User.is_moderator.is_(True),
         "arbiter": User.is_arbiter.is_(True),
         "vip": User.is_vip.is_(True),
-        "regular": (
-            User.is_admin.is_(False)
-            & User.is_moderator.is_(False)
-            & User.is_arbiter.is_(False)
-            & User.is_vip.is_(False)
-        ),
+        "regular": (User.is_admin.is_(False) & User.is_arbiter.is_(False) & User.is_vip.is_(False)),
     }.get(role)
     if role_filter is not None:
         stmt = stmt.where(role_filter)

@@ -170,7 +170,7 @@ async def create_message(
     # When the sender is a participant we only need to broadcast to the
     # opposite party. When the sender is staff (admin / arbiter writing
     # into the deal chat) we broadcast to *both* buyer and seller, so
-    # both sides see the moderator's message in real time.
+    # both sides see the staff message in real time.
     event: dict[str, Any] = {
         "event": "deal_message",
         "data": out.model_dump(mode="json"),

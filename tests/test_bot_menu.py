@@ -137,7 +137,6 @@ def test_profile_summary_text_uses_username_and_status():
         username="bob",
         display_name="Bob",
         is_admin=False,
-        is_moderator=False,
         is_arbiter=True,
         good=4,
         bad=1,

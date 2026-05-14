@@ -161,7 +161,15 @@ async def create_deal(
     if amt <= 0:
         raise ValueError("Сумма должна быть больше нуля")
 
-    commission = _commission(amt, settings.deal_commission_percent, currency.decimals)
+    # Per spec, VIP users get a reduced commission rate (set globally
+    # in ``app_settings.vip_commission_percent``). The override applies
+    # whenever either side of the deal is VIP — keeps the discount on
+    # the user who actually holds the VIP flag regardless of who pays.
+    rate = Decimal(str(settings.deal_commission_percent))
+    vip_rate = Decimal(str(settings.vip_commission_percent))
+    if vip_rate >= 0 and (buyer.is_vip or seller.is_vip):
+        rate = vip_rate
+    commission = _commission(amt, rate, currency.decimals)
     locked = amt + commission if pay_commission == PayCommission.buyer else amt
     await _debit(session, buyer.id, currency.id, locked)
 
@@ -541,7 +549,8 @@ async def sweep_inactivity(session: AsyncSession) -> int:
     rows = (
         (
             await session.execute(
-                select(Deal).where(
+                select(Deal)
+                .where(
                     or_(
                         (Deal.status == DealStatus.pending_confirmation)
                         & (Deal.created_at <= pc_cutoff),
@@ -550,11 +559,18 @@ async def sweep_inactivity(session: AsyncSession) -> int:
                         & (Deal.cancellation_requested_at <= pcanc_cutoff),
                     )
                 )
+                .with_for_update(skip_locked=True)
             )
         )
         .scalars()
         .all()
     )
+    # Hold the row locks for the whole sweep so a parallel sweeper or
+    # admin force action can't double-process the same row. One commit
+    # at the end releases them. Notifications are pushed after the
+    # commit so they don't get included in the same transaction (and
+    # so a notifier failure can't roll back the refund).
+    notifications: list[tuple[int, int]] = []
     for deal in rows:
         if deal.currency_id is None or deal.amount is None:
             continue
@@ -576,16 +592,19 @@ async def sweep_inactivity(session: AsyncSession) -> int:
         )
         deal.status = target_status
         deal.completed_at = now
-        await session.commit()
-
-        for recipient_id in (deal.buyer_id, deal.seller_id):
-            await notifier.push(
-                session,
-                recipient_id,
-                NotificationType.deals,
-                "Сделка отменена за неактивность",
-                f"Сделка #{deal.id} автоматически закрыта.",
-                {"deal_id": deal.id},
-            )
+        notifications.append((deal.id, deal.buyer_id))
+        notifications.append((deal.id, deal.seller_id))
         affected += 1
+
+    await session.commit()
+
+    for deal_id, recipient_id in notifications:
+        await notifier.push(
+            session,
+            recipient_id,
+            NotificationType.deals,
+            "Сделка отменена за неактивность",
+            f"Сделка #{deal_id} автоматически закрыта.",
+            {"deal_id": deal_id},
+        )
     return affected

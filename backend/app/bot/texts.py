@@ -63,8 +63,6 @@ def deals_summary(
 def _user_status(user: User) -> str:
     if user.is_admin:
         return "Администратор"
-    if user.is_moderator:
-        return "Модератор"
     if user.is_arbiter:
         return "Арбитр"
     return "Пользователь"

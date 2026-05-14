@@ -28,7 +28,6 @@ export interface ServiceOwnerDto {
   good: number;
   bad: number;
   is_admin: boolean;
-  is_moderator: boolean;
   is_arbiter: boolean;
 }
 
@@ -59,9 +58,8 @@ export interface UserCardDto {
   photo_url: string | null;
   balance: number;
   admin: number;
-  prefix: "admin" | "moderator" | "arbiter" | "vip" | null;
+  prefix: "admin" | "arbiter" | "vip" | null;
   is_admin?: boolean;
-  is_moderator?: boolean;
   is_arbiter?: boolean;
   is_vip?: boolean;
   is_banned?: boolean;
@@ -270,7 +268,7 @@ export interface AdminDashboardDto {
   vips: number;
 }
 
-export type AdminUserPrefix = "admin" | "moderator" | "arbiter" | "vip" | null;
+export type AdminUserPrefix = "admin" | "arbiter" | "vip" | null;
 
 export interface AdminUserListItemDto {
   id: number;
@@ -280,7 +278,6 @@ export interface AdminUserListItemDto {
   photo_url: string | null;
   prefix: AdminUserPrefix;
   is_admin: boolean;
-  is_moderator: boolean;
   is_arbiter: boolean;
   is_vip: boolean;
   is_banned: boolean;
@@ -322,7 +319,6 @@ export interface AdminUserDetailDto {
   deals_failed: number;
   deals_arbitrage: number;
   is_admin: boolean;
-  is_moderator: boolean;
   is_arbiter: boolean;
   is_vip: boolean;
   is_banned: boolean;
@@ -340,7 +336,7 @@ export interface AdminUserDetailDto {
 
 export interface AdminListUsersQuery {
   q?: string;
-  role?: "admin" | "moderator" | "arbiter" | "vip" | "regular" | "any";
+  role?: "admin" | "arbiter" | "vip" | "regular" | "any";
   status?: "any" | "active" | "banned" | "frozen";
   sort?: "created_desc" | "created_asc" | "rating" | "deals" | "deposit";
   page?: number;
