@@ -40,7 +40,7 @@ from .models import (
     User,
     UserBalance,
 )
-from .services_wallet import get_currency_by_code, get_or_create_balance
+from .services_wallet import get_currency_by_code, get_or_create_balance, lock_user_balance
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,9 @@ def _commission(amount: Decimal, percent: Decimal | float, decimals: int) -> Dec
 async def _debit(
     session: AsyncSession, user_id: int, currency_id: int, amount: Decimal
 ) -> UserBalance:
-    bal = await get_or_create_balance(session, user_id, currency_id)
+    # Row-lock the balance: two concurrent ``create_deal`` calls must
+    # not both pass the ``amount >= locked`` check on the same balance.
+    bal = await lock_user_balance(session, user_id, currency_id)
     if Decimal(str(bal.amount)) < amount:
         raise ValueError("Недостаточно средств")
     bal.amount = float(Decimal(str(bal.amount)) - amount)
