@@ -43,6 +43,14 @@ router = APIRouter(
 
 
 def _balance_row(user: User, currency: Currency, bal: UserBalance | None) -> AdminUserBalanceOut:
+    # M-20: keep arithmetic in ``Decimal`` so the ``total`` doesn't pick
+    # up float surface errors (e.g. 0.1 + 0.2 surfacing as
+    # 0.30000000000000004) before it hits the schema. The schema itself
+    # still declares ``float`` for backwards compatibility with the
+    # frontend wire format — changing the schema to ``Decimal`` /
+    # string is tracked separately (M-3 + M-9).
+    amount = Decimal(str(bal.amount)) if bal else Decimal(0)
+    locked = Decimal(str(bal.locked)) if bal else Decimal(0)
     return AdminUserBalanceOut(
         user_id=user.id,
         username=user.username,
@@ -51,9 +59,9 @@ def _balance_row(user: User, currency: Currency, bal: UserBalance | None) -> Adm
         currency_code=currency.code,
         currency_name=currency.name,
         decimals=currency.decimals,
-        amount=float(bal.amount) if bal else 0.0,
-        locked=float(bal.locked) if bal else 0.0,
-        total=(float(bal.amount) + float(bal.locked)) if bal else 0.0,
+        amount=amount,
+        locked=locked,
+        total=amount + locked,
         updated_at=bal.updated_at if bal else None,
     )
 
@@ -212,9 +220,12 @@ async def adjust_user_balance(
         reason=body.reason,
         payload={
             "currency": currency.code,
-            "delta": float(delta),
-            "before_amount": float(before_amount),
-            "after_amount": float(new_amount),
+            # M-20: persist audit numbers as strings so the trail keeps
+            # full ``Numeric(18,8)`` precision instead of losing the
+            # tail digits to a ``float`` round-trip in the JSONB column.
+            "delta": str(delta),
+            "before_amount": str(before_amount),
+            "after_amount": str(new_amount),
         },
         request=request,
     )

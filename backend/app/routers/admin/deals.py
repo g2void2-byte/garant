@@ -91,19 +91,24 @@ async def _get_deal_or_404(session: AsyncSession, deal_id: int, *, lock: bool = 
 async def _balance_snapshot(
     session: AsyncSession, user: User, currency: Currency | None
 ) -> AdminBalanceSnapshot:
+    # M-20: keep balance arithmetic in ``Decimal`` end-to-end so the
+    # ``total`` we hand to the schema is computed exactly. The schema
+    # still declares ``float`` (legacy wire format); the full Decimal
+    # wire format change is tracked under M-3 / M-9.
     if currency is None:
+        legacy = Decimal(str(user.balance))
         return AdminBalanceSnapshot(
             user_id=user.id,
             username=user.username,
             display_name=user.display_name,
             currency_code=None,
-            amount=float(user.balance),
-            locked=0.0,
-            total=float(user.balance),
+            amount=legacy,
+            locked=Decimal(0),
+            total=legacy,
         )
     balance = await get_or_create_balance(session, user.id, currency.id)
-    amount = float(balance.amount)
-    locked = float(balance.locked)
+    amount = Decimal(str(balance.amount))
+    locked = Decimal(str(balance.locked))
     return AdminBalanceSnapshot(
         user_id=user.id,
         username=user.username,
@@ -548,8 +553,9 @@ async def force_release(
             "before_status": before_status,
             "after_status": deal.status.value,
             "currency": currency.code,
-            "locked": float(locked),
-            "payout": float(payout),
+            # M-23: keep Numeric(18,8) precision in the JSONB audit trail.
+            "locked": str(locked),
+            "payout": str(payout),
         },
     )
     await session.commit()
@@ -607,8 +613,9 @@ async def force_refund(
             "before_status": before_status,
             "after_status": deal.status.value,
             "currency": currency.code,
-            "locked": float(locked),
-            "refunded": float(refunded),
+            # M-23: keep Numeric(18,8) precision in the JSONB audit trail.
+            "locked": str(locked),
+            "refunded": str(refunded),
         },
     )
     await session.commit()
@@ -673,9 +680,10 @@ async def split_deal(
             "after_status": deal.status.value,
             "currency": currency.code,
             "buyer_percent": body.buyer_percent,
-            "buyer_share": float(buyer_share),
-            "seller_share": float(seller_share),
-            "locked": float(locked),
+            # M-23: keep Numeric(18,8) precision in the JSONB audit trail.
+            "buyer_share": str(buyer_share),
+            "seller_share": str(seller_share),
+            "locked": str(locked),
         },
     )
     await session.commit()
@@ -805,16 +813,20 @@ async def delete_deal(
     deal = await _get_deal_or_404(session, deal_id, lock=True)
     currency = await session.get(Currency, deal.currency_id) if deal.currency_id else None
 
-    snapshot = {
+    # M-23: store amount columns as strings in the JSONB audit payload so
+    # the full ``Numeric(18,8)`` precision survives. The previous
+    # ``float(...)`` cast silently dropped trailing satoshi on large
+    # BTC deals, which made the snapshot unsafe to use for reconciliation.
+    snapshot: dict[str, object] = {
         "id": deal.id,
         "status": deal.status.value,
         "buyer_id": deal.buyer_id,
         "seller_id": deal.seller_id,
-        "sum": float(deal.sum),
+        "sum": str(deal.sum) if deal.sum is not None else None,
         "currency": currency.code if currency else None,
-        "amount": float(deal.amount) if deal.amount is not None else None,
+        "amount": str(deal.amount) if deal.amount is not None else None,
         "commission_amount": (
-            float(deal.commission_amount) if deal.commission_amount is not None else None
+            str(deal.commission_amount) if deal.commission_amount is not None else None
         ),
         "pay_commission": deal.pay_commission.value,
         "created_at": deal.created_at.isoformat() if deal.created_at else None,
@@ -833,12 +845,18 @@ async def delete_deal(
         else:
             locked_pot = amt
         buyer_balance = await get_or_create_balance(session, deal.buyer_id, currency.id)
-        buyer_balance.locked = float(
-            max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked_pot)
-        )
-        buyer_balance.amount = float(Decimal(str(buyer_balance.amount)) + locked_pot)
+        # M-23: assign ``Decimal`` directly to the ``Numeric(18,8)``
+        # columns. The previous ``float(...)`` wrapper round-tripped
+        # through float64 and dropped the last few satoshi units on
+        # large BTC balances; this matches the canonical pattern in
+        # ``services_deals.py``.
+        buyer_balance.locked = max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked_pot)
+        buyer_balance.amount = Decimal(str(buyer_balance.amount)) + locked_pot
         refunded = locked_pot
-        snapshot["refunded"] = float(refunded)
+        # Audit payload stays JSON-safe via ``str`` so the trail keeps
+        # full Decimal precision (the JSON encoder used by the audit
+        # log will store the value verbatim).
+        snapshot["refunded"] = str(refunded)
 
     # Clean up dependent rows: messages reference the deal via FK.
     await session.execute(DealMessage.__table__.delete().where(DealMessage.deal_id == deal.id))
