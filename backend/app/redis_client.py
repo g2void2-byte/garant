@@ -27,14 +27,18 @@ async def get_redis() -> Redis | None:
     """Return a cached Redis client or ``None`` when unavailable.
 
     Safe to call from anywhere — the first hit performs a single ``PING``
-    to validate connectivity. Subsequent hits return the cached client
-    (or cached ``None`` if the first hit failed).
+    to validate connectivity. Subsequent hits return the cached client.
+
+    If the initial connection failed we leave ``_resolved`` ``False`` so
+    the next caller retries: a transient Redis outage at startup would
+    otherwise wedge the process in "fall back to in-memory" mode
+    forever and require a restart to recover.
     """
     global _client, _resolved
     if _resolved:
         return _client
-    _resolved = True
     if not settings.redis_url:
+        _resolved = True
         return None
     try:
         import redis.asyncio as aioredis
@@ -42,6 +46,7 @@ async def get_redis() -> Redis | None:
         c = aioredis.from_url(settings.redis_url, decode_responses=True)
         await c.ping()
         _client = c
+        _resolved = True
         logger.info("redis: connected at %s", _redact_dsn(settings.redis_url))
     except Exception:  # noqa: BLE001
         logger.warning(
@@ -50,6 +55,8 @@ async def get_redis() -> Redis | None:
             exc_info=True,
         )
         _client = None
+        # Deliberately do NOT set ``_resolved = True`` here so the next
+        # call retries the connection.
     return _client
 
 

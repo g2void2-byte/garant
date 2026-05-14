@@ -45,6 +45,7 @@ from ...schemas import (
     AdminWithdrawalListOut,
     AdminWithdrawalOut,
 )
+from ...sql_filters import escape_like_wildcards
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +92,13 @@ async def list_withdrawals(
         except ValueError:
             raise HTTPException(422, f"Неизвестный статус: {status}")
     if q:
-        like = f"%{q}%"
-        stmt = stmt.where(or_(User.username.ilike(like), User.display_name.ilike(like)))
+        like = f"%{escape_like_wildcards(q)}%"
+        stmt = stmt.where(
+            or_(
+                User.username.ilike(like, escape="\\"),
+                User.display_name.ilike(like, escape="\\"),
+            )
+        )
 
     rows = (
         await session.execute(

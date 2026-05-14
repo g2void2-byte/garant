@@ -7,4 +7,4 @@ from a runtime-only attribute.
 
 from __future__ import annotations
 
-BACKEND_VERSION = "1.0.0"
+BACKEND_VERSION = "2.0.0"

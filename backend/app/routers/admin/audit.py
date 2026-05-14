@@ -49,7 +49,7 @@ async def list_audit(
     since: datetime | None = Query(None),
     until: datetime | None = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=500),
+    page_size: int = Query(50, ge=1, le=200),
 ):
     stmt = select(AdminAuditLog, User).outerjoin(User, User.id == AdminAuditLog.actor_id)
     count_stmt = select(func.count()).select_from(AdminAuditLog)

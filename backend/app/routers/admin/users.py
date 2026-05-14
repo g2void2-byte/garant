@@ -52,6 +52,7 @@ from ...schemas import (
     AdminUserListItem,
     AdminUserListOut,
 )
+from ...sql_filters import escape_like_wildcards
 from ...ws import manager as ws_manager
 
 # All admin/users/* endpoints share a single 600/min token-bucket. Apply
@@ -262,10 +263,10 @@ async def list_users(
 
     if q:
         q_clean = q.strip().lstrip("@")
-        like = f"%{q_clean.lower()}%"
+        like = f"%{escape_like_wildcards(q_clean.lower())}%"
         conditions = [
-            func.lower(User.username).like(like),
-            func.lower(User.display_name).like(like),
+            func.lower(User.username).like(like, escape="\\"),
+            func.lower(User.display_name).like(like, escape="\\"),
         ]
         if q_clean.isdigit():
             conditions.append(User.tg_user_id == int(q_clean))

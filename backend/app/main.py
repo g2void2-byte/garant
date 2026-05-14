@@ -4,7 +4,6 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from pathlib import Path as _Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -67,6 +66,18 @@ async def lifespan(app: FastAPI):
         logger.warning(
             "REDIS_URL is empty — rate-limit counters are per-process; "
             "this is OK for development only.",
+        )
+
+    # ``ALLOW_UNSIGNED_INIT_DATA`` skips Telegram HMAC verification so the
+    # TMA can run outside Telegram during local development. Allowing it
+    # in production/staging would let any caller forge an init-data
+    # payload and authenticate as an arbitrary user, so refuse to boot
+    # before we open the listener.
+    if settings.allow_unsigned_init_data and settings.environment in ("production", "staging"):
+        raise RuntimeError(
+            "ALLOW_UNSIGNED_INIT_DATA must not be enabled when ENVIRONMENT is "
+            f"'{settings.environment}'; it disables Telegram HMAC verification "
+            "and is dev-only."
         )
 
     await run_migrations()
@@ -233,7 +244,7 @@ for r in admin_routers:
     app.include_router(r)
 
 # Serve uploaded media files from disk.
-_media_root = _Path(settings.media_root).expanduser().resolve()
+_media_root = Path(settings.media_root).expanduser().resolve()
 _media_root.mkdir(parents=True, exist_ok=True)
 app.mount(
     settings.media_base_url,
