@@ -61,6 +61,31 @@ async def get_or_create_balance(
     return bal
 
 
+async def lock_user_balance(session: AsyncSession, user_id: int, currency_id: int) -> UserBalance:
+    """Return the user's balance row with a ``FOR UPDATE`` row lock held.
+
+    Used by money-moving flows (withdrawal, deal creation) where two
+    concurrent requests must not both pass an ``amount >= price``
+    check. A newly inserted row is implicitly locked by the inserting
+    transaction, so the missing-row branch needs no extra select.
+    """
+    bal = (
+        await session.execute(
+            select(UserBalance)
+            .where(
+                UserBalance.user_id == user_id,
+                UserBalance.currency_id == currency_id,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if bal is None:
+        bal = UserBalance(user_id=user_id, currency_id=currency_id, amount=0, locked=0)
+        session.add(bal)
+        await session.flush()
+    return bal
+
+
 async def list_balances(
     session: AsyncSession, user_id: int
 ) -> list[tuple[Currency, UserBalance | None]]:
@@ -205,7 +230,9 @@ async def create_withdrawal(
             400, f"Минимальная сумма вывода: {currency.min_withdraw} {currency.code}"
         )
 
-    bal = await get_or_create_balance(session, user.id, currency.id)
+    # Row-lock the balance: two concurrent withdrawals must not both
+    # pass the ``amount >= price`` check on the same balance.
+    bal = await lock_user_balance(session, user.id, currency.id)
     if float(bal.amount) < amount:
         raise HTTPException(400, "Недостаточно средств")
 

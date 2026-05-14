@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -125,10 +126,12 @@ async def check_invoice(invoice_id: int, user: CurrentUser, session: SessionDep)
     dependencies=[Depends(_LIMIT_MANUAL_DEPOSIT)],
 )
 async def manual_deposit(body: DepositReq, user: CurrentUser, session: SessionDep):
+    # ``Invoice.provider_invoice_id`` is UNIQUE, so the suffix has to
+    # be globally unique per row — a UUID is the cheapest way.
     inv = Invoice(
         owner_id=user.id,
         provider=InvoiceProvider.cryptobot,
-        provider_invoice_id=f"manual-{user.id}-{body.amount}",
+        provider_invoice_id=f"manual-{user.id}-{body.amount}-{uuid4().hex}",
         amount=body.amount,
         status=InvoiceStatus.pending,
     )
