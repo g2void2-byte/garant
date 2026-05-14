@@ -191,11 +191,17 @@ async def list_broadcasts(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
-    total = (await session.execute(select(func.count()).select_from(Broadcast))).scalar_one()
+    # PR-H (L-10) — hide soft-deleted broadcasts from the list. The
+    # row still exists so the admin audit log entry remains joinable.
+    base_filter = Broadcast.deleted_at.is_(None)
+    total = (
+        await session.execute(select(func.count()).select_from(Broadcast).where(base_filter))
+    ).scalar_one()
     rows = (
         await session.execute(
             select(Broadcast, User)
             .join(User, User.id == Broadcast.actor_id)
+            .where(base_filter)
             .order_by(Broadcast.created_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
@@ -217,9 +223,15 @@ async def delete_broadcast(
     request: Request,
 ):
     b = await session.get(Broadcast, broadcast_id)
-    if b is None:
+    if b is None or b.deleted_at is not None:
+        # Already soft-deleted rows look like 404s to the admin UI;
+        # the row stays for audit-log linkage but isn't a valid target.
         raise HTTPException(404, "Рассылка не найдена")
-    await session.delete(b)
+    # PR-H (L-10) — soft-delete instead of ``session.delete``. The
+    # hard-delete used to orphan the matching ``admin_audit_log`` row
+    # (the FK target vanished, so the action stayed on the audit
+    # screen but its target was un-resolvable).
+    b.deleted_at = utcnow()
     await log_admin_action(
         session,
         actor=admin,

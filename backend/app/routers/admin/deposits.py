@@ -208,7 +208,11 @@ async def refund_deposit(
         raise HTTPException(400, "Недостаточно средств у пользователя для возврата")
 
     bal.amount = Decimal(str(bal.amount)) - Decimal(str(d.amount))
-    d.status = WalletDepositStatus.expired
+    # PR-H (M-16) — was ``WalletDepositStatus.expired``, which
+    # conflated CryptoBot-side invoice expiry with an admin reversal
+    # in the UI badge + analytics filter. ``refunded`` is the
+    # dedicated state for this transition.
+    d.status = WalletDepositStatus.refunded
     d.paid_at = None
 
     await notifier.push(
