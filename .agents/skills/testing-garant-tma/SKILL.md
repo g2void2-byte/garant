@@ -159,9 +159,105 @@ wait_confirm → (both confirm) → confirmed → (buyer completes) → success
 | `/api/deals/{id}/arbitrate` | POST | Arbitrate (query param: reason) |
 | `/api/notifications` | GET | List notifications |
 | `/api/notifications/counters` | GET | Notification counts |
+| `/api/notifications/read-all` | POST | Mark all notifications read |
 | `/api/payments/deposit/invoice` | POST | CryptoBot invoice (needs real token) |
+| `/api/payments/webhook/cryptobot` | POST | CryptoBot webhook (HMAC-SHA256 signed) |
 | `/api/wallet/withdrawals` | POST | **Requires PIN session** (X-Pin-Token header) |
+| `/api/pin/setup` | POST | Set initial PIN (`{"pin":"1234","confirm":"1234"}`) |
+| `/api/pin/check` | POST | Verify PIN (`{"pin":"1234"}`) → returns JWT token |
+| `/api/pin/change` | POST | Change PIN (requires current PIN) |
+| `/api/pin/reset/request` | POST | Request PIN reset code (sent via bot DM) |
+| `/api/pin/reset/confirm` | POST | Confirm PIN reset with code |
+| `/api/pin/status` | GET | Check PIN setup/lock status |
+| `/api/admin/services` | GET | Admin list services (**requires AdminUser**) |
+| `/api/admin/services/{id}/moderate` | POST | Moderate service (**requires AdminUser + TotpUser**) |
+| `/api/admin/withdrawals/{id}/decide` | POST | Approve/reject withdrawal (**requires AdminUser + TotpUser**) |
 | `/ws/notifications` | WS | Real-time notifications |
+
+## Security Testing
+
+### Testing banned/frozen users (C-1)
+
+```bash
+# Ban a user, then verify 403
+docker exec garant-pg psql -U garant -d garant -c "UPDATE users SET is_banned=true WHERE tg_user_id=111"
+curl -s -H "Authorization: tma $BUYER_INIT" http://localhost:8080/api/me
+# Expected: 403 {"detail":"Аккаунт заблокирован"}
+
+# Freeze a user
+docker exec garant-pg psql -U garant -d garant -c "UPDATE users SET is_banned=false, is_frozen=true WHERE tg_user_id=111"
+curl -s -H "Authorization: tma $BUYER_INIT" http://localhost:8080/api/me
+# Expected: 403 {"detail":"Аккаунт заморожен"}
+```
+
+### Testing PIN lock (C-2)
+
+PIN endpoints use `/api/pin/setup` and `/api/pin/check` — NOT `/set` or `/verify`.
+After `pin_max_attempts` (default 3) wrong attempts, the account locks for 60 min (HTTP 423).
+Even the correct PIN returns 423 while locked.
+
+### Testing path traversal (C-3)
+
+The SPA fallback route only activates when `frontend/dist` directory exists.
+For testing, create a minimal dist: `mkdir -p frontend/dist/assets && echo '<html>SPA</html>' > frontend/dist/index.html`
+Then restart the backend so it registers the catch-all route.
+
+```bash
+curl -s http://localhost:8080/..%2F..%2Fetc%2Fpasswd
+# Expected: index.html content, NOT /etc/passwd
+```
+
+### Testing admin endpoints (C-4)
+
+Admin service moderation requires `AdminUser` dependency. Make a test user admin:
+```bash
+docker exec garant-pg psql -U garant -d garant -c "UPDATE users SET is_admin=true WHERE tg_user_id=111"
+```
+The `/moderate` and `/decide` endpoints additionally require `TotpUser` (2FA) — cannot test via simple curl without TOTP setup.
+
+### Testing webhook status validation (H-5)
+
+Sign webhook payloads with HMAC-SHA256 using SHA256(CRYPTOBOT_TOKEN) as key:
+```python
+import hashlib, hmac, json
+secret = 'your-cryptobot-token'
+key = hashlib.sha256(secret.encode()).digest()
+body = json.dumps({'update_type': 'invoice_paid', 'payload': {'invoice_id': 'test-001', 'status': 'pending'}})
+sig = hmac.new(key, body.encode(), hashlib.sha256).hexdigest()
+# Send with header: crypto-pay-api-signature: <sig>
+```
+Webhook with `status != "paid"` returns `{"ok":false,"reason":"status is not paid"}`.
+
+### Testing notification counters (H-11)
+
+To verify the statement mutation fix, create notifications of different types with mixed read/unread states:
+```sql
+INSERT INTO notifications (recipient_id, type, title, body, is_read, created_at) VALUES
+(1, 'deals', 'Deal Read', 'body', true, NOW()),
+(1, 'deals', 'Deal Unread', 'body', false, NOW()),
+(1, 'deposits', 'Dep Read', 'body', true, NOW()),
+(1, 'system', 'Sys Read', 'body', true, NOW());
+```
+Then `GET /api/notifications/counters` should show `deals=2` (not 1). If the mutation bug exists, `deals` would only count unread deals because the `.where(is_read=False)` filter leaks from the unread counter.
+
+### Testing hidden profile (H-12)
+
+```bash
+docker exec garant-pg psql -U garant -d garant -c "UPDATE users SET is_hidden_profile=true WHERE tg_user_id=333"
+curl -s http://localhost:8080/api/users/hiddenuser  # Expected: 404
+curl -s http://localhost:8080/api/users  # hiddenuser should NOT appear
+```
+
+### Testing online status (H-8)
+
+```bash
+# Recently active user → online=true
+docker exec garant-pg psql -U garant -d garant -c "UPDATE users SET last_login_at=NOW() WHERE tg_user_id=222"
+# Inactive user → online=false
+docker exec garant-pg psql -U garant -d garant -c "UPDATE users SET last_login_at=NOW() - interval '1 hour' WHERE tg_user_id=111"
+curl -s http://localhost:8080/api/users/testseller  # online=true
+curl -s http://localhost:8080/api/users/testbuyer   # online=false
+```
 
 ## Frontend Routes
 
@@ -254,3 +350,6 @@ Override DB connection via env vars: `POSTGRES_HOST`, `POSTGRES_PORT`,
 - Telegram WebApp HapticFeedback/BackButton warnings appear in browser console — expected outside Telegram
 - WebSocket connection auto-reconnects with exponential backoff — may see connection closed/reopened in logs
 - The `arbitrate` endpoint uses a query parameter `reason`, not a request body
+- Admin withdrawal `/decide` and service `/moderate` endpoints require TotpUser (2FA) — cannot test via simple curl without TOTP setup
+- `wallet_deposits` table has a NOT NULL `provider` column — direct psql inserts need to include it
+- `wallet_withdrawals` table has NOT NULL `admin_note` column and foreign key constraints on `user_id`/`currency_id` — direct psql inserts must satisfy these
