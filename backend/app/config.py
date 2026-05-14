@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    # Deployment mode. ``production`` enables fail-fast checks for
+    # critical secrets (PIN JWT key, etc.) that would otherwise
+    # silently fall back to derivable values in dev.
+    environment: Literal["development", "test", "staging", "production"] = "development"
 
     bot_token: str = ""
     cryptobot_token: str = ""
@@ -58,9 +65,22 @@ settings = Settings()
 
 
 def pin_secret() -> str:
-    """JWT secret for PIN session tokens. Falls back to bot_token-derived hash."""
+    """JWT secret for PIN session tokens.
+
+    In production / staging this must be set explicitly via
+    ``PIN_JWT_SECRET``. Anything else (dev, test) falls back to a
+    deterministic hash derived from ``BOT_TOKEN`` so local runs
+    don't need a separate secret. The fallback is deliberately
+    blocked in production because compromising ``BOT_TOKEN`` would
+    otherwise compromise every PIN session ever issued.
+    """
     if settings.pin_jwt_secret:
         return settings.pin_jwt_secret
+    if settings.environment in ("production", "staging"):
+        raise RuntimeError(
+            "PIN_JWT_SECRET must be set explicitly when ENVIRONMENT is "
+            f"'{settings.environment}'; refusing to derive it from BOT_TOKEN."
+        )
     import hashlib
 
     seed = (settings.bot_token or "garant-dev-pin-secret").encode()

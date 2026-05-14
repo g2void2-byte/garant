@@ -150,6 +150,14 @@ RLServiceComment = Annotated[None, Depends(rate_limit("service-comment", limit=1
 # leaked/stolen admin session before the entire DB walks out the door.
 RLAdmin = Annotated[None, Depends(rate_limit("admin", limit=600, window=60))]
 
+# Browse-style reads (catalog of categories, reviews about a user, the
+# support contact list). Limits are generous because these are normal
+# navigation calls, but tight enough to refuse a scraper that wants
+# every user's review log or the full admin/arbiter directory.
+RLCategories = Annotated[None, Depends(rate_limit("categories", limit=120, window=60))]
+RLReviewsList = Annotated[None, Depends(rate_limit("reviews-list", limit=60, window=60))]
+RLSupport = Annotated[None, Depends(rate_limit("support", limit=60, window=60))]
+
 
 __all__ = [
     "User",
@@ -164,4 +172,7 @@ __all__ = [
     "RLDealMessage",
     "RLServiceComment",
     "RLAdmin",
+    "RLCategories",
+    "RLReviewsList",
+    "RLSupport",
 ]

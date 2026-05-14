@@ -3,15 +3,20 @@ from __future__ import annotations
 from fastapi import APIRouter
 from sqlalchemy import func, select
 
-from ..deps import SessionDep
+from ..deps import CurrentUser, SessionDep
 from ..models import Category, Service
+from ..rate_limit import RLCategories
 from ..schemas import CategoryOut
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
 
 
 @router.get("", response_model=list[CategoryOut])
-async def list_categories(session: SessionDep):
+async def list_categories(
+    session: SessionDep,
+    _user: CurrentUser,
+    _rl: RLCategories,
+):
     count_sub = (
         select(func.count(Service.id))
         .where(Service.category_id == Category.id)

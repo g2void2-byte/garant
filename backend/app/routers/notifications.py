@@ -32,15 +32,11 @@ async def list_notifications(
 async def get_counters(user: CurrentUser, session: SessionDep):
     base_filter = Notification.recipient_id == user.id
     all_count = (
-        await session.execute(
-            select(func.count(Notification.id)).where(base_filter)
-        )
+        await session.execute(select(func.count(Notification.id)).where(base_filter))
     ).scalar() or 0
     unread = (
         await session.execute(
-            select(func.count(Notification.id)).where(
-                base_filter, Notification.is_read.is_(False)
-            )
+            select(func.count(Notification.id)).where(base_filter, Notification.is_read.is_(False))
         )
     ).scalar() or 0
     deals = (
