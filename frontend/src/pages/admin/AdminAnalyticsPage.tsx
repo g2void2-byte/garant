@@ -9,8 +9,8 @@ import {
   useAdminAnalyticsSeries,
   useAdminAnalyticsTop,
 } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
 import type { AdminAnalyticsSeriesPointDto } from "@/api/types";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 /**
  * `/admin/analytics` — KPI cards, 30-day sparklines, top-user lists.
@@ -21,15 +21,12 @@ import type { AdminAnalyticsSeriesPointDto } from "@/api/types";
  */
 export default function AdminAnalyticsPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const kpi = useAdminAnalyticsKpi();
   const series = useAdminAnalyticsSeries();
   const top = useAdminAnalyticsTop();
 
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>

@@ -35,6 +35,7 @@ import { useMe } from "@/api/hooks";
 import type { AdminUserDetailDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 /**
  * Continental admin user detail screen.
@@ -58,10 +59,8 @@ export default function AdminUserDetailPage() {
     Number.isFinite(userId) ? userId : undefined,
   );
 
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
 
   if (!Number.isFinite(userId)) {
     return (

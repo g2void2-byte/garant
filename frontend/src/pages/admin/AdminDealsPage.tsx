@@ -9,9 +9,9 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { useAdminDeals } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
 import { parseDecimal } from "@/lib/format";
 import type { AdminDealListItemDto, AdminListDealsQuery } from "@/api/types";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 const STATUS_LABEL: Record<string, string> = {
   any: "Все",
@@ -38,7 +38,6 @@ const STATUSES = Object.keys(STATUS_LABEL) as Array<keyof typeof STATUS_LABEL>;
  */
 export default function AdminDealsPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const [params, setParams] = useSearchParams();
   const [filterOpen, setFilterOpen] = useState(false);
   const [draftCurrency, setDraftCurrency] = useState(params.get("currency") ?? "");
@@ -65,10 +64,8 @@ export default function AdminDealsPage() {
   };
   const { data, isLoading } = useAdminDeals(query);
 
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
 
   const update = (next: Record<string, string | number | boolean | undefined | null>) => {
     const sp = new URLSearchParams(params);

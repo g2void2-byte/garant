@@ -17,20 +17,17 @@ import {
   useAdminUpsertCategory,
   useAdminUpsertCurrency,
 } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
 import type {
   AdminCategoryDto,
   AdminCurrencyDto,
 } from "@/api/types";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 export default function AdminTaxonomyPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const [tab, setTab] = useState<"categories" | "currencies">("categories");
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
   return (
     <Page showBack onBack={() => navigate("/admin")}>
       <Header title="Таксономия" />

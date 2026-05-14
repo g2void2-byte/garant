@@ -1,0 +1,80 @@
+name: Security
+
+# Warn-only security scans. Runs in parallel with the main ``ci``
+# workflow on every push / PR, but every step uses
+# ``continue-on-error: true`` so a finding never blocks a merge. Once
+# the team triages the initial backlog the ``continue-on-error`` flags
+# can be flipped to ``false`` to escalate to a hard gate.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  backend-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install scan tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit pip-audit
+
+      # Bandit: AST-based static analysis for common Python security
+      # issues (sql injection patterns, weak hash use, hardcoded
+      # secrets, etc). Tests are excluded because they intentionally
+      # use insecure inputs / hardcoded passwords.
+      - name: Bandit (warn-only)
+        continue-on-error: true
+        run: |
+          bandit -r backend/app -ll -ii -x backend/app/tests || true
+
+      # pip-audit: checks every installed package against the PyPI
+      # advisory database. We install the project (without dev extras)
+      # to limit the scan to the runtime dependency set, and
+      # ``--skip-editable`` tells pip-audit to ignore the local
+      # ``garant`` package itself (not published on PyPI, so the
+      # advisory lookup would error out).
+      - name: pip-audit (warn-only)
+        continue-on-error: true
+        run: |
+          pip install -e .
+          pip-audit --strict --skip-editable --progress-spinner=off || true
+
+  frontend-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+
+      # ``npm audit`` reports known vulns in the locked dependency
+      # tree. ``--audit-level=high`` filters out low/moderate noise so
+      # the warning surface stays useful.
+      - name: npm audit (warn-only)
+        continue-on-error: true
+        run: |
+          npm audit --audit-level=high || true

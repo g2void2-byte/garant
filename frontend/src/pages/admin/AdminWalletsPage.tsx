@@ -14,9 +14,9 @@ import {
   useAdminCurrencies,
   useAdminWallets,
 } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
 import { parseDecimal } from "@/lib/format";
 import type { AdminWalletListItemDto } from "@/api/types";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 /**
  * `/admin/wallets` — user-balance inspector + manual credit/debit.
@@ -28,17 +28,14 @@ import type { AdminWalletListItemDto } from "@/api/types";
  */
 export default function AdminWalletsPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const [q, setQ] = useState("");
   const [draftQ, setDraftQ] = useState("");
   const [page, setPage] = useState(1);
   const { data, isLoading } = useAdminWallets({ q, page });
   const [target, setTarget] = useState<AdminWalletListItemDto | null>(null);
 
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>

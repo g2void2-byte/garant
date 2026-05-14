@@ -11,8 +11,8 @@ import {
   useAdminDecideWithdrawal,
   useAdminWithdrawals,
 } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
 import { parseDecimal } from "@/lib/format";
+import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 const STATUSES = ["pending", "approved", "rejected", "sent"] as const;
 type Status = (typeof STATUSES)[number];
@@ -27,16 +27,13 @@ type Status = (typeof STATUSES)[number];
  */
 export default function AdminWithdrawalsPage() {
   const navigate = useNavigate();
-  const { data: me } = useMe();
   const [status, setStatus] = useState<Status>("pending");
   const { data, isLoading } = useAdminWithdrawals({ status });
   const decide = useAdminDecideWithdrawal();
   const toast = useToast();
 
-  if (me && !me.is_admin) {
-    navigate("/search", { replace: true });
-    return null;
-  }
+  const __guard = useAdminRedirect();
+  if (!__guard.shouldRender) return null;
 
   const counters = data?.counters ?? {};
 
