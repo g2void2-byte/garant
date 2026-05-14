@@ -20,6 +20,7 @@ from sqlalchemy import select
 from ...admin_audit import log_admin_action
 from ...auth_2fa import TotpUser
 from ...deps import AdminUser, SessionDep
+from ...maintenance import invalidate_cache as invalidate_maintenance_cache
 from ...models import AppSettings
 from ...rate_limit import rate_limit
 from ...schemas import AdminSettingsOut, AdminSettingsUpdateIn
@@ -110,4 +111,9 @@ async def update_settings(
     )
     await session.commit()
     await session.refresh(row)
+    # Drop the in-process maintenance cache so the toggle takes effect
+    # on this worker immediately. Other workers / processes catch up
+    # within the cache TTL on their own.
+    if "maintenance_enabled" in after or "maintenance_message" in after:
+        invalidate_maintenance_cache()
     return _to_out(row)

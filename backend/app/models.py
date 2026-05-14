@@ -156,6 +156,15 @@ class User(Base):
     # ``get_current_user`` on every authenticated request.
     last_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # "Sessions seen by the API" — bumped on the first authenticated
+    # request after a quiet window of ``deps._LAST_LOGIN_DEBOUNCE``
+    # (5 min). NOT a literal Telegram login event nor a per-request
+    # counter: a user pulling-to-refresh five times in a minute still
+    # adds 1, a user coming back the next day adds 1 more. The admin
+    # panel still surfaces this as "Логинов" because that label maps
+    # cleanly onto the debounced semantics; if the debounce window
+    # ever changes, update both the column comment and the admin
+    # copy.
     login_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # Admin PR-A — aggregate stats editable by an admin via /admin/users/:id/stats
     deposit_total: Mapped[float] = mapped_column(Numeric(14, 2), default=0, server_default="0")

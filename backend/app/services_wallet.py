@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -159,7 +160,9 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
         return deposit
 
     bal = await get_or_create_balance(session, deposit.user_id, deposit.currency_id)
-    bal.amount = float(bal.amount) + float(deposit.amount)
+    # See M5 in services_deals._debit for why this stays Decimal end-
+    # to-end instead of round-tripping through ``float``.
+    bal.amount = Decimal(str(bal.amount)) + Decimal(str(deposit.amount))
     deposit.status = WalletDepositStatus.paid
     deposit.paid_at = datetime.utcnow()
     await session.commit()
@@ -233,11 +236,17 @@ async def create_withdrawal(
     # Row-lock the balance: two concurrent withdrawals must not both
     # pass the ``amount >= price`` check on the same balance.
     bal = await lock_user_balance(session, user.id, currency.id)
-    if float(bal.amount) < amount:
+    amount_d = Decimal(str(amount))
+    current = Decimal(str(bal.amount))
+    if current < amount_d:
         raise HTTPException(400, "Недостаточно средств")
 
-    bal.amount = float(bal.amount) - amount
-    bal.locked = float(bal.locked) + amount
+    # Decimal end-to-end: ``Numeric(18,8)`` accepts Decimal natively;
+    # round-tripping through ``float`` (the previous M5 buggy path)
+    # drops the last 2-3 significant digits at the 10^10 scale that
+    # USDT can hit.
+    bal.amount = current - amount_d
+    bal.locked = Decimal(str(bal.locked)) + amount_d
 
     withdrawal = WalletWithdrawal(
         user_id=user.id,
@@ -277,7 +286,7 @@ async def create_withdrawal(
             withdrawal.status = WalletWithdrawStatus.sent
             withdrawal.processed_at = datetime.utcnow()
             withdrawal.admin_note = f"cryptobot_transfer_id={tr.transfer_id}"
-            bal.locked = float(max(0.0, float(bal.locked) - float(amount)))
+            bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - amount_d)
             await session.commit()
             await session.refresh(withdrawal)
             await notifier.push(

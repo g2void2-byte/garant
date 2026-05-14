@@ -11,11 +11,20 @@ blocked.
 
 Implemented as a FastAPI middleware so it sits in front of route
 dependencies and short-circuits before any expensive work.
+
+The middleware caches the flag in-process with a short TTL so a busy
+endpoint doesn't open a fresh DB session per write. The cache is
+invalidated explicitly by the admin settings PATCH handler so toggling
+the flag takes effect immediately for the admin who flipped it;
+peer-instance staleness is bounded by ``_TTL_SECONDS`` (other workers
+catch up within at most that window).
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from typing import Awaitable, Callable
 
 from fastapi import Request
@@ -48,29 +57,87 @@ _ALWAYS_ALLOWED_PREFIXES = (
 )
 
 
+# ── In-process cache ───────────────────────────────────
+#
+# The cache stores ``(expires_at, enabled, message)``. ``expires_at``
+# is the monotonic ``time.monotonic()`` deadline after which the entry
+# is considered stale and the next call refreshes from the DB. The
+# admin "settings.update" handler calls :func:`invalidate_cache` after
+# committing, so a toggle is reflected on the same process immediately;
+# peers refresh within ``_TTL_SECONDS``.
+
+_TTL_SECONDS = 30.0
+
+_cache: tuple[float, bool, str] | None = None
+_cache_lock = asyncio.Lock()
+
+
+def invalidate_cache() -> None:
+    """Drop the cached maintenance flag.
+
+    Called by the admin settings PATCH handler after committing a
+    change so the next request on the same worker re-reads the row
+    instead of waiting up to ``_TTL_SECONDS`` for the TTL to expire.
+    """
+    global _cache
+    _cache = None
+
+
+async def _load_from_db() -> tuple[bool, str]:
+    """Fetch the maintenance flag + message directly. No caching."""
+    async with async_session() as session:
+        row = (
+            await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
+        ).scalar_one_or_none()
+    if row is None:
+        return False, ""
+    return bool(row.maintenance_enabled), row.maintenance_message or ""
+
+
+async def _get_maintenance() -> tuple[bool, str]:
+    """Return ``(enabled, message)`` from cache or DB.
+
+    Wraps the refresh in an ``asyncio.Lock`` so a thundering herd of
+    concurrent writes during cold-cache doesn't open ``N`` sessions in
+    parallel.
+    """
+    global _cache
+    now = time.monotonic()
+    cached = _cache
+    if cached is not None and cached[0] > now:
+        return cached[1], cached[2]
+    async with _cache_lock:
+        cached = _cache
+        if cached is not None and cached[0] > time.monotonic():
+            return cached[1], cached[2]
+        try:
+            enabled, message = await _load_from_db()
+        except Exception:
+            logger.exception("maintenance middleware: settings lookup failed")
+            # Fail open: don't block writes if the DB is down. The
+            # entry is still cached briefly so we don't hammer a
+            # failing DB; pick a short TTL on error so recovery is
+            # quick.
+            _cache = (time.monotonic() + 1.0, False, "")
+            return False, ""
+        _cache = (time.monotonic() + _TTL_SECONDS, enabled, message)
+        return enabled, message
+
+
 async def maintenance_middleware(request: Request, call_next: Callable[[Request], Awaitable]):
     """Block state-changing calls when maintenance mode is on."""
     method = request.method.upper()
     path = request.url.path
 
-    # Fast-path: read-only or allow-listed paths bypass the DB lookup.
+    # Fast-path: read-only or allow-listed paths bypass even the cache
+    # lookup.
     if method in _READONLY_METHODS:
         return await call_next(request)
     if any(path.startswith(prefix) for prefix in _ALWAYS_ALLOWED_PREFIXES):
         return await call_next(request)
 
-    # One quick singleton lookup. The AppSettings row is created by the
-    # seed script; the middleware no-ops if it's missing for any reason.
-    try:
-        async with async_session() as session:
-            row = (
-                await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
-            ).scalar_one_or_none()
-    except Exception:
-        logger.exception("maintenance middleware: settings lookup failed")
-        return await call_next(request)
-
-    if row is None or not row.maintenance_enabled:
+    enabled, message = await _get_maintenance()
+    if not enabled:
         return await call_next(request)
 
     # Admin /api/admin/* paths are in _ALWAYS_ALLOWED_PREFIXES so admins
@@ -78,6 +145,6 @@ async def maintenance_middleware(request: Request, call_next: Callable[[Request]
     # respond 503 with the configured message.
     return JSONResponse(
         status_code=503,
-        content={"detail": row.maintenance_message or "Сервис на технических работах."},
+        content={"detail": message or "Сервис на технических работах."},
         headers={"Retry-After": "60"},
     )

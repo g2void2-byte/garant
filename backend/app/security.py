@@ -39,7 +39,18 @@ def verify_init_data(init_data: str) -> dict:
     auth_date_str = parsed.get("auth_date", [None])[0]
     if auth_date_str:
         auth_date = int(auth_date_str)
-        if time.time() - auth_date > 86400:
+        now = time.time()
+        # Reject ``auth_date`` that's far in the future too. HMAC
+        # makes a forgery impossible from a malicious actor, but a
+        # legitimate-but-misconfigured client (clock badly skewed
+        # ahead, or a Telegram-side bug stamping the wrong epoch)
+        # would otherwise produce a token that's "valid forever" by
+        # our own ``time.time() - auth_date`` arithmetic. 5 minutes
+        # of forward drift is enough to absorb NTP wobble without
+        # admitting tokens that are de-facto un-aged.
+        if auth_date - now > 300:
+            raise InitDataError("init data auth_date is in the future")
+        if now - auth_date > 86400:
             raise InitDataError("init data expired")
 
     user_json = parsed.get("user", [None])[0]

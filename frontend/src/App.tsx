@@ -81,9 +81,14 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
         <PinGate>
-          <LiveNotifications />
           <MaintenanceBanner />
           <BrowserRouter>
+            {/* LiveNotifications must live *inside* BrowserRouter so
+                future toast-click handlers can call ``useNavigate``
+                to jump straight to ``/deals/:id`` etc. Outside the
+                router the hook is unreachable and we'd silently lose
+                the navigation. */}
+            <LiveNotifications />
             <div className="min-h-full app-container">
               <Suspense fallback={<PageFallback />}>
                 <Routes>

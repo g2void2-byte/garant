@@ -198,7 +198,10 @@ async def adjust_user_balance(
             400,
             f"Недостаточно средств: текущий баланс {before_amount}, корректировка {delta}",
         )
-    bal.amount = float(new_amount)
+    # M5: persist as Decimal so the ``Numeric(18,8)`` precision is
+    # preserved end-to-end — admin adjustments on the BTC/USDT side
+    # otherwise lose the last few sat / cents on every save.
+    bal.amount = new_amount
 
     await log_admin_action(
         session,

@@ -78,10 +78,16 @@ async def _debit(
     # Row-lock the balance: two concurrent ``create_deal`` calls must
     # not both pass the ``amount >= locked`` check on the same balance.
     bal = await lock_user_balance(session, user_id, currency_id)
-    if Decimal(str(bal.amount)) < amount:
+    current = Decimal(str(bal.amount))
+    if current < amount:
         raise ValueError("Недостаточно средств")
-    bal.amount = float(Decimal(str(bal.amount)) - amount)
-    bal.locked = float(Decimal(str(bal.locked)) + amount)
+    # Persist as Decimal so SQLAlchemy's ``Numeric(18,8)`` keeps the
+    # full 8-fractional-digit precision. Round-tripping through
+    # ``float()`` here was the M5 finding — for crypto amounts at the
+    # 10^10 scale a ``float`` re-encode drops the last 2-3 significant
+    # digits, and the *next* read-modify-write compounds the loss.
+    bal.amount = current - amount
+    bal.locked = Decimal(str(bal.locked)) + amount
     return bal
 
 
@@ -89,8 +95,8 @@ async def _refund(
     session: AsyncSession, user_id: int, currency_id: int, amount: Decimal
 ) -> UserBalance:
     bal = await get_or_create_balance(session, user_id, currency_id)
-    bal.locked = float(max(Decimal(0), Decimal(str(bal.locked)) - amount))
-    bal.amount = float(Decimal(str(bal.amount)) + amount)
+    bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - amount)
+    bal.amount = Decimal(str(bal.amount)) + amount
     return bal
 
 
@@ -110,8 +116,8 @@ async def _refund_principal_keep_commission(
     / admin force-refund).
     """
     bal = await get_or_create_balance(session, user_id, currency_id)
-    bal.locked = float(max(Decimal(0), Decimal(str(bal.locked)) - locked))
-    bal.amount = float(Decimal(str(bal.amount)) + principal)
+    bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - locked)
+    bal.amount = Decimal(str(bal.amount)) + principal
     return bal
 
 
@@ -130,9 +136,9 @@ async def _release_to(
     pool. The platform's own ledger isn't modeled in PR-3.
     """
     payer = await get_or_create_balance(session, payer_id, currency_id)
-    payer.locked = float(max(Decimal(0), Decimal(str(payer.locked)) - locked_amount))
+    payer.locked = max(Decimal(0), Decimal(str(payer.locked)) - locked_amount)
     payee = await get_or_create_balance(session, payee_id, currency_id)
-    payee.amount = float(Decimal(str(payee.amount)) + payout_amount)
+    payee.amount = Decimal(str(payee.amount)) + payout_amount
 
 
 # ── Lifecycle ──────────────────────────────────────────
