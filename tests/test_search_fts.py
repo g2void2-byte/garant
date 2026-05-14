@@ -37,6 +37,23 @@ def test_tsquery_builder_returns_none_for_empty_or_punct_only():
     assert build_prefix_tsquery("?!.,") is None
 
 
+def test_tsquery_builder_strips_tsquery_meta_chars():
+    """User-supplied ``!|&():*<>'\\\\`` must not survive into the tsquery.
+
+    Without sanitisation any of these would be interpreted as operators
+    or term weights by ``to_tsquery`` — a malicious query like
+    ``"x:*&y"`` could otherwise inject extra AND clauses.
+    """
+    assert build_prefix_tsquery("foo!bar") == "foobar:*"
+    assert build_prefix_tsquery("a|b") == "ab:*"
+    assert build_prefix_tsquery("(boom)") == "boom:*"
+    assert build_prefix_tsquery("a:b") == "ab:*"
+    assert build_prefix_tsquery("a*b") == "ab:*"
+    assert build_prefix_tsquery("'drop'") == "drop:*"
+    # Backslash + chained operators — the worst case.
+    assert build_prefix_tsquery("\\foo & bar:*") == "foo:* & bar:*"
+
+
 # ── /api/services?q= ───────────────────────────────────────────────────────
 
 

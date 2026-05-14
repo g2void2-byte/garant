@@ -60,6 +60,7 @@ from ...schemas import (
     DealMessageOut,
 )
 from ...services_wallet import get_or_create_balance
+from ...time_utils import utcnow
 
 router = APIRouter(
     prefix="/api/admin/deals",
@@ -532,11 +533,11 @@ async def force_release(
     before_status = deal.status.value
     locked, payout = await _release_locked_to_seller(session, deal, currency)
     deal.status = DealStatus.resolved_for_seller
-    deal.completed_at = datetime.utcnow()
+    deal.completed_at = utcnow()
     deal.arbitration_resolved_by = admin.id
     deal.arbitration_resolution = "seller"
     if deal.arbitration_resolved_at is None:
-        deal.arbitration_resolved_at = datetime.utcnow()
+        deal.arbitration_resolved_at = utcnow()
 
     await _audit(
         session=session,
@@ -592,11 +593,11 @@ async def force_refund(
     before_status = deal.status.value
     locked, refunded = await _refund_locked_to_buyer(session, deal, currency)
     deal.status = DealStatus.resolved_for_buyer
-    deal.completed_at = datetime.utcnow()
+    deal.completed_at = utcnow()
     deal.arbitration_resolved_by = admin.id
     deal.arbitration_resolution = "buyer"
     if deal.arbitration_resolved_at is None:
-        deal.arbitration_resolved_at = datetime.utcnow()
+        deal.arbitration_resolved_at = utcnow()
 
     await _audit(
         session=session,
@@ -658,11 +659,11 @@ async def split_deal(
         if body.buyer_percent >= 50
         else DealStatus.resolved_for_seller
     )
-    deal.completed_at = datetime.utcnow()
+    deal.completed_at = utcnow()
     deal.arbitration_resolved_by = admin.id
     deal.arbitration_resolution = "buyer" if body.buyer_percent >= 50 else "seller"
     if deal.arbitration_resolved_at is None:
-        deal.arbitration_resolved_at = datetime.utcnow()
+        deal.arbitration_resolved_at = utcnow()
 
     await _audit(
         session=session,

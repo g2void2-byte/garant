@@ -20,6 +20,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from ..deps import CurrentUser, SessionDep
 from ..models import Deal, DealMessage, Media
@@ -101,11 +102,17 @@ async def list_messages(
     session: SessionDep,
 ) -> list[DealMessageOut]:
     await _load_deal_or_403(session, deal_id, user)
+    # ``DealMessage.sender`` already declares ``lazy="selectin"`` on the
+    # model, so the senders are batched into a single follow-up SELECT
+    # — calling ``selectinload`` explicitly here is belt-and-braces:
+    # if the model's lazy strategy ever changes, the explicit option
+    # keeps this hot endpoint O(1) queries instead of O(messages).
     rows = (
         (
             await session.execute(
                 select(DealMessage)
                 .where(DealMessage.deal_id == deal_id)
+                .options(selectinload(DealMessage.sender))
                 .order_by(DealMessage.created_at.asc(), DealMessage.id.asc())
             )
         )

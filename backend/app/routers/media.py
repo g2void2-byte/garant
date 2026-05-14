@@ -11,7 +11,6 @@ Allowed kinds are configured via ``settings.media_allowed_kinds``.
 from __future__ import annotations
 
 import secrets
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -21,6 +20,7 @@ from ..deps import CurrentUser, SessionDep
 from ..models import Media
 from ..rate_limit import RLMediaUpload
 from ..schemas import MediaOut
+from ..time_utils import utcnow
 
 router = APIRouter(prefix="/api/media", tags=["media"])
 
@@ -101,7 +101,7 @@ async def upload_media(
     folder = root / kind
     folder.mkdir(parents=True, exist_ok=True)
 
-    name = f"{user.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(6)}{ext}"
+    name = f"{user.id}-{utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(6)}{ext}"
     path = folder / name
     path.write_bytes(data)
 

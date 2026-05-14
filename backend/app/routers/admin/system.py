@@ -14,7 +14,6 @@ treat it as a privileged action on par with treasury withdrawals.
 from __future__ import annotations
 
 import time
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
@@ -28,6 +27,7 @@ from ...models import User
 from ...rate_limit import rate_limit
 from ...redis_client import get_redis
 from ...schemas import AdminSystemStatusOut
+from ...time_utils import utcnow
 
 router = APIRouter(
     prefix="/api/admin/system",
@@ -36,7 +36,7 @@ router = APIRouter(
 )
 
 
-_STARTED_AT = datetime.utcnow()
+_STARTED_AT = utcnow()
 
 
 @router.get("/status", response_model=AdminSystemStatusOut)
@@ -76,7 +76,7 @@ async def status(_admin: AdminUser, session: SessionDep):
         ),
         backend_version=app_version.BACKEND_VERSION,
         started_at=_STARTED_AT,
-        uptime_seconds=(datetime.utcnow() - _STARTED_AT).total_seconds(),
+        uptime_seconds=(utcnow() - _STARTED_AT).total_seconds(),
     )
 
 

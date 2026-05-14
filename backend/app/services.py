@@ -11,7 +11,6 @@ Deal lifecycle moved to :mod:`backend.app.services_deals` (multi-currency,
 
 from __future__ import annotations
 
-from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -27,6 +26,7 @@ from .models import (
     Review,
     User,
 )
+from .time_utils import utcnow
 
 # Deal states in which a counter-party review is allowed.
 REVIEWABLE_DEAL_STATUSES = frozenset(
@@ -129,7 +129,7 @@ async def credit_invoice(
         return invoice
 
     invoice.status = InvoiceStatus.paid
-    invoice.paid_at = datetime.utcnow()
+    invoice.paid_at = utcnow()
 
     owner = await session.get(User, invoice.owner_id)
     if owner:

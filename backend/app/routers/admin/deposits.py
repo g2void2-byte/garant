@@ -16,7 +16,6 @@ the balance change.
 
 from __future__ import annotations
 
-from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -38,6 +37,7 @@ from ...rate_limit import rate_limit
 from ...schemas import AdminDepositListOut, AdminDepositOut, AdminReasonIn
 from ...services_wallet import get_or_create_balance
 from ...sql_filters import escape_like_wildcards
+from ...time_utils import utcnow
 
 router = APIRouter(
     prefix="/api/admin/deposits",
@@ -138,7 +138,7 @@ async def mark_paid(
     bal = await get_or_create_balance(session, d.user_id, d.currency_id)
     bal.amount = Decimal(str(bal.amount)) + Decimal(str(d.amount))
     d.status = WalletDepositStatus.paid
-    d.paid_at = datetime.utcnow()
+    d.paid_at = utcnow()
 
     await notifier.push(
         session,

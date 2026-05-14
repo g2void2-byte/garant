@@ -18,7 +18,6 @@ identical regardless of who triggers it.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -33,6 +32,7 @@ from ...schemas import (
     AdminArbitrationCounters,
     AdminArbitrationListOut,
 )
+from ...time_utils import utcnow
 from .deals import _to_list_item
 
 router = APIRouter(
@@ -176,5 +176,5 @@ async def claim_arbitration(
         "claimed": True,
         "deal_id": deal.id,
         "arbiter_id": user.id,
-        "claimed_at": datetime.utcnow().isoformat(),
+        "claimed_at": utcnow().isoformat(),
     }
