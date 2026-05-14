@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from ..bot.notify import send_dm
 from ..deps import CurrentUser, PinUser, SessionDep
+from ..rate_limit import RLPin
 from ..services_account import (
     cancel_active,
     confirm_transfer,
@@ -78,8 +79,15 @@ async def transfer_cancel(user: PinUser, session: SessionDep) -> TransferStatusO
 
 @router.post("/confirm", response_model=TransferConfirmOut)
 async def transfer_confirm(
-    body: TransferConfirmIn, user: CurrentUser, session: SessionDep
+    body: TransferConfirmIn,
+    user: CurrentUser,
+    session: SessionDep,
+    _rl: RLPin,
 ) -> TransferConfirmOut:
+    # ``RLPin`` (5/min per caller) caps the request rate at the network
+    # edge; ``confirm_transfer`` enforces an in-DB per-code attempt
+    # counter so an attacker can't churn the 10⁶ keyspace from many
+    # IPs and hijack any active transfer.
     try:
         source = await confirm_transfer(session, user, body.code)
     except ValueError as e:

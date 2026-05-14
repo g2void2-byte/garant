@@ -146,8 +146,16 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
     signature = request.headers.get("crypto-pay-api-signature")
     secret = webhook_secret()
 
-    if secret and not verify_webhook_signature(secret, raw, signature):
-        # Soft-reject: log and 401 so Crypto Pay surfaces the misconfig.
+    # Fail closed: if the bot token is unconfigured we have no way to
+    # verify the signature, so accepting the body would let an
+    # unauthenticated caller credit any local invoice by id. 503 with a
+    # neutral message lets Crypto Pay surface the misconfig in retries
+    # without leaking that the token is empty.
+    if not secret:
+        logger.error("CryptoBot webhook: token not configured — refusing")
+        raise HTTPException(503, "Webhooks disabled (CryptoBot not configured)")
+
+    if not verify_webhook_signature(secret, raw, signature):
         logger.warning("CryptoBot webhook bad signature")
         raise HTTPException(401, "Bad signature")
 

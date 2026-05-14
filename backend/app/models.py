@@ -572,6 +572,10 @@ class AccountTransferCode(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     target_tg_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Counts failed ``confirm_transfer`` attempts against this code so a
+    # caller can't enumerate the 10⁶-keyspace by spamming the endpoint —
+    # see ``services_account.confirm_transfer`` for the threshold.
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     source_user: Mapped[User] = relationship(foreign_keys=[source_user_id], lazy="selectin")
