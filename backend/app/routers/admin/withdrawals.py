@@ -21,7 +21,7 @@ import logging
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from ... import notifier
 from ...admin_audit import log_admin_action
@@ -108,19 +108,28 @@ async def list_withdrawals(
         )
     ).all()
 
-    # Counters across the full table (independent of filters).
-    async def _count(s: WalletWithdrawStatus) -> int:
-        result = await session.execute(
-            select(WalletWithdrawal.id).where(WalletWithdrawal.status == s)
+    # V5-B-9 — counters across the full table (independent of filters).
+    # Pre-fix this issued 4 separate ``SELECT id WHERE status=?`` round
+    # trips and materialised every id in Python just to call ``len()``
+    # on the list — O(N) network + memory per status, for 4 statuses,
+    # on every page load. ``GROUP BY status`` returns one row per
+    # status (4 rows total) in a single round trip; populate any
+    # status that doesn't appear in the result with ``0`` so the
+    # response shape is stable for the frontend tab bar.
+    counter_rows = (
+        await session.execute(
+            select(WalletWithdrawal.status, func.count(WalletWithdrawal.id)).group_by(
+                WalletWithdrawal.status
+            )
         )
-        return len(result.scalars().all())
-
-    counters = {
-        "pending": await _count(WalletWithdrawStatus.pending),
-        "approved": await _count(WalletWithdrawStatus.approved),
-        "sent": await _count(WalletWithdrawStatus.sent),
-        "rejected": await _count(WalletWithdrawStatus.rejected),
-    }
+    ).all()
+    counters: dict[str, int] = {s.value: 0 for s in WalletWithdrawStatus}
+    for status_val, n in counter_rows:
+        # ``status_val`` is a ``WalletWithdrawStatus`` enum when the
+        # column type maps round-trip (default with SQLAlchemy's Enum
+        # adapter); ``getattr(..., "value", str(...))`` is defensive
+        # in case a driver returns the raw string.
+        counters[getattr(status_val, "value", str(status_val))] = int(n)
 
     return AdminWithdrawalListOut(
         items=[_to_out(w, c, u) for w, c, u in rows],
@@ -171,6 +180,21 @@ async def decide_withdrawal(
                     app_settings_env.cryptobot_token,
                     testnet=app_settings_env.cryptobot_testnet,
                 ) as cp:
+                    # V5-B-5 — ``spend_id=f"wd:{w.id}"`` is the
+                    # idempotency key CryptoBot uses to dedupe
+                    # ``transfer`` calls server-side. Per their docs:
+                    # "Transfers with the same ``spend_id`` will be
+                    # processed only once." That's how this auto-send
+                    # path stays safe against a double click on the
+                    # admin Approve button or a retry after a network
+                    # timeout — both retries hit the same ``spend_id``
+                    # and CryptoBot returns the already-processed
+                    # transfer instead of paying out twice. The same
+                    # key is used in
+                    # ``services_wallet.create_withdrawal`` for the
+                    # user-facing auto-mode path; both share the
+                    # ``w.id`` namespace because each withdrawal has
+                    # exactly one ``WalletWithdrawal`` row.
                     tr = await cp.transfer(
                         user_id=user.tg_user_id,
                         asset=currency.code,
@@ -253,6 +277,17 @@ async def decide_withdrawal(
         w.status = WalletWithdrawStatus.rejected
         w.admin_note = body.note or ""
         w.processed_at = utcnow()
+        # V5-B-6 — clear the cool-down timer on rejection. The
+        # ``locked_until`` column tracks when funds become spendable
+        # again after the 24h cool-down (set in
+        # ``services_wallet.create_withdrawal``). On reject we just
+        # restored ``bal.amount`` immediately above, so the cool-down
+        # no longer applies — anything else is a UI lie: the frontend
+        # surfaces ``locked_until`` to mean "your funds are locked
+        # until X" and showing a future timestamp on a row whose funds
+        # are already back in ``amount`` is at best confusing and at
+        # worst makes the user think they were partially refunded.
+        w.locked_until = None
         if currency and user:
             await notifier.push(
                 session,

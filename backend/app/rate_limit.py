@@ -248,6 +248,17 @@ RLSupport = Annotated[None, Depends(rate_limit("support", limit=60, window=60))]
 # 10/min is more than the UI ever does (a single tap per mailbox visit).
 RLMarkAllRead = Annotated[None, Depends(rate_limit("mark-all-read", limit=10, window=60))]
 
+# V5-B-10 — ``GET /api/wallet/deposits/{id}`` hits CryptoBot's
+# ``get_invoices`` for every still-``pending`` deposit, then takes a
+# ``SELECT ... FOR UPDATE`` on the row and possibly credits the
+# balance. Pre-throttle a logged-in client could spin the endpoint at
+# arbitrary rate per deposit_id — wasting our CryptoBot quota and
+# producing constant lock-contention with the canonical webhook
+# path. 2/30s per user is generous enough for the DepositPage's
+# refresh-on-mount + a single user-initiated refresh, while pinning
+# the upstream API rate to ≤4/min/user even under attack.
+RLWalletPoll = Annotated[None, Depends(rate_limit("wallet-poll", limit=2, window=30))]
+
 
 __all__ = [
     "User",
@@ -266,4 +277,5 @@ __all__ = [
     "RLReviewsList",
     "RLSupport",
     "RLMarkAllRead",
+    "RLWalletPoll",
 ]
