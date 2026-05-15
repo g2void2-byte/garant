@@ -97,6 +97,17 @@ async def test_pin_reset_request_does_not_log_plaintext_code(client, caplog, mon
     # to search for in captured log records.
     monkeypatch.setattr(pin_router, "generate_reset_code", lambda: SENTINEL_CODE)
 
+    # Conftest stubs ``notifier._safe_send_dm`` to a noop, but the
+    # ``pin_reset_request`` handler calls ``send_dm`` directly via
+    # ``from ..bot.notify import send_dm``, so the local symbol bound
+    # at module-import time is what we patch. Without this stub the
+    # real aiogram bot would spin up an aiohttp session against a fake
+    # token and crash with "Event loop is closed". Returning True
+    # keeps the handler off its ``logger.warning`` "delivery failed"
+    # branch (which would log only ``user.id`` anyway, but we don't
+    # want to depend on that here).
+    monkeypatch.setattr(pin_router, "send_dm", AsyncMock(return_value=True))
+
     # Override the autouse ``_quiet_logs`` fixture so even DEBUG-level
     # records on these loggers reach caplog. A leak at any level must
     # fail the test.

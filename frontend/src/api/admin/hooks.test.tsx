@@ -109,7 +109,7 @@ function makeHarness() {
 
 function invalidatedKeys(
   spy: ReturnType<typeof spyInvalidate>,
-): readonly unknown[][] {
+): readonly (readonly unknown[])[] {
   return spy.mock.calls
     .map((call) => {
       const arg = call[0] as { queryKey?: readonly unknown[] } | undefined;
