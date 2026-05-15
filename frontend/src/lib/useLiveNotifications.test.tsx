@@ -1,0 +1,168 @@
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { renderHook } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+
+/**
+ * Verifies the React Query cache & toast side-effects of the live
+ * notifications hook. The real WS module is replaced by a mock that
+ * captures the handlers object so each test can drive arbitrary
+ * events through ``onEvent`` and assert the side-effects.
+ */
+
+const wsState = vi.hoisted(() => ({
+  capturedHandlers: null as
+    | null
+    | { onEvent: (e: { event: string; data?: unknown }) => void; onOpen?: () => void; onClose?: () => void },
+  disconnect: vi.fn(),
+}));
+
+vi.mock("@/lib/ws", () => ({
+  connectNotifications: (handlers: {
+    onEvent: (e: { event: string; data?: unknown }) => void;
+    onOpen?: () => void;
+    onClose?: () => void;
+  }) => {
+    wsState.capturedHandlers = handlers;
+    return wsState.disconnect;
+  },
+}));
+
+const hapticSpy = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/tg", () => ({
+  haptic: hapticSpy,
+}));
+
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock("@/components/ui/Toast", () => ({
+  useToast: () => ({ show: toastSpy }),
+}));
+
+import { useLiveNotifications } from "./useLiveNotifications";
+
+function makeWrapper(client: QueryClient) {
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+}
+
+beforeEach(() => {
+  wsState.capturedHandlers = null;
+  wsState.disconnect.mockClear();
+  hapticSpy.mockClear();
+  toastSpy.mockClear();
+});
+
+describe("useLiveNotifications", () => {
+  it("subscribes on mount and unsubscribes on unmount", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { unmount } = renderHook(() => useLiveNotifications(), {
+      wrapper: makeWrapper(qc),
+    });
+    expect(wsState.capturedHandlers).not.toBeNull();
+    expect(wsState.disconnect).not.toHaveBeenCalled();
+    unmount();
+    expect(wsState.disconnect).toHaveBeenCalled();
+  });
+
+  it("appends incoming deal_message to the cached deal thread", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(["deal", 42, "messages"], [{ id: 1, body: "hi" }]);
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "deal_message",
+      data: { id: 2, deal_id: 42, body: "yo" },
+    });
+
+    expect(qc.getQueryData(["deal", 42, "messages"])).toEqual([
+      { id: 1, body: "hi" },
+      { id: 2, deal_id: 42, body: "yo" },
+    ]);
+    expect(hapticSpy).toHaveBeenCalledWith("light");
+    expect(toastSpy).not.toHaveBeenCalled();
+  });
+
+  it("de-dupes deal_message by id (no duplicates on reconnect replay)", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(["deal", 5, "messages"], [{ id: 7, body: "hi" }]);
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "deal_message",
+      data: { id: 7, deal_id: 5, body: "duplicate" },
+    });
+
+    expect(qc.getQueryData(["deal", 5, "messages"])).toEqual([
+      { id: 7, body: "hi" },
+    ]);
+  });
+
+  it("seeds the deal thread when no messages were cached yet", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "deal_message",
+      data: { id: 1, deal_id: 99, body: "first!" },
+    });
+    expect(qc.getQueryData(["deal", 99, "messages"])).toEqual([
+      { id: 1, deal_id: 99, body: "first!" },
+    ]);
+  });
+
+  it("inserts a notification, fires haptic+toast, and invalidates counters", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(["notifications"], [{ id: 1, type: "deals", title: "Old", body: "" }]);
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "notification",
+      data: { id: 2, type: "deals", title: "New deal", body: "Pay attention" },
+    });
+
+    const list = qc.getQueryData(["notifications"]) as { id: number }[];
+    expect(list).toHaveLength(2);
+    expect(list[0].id).toBe(2);
+    expect(hapticSpy).toHaveBeenCalledWith("light");
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "info", title: "New deal" }),
+    );
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["notifications", "counters"] });
+    // deals-typed notification also invalidates deals + deal caches.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deals"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deal"] });
+  });
+
+  it("uses 'success' kind for deposit notifications and invalidates me/payments", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "notification",
+      data: { id: 9, type: "deposits", title: "Зачислено", body: "+50 USDT" },
+    });
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "success", title: "Зачислено" }),
+    );
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["me"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["payments"] });
+  });
+
+  it("ignores events without ``data`` or with unknown event names", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({ event: "notification" });
+    wsState.capturedHandlers!.onEvent({ event: "unknown_event", data: { foo: 1 } });
+
+    expect(toastSpy).not.toHaveBeenCalled();
+    expect(hapticSpy).not.toHaveBeenCalled();
+  });
+});

@@ -152,3 +152,136 @@ describe("minimizeApp", () => {
     expect(() => mod.minimizeApp()).not.toThrow();
   });
 });
+
+describe("haptic", () => {
+  it.each([
+    ["light", "impactOccurred"],
+    ["medium", "impactOccurred"],
+    ["heavy", "impactOccurred"],
+  ] as const)("kind=%s -> %s", async (kind, method) => {
+    const { fake, mod } = await importTgWithFake("ios");
+    mod.haptic(kind);
+    const fb = fake.HapticFeedback as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    expect(fb[method]).toHaveBeenCalled();
+  });
+
+  it.each([
+    ["success"],
+    ["error"],
+    ["warning"],
+  ] as const)("kind=%s routes to notificationOccurred", async (kind) => {
+    const { fake, mod } = await importTgWithFake("ios");
+    mod.haptic(kind);
+    expect(fake.HapticFeedback.notificationOccurred).toHaveBeenCalledWith(kind);
+  });
+
+  it("kind=select routes to selectionChanged", async () => {
+    const { fake, mod } = await importTgWithFake("ios");
+    mod.haptic("select");
+    expect(fake.HapticFeedback.selectionChanged).toHaveBeenCalled();
+  });
+
+  it("is a no-op when Telegram is unavailable", async () => {
+    (window as unknown as { Telegram?: unknown }).Telegram = undefined;
+    vi.resetModules();
+    const mod = await import("./tg");
+    expect(() => mod.haptic("light")).not.toThrow();
+  });
+
+  it("swallows errors thrown by the Telegram global", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { fake, mod } = await importTgWithFake("ios");
+    fake.HapticFeedback.impactOccurred.mockImplementation(() => {
+      throw new Error("legacy client");
+    });
+    expect(() => mod.haptic("light")).not.toThrow();
+  });
+});
+
+describe("getInitData", () => {
+  it("returns Telegram.WebApp.initData when present", async () => {
+    const { fake, mod } = await importTgWithFake("ios");
+    fake.initData = "user=%7B%22id%22%3A1%7D&hash=abc";
+    expect(mod.getInitData()).toBe("user=%7B%22id%22%3A1%7D&hash=abc");
+  });
+
+  it("returns an empty string when Telegram has no initData and no dev fallback exists", async () => {
+    const { mod } = await importTgWithFake("ios");
+    window.localStorage.clear();
+    expect(mod.getInitData()).toBe("");
+  });
+
+  it("falls back to localStorage 'dev_init_data' in DEV builds", async () => {
+    window.localStorage.setItem("dev_init_data", "dev-fallback-token");
+    const { mod } = await importTgWithFake("ios");
+    expect(mod.getInitData()).toBe("dev-fallback-token");
+    window.localStorage.clear();
+  });
+});
+
+describe("getTelegramUser", () => {
+  it("returns the unsafe user when Telegram exposes it", async () => {
+    const { fake, mod } = await importTgWithFake("ios");
+    fake.initDataUnsafe = { user: { id: 42 } };
+    expect(mod.getTelegramUser()).toEqual({ id: 42 });
+  });
+
+  it("returns undefined when Telegram is unavailable", async () => {
+    (window as unknown as { Telegram?: unknown }).Telegram = undefined;
+    vi.resetModules();
+    const mod = await import("./tg");
+    expect(mod.getTelegramUser()).toBeUndefined();
+  });
+});
+
+describe("openTelegramLink", () => {
+  it("delegates to Telegram.WebApp.openTelegramLink when available", async () => {
+    const { fake, mod } = await importTgWithFake("ios");
+    mod.openTelegramLink("https://t.me/test");
+    expect(fake.openTelegramLink).toHaveBeenCalledWith("https://t.me/test");
+  });
+
+  it("falls back to window.open when Telegram is unavailable", async () => {
+    (window as unknown as { Telegram?: unknown }).Telegram = undefined;
+    vi.resetModules();
+    const mod = await import("./tg");
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    mod.openTelegramLink("https://example.com");
+    expect(openSpy).toHaveBeenCalledWith("https://example.com", "_blank");
+    openSpy.mockRestore();
+  });
+});
+
+describe("showBackButton / showMainButton", () => {
+  it("showBackButton wires onClick + show and returns a teardown", async () => {
+    const { fake, mod } = await importTgWithFake("ios");
+    const cb = () => {};
+    const teardown = mod.showBackButton(cb);
+    expect(fake.BackButton.onClick).toHaveBeenCalledWith(cb);
+    expect(fake.BackButton.show).toHaveBeenCalled();
+    teardown();
+    expect(fake.BackButton.offClick).toHaveBeenCalledWith(cb);
+    expect(fake.BackButton.hide).toHaveBeenCalled();
+  });
+
+  it("showBackButton returns a no-op teardown when Telegram is unavailable", async () => {
+    (window as unknown as { Telegram?: unknown }).Telegram = undefined;
+    vi.resetModules();
+    const mod = await import("./tg");
+    const teardown = mod.showBackButton(() => {});
+    expect(() => teardown()).not.toThrow();
+  });
+
+  it("showMainButton configures + binds onClick and returns a teardown", async () => {
+    const { fake, mod } = await importTgWithFake("ios");
+    const cb = () => {};
+    const teardown = mod.showMainButton("Submit", cb);
+    expect(fake.MainButton.setParams).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Submit", is_visible: true, is_active: true }),
+    );
+    expect(fake.MainButton.onClick).toHaveBeenCalledWith(cb);
+    teardown();
+    expect(fake.MainButton.offClick).toHaveBeenCalledWith(cb);
+    expect(fake.MainButton.hide).toHaveBeenCalled();
+  });
+});
