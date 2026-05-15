@@ -11,7 +11,6 @@
  * query cache, toasts on success/error).
  */
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   Edit2,
   MessageSquare,
@@ -73,14 +72,9 @@ export function ServicesSection({ userId }: SectionProps) {
         <p className="text-sm text-text-muted py-2">Нет услуг.</p>
       ) : (
         <ul className="space-y-2">
-          <AnimatePresence initial={false}>
-            {data.map((s, idx) => (
-              <motion.li
+            {data.map((s, _idx) => (
+              <li
                 key={s.id}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ delay: Math.min(idx, 6) * 0.03 }}
                 className="bg-panel-2 rounded-card p-3"
               >
                 <div className="flex items-start justify-between gap-2">
@@ -112,9 +106,8 @@ export function ServicesSection({ userId }: SectionProps) {
                     <Edit2 size={14} />
                   </button>
                 </div>
-              </motion.li>
+              </li>
             ))}
-          </AnimatePresence>
         </ul>
       )}
       <ServiceEditSheet userId={userId} service={editing} onClose={() => setEditing(null)} />
@@ -325,14 +318,9 @@ export function ReviewsSection({ userId }: SectionProps) {
         />
       ) : (
         <ul className="space-y-2">
-          <AnimatePresence initial={false}>
-            {data.map((r, idx) => (
-              <motion.li
+            {data.map((r, _idx) => (
+              <li
                 key={r.id}
-                initial={{ opacity: 0, x: -6 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ delay: Math.min(idx, 6) * 0.03 }}
                 className="bg-panel-2 rounded-card p-3"
               >
                 <div className="flex items-start justify-between gap-2">
@@ -351,9 +339,8 @@ export function ReviewsSection({ userId }: SectionProps) {
                     <Edit2 size={14} />
                   </button>
                 </div>
-              </motion.li>
+              </li>
             ))}
-          </AnimatePresence>
         </ul>
       )}
       <Button
@@ -563,14 +550,9 @@ export function CommentsSection({ userId }: SectionProps) {
         <p className="text-sm text-text-muted py-2">Юзер не оставлял комментариев.</p>
       ) : (
         <ul className="space-y-2">
-          <AnimatePresence initial={false}>
-            {data.map((c, idx) => (
-              <motion.li
+            {data.map((c, _idx) => (
+              <li
                 key={c.id}
-                initial={{ opacity: 0, x: -6 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ delay: Math.min(idx, 6) * 0.03 }}
                 className="bg-panel-2 rounded-card p-3"
               >
                 <div className="flex items-start justify-between gap-2">
@@ -590,9 +572,8 @@ export function CommentsSection({ userId }: SectionProps) {
                     <Edit2 size={14} />
                   </button>
                 </div>
-              </motion.li>
+              </li>
             ))}
-          </AnimatePresence>
         </ul>
       )}
       <CommentEditSheet userId={userId} comment={editing} onClose={() => setEditing(null)} />

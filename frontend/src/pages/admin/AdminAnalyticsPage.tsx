@@ -1,5 +1,4 @@
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Activity, Users, TrendingUp, Wallet } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -134,9 +133,7 @@ function KpiCard({
 }) {
   if (loading) return <Skeleton className="h-16 rounded-card" />;
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
+    <div
       className={`bg-panel rounded-card p-3 ${
         accent === "warning" ? "ring-1 ring-warning/40" : ""
       }`}
@@ -146,7 +143,7 @@ function KpiCard({
         {label}
       </div>
       <div className="text-lg font-bold">{value}</div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -177,9 +174,7 @@ function SparklineCard({
     .join(" ");
   const last = data[data.length - 1]?.value ?? 0;
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
+    <div
       className="bg-panel rounded-card p-3"
     >
       <div className="flex items-baseline justify-between">
@@ -203,7 +198,7 @@ function SparklineCard({
           className="text-accent"
         />
       </svg>
-    </motion.div>
+    </div>
   );
 }
 

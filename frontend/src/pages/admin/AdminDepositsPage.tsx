@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { ArrowDownToLine, RefreshCcw, Check } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -65,12 +64,9 @@ export default function AdminDepositsPage() {
             Депозитов нет
           </p>
         ) : (
-          data?.items.map((d, idx) => (
-            <motion.div
+          data?.items.map((d, _idx) => (
+            <div
               key={d.id}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.03 }}
               className="bg-panel rounded-card p-3"
             >
               <div className="flex items-start justify-between">
@@ -141,7 +137,7 @@ export default function AdminDepositsPage() {
                   </a>
                 )}
               </div>
-            </motion.div>
+            </div>
           ))
         )}
       </div>

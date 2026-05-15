@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Send, Trash2, Users } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -61,12 +60,9 @@ export default function AdminBroadcastsPage() {
         ) : data?.items.length === 0 ? (
           <p className="text-sm text-text-muted text-center py-12">Рассылок нет</p>
         ) : (
-          data?.items.map((b, idx) => (
-            <motion.div
+          data?.items.map((b, _idx) => (
+            <div
               key={b.id}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.03 }}
               className="bg-panel rounded-card p-3"
             >
               <div className="flex items-start justify-between gap-2">
@@ -99,7 +95,7 @@ export default function AdminBroadcastsPage() {
                   <Trash2 size={16} />
                 </button>
               </div>
-            </motion.div>
+            </div>
           ))
         )}
       </div>
@@ -205,13 +201,11 @@ function Composer({ onClose }: { onClose: () => void }) {
         <Switch checked={dm} onChange={setDm} label="Telegram DM (от бота)" />
       </div>
       {previewCount !== null && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
+        <div
           className="text-sm text-center bg-accent/10 text-accent rounded-button py-2"
         >
           Будет отправлено: {previewCount}
-        </motion.div>
+        </div>
       )}
       <div className="flex gap-2">
         <Button

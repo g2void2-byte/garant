@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { ShieldCheck, ShieldOff, KeyRound, Copy } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -50,9 +49,7 @@ export default function AdminTwoFactorPage() {
         subtitle={enabled ? "Включена" : "Не настроена"}
       />
       <div className="px-4 space-y-3 pb-24">
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
+        <div
           className={`rounded-card p-4 flex items-center gap-3 ${
             enabled
               ? "bg-success/10 border border-success/30"
@@ -75,7 +72,7 @@ export default function AdminTwoFactorPage() {
               (/admin/treasury) и других опасных операций.
             </div>
           </div>
-        </motion.div>
+        </div>
 
         {!enabled && !secret && (
           <Button
@@ -100,9 +97,7 @@ export default function AdminTwoFactorPage() {
         )}
 
         {!enabled && secret && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+          <div
             className="bg-panel rounded-card p-3 space-y-3"
           >
             <div>
@@ -161,7 +156,7 @@ export default function AdminTwoFactorPage() {
             >
               Подтвердить
             </Button>
-          </motion.div>
+          </div>
         )}
 
         {enabled && (

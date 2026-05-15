@@ -1,4 +1,3 @@
-import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { showBackButton } from "@/lib/tg";
@@ -22,17 +21,11 @@ export function Page({ children, showBack, onBack }: PageProps) {
   }, [showBack, onBack, navigate]);
 
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={location.pathname}
-        initial={{ opacity: 0, x: 16 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -16 }}
-        transition={{ duration: 0.18, ease: "easeOut" }}
-        className="min-h-full pb-[96px]"
-      >
-        {children}
-      </motion.div>
-    </AnimatePresence>
+    <div
+      key={location.pathname}
+      className="min-h-full pb-[96px] animate-fadein"
+    >
+      {children}
+    </div>
   );
 }

@@ -1,4 +1,3 @@
-import { motion } from "framer-motion";
 import { Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { UserCardDto } from "@/api/types";
@@ -6,14 +5,14 @@ import { Avatar } from "@/components/ui/Avatar";
 import { BadgePrefix } from "@/components/ui/BadgePrefix";
 import { OnlineDot } from "@/components/ui/OnlineDot";
 import { formatMoney, dealsLabel } from "@/lib/format";
+import { staggerDelay } from "@/lib/animate";
 
 export function UserCard({ user, index = 0 }: { user: UserCardDto; index?: number }) {
   const name = user.display_name?.trim() || user.username || "—";
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.03, 0.3), duration: 0.2 }}
+    <div
+      className="animate-fadein"
+      style={staggerDelay(index)}
     >
       <Link
         to={`/users/${user.username}`}
@@ -43,6 +42,6 @@ export function UserCard({ user, index = 0 }: { user: UserCardDto; index?: numbe
           <div className="mt-1 text-[11px] text-text-muted">{dealsLabel(user.deals_count)}</div>
         </div>
       </Link>
-    </motion.div>
+    </div>
   );
 }

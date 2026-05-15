@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Check, X, Send, Copy } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -75,12 +74,9 @@ export default function AdminWithdrawalsPage() {
             Заявок нет
           </p>
         ) : (
-          data?.items.map((w, idx) => (
-            <motion.div
+          data?.items.map((w, _idx) => (
+            <div
               key={w.id}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.03 }}
               className="bg-panel rounded-card p-3 space-y-2"
             >
               <div className="flex items-start justify-between">
@@ -193,7 +189,7 @@ export default function AdminWithdrawalsPage() {
                   <Send size={14} className="mr-1" /> Отмечено отправлено
                 </Button>
               )}
-            </motion.div>
+            </div>
           ))
         )}
       </div>

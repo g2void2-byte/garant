@@ -1,5 +1,4 @@
-import { motion, useScroll, useTransform } from "framer-motion";
-import { useRef } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import type { UserCardDto } from "@/api/types";
 import { Logo } from "@/components/layout/Logo";
 
@@ -10,29 +9,41 @@ const ROLE_LABEL: Record<string, string> = {
 
 export function ProfileHeader({ user }: { user: UserCardDto }) {
   const ref = useRef<HTMLDivElement>(null);
-  const { scrollY } = useScroll();
-  const y = useTransform(scrollY, [0, 200], [0, -40]);
-  const opacity = useTransform(scrollY, [0, 220], [1, 0.4]);
+  const [transform, setTransform] = useState({ y: 0, opacity: 1 });
+
+  const onScroll = useCallback(() => {
+    const scrollY = window.scrollY;
+    const t = Math.min(1, Math.max(0, scrollY / 200));
+    setTransform({
+      y: -40 * t,
+      opacity: 1 - 0.6 * Math.min(1, scrollY / 220),
+    });
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [onScroll]);
 
   const displayName = user.display_name?.trim() || user.username || "—";
   const roleLabel = user.prefix ? ROLE_LABEL[user.prefix] : "Пользователь";
 
   return (
     <div ref={ref}>
-      <motion.div
+      <div
         style={{
-          y,
-          opacity,
+          transform: `translateY(${transform.y}px)`,
+          opacity: transform.opacity,
           backgroundImage: user.banner_url ? `url(${user.banner_url})` : undefined,
         }}
-        className="relative h-64 mx-4 mt-3 rounded-3xl overflow-hidden bg-gradient-to-br from-accent/20 via-panel-2 to-panel bg-cover bg-center"
+        className="relative h-64 mx-4 mt-3 rounded-3xl overflow-hidden bg-gradient-to-br from-accent/20 via-panel-2 to-panel bg-cover bg-center will-change-transform"
       >
         {!user.banner_url && (
           <div className="absolute inset-0 grid place-items-center">
             <Logo size={96} />
           </div>
         )}
-      </motion.div>
+      </div>
 
       <div className="px-4 mt-3">
         <div className="bg-panel border border-border rounded-card p-4">

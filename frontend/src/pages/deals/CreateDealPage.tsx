@@ -66,7 +66,6 @@ export default function CreateDealPage() {
             { value: "seller", label: "Я продавец" },
           ]}
           onChange={setRole}
-          layoutId="create-deal-role"
         />
         <Input
           label="Контрагент (username)"
@@ -105,7 +104,6 @@ export default function CreateDealPage() {
             { value: "seller", label: "Комиссию платит продавец" },
           ]}
           onChange={setComissionFrom}
-          layoutId="create-deal-comm"
         />
         <Button fullWidth onClick={submit} disabled={create.isPending}>
           {create.isPending ? "Создаю..." : "Создать сделку"}

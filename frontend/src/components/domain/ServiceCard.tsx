@@ -1,9 +1,9 @@
-import { motion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { ServiceDto } from "@/api/types";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { staggerDelay } from "@/lib/animate";
 
 const STATUS_BADGE: Record<string, { text: string; cls: string }> = {
   draft: { text: "Черновик", cls: "bg-panel-2 text-text-muted" },
@@ -22,11 +22,9 @@ export function ServiceCard({
 }) {
   const badge = STATUS_BADGE[service.status];
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.03, 0.3), duration: 0.2 }}
-      className="bg-panel border border-border rounded-card p-3"
+    <div
+      className="bg-panel border border-border rounded-card p-3 animate-fadein"
+      style={staggerDelay(index)}
     >
       <div className="flex items-start gap-3">
         <Link to={`/services/${service.id}`} className="flex-1 min-w-0">
@@ -57,6 +55,6 @@ export function ServiceCard({
         </Link>
         {rightSlot ? rightSlot : <ChevronRight className="size-5 text-text-muted shrink-0" />}
       </div>
-    </motion.div>
+    </div>
   );
 }

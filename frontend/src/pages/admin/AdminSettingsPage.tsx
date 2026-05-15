@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Save, Lock, AlertTriangle } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -144,9 +143,7 @@ export default function AdminSettingsPage() {
             />
           </div>
           {form.maintenance_enabled && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+            <div
               className="mx-3 p-2.5 rounded-card bg-danger/10 border border-danger/30 text-danger text-xs flex items-start gap-2"
             >
               <AlertTriangle size={14} className="shrink-0 mt-0.5" />
@@ -154,7 +151,7 @@ export default function AdminSettingsPage() {
                 При сохранении бот и TMA перестанут принимать любые
                 действия (кроме админских) пока флаг не выключен.
               </span>
-            </motion.div>
+            </div>
           )}
         </Section>
       </div>
@@ -196,9 +193,7 @@ function Section({
   danger?: boolean;
 }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
+    <div
       className={`rounded-card overflow-hidden ${
         danger ? "bg-danger/5 border border-danger/30" : "bg-panel"
       }`}
@@ -207,7 +202,7 @@ function Section({
         {title}
       </div>
       <div className="space-y-2 py-2">{children}</div>
-    </motion.div>
+    </div>
   );
 }
 

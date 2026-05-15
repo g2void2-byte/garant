@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { cn } from "@/lib/cn";
 import { haptic } from "@/lib/tg";
 
@@ -14,7 +14,6 @@ interface ToggleTabsProps<T extends string> {
   options: ToggleOption<T>[];
   onChange: (value: T) => void;
   className?: string;
-  layoutId?: string;
 }
 
 export function ToggleTabs<T extends string>({
@@ -22,10 +21,32 @@ export function ToggleTabs<T extends string>({
   options,
   onChange,
   className,
-  layoutId = "toggle-pill",
 }: ToggleTabsProps<T>) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [pill, setPill] = useState({ left: 0, width: 0 });
+
+  const updatePill = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const idx = options.findIndex((o) => o.value === value);
+    const btn = container.children[idx + 1] as HTMLElement | undefined;
+    if (btn) {
+      setPill({ left: btn.offsetLeft, width: btn.offsetWidth });
+    }
+  }, [value, options]);
+
+  useEffect(() => {
+    updatePill();
+    window.addEventListener("resize", updatePill);
+    return () => window.removeEventListener("resize", updatePill);
+  }, [updatePill]);
+
   return (
-    <div className={cn("relative inline-flex w-full rounded-2xl bg-panel-2 p-1 gap-1", className)}>
+    <div ref={containerRef} className={cn("relative inline-flex w-full rounded-2xl bg-panel-2 p-1 gap-1", className)}>
+      <span
+        className="absolute rounded-xl bg-accent transition-all duration-200 ease-out"
+        style={{ left: pill.left, width: pill.width, top: 4, bottom: 4 }}
+      />
       {options.map((opt) => {
         const active = opt.value === value;
         return (
@@ -44,13 +65,6 @@ export function ToggleTabs<T extends string>({
               active ? "text-accent-fg" : "text-text-muted hover:text-text",
             )}
           >
-            {active && (
-              <motion.span
-                layoutId={layoutId}
-                className="absolute inset-0 rounded-xl bg-accent"
-                transition={{ type: "spring", stiffness: 500, damping: 32 }}
-              />
-            )}
             <span className="relative z-10 inline-flex items-center gap-2">
               {opt.icon}
               <span>{opt.label}</span>

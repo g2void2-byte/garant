@@ -1,8 +1,8 @@
 import { ChevronDown, SlidersHorizontal } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { haptic } from "@/lib/tg";
+import { usePresence } from "@/lib/animate";
 
 export interface SelectOption<T extends string> {
   value: T;
@@ -29,6 +29,7 @@ export function Select<T extends string>({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const current = options.find((o) => o.value === value);
+  const { mounted, visible } = usePresence(open, 150);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -57,37 +58,35 @@ export function Select<T extends string>({
         </span>
         <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
       </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.15 }}
-            className="absolute left-0 right-0 z-30 mt-1 overflow-hidden rounded-2xl border border-border bg-panel shadow-pop"
-          >
-            <ul className="max-h-[260px] overflow-y-auto py-1">
-              {options.map((opt) => (
-                <li key={opt.value}>
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex w-full items-center justify-between px-3 py-3 text-left text-sm hover:bg-panel-2",
-                      opt.value === value && "text-accent",
-                    )}
-                    onClick={() => {
-                      onChange(opt.value);
-                      setOpen(false);
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {mounted && (
+        <div
+          className={cn(
+            "absolute left-0 right-0 z-30 mt-1 overflow-hidden rounded-2xl border border-border bg-panel shadow-pop",
+            "transition-all duration-150",
+            visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1.5",
+          )}
+        >
+          <ul className="max-h-[260px] overflow-y-auto py-1">
+            {options.map((opt) => (
+              <li key={opt.value}>
+                <button
+                  type="button"
+                  className={cn(
+                    "flex w-full items-center justify-between px-3 py-3 text-left text-sm hover:bg-panel-2",
+                    opt.value === value && "text-accent",
+                  )}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
+                >
+                  {opt.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Search, Wallet, Plus, Minus } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -76,16 +75,12 @@ export default function AdminWalletsPage() {
             Ничего не найдено
           </p>
         ) : (
-          data?.items.map((it, idx) => (
-            <motion.button
+          data?.items.map((it, _idx) => (
+            <button
               key={it.user_id}
               type="button"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.03 }}
-              whileTap={{ scale: 0.98 }}
               onClick={() => setTarget(it)}
-              className="w-full text-left bg-panel rounded-card p-3 hover:bg-panel-2 transition"
+              className="w-full text-left bg-panel rounded-card p-3 hover:bg-panel-2 transition active:scale-[0.98]"
             >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-panel-2 overflow-hidden flex-shrink-0">
@@ -126,7 +121,7 @@ export default function AdminWalletsPage() {
                     );
                   })}
               </div>
-            </motion.button>
+            </button>
           ))
         )}
       </div>

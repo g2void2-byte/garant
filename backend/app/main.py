@@ -182,17 +182,18 @@ app.add_middleware(
 # duplicates the legacy ``X-Frame-Options: DENY`` for modern browsers
 # that prefer the CSP3 directive.
 #
-# L-2 — ``style-src 'unsafe-inline'`` is the one compromise. React +
-# Framer Motion set element ``style=`` attributes at runtime and CSP3
-# nonces ONLY apply to ``<style>`` tags / ``<link rel=stylesheet>`` —
-# inline ``style=`` attributes can't be nonced at all (see
-# https://www.w3.org/TR/CSP3/#allow-all-inline). The only way to drop
-# ``'unsafe-inline'`` safely is to migrate every component off
-# inline-style attributes and onto stylesheet classes, which is a
-# multi-package refactor (Framer Motion in particular targets
-# ``style=`` on purpose for animation perf).
+# L-2 — ``style-src`` is now ``'self'`` only. Framer Motion was the
+# sole source of dynamic inline ``style=`` attributes, and the full
+# migration to CSS class-based animations (PR «CSP nonce migration»)
+# eliminated that dependency. React CSR (client-side rendering via
+# ``createRoot``) sets element styles through the CSSOM
+# (``element.style.prop = value``), which is NOT blocked by CSP
+# ``style-src`` — only HTML ``style=`` attributes in source markup
+# are restricted. Since the app is a Vite SPA with no SSR, the
+# remaining dynamic ``style`` props (layout positioning, scroll
+# parallax) go through React DOM's CSSOM path and are safe.
 #
-# The interim mitigation flagged in the audit is wiring up
+# The CSP report endpoint is kept as telemetry for regressions:
 # ``report-uri``/``report-to`` so we can SEE what would actually break
 # if we tightened the policy, before flipping the switch. That's what
 # the trailing ``report-uri`` directive does: violations get POSTed to
@@ -204,7 +205,7 @@ app.add_middleware(
 _CSP_DIRECTIVES = (
     "default-src 'self'; "
     "script-src 'self' https://telegram.org; "
-    "style-src 'self' 'unsafe-inline'; "
+    "style-src 'self'; "
     "img-src 'self' data: blob:; "
     "font-src 'self' data:; "
     "connect-src 'self'; "
