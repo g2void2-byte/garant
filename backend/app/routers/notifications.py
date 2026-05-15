@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 
 from ..deps import CurrentUser, SessionDep
 from ..models import Notification, NotificationType
+from ..rate_limit import RLMarkAllRead
 from ..schemas import NotificationCountersOut, NotificationOut
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
+
+# V5-D-1 — page size matches the previous unbounded ``limit(200)``
+# behaviour so existing clients see no functional change.
+_PAGE_SIZE = 200
 
 
 @router.get("", response_model=list[NotificationOut])
@@ -15,6 +20,22 @@ async def list_notifications(
     user: CurrentUser,
     session: SessionDep,
     type: str | None = Query(None),
+    # V5-D-1 (M) — cursor pagination by ``(created_at, id)``. Two
+    # rows can share a ``created_at`` (we INSERT in bulk on broadcast
+    # fan-out), so the tuple is required to make the order strict —
+    # otherwise pages would silently drop or duplicate rows. The
+    # cursor is the ``(created_at, id)`` of the last row the client
+    # already has; we return rows strictly older than that.
+    before_created_at: str | None = Query(
+        None,
+        description="ISO-8601 timestamp from the last seen notification.",
+    ),
+    before_id: int | None = Query(
+        None,
+        description="Id from the last seen notification (must accompany before_created_at).",
+        ge=1,
+    ),
+    limit: int = Query(_PAGE_SIZE, ge=1, le=_PAGE_SIZE),
 ):
     stmt = select(Notification).where(Notification.recipient_id == user.id)
     if type:
@@ -23,7 +44,24 @@ async def list_notifications(
             stmt = stmt.where(Notification.type == type_enum)
         except ValueError:
             pass
-    stmt = stmt.order_by(Notification.created_at.desc()).limit(200)
+    if before_created_at is not None and before_id is not None:
+        try:
+            from datetime import datetime
+
+            cursor_ts = datetime.fromisoformat(before_created_at.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(400, "Invalid before_created_at")
+        # Standard keyset pagination: ``(created_at, id) < (cursor_ts,
+        # cursor_id)`` in descending order. The OR-form avoids the
+        # need for ``tuple_`` row-value support across all dialects
+        # while remaining index-friendly.
+        stmt = stmt.where(
+            or_(
+                Notification.created_at < cursor_ts,
+                (Notification.created_at == cursor_ts) & (Notification.id < before_id),
+            )
+        )
+    stmt = stmt.order_by(Notification.created_at.desc(), Notification.id.desc()).limit(limit)
     result = await session.execute(stmt)
     return [NotificationOut.model_validate(n, from_attributes=True) for n in result.scalars().all()]
 
@@ -95,7 +133,7 @@ async def mark_read(notif_id: int, user: CurrentUser, session: SessionDep):
 
 
 @router.post("/read-all")
-async def mark_all_read(user: CurrentUser, session: SessionDep):
+async def mark_all_read(user: CurrentUser, session: SessionDep, _rl: RLMarkAllRead):
     await session.execute(
         update(Notification)
         .where(

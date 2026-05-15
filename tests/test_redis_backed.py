@@ -43,20 +43,21 @@ async def fake_redis():
 
 
 async def test_rate_limit_uses_redis_when_bound(fake_redis):
-    """Each hit increments a Redis counter; the (n+1)th raises 429."""
+    """Each hit adds a ZSET entry; the (n+1)th raises 429."""
     # 3 hits under limit=3 must succeed.
     for _ in range(3):
         await rate_limit._hit("test-scope", "user:42", limit=3, window=60)
 
-    # Inspect the bucket key in fakeredis (key format embeds time bucket).
-    keys = await fake_redis.keys("rl:test-scope:user:42:*")
-    assert len(keys) == 1
-    assert int(await fake_redis.get(keys[0])) == 3
+    # Sliding-window: one ZSET per ``(scope, principal)`` with one
+    # entry per hit. The key no longer carries a bucket suffix.
+    assert int(await fake_redis.zcard("rl:test-scope:user:42")) == 3
 
-    # The 4th hit must raise 429.
+    # The 4th hit must raise 429 and must NOT be persisted (the Lua
+    # script rejects before ``ZADD``).
     with pytest.raises(HTTPException) as exc:
         await rate_limit._hit("test-scope", "user:42", limit=3, window=60)
     assert exc.value.status_code == 429
+    assert int(await fake_redis.zcard("rl:test-scope:user:42")) == 3
 
 
 async def test_rate_limit_falls_back_to_inmemory_when_no_redis():

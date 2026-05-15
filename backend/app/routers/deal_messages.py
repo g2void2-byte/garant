@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from ..deps import CurrentUser, SessionDep
-from ..models import Deal, DealMessage, Media
+from ..models import TERMINAL_DEAL_STATUSES, Deal, DealMessage, DealStatus, Media
 from ..rate_limit import RLDealMessage
 from ..schemas import DealMessageCreate, DealMessageOut, MediaOut
 from ..ws import manager
@@ -135,6 +135,25 @@ async def create_message(
     _rl: RLDealMessage,
 ) -> DealMessageOut:
     deal = await _load_deal_or_403(session, deal_id, user)
+
+    # Comment 37 (H, harassment) — block new chat messages on deals
+    # that are already in a terminal state. Pre-fix, the loser of a
+    # deal (or any party after completion / cancellation) could keep
+    # writing into the chat forever — a harassment vector that the
+    # block / mute UI does not cover because the chat is scoped to a
+    # specific deal id. Participants can chat only while the deal is
+    # actively running (``pending_confirmation``, ``in_progress``,
+    # ``pending_cancellation``). Staff (admins / arbiters) may still
+    # send messages into ``arbitration`` / ``resolved_*`` rows so
+    # they can post a verdict / explanation.
+    is_staff = bool(user.is_admin or user.is_arbiter)
+    _STAFF_TERMINAL_OK = {
+        DealStatus.resolved_for_buyer,
+        DealStatus.resolved_for_seller,
+    }
+    if deal.status in TERMINAL_DEAL_STATUSES:
+        if not (is_staff and deal.status in _STAFF_TERMINAL_OK):
+            raise HTTPException(409, "Чат сделки закрыт")
 
     text = (body.text or "").strip()
     if not text and not body.attachments:
