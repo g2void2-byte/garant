@@ -90,3 +90,35 @@ async def test_rate_limit_resets_between_tests(client):
     await setup_pin(client, init, pin="9876")
     resp = await client.post("/api/pin/check", json={"pin": "0000"}, headers=auth_headers(init))
     assert resp.status_code != 429
+
+
+async def test_notifications_read_all_rate_limited_at_11(client):
+    """V5-D-2 (M) — ``POST /api/notifications/read-all`` is a
+    fan-out UPDATE that scans every unread row for the user.
+    Without a throttle, a stolen Telegram initData could spam the
+    endpoint and generate constant write churn on the
+    ``notifications`` table. The ``RLMarkAllRead`` dep caps the
+    endpoint at 10/min — the 11th call must 429.
+
+    10/min is more than the UI ever does (a single tap per mailbox
+    visit), so this won't bother any real client.
+    """
+    init = signed_init_data(3201, "rl_read_all_user")
+    await setup_pin(client, init)
+
+    statuses: list[int] = []
+    for _ in range(10):
+        resp = await client.post(
+            "/api/notifications/read-all",
+            headers=auth_headers(init),
+        )
+        statuses.append(resp.status_code)
+
+    assert all(s == 200 for s in statuses), statuses
+
+    blocked = await client.post(
+        "/api/notifications/read-all",
+        headers=auth_headers(init),
+    )
+    assert blocked.status_code == 429
+    assert "Retry-After" in blocked.headers

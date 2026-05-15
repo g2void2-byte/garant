@@ -450,7 +450,13 @@ async def test_concurrent_webhook_and_poll_credits_wallet_only_once(client, monk
     await setup_pin(client, init)
 
     deposit_amount = Decimal("33.0")
-    provider_id = "cb-race-webhook-poll-wallet-1"
+    # ``poll_deposit_status`` coerces ``provider_invoice_id`` to ``int``
+    # for the CryptoBot ``get_invoices`` API (real invoice IDs are
+    # numeric), so use a numeric-string here. Pre-fix this row used
+    # ``"cb-race-webhook-poll-wallet-1"`` and the polling branch
+    # crashed with ``ValueError`` before either path could write,
+    # making the test flake on whichever task got scheduled first.
+    provider_id = "780011001"
 
     async with async_session() as session:
         user_id = await get_user_id_by_tg(session, 7501)
@@ -797,3 +803,86 @@ async def test_concurrent_paid_and_expired_webhook_keeps_paid_status_sticky(clie
             .all()
         )
         assert len(notifs) == 1, [n.title for n in notifs]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_touch_creates_exactly_one_user(client):
+    """Comment 28 (H) — N parallel first-touch requests for the same
+    brand-new ``tg_user_id`` must end with exactly one ``users`` row.
+
+    Pre-fix, ``get_current_user`` did a plain ``SELECT`` + ``session.add``
+    sequence: when the TMA frontend mounts it fires
+    ``/api/me``, ``/api/wallet/balances``, ``/api/notifications`` and
+    ``/api/categories`` in parallel, all four saw no row, all four
+    called ``session.add(User(...))``, the loser of the commit race
+    blew up with ``IntegrityError`` on the ``users.tg_user_id`` unique
+    constraint and the request 500'd. The fix is an
+    ``INSERT ... ON CONFLICT (tg_user_id) DO NOTHING`` followed by a
+    re-SELECT to load whichever row actually persisted.
+
+    Driving the four real endpoints the frontend hits — instead of
+    just /api/me four times — also covers any per-router middleware
+    quirks (e.g. an extra ``get_current_user`` resolution path).
+    """
+    from backend.app.db import async_session
+    from backend.app.models import User
+
+    tg_user_id = 8801
+    init = signed_init_data(tg_user_id, "race_first_touch")
+    headers = auth_headers(init)
+
+    r1, r2, r3, r4 = await asyncio.gather(
+        client.get("/api/me", headers=headers),
+        client.get("/api/wallet/balances", headers=headers),
+        client.get("/api/notifications", headers=headers),
+        client.get("/api/categories", headers=headers),
+    )
+
+    for label, resp in zip(("me", "balances", "notifications", "categories"), (r1, r2, r3, r4)):
+        assert resp.status_code == 200, f"{label}: {resp.status_code} {resp.text}"
+
+    async with async_session() as session:
+        rows = (
+            (await session.execute(select(User).where(User.tg_user_id == tg_user_id)))
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1, [r.id for r in rows]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_me_for_new_user_is_idempotent(client):
+    """Comment 28 (H) — same race, narrower probe: just /api/me four
+    times in parallel. Asserts on both the row count (exactly one)
+    and that every request returned a consistent user id.
+
+    The four-endpoint variant above exercises the realistic mount
+    storm; this one is a focused regression that fails fast if
+    ``get_current_user`` ever drops the ON CONFLICT path.
+    """
+    from backend.app.db import async_session
+    from backend.app.models import User
+
+    tg_user_id = 8802
+    init = signed_init_data(tg_user_id, "race_me_only")
+    headers = auth_headers(init)
+
+    results = await asyncio.gather(
+        client.get("/api/me", headers=headers),
+        client.get("/api/me", headers=headers),
+        client.get("/api/me", headers=headers),
+        client.get("/api/me", headers=headers),
+    )
+    statuses = [r.status_code for r in results]
+    assert statuses == [200, 200, 200, 200], statuses
+
+    seen_ids = {r.json()["id"] for r in results}
+    assert len(seen_ids) == 1, seen_ids
+
+    async with async_session() as session:
+        rows = (
+            (await session.execute(select(User).where(User.tg_user_id == tg_user_id)))
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
