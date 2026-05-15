@@ -59,7 +59,7 @@ def verify_init_data(init_data: str) -> dict:
         # admitting tokens that are de-facto un-aged.
         if auth_date - now > 300:
             raise InitDataError("init data auth_date is in the future")
-        if now - auth_date > 86400:
+        if now - auth_date > settings.init_data_max_age_seconds:
             raise InitDataError("init data expired")
 
     user_json = parsed.get("user", [None])[0]

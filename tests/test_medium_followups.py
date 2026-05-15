@@ -195,6 +195,58 @@ def test_auth_date_in_past_still_expires():
     assert "expired" in str(exc.value).lower()
 
 
+# --- V5-A-1: shortened replay window (15 min default) ----------------------
+
+
+def test_auth_date_just_past_new_window_is_rejected():
+    """An init-data 16 minutes old must be rejected under the new
+    15-minute default replay window. Pre-V5-A-1 it would have been
+    accepted (the bound was 24h).
+    """
+    if app_settings.allow_unsigned_init_data:
+        pytest.skip("HMAC bypassed in this test config")
+    just_past = int(time.time()) - 16 * 60  # 16 min in the past
+    init = _signed_init_data_with_auth_date(9104, just_past, "just_past9104")
+    with pytest.raises(InitDataError) as exc:
+        verify_init_data(init)
+    assert "expired" in str(exc.value).lower()
+
+
+def test_auth_date_within_new_window_is_accepted():
+    """An init-data 14 minutes old is still inside the 15-min window
+    and must be accepted; this guards against the window being set
+    too tight.
+    """
+    if app_settings.allow_unsigned_init_data:
+        pytest.skip("HMAC bypassed in this test config")
+    recent = int(time.time()) - 14 * 60  # 14 min in the past
+    init = _signed_init_data_with_auth_date(9105, recent, "recent9105")
+    parsed = verify_init_data(init)
+    assert parsed["id"] == 9105
+
+
+def test_init_data_max_age_is_configurable(monkeypatch):
+    """``settings.init_data_max_age_seconds`` is read at every
+    ``verify_init_data`` call (not snapshotted at import). Setting a
+    60-second window must reject a 120-second-old token and accept a
+    30-second-old one.
+    """
+    if app_settings.allow_unsigned_init_data:
+        pytest.skip("HMAC bypassed in this test config")
+    monkeypatch.setattr(app_settings, "init_data_max_age_seconds", 60)
+
+    too_old = int(time.time()) - 120  # 2 min in the past, beyond 60s window
+    init_old = _signed_init_data_with_auth_date(9106, too_old, "cfg_old9106")
+    with pytest.raises(InitDataError) as exc:
+        verify_init_data(init_old)
+    assert "expired" in str(exc.value).lower()
+
+    fresh = int(time.time()) - 30  # 30 sec in the past, within 60s window
+    init_fresh = _signed_init_data_with_auth_date(9107, fresh, "cfg_fresh9107")
+    parsed = verify_init_data(init_fresh)
+    assert parsed["id"] == 9107
+
+
 # --- M5: Decimal end-to-end in money paths ---------------------------------
 
 

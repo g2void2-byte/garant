@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     pin_lock_minutes: int = 60
     pin_reset_code_ttl_seconds: int = 10 * 60
 
+    # V5-A-1 — replay window for Telegram WebApp init data; Telegram
+    # regenerates init-data on every TMA open so 15min is safe;
+    # legacy default was 86400 (24h).
+    init_data_max_age_seconds: int = 900
+
     # PR-3 — periodic sweep of stale deals (0 disables).
     inactivity_sweep_seconds: int = 600
 
