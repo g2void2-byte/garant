@@ -70,6 +70,26 @@ async def create_deposit_invoice(
         logger.error("CryptoBot error: %s", e)
         raise HTTPException(502, f"Ошибка CryptoBot: {e}")
 
+    # V5-B-3 — same pay_url fallback chain as the wallet path. The
+    # legacy Invoice model only persists ``provider_invoice_id`` (not
+    # the URL), so if CryptoBot returns an invoice with no URL the
+    # frontend has no fallback at all — the response below would set
+    # ``pay_url=""`` and the deposit button would be inert. Fail loud
+    # with 502 instead of silently handing the client a broken row.
+    pay_url = (
+        invoice.mini_app_invoice_url
+        or invoice.bot_invoice_url
+        or invoice.pay_url
+        or invoice.web_app_invoice_url
+        or ""
+    )
+    if not pay_url:
+        logger.error(
+            "CryptoBot create_invoice returned no pay_url for legacy USD invoice_id=%s",
+            invoice.invoice_id,
+        )
+        raise HTTPException(502, "CryptoBot не вернул ссылку для оплаты")
+
     db_invoice = Invoice(
         owner_id=user.id,
         provider=InvoiceProvider.cryptobot,
@@ -83,7 +103,7 @@ async def create_deposit_invoice(
 
     return InvoiceOut(
         invoice_id=str(invoice.invoice_id),
-        pay_url=invoice.pay_url,
+        pay_url=pay_url,
         amount=float(body.amount),
         asset="USDT",
     )
@@ -211,7 +231,16 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
     except ValueError:
         raise HTTPException(400, "Body must be JSON")
 
-    update_type = body.get("update_type") or body.get("type")
+    # V5-B-8 — Crypto Pay's webhook envelope has ALWAYS used
+    # ``update_type`` (per their public docs, `https://help.crypt.bot/
+    # crypto-pay-api#webhooks`). The previous ``or body.get("type")``
+    # fallback predated that and survived in the codebase as cargo;
+    # it was never observed in a real Crypto Pay delivery and would
+    # match unrelated payloads (e.g. a generic ``{"type": "..."}``
+    # health-check ping from a scanner) and route them through the
+    # invoice-paid handler. Drop the fallback so we only accept
+    # genuinely-shaped payloads.
+    update_type = body.get("update_type")
     payload = body.get("payload") or {}
 
     if update_type == "invoice_paid":

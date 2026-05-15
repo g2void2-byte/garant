@@ -8,6 +8,7 @@ review or during the cool-down window).
 from __future__ import annotations
 
 import logging
+import re
 from datetime import timedelta
 from decimal import Decimal
 
@@ -134,6 +135,15 @@ async def create_deposit_invoice(
         logger.error("CryptoBot invoice error: %s", e)
         raise HTTPException(502, f"Ошибка CryptoBot: {e}")
 
+    # V5-B-3 — CryptoBot normally returns at least one non-empty URL,
+    # but the API contract is "one of these four MAY be set" rather
+    # than "exactly one is guaranteed". If they ever return all four
+    # blank (e.g. a misconfigured asset on their side, or an API
+    # version drift), the previous fallback chain quietly stored ``""``
+    # and the frontend rendered a deposit card with a dead button —
+    # the user paid via a different invoice and we eventually got a
+    # webhook anyway, but the UX was broken. Fail loudly here so the
+    # caller sees 502 instead of a half-broken deposit row in the DB.
     pay_url = (
         invoice.mini_app_invoice_url
         or invoice.bot_invoice_url
@@ -141,6 +151,13 @@ async def create_deposit_invoice(
         or invoice.web_app_invoice_url
         or ""
     )
+    if not pay_url:
+        logger.error(
+            "CryptoBot create_invoice returned no pay_url for invoice_id=%s asset=%s",
+            invoice.invoice_id,
+            currency.code,
+        )
+        raise HTTPException(502, "CryptoBot не вернул ссылку для оплаты")
     deposit = WalletDeposit(
         user_id=user.id,
         currency_id=currency.id,
@@ -353,6 +370,20 @@ async def create_withdrawal(
             400, f"Минимальная сумма вывода: {currency.min_withdraw} {currency.code}"
         )
 
+    # V5-B-4 — per-currency anchored regex check. Anchored on both
+    # ends because ``re.fullmatch`` already requires the whole string
+    # to match; the ``^...$`` markers in the seed are defensive against
+    # someone swapping ``fullmatch`` for ``search`` later. An empty
+    # ``address_regex`` means "validation deliberately disabled for
+    # this currency" (e.g. a future asset added before its regex is
+    # known) — fall through and let CryptoBot's ``transfer`` validate
+    # at payout time, same as before this audit item. We do NOT
+    # ``re.compile`` here because the regex column rarely changes and
+    # Python's regex cache caps at 512 patterns — well above the ~10
+    # currencies we ship.
+    if currency.address_regex and not re.fullmatch(currency.address_regex, address):
+        raise HTTPException(400, f"Неверный формат адреса для {currency.code} ({currency.network})")
+
     # Row-lock the balance: two concurrent withdrawals must not both
     # pass the ``amount >= price`` check on the same balance.
     bal = await lock_user_balance(session, user.id, currency.id)
@@ -384,6 +415,21 @@ async def create_withdrawal(
     # immediately so the user doesn't wait on an admin. Failures here
     # leave the withdrawal in ``pending`` so admins can still approve
     # manually.
+    #
+    # V5-B-5 — ``spend_id=f"wd:{withdrawal.id}"`` is the **idempotency
+    # key** CryptoBot uses to deduplicate Transfer calls on their
+    # side. From their docs: "Transfers with the same ``spend_id``
+    # will be processed only once." This is the only thing standing
+    # between us and a double payout if (a) the network request
+    # succeeds but we never see the response (timeout, ASGI worker
+    # crash mid-await), and (b) the operator retries the same
+    # withdrawal id. The retry hits the same ``spend_id``, CryptoBot
+    # returns the already-completed Transfer, and we end up where we
+    # started instead of paying out twice. Do NOT include any
+    # request-attempt / timestamp suffix in ``spend_id`` — that
+    # defeats the point. ``withdrawal.id`` is the natural key
+    # because the ``WalletWithdrawal`` row is created **before** the
+    # Transfer call, so its id is stable across retries.
     if await _auto_withdraw_enabled(session) and _cryptopay_configured():
         try:
             async with CryptoPay(

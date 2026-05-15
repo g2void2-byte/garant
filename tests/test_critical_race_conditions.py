@@ -73,7 +73,7 @@ async def test_concurrent_withdrawals_cannot_overdraw(client):
         await credit_balance(session, user_id, "USDT", 100.0)
 
     headers = {**auth_headers(init), "X-Pin-Token": pin_token}
-    body = {"currency_code": "USDT", "amount": 70.0, "address": "TXyz123456789abcdef"}
+    body = {"currency_code": "USDT", "amount": 70.0, "address": "T" + "x" * 33}
 
     r1, r2 = await asyncio.gather(
         client.post("/api/wallet/withdrawals", json=body, headers=headers),

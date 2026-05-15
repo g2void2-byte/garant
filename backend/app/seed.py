@@ -5,6 +5,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import AppSettings, Category, Currency
 
+# V5-B-4 — keep ``CURRENCY_ADDRESS_REGEX`` in lockstep with the back-fill
+# in ``alembic/versions/d9f1c3a8e205_currencies_address_regex.py``. The
+# migration is responsible for existing installs; this dict is the
+# source of truth for fresh seeds and for the model default.
+CURRENCY_ADDRESS_REGEX: dict[str, str] = {
+    "USDT": r"^T[1-9A-HJ-NP-Za-km-z]{33}$",
+    "USDC": r"^T[1-9A-HJ-NP-Za-km-z]{33}$",
+    "TRX": r"^T[1-9A-HJ-NP-Za-km-z]{33}$",
+    "TON": r"^(EQ|UQ|kQ|0Q)[A-Za-z0-9_-]{46}$",
+    "BTC": r"^(bc1[a-z0-9]{25,87}|[13][a-km-zA-HJ-NP-Z1-9]{25,42})$",
+    "LTC": r"^(ltc1[a-z0-9]{25,87}|[LM][a-km-zA-HJ-NP-Z1-9]{25,42})$",
+    "ETH": r"^0x[a-fA-F0-9]{40}$",
+    "BNB": r"^0x[a-fA-F0-9]{40}$",
+    "DOGE": r"^D[5-9A-HJ-NP-U][1-9A-HJ-NP-Za-km-z]{32}$",
+    "SOL": r"^[1-9A-HJ-NP-Za-km-z]{32,44}$",
+}
+
+
 CURRENCIES: list[tuple[str, str, str, int, float, float, int]] = [
     # (code, name, network, decimals, min_deposit, min_withdraw, sort_order)
     ("USDT", "Tether", "TRC20", 2, 1.0, 1.0, 10),
@@ -81,6 +99,7 @@ async def seed_currencies(session: AsyncSession) -> None:
                 min_withdraw=min_withdraw,
                 sort_order=sort_order,
                 is_active=True,
+                address_regex=CURRENCY_ADDRESS_REGEX.get(code, ""),
             )
         )
     await session.commit()

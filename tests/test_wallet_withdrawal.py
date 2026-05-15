@@ -25,9 +25,14 @@ async def test_withdrawal_requires_pin_token(client):
         user_id = await get_user_id_by_tg(session, 7001)
         await credit_balance(session, user_id, "USDT", 500.0)
 
+    # V5-B-4 — TRC20 USDT addresses are 34 chars starting with ``T``
+    # and matching the base58 alphabet. The test pin-gate runs **before**
+    # the address regex check in ``create_withdrawal``, so a placeholder
+    # would work here, but mirroring the realistic shape keeps the body
+    # consistent with the success-path test below.
     resp = await client.post(
         "/api/wallet/withdrawals",
-        json={"currency_code": "USDT", "amount": 50.0, "address": "TXyz123456789abcdef"},
+        json={"currency_code": "USDT", "amount": 50.0, "address": "T" + "x" * 33},
         headers=auth_headers(init),
     )
     assert resp.status_code == 401, resp.text
@@ -45,16 +50,17 @@ async def test_withdrawal_succeeds_with_pin_token(client):
         user_id = await get_user_id_by_tg(session, 7002)
         await credit_balance(session, user_id, "USDT", 500.0)
 
+    address = "T" + "x" * 33
     resp = await client.post(
         "/api/wallet/withdrawals",
-        json={"currency_code": "USDT", "amount": 50.0, "address": "TXyz123456789abcdef"},
+        json={"currency_code": "USDT", "amount": 50.0, "address": address},
         headers={**auth_headers(init), "X-Pin-Token": pin_token},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["amount"] == 50.0
     assert body["status"] == "pending"
-    assert body["address"] == "TXyz123456789abcdef"
+    assert body["address"] == address
 
 
 @pytest.mark.asyncio
@@ -71,7 +77,7 @@ async def test_withdrawal_rejects_bogus_pin_token(client):
 
     resp = await client.post(
         "/api/wallet/withdrawals",
-        json={"currency_code": "USDT", "amount": 50.0, "address": "TXyz123456789abcdef"},
+        json={"currency_code": "USDT", "amount": 50.0, "address": "T" + "x" * 33},
         headers={**auth_headers(init), "X-Pin-Token": "not-a-real-token"},
     )
     assert resp.status_code == 401, resp.text

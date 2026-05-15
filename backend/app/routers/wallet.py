@@ -16,7 +16,7 @@ from ..models import (
     WalletDeposit,
     WalletWithdrawal,
 )
-from ..rate_limit import RLWithdrawal
+from ..rate_limit import RLWalletPoll, RLWithdrawal
 from ..schemas import (
     CurrencyOut,
     WalletBalanceOut,
@@ -137,7 +137,15 @@ async def list_user_deposits(user: CurrentUser, session: SessionDep):
 
 
 @router.get("/deposits/{deposit_id}", response_model=WalletDepositOut)
-async def get_deposit(deposit_id: int, user: CurrentUser, session: SessionDep):
+async def get_deposit(
+    deposit_id: int,
+    user: CurrentUser,
+    session: SessionDep,
+    _rl: RLWalletPoll,
+):
+    # V5-B-10 — ``_rl`` runs first via FastAPI's dep resolution and
+    # raises 429 before any DB / CryptoBot work happens, so a hot-loop
+    # caller is cheap to refuse.
     deposit = await session.get(WalletDeposit, deposit_id)
     if deposit is None or deposit.user_id != user.id:
         raise HTTPException(404, "Депозит не найден")

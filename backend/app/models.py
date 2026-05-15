@@ -499,6 +499,14 @@ class Currency(Base):
     min_withdraw: Mapped[float] = mapped_column(Numeric(18, 8), default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    # V5-B-4 — anchored regex applied to user-supplied payout addresses
+    # in :func:`backend.app.services_wallet.create_withdrawal`. An empty
+    # string means "skip the format check" — back-compat for future
+    # currencies seeded before their regex is known. The patterns are
+    # permissive (catch typos / wrong-network paste), NOT
+    # cryptographic; CryptoBot's ``transfer`` API does the checksum
+    # validation at payout time.
+    address_regex: Mapped[str] = mapped_column(Text, default="", server_default="")
 
 
 class UserBalance(Base):
