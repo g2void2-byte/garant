@@ -134,20 +134,20 @@ async def credit_invoice(
     # legacy ``balance`` column BEFORE mutating it. ``credit_invoice``
     # is called from two callers:
     #
-    # * :func:`services_payments.handle_invoice_paid`, which now also
-    #   locks the Invoice row before getting here (the webhook path,
-    #   V5-B-2 step 1), and
-    # * :func:`backend.app.routers.payments.check_invoice`, the
-    #   polling fallback, which does a plain ``session.get(Invoice,
-    #   ...)`` without a lock.
+    # * :func:`services_payments.handle_invoice_paid` — locks the
+    #   Invoice row via ``_find_legacy_invoice(lock=True)`` before
+    #   getting here.
+    # * :func:`backend.app.routers.payments.check_invoice` — the
+    #   polling fallback, which now also locks the Invoice row via
+    #   ``select(Invoice).with_for_update()
+    #   .execution_options(populate_existing=True)`` (V5-B-2 follow-up).
     #
-    # Locking the User row serialises the second caller against any
-    # concurrent webhook delivery for the SAME owner: the webhook
-    # holds the User lock while it RMW-s ``owner.balance``, and the
-    # polling path blocks here until that commits. We then refresh
-    # ``invoice`` from the DB and re-check ``invoice.status`` — the
-    # loser of the race observes ``paid`` and returns idempotently
-    # without double-crediting the user.
+    # Both callers therefore acquire the same lock order
+    # ``Invoice -> User``. The User-row lock here is the primary
+    # serialising guard between two webhook deliveries for the SAME
+    # owner; the refresh+recheck of ``invoice.status`` below remains
+    # as belt-and-suspenders so the loser of any race observes
+    # ``paid`` and returns idempotently without double-crediting.
     owner = (
         await session.execute(select(User).where(User.id == invoice.owner_id).with_for_update())
     ).scalar_one_or_none()

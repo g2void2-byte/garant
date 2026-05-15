@@ -170,12 +170,17 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
     # and the deal-creation ``_debit`` path already use.
     bal = await lock_user_balance(session, deposit.user_id, deposit.currency_id)
 
-    # Re-read the deposit's status under the balance lock as a
-    # defence-in-depth guard against the polling fallback racing
-    # with a webhook for the same deposit. The webhook path locks
-    # the deposit row in ``services_payments.handle_invoice_paid``;
-    # the polling path does not, so this refresh+recheck is what
-    # serialises the two against each other in that corner case.
+    # Re-read the deposit's status under the balance lock as
+    # belt-and-suspenders behind the outer FOR UPDATE lock both
+    # entry points now take on the deposit row before calling us:
+    # the webhook path locks via ``_find_wallet_deposit(lock=True)``
+    # in ``services_payments.handle_invoice_paid``, and the polling
+    # path locks via ``select(...).with_for_update()
+    # .execution_options(populate_existing=True)`` in
+    # ``poll_deposit_status``. Those outer locks are the primary
+    # serialising guard; this refresh+recheck just narrows the
+    # window if a future caller forgets to acquire the deposit-row
+    # lock first.
     await session.refresh(deposit, attribute_names=["status", "paid_at"])
     if deposit.status == WalletDepositStatus.paid:
         return deposit
@@ -277,12 +282,24 @@ async def poll_deposit_status(session: AsyncSession, deposit: WalletDeposit) -> 
         # WalletDeposit -> UserBalance. Without this, the webhook's
         # WalletDeposit lock and the poll path's UserBalance lock
         # form a cycle that Postgres resolves with a deadlock abort
-        # for one of the transactions. The recheck inside
-        # ``credit_deposit`` is defence-in-depth; this lock here is
-        # what actually serialises the two entry points.
+        # for one of the transactions.
+        #
+        # ``populate_existing=True`` is required because ``deposit``
+        # is already in the session's identity map (the caller
+        # loaded it before calling us). Without it, SQLAlchemy
+        # issues the ``SELECT ... FOR UPDATE`` (acquiring the row
+        # lock) but returns the cached instance with its pre-lock
+        # column values, so ``locked.status`` would read the stale
+        # ``pending`` even after a sibling webhook just committed
+        # ``paid``. With the option set, attribute values are
+        # refreshed from the result row and the recheck below is
+        # the primary serialising guard.
         locked = (
             await session.execute(
-                select(WalletDeposit).where(WalletDeposit.id == deposit.id).with_for_update()
+                select(WalletDeposit)
+                .where(WalletDeposit.id == deposit.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
         ).scalar_one()
         if locked.status != WalletDepositStatus.pending:
@@ -293,9 +310,14 @@ async def poll_deposit_status(session: AsyncSession, deposit: WalletDeposit) -> 
         # serialise with any concurrent webhook delivery on the same
         # row and re-check ``status`` so we never clobber a
         # freshly-paid deposit back to ``expired``.
+        # ``populate_existing=True`` for the same identity-map reason
+        # documented in the ``paid`` branch above.
         locked = (
             await session.execute(
-                select(WalletDeposit).where(WalletDeposit.id == deposit.id).with_for_update()
+                select(WalletDeposit)
+                .where(WalletDeposit.id == deposit.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
         ).scalar_one()
         if locked.status != WalletDepositStatus.pending:

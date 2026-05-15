@@ -548,26 +548,28 @@ async def test_concurrent_webhook_and_poll_credits_wallet_only_once(client, monk
 
 
 @pytest.mark.asyncio
-async def test_concurrent_webhook_and_poll_credits_legacy_only_once(client):
+async def test_concurrent_webhook_and_poll_credits_legacy_only_once(client, monkeypatch):
     """V5-B-2 follow-up — webhook + polling fallback for the SAME
     pending legacy ``Invoice`` must credit ``User.balance`` exactly
     once.
 
     Same shape as the wallet test above for the legacy
     ``credit_invoice`` path. The polling endpoint
-    (``GET /api/payments/deposit/invoice/{id}``) now reloads the
+    (``GET /api/payments/deposit/invoice/{id}``) reloads the
     ``Invoice`` row with ``FOR UPDATE`` before calling
     ``credit_invoice``, matching the lock order the webhook
     (``handle_invoice_paid``) uses: Invoice -> User. Pre-fix the poll
     path took the User lock first inside ``credit_invoice`` and only
     updated the unlocked Invoice at commit, forming a cycle.
 
-    Drives the poll path's locking at the service layer (via the same
-    ``select(...).with_for_update()`` + ``credit_invoice`` call
-    sequence the router does) in parallel with
-    ``handle_invoice_paid`` from another session. That avoids having
-    to monkeypatch CryptoPay for an HTTPX-level test of the polling
-    endpoint.
+    Drives the polling fallback through the real router via
+    ``GET /api/payments/deposit/invoice/{id}`` with CryptoPay
+    monkeypatched on ``backend.app.routers.payments.CryptoPay`` (the
+    name resolved by ``from ..cryptopay import CryptoPay`` at the
+    router's module load — patching the source module would not
+    intercept that already-bound reference). The webhook side runs
+    ``handle_invoice_paid`` directly in a parallel session, the same
+    pattern the wallet test uses.
     """
     from backend.app.db import async_session
     from backend.app.models import (
@@ -578,7 +580,6 @@ async def test_concurrent_webhook_and_poll_credits_legacy_only_once(client):
         NotificationType,
         User,
     )
-    from backend.app.services import credit_invoice
     from backend.app.services_payments import handle_invoice_paid
 
     init = signed_init_data(7502, "race_webhook_poll_legacy")
@@ -589,16 +590,44 @@ async def test_concurrent_webhook_and_poll_credits_legacy_only_once(client):
 
     async with async_session() as session:
         user_id = await get_user_id_by_tg(session, 7502)
-        session.add(
-            Invoice(
-                owner_id=user_id,
-                provider=InvoiceProvider.cryptobot,
-                provider_invoice_id=provider_id,
-                amount=invoice_amount,
-                status=InvoiceStatus.pending,
-            )
+        inv = Invoice(
+            owner_id=user_id,
+            provider=InvoiceProvider.cryptobot,
+            provider_invoice_id=provider_id,
+            amount=invoice_amount,
+            status=InvoiceStatus.pending,
         )
+        session.add(inv)
         await session.commit()
+        await session.refresh(inv)
+        invoice_id = inv.id
+
+    # Stub CryptoPay so the polling endpoint
+    # ``GET /api/payments/deposit/invoice/{id}`` returns a fake
+    # ``paid`` invoice without hitting the network. ``check_invoice``
+    # imports CryptoPay via ``from ..cryptopay import CryptoPay``, so
+    # the symbol to patch is the one bound on ``routers.payments``,
+    # not the source module — patching the source module would leave
+    # the already-resolved router-side reference untouched.
+    class _FakeInvoice:
+        status = "paid"
+
+    class _FakeCryptoPay:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return None
+
+        async def get_invoices(self, *, invoice_ids):  # noqa: ARG002
+            return [_FakeInvoice()]
+
+    import backend.app.routers.payments as payments_router
+
+    monkeypatch.setattr(payments_router, "CryptoPay", _FakeCryptoPay)
 
     payload = {"invoice_id": provider_id, "status": "paid"}
 
@@ -607,25 +636,21 @@ async def test_concurrent_webhook_and_poll_credits_legacy_only_once(client):
             return await handle_invoice_paid(s, payload)
 
     async def _run_poll():
-        # Mirror the post-fix sequence in
-        # ``routers/payments.check_invoice``: the polling fallback
-        # reloads the Invoice with ``FOR UPDATE`` before crediting,
-        # so this test exercises the same lock order the webhook
-        # uses (Invoice -> User).
-        async with async_session() as s:
-            inv = (
-                await s.execute(select(Invoice).where(Invoice.provider_invoice_id == provider_id))
-            ).scalar_one()
-            locked = (
-                await s.execute(select(Invoice).where(Invoice.id == inv.id).with_for_update())
-            ).scalar_one()
-            if locked.status == InvoiceStatus.pending:
-                return await credit_invoice(s, locked)
-            return locked
+        # Drive the real router so the V5-B-2 follow-up's
+        # ``select(Invoice).with_for_update()`` reload inside
+        # ``check_invoice`` is exercised. A future regression that
+        # drops the FOR UPDATE reload (or moves it outside the
+        # ``checks[0].status == "paid"`` branch) would surface as a
+        # double-credit / deadlock here.
+        return await client.get(
+            f"/api/payments/deposit/invoice/{invoice_id}",
+            headers=auth_headers(init),
+        )
 
-    webhook_result, _poll_result = await asyncio.gather(_run_webhook(), _run_poll())
+    webhook_result, poll_resp = await asyncio.gather(_run_webhook(), _run_poll())
 
     assert webhook_result.get("ok") is True
+    assert poll_resp.status_code == 200, poll_resp.text
 
     async with async_session() as session:
         owner = (await session.execute(select(User).where(User.id == user_id))).scalar_one()
@@ -634,10 +659,10 @@ async def test_concurrent_webhook_and_poll_credits_legacy_only_once(client):
         # deadlock-abort.
         assert Decimal(str(owner.balance)) == invoice_amount
 
-        inv = (
+        inv_row = (
             await session.execute(select(Invoice).where(Invoice.provider_invoice_id == provider_id))
         ).scalar_one()
-        assert inv.status == InvoiceStatus.paid
+        assert inv_row.status == InvoiceStatus.paid
 
         notifs = (
             (
