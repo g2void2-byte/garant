@@ -127,3 +127,100 @@ async def test_unbanned_user_can_resume(client):
 
     resp = await client.get("/api/me", headers=auth_headers(init))
     assert resp.status_code == 200, resp.text
+
+
+async def test_banned_user_request_does_not_touch_user_row(client):
+    """Comment 50 (M) — a banned user's request must NOT UPDATE the
+    ``users`` row before 403'ing.
+
+    Pre-fix the 403 gate lived after the ``last_login_at`` /
+    ``last_ip`` / ``login_count`` debounce block, so every request
+    from a banned user still committed an UPDATE — wasting WAL and
+    making the admin "last seen" column lie about whether a blocked
+    user was active. The fix moves the gate above the debounce
+    block; this test pins the order down so a future refactor can't
+    silently reintroduce the side effect.
+
+    Setup: bootstrap a user, snapshot their (last_login_at,
+    last_ip, login_count, username) values, then ban them while
+    setting all four columns to recognisable poison values via the
+    ORM. A request to ``/api/me`` must 403 and leave those columns
+    exactly as we wrote them — no debounce-driven UPDATE.
+    """
+    from datetime import datetime, timedelta
+
+    init = signed_init_data(5101, "ban_no_writes")
+    await _bootstrap_user(client, 5101, "ban_no_writes")
+
+    # Anchor poison values well outside the 5-min debounce so the
+    # pre-fix code would unconditionally overwrite them.
+    poison_login_at = datetime(2020, 1, 1) - timedelta(days=42)
+    poison_ip = "10.255.255.254"
+    poison_username = "ban_no_writes_poison"
+    poison_count = 9999
+
+    async with async_session() as session:
+        user = (await session.execute(select(User).where(User.tg_user_id == 5101))).scalar_one()
+        user.is_banned = True
+        user.ban_reason = "ordering-regression"
+        user.last_login_at = poison_login_at
+        user.last_ip = poison_ip
+        user.login_count = poison_count
+        user.username = poison_username
+        await session.commit()
+
+    # The request must 403 with the banned-account detail and NOT
+    # bump any of the debounced columns.
+    resp = await client.get("/api/me", headers=auth_headers(init))
+    assert resp.status_code == 403, resp.text
+    assert "заблокирован" in resp.json().get("detail", "")
+
+    async with async_session() as session:
+        user = (await session.execute(select(User).where(User.tg_user_id == 5101))).scalar_one()
+        assert user.last_login_at == poison_login_at, (
+            "banned request bumped last_login_at — Comment 50 regression"
+        )
+        assert user.last_ip == poison_ip, "banned request rewrote last_ip — Comment 50 regression"
+        assert user.login_count == poison_count, (
+            "banned request bumped login_count — Comment 50 regression"
+        )
+        # initData ships ``username='ban_no_writes'``; the pre-fix
+        # path would have synced it back to that value on top of the
+        # debounce bump.
+        assert user.username == poison_username, (
+            "banned request synced username from initData — Comment 50 regression"
+        )
+
+
+async def test_frozen_user_request_does_not_touch_user_row(client):
+    """Companion to the banned-case: ``is_frozen`` must short-circuit
+    the same way. The two flags lead to different 403 detail
+    strings but the side-effect-suppression behaviour is identical.
+    """
+    from datetime import datetime, timedelta
+
+    init = signed_init_data(5102, "freeze_no_writes")
+    await _bootstrap_user(client, 5102, "freeze_no_writes")
+
+    poison_login_at = datetime(2020, 1, 1) - timedelta(days=42)
+    poison_ip = "10.255.255.253"
+    poison_count = 7777
+
+    async with async_session() as session:
+        user = (await session.execute(select(User).where(User.tg_user_id == 5102))).scalar_one()
+        user.is_frozen = True
+        user.freeze_reason = "ordering-regression"
+        user.last_login_at = poison_login_at
+        user.last_ip = poison_ip
+        user.login_count = poison_count
+        await session.commit()
+
+    resp = await client.get("/api/me", headers=auth_headers(init))
+    assert resp.status_code == 403, resp.text
+    assert "заморожен" in resp.json().get("detail", "")
+
+    async with async_session() as session:
+        user = (await session.execute(select(User).where(User.tg_user_id == 5102))).scalar_one()
+        assert user.last_login_at == poison_login_at
+        assert user.last_ip == poison_ip
+        assert user.login_count == poison_count
