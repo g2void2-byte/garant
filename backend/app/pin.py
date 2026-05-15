@@ -24,9 +24,64 @@ RESET_CODE_LEN = 6
 JWT_ALGORITHM = "HS256"
 JWT_ISSUER = "garant-pin"
 
+# V5-A-4 (M) — reject 4-digit PINs that show up in every published
+# leaked-PIN dataset (DataGenetics 2012, Dan Amitay 2011, multiple
+# breach corpora since). 4-digit space is only 10⁴ = 10 000, so a
+# stolen handset where the user picked any of these falls in a few
+# seconds even with our /check throttle. The blacklist covers:
+# * all 10 single-digit repeats (0000–9999)
+# * ascending / descending runs (1234, 0123, 4321, 9876)
+# * 2-digit repeats (1212, 2121, 1313, 1010)
+# * popular numeric-keypad patterns (2580 vertical line, 1379 corners)
+# * culturally common picks (1004 Korean homonym, 1122, 6969)
+#
+# Total: 24 entries (~0.24 % of the keyspace). This is intentionally
+# small — a wider blacklist would frustrate users without much extra
+# security, since most attackers stop after a handful of guesses
+# anyway thanks to the /check lockout in ``routers/pin.py``.
+COMMON_PINS: frozenset[str] = frozenset(
+    {
+        "0000",
+        "1111",
+        "2222",
+        "3333",
+        "4444",
+        "5555",
+        "6666",
+        "7777",
+        "8888",
+        "9999",
+        "1234",
+        "0123",
+        "4321",
+        "9876",
+        "1212",
+        "2121",
+        "1313",
+        "1010",
+        "2580",
+        "1379",
+        "1004",
+        "1122",
+        "6969",
+        "0852",
+    }
+)
+
 
 def is_pin_format_valid(pin: str) -> bool:
     return bool(PIN_RE.fullmatch(pin or ""))
+
+
+def is_pin_too_common(pin: str) -> bool:
+    """Return ``True`` if ``pin`` is in the leaked-PIN blacklist.
+
+    The caller must have already passed :func:`is_pin_format_valid`
+    — we don't re-check format here so callers can map the two
+    failure modes to different HTTP responses (400 vs 400, but with
+    distinct user-facing messages).
+    """
+    return pin in COMMON_PINS
 
 
 def hash_pin(pin: str) -> str:

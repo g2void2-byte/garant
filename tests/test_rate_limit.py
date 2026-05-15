@@ -17,7 +17,9 @@ async def test_pin_rate_limit_blocks_after_threshold(client):
     bucket slot via /api/pin/setup, so 4 wrong-PIN checks should still be
     honoured and the 5th must be rate-limited."""
     init = signed_init_data(3001, "rl_pin_user")
-    await setup_pin(client, init, pin="9876")  # bucket: 1/5
+    # V5-A-4 (M) — ``9876`` is now in the blacklist; this test just
+    # needs *some* strong PIN since /check below sends wrong PINs.
+    await setup_pin(client, init, pin="5092")  # bucket: 1/5
 
     for i in range(4):  # bucket: 2..5 / 5
         resp = await client.post(
@@ -68,8 +70,10 @@ async def test_rate_limit_is_per_user(client):
     """User A spamming pin/check must NOT block user B."""
     a = signed_init_data(3101, "rl_a")
     b = signed_init_data(3102, "rl_b")
-    await setup_pin(client, a, pin="1111")
-    await setup_pin(client, b, pin="2222")
+    # V5-A-4 (M) — the audit-blacklist rejects 1111/2222 at /setup;
+    # use strong PINs that aren't on the leaked-PIN list.
+    await setup_pin(client, a, pin="5837")
+    await setup_pin(client, b, pin="4163")
 
     # Burn A's bucket — setup already used 1, so 4 more saturates it.
     for _ in range(4):
@@ -78,7 +82,7 @@ async def test_rate_limit_is_per_user(client):
     assert blocked_a.status_code == 429
 
     # B is still fine.
-    ok_b = await client.post("/api/pin/check", json={"pin": "2222"}, headers=auth_headers(b))
+    ok_b = await client.post("/api/pin/check", json={"pin": "4163"}, headers=auth_headers(b))
     assert ok_b.status_code == 200, ok_b.text
 
 
@@ -87,7 +91,7 @@ async def test_rate_limit_resets_between_tests(client):
     previous test already burned a bucket for the same scope.
     """
     init = signed_init_data(3001, "rl_pin_user")  # reused tg_user_id from earlier
-    await setup_pin(client, init, pin="9876")
+    await setup_pin(client, init, pin="5092")
     resp = await client.post("/api/pin/check", json={"pin": "0000"}, headers=auth_headers(init))
     assert resp.status_code != 429
 

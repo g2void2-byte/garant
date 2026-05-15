@@ -23,6 +23,17 @@ def verify_init_data(init_data: str) -> dict:
 
     parsed = parse_qs(init_data, keep_blank_values=True)
 
+    # V5-A-2 (L) — ``hash`` is the only proof Telegram's WebApp made
+    # this initData (HMAC-SHA256 of the sorted data-check string keyed
+    # with the bot-token-derived secret). ``parse_qs(keep_blank_values=True)``
+    # would yield ``[""]`` for ``...&hash=`` and ``[None]`` is the
+    # default we hand it for a missing key, so ``if not received_hash``
+    # covers both branches: any falsy value (``None``, ``""``) is
+    # functionally indistinguishable from "unsigned" and must be
+    # rejected before we run ``hmac.compare_digest`` — which would
+    # otherwise compare against ``hexdigest()`` (always non-empty) and
+    # never short-circuit, but that's a defence-in-depth invariant we
+    # don't want to silently rely on. NEVER accept an empty hash.
     received_hash = parsed.pop("hash", [None])[0]
     if not received_hash:
         raise InitDataError("hash is missing from init data")
@@ -70,7 +81,23 @@ def verify_init_data(init_data: str) -> dict:
 
 
 def _parse_unsigned(init_data: str) -> dict:
-    """Accept unsigned init data for local dev."""
+    """Accept unsigned init data for local dev.
+
+    V5-A-3 (M) — defence-in-depth check: even though
+    :mod:`backend.app.main` refuses to boot when
+    ``ALLOW_UNSIGNED_INIT_DATA`` is set in production/staging, the
+    runtime setting could in theory be toggled inside a test fixture
+    or via a misconfiguration that bypasses startup (e.g. an
+    embedded ASGI runner, or a tool that imports ``app`` directly
+    without running ``lifespan``). Re-check the environment here so
+    a forged unsigned token can never authenticate against a
+    production-like deployment, regardless of how the server
+    process was launched.
+    """
+    if settings.environment in ("production", "staging"):
+        # The startup guard should have prevented this. If we reach
+        # here, treat it as a forged token.
+        raise InitDataError("unsigned init data is rejected outside development")
     try:
         parsed = parse_qs(init_data, keep_blank_values=True)
         user_json = parsed.get("user", [None])[0]

@@ -255,7 +255,10 @@ async def test_invalidate_sessions_revokes_active_pin_token(client):
 
     # A fresh PIN check mints a token bound to the new epoch and works.
     refreshed = await client.post(
-        "/api/pin/check", json={"pin": "1234"}, headers=auth_headers(user_init)
+        # V5-A-4 (M) — must match ``setup_pin`` default (STRONG_TEST_PIN).
+        "/api/pin/check",
+        json={"pin": "3741"},
+        headers=auth_headers(user_init),
     )
     assert refreshed.status_code == 200, refreshed.text
     fresh_token = refreshed.json()["token"]
