@@ -280,3 +280,141 @@ async def test_random_user_cannot_write_in_deal_chat(client):
         headers=auth_headers(init),
     )
     assert resp.status_code == 403
+
+
+# ── Comment 37 (H, harassment) — terminal-status blocking ──────────────
+
+
+async def _set_status(deal_id: int, status):
+    """Force a deal into ``status`` so the test doesn't have to drive
+    the state machine each time. The terminal-status blocking lives in
+    the chat router, not in the deal transition logic, so the route
+    we take to reach the status is irrelevant for this regression."""
+    from backend.app.db import async_session
+    from backend.app.models import Deal
+
+    async with async_session() as session:
+        deal = await session.get(Deal, deal_id)
+        assert deal is not None
+        deal.status = status
+        await session.commit()
+
+
+async def _make_staff(client, *, tg_id: int, username: str, role: str) -> str:
+    """Bootstrap a fresh user and grant them ``role`` ("admin" or
+    "arbiter"). Returns the signed initData for use in
+    ``auth_headers``."""
+    from backend.app.db import async_session
+    from backend.app.models import User
+
+    init = signed_init_data(tg_id, username)
+    me = await client.get("/api/me", headers=auth_headers(init))
+    assert me.status_code == 200, me.text
+    uid = me.json()["id"]
+    async with async_session() as session:
+        u = await session.get(User, uid)
+        assert u is not None
+        if role == "admin":
+            u.is_admin = True
+        elif role == "arbiter":
+            u.is_arbiter = True
+        else:
+            raise ValueError(f"bad role: {role}")
+        await session.commit()
+    return init
+
+
+async def test_participant_cannot_message_in_any_terminal_status(client):
+    """Comment 37 — participants (buyer/seller) get 409 in every
+    terminal state. We probe each of the five terminal values: closed
+    chat means closed chat, regardless of *how* the deal ended.
+
+    Reusing one deal across statuses is safe because the 409 is
+    immediate — no DB write side-effects — and we re-stamp the status
+    each iteration."""
+    from backend.app.models import DealStatus
+
+    deal_id, buyer_init, seller_init, _, _ = await _create_deal(client)
+
+    terminal_states = [
+        DealStatus.cancelled,
+        DealStatus.completed,
+        DealStatus.resolved_for_buyer,
+        DealStatus.resolved_for_seller,
+        DealStatus.cancelled_for_inactivity,
+    ]
+    for st in terminal_states:
+        await _set_status(deal_id, st)
+        for who, init in (("buyer", buyer_init), ("seller", seller_init)):
+            resp = await client.post(
+                f"/api/deals/{deal_id}/messages",
+                json={"text": f"after {st.value}", "attachments": []},
+                headers=auth_headers(init),
+            )
+            assert resp.status_code == 409, f"{who}@{st.value}: {resp.status_code} {resp.text}"
+
+
+async def test_staff_can_message_only_in_resolved_terminal(client):
+    """Comment 37 — staff (admin or arbiter) can post a closing
+    explanation only in ``resolved_for_buyer`` / ``resolved_for_seller``.
+    Other terminal states (``cancelled``, ``completed``,
+    ``cancelled_for_inactivity``) close the chat for everyone.
+
+    Pick one admin and one arbiter so we cover both branches of the
+    ``is_admin or is_arbiter`` guard.
+    """
+    from backend.app.models import DealStatus
+
+    deal_id, _buyer_init, _seller_init, _, _ = await _create_deal(client)
+    admin_init = await _make_staff(client, tg_id=5301, username="ch_admin", role="admin")
+    arb_init = await _make_staff(client, tg_id=5302, username="ch_arb", role="arbiter")
+
+    # Staff-allowed terminal states: 201 for both admin and arbiter.
+    for st in (DealStatus.resolved_for_buyer, DealStatus.resolved_for_seller):
+        await _set_status(deal_id, st)
+        for label, init in (("admin", admin_init), ("arbiter", arb_init)):
+            resp = await client.post(
+                f"/api/deals/{deal_id}/messages",
+                json={"text": f"verdict in {st.value}", "attachments": []},
+                headers=auth_headers(init),
+            )
+            assert resp.status_code == 201, f"{label}@{st.value}: {resp.status_code} {resp.text}"
+
+    # Staff-blocked terminal states: 409 for both.
+    for st in (
+        DealStatus.completed,
+        DealStatus.cancelled,
+        DealStatus.cancelled_for_inactivity,
+    ):
+        await _set_status(deal_id, st)
+        for label, init in (("admin", admin_init), ("arbiter", arb_init)):
+            resp = await client.post(
+                f"/api/deals/{deal_id}/messages",
+                json={"text": f"closing word in {st.value}", "attachments": []},
+                headers=auth_headers(init),
+            )
+            assert resp.status_code == 409, f"{label}@{st.value}: {resp.status_code} {resp.text}"
+
+
+async def test_messages_still_allowed_in_active_statuses(client):
+    """Comment 37 sanity — the block only applies to terminal states.
+    ``pending_confirmation``, ``in_progress``, ``arbitration``,
+    ``pending_cancellation`` all keep the chat open for the parties
+    so the legitimate happy path doesn't regress."""
+    from backend.app.models import DealStatus
+
+    deal_id, buyer_init, _seller_init, _, _ = await _create_deal(client)
+
+    for st in (
+        DealStatus.pending_confirmation,
+        DealStatus.in_progress,
+        DealStatus.arbitration,
+        DealStatus.pending_cancellation,
+    ):
+        await _set_status(deal_id, st)
+        resp = await client.post(
+            f"/api/deals/{deal_id}/messages",
+            json={"text": f"alive in {st.value}", "attachments": []},
+            headers=auth_headers(buyer_init),
+        )
+        assert resp.status_code == 201, f"{st.value}: {resp.status_code} {resp.text}"

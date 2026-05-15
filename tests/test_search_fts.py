@@ -54,6 +54,39 @@ def test_tsquery_builder_strips_tsquery_meta_chars():
     assert build_prefix_tsquery("\\foo & bar:*") == "foo:* & bar:*"
 
 
+def test_tsquery_builder_caps_at_ten_tokens():
+    """V5-D-8 (M) — pathological input (paste of 50+ words) must be
+    truncated to the first 10 prefix-tokens before being handed to
+    ``to_tsquery``. A 5 000-clause ``& foo:* & bar:* …`` expression
+    would otherwise explode the GIN-index scan cost; ten prefix
+    tokens are already more than enough to narrow any catalog or
+    user search.
+
+    Input: 50 single-letter tokens (all ``"a"``). The builder is
+    expected to keep only the first 10, AND-joined with ``" & "``.
+    """
+    result = build_prefix_tsquery(" ".join(["a"] * 50))
+    assert result is not None
+    # 10 tokens, 9 joiners ⇒ split on " & " gives 10 parts.
+    parts = result.split(" & ")
+    assert len(parts) == 10
+    assert all(p == "a:*" for p in parts)
+
+
+def test_tsquery_builder_caps_at_ten_tokens_distinct():
+    """Same cap, with 11 *distinct* tokens to make sure the slicing
+    is positional (first 10) and not deduplicating to a smaller set.
+    """
+    raw = " ".join(f"t{i}" for i in range(11))
+    result = build_prefix_tsquery(raw)
+    assert result is not None
+    parts = result.split(" & ")
+    assert len(parts) == 10
+    # Position-ordered: the truncated tail (``t10``) must be absent.
+    assert parts == [f"t{i}:*" for i in range(10)]
+    assert "t10:*" not in result
+
+
 # ── /api/services?q= ───────────────────────────────────────────────────────
 
 

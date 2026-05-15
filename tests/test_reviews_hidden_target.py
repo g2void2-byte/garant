@@ -132,3 +132,63 @@ async def test_visible_target_still_returns_review_list(client):
     )
     assert resp.status_code == 200, resp.text
     assert len(resp.json()) == 4
+
+
+# ── V5-D-4 — offset cap on the reviews list ──────────────────────────────
+
+
+async def test_reviews_offset_above_cap_is_rejected(client):
+    """V5-D-4 (M) — ``GET /api/reviews?user=…&offset=10001`` must
+    422 at the Pydantic Query validator. Without an upper bound a
+    scraper could request ``offset=10_000_000`` and force Postgres
+    to walk the full review index just to skip rows we already
+    paged past. 10 000 is the cap; anything above is rejected
+    before any DB work happens.
+
+    The validator runs before the resolved-target lookup, so the
+    request fails even though no user with this username exists —
+    that's correct behaviour: refusing 422 on cap violations is the
+    cheap, predictable failure mode (an attacker can't probe for
+    existence by offset).
+    """
+    caller_init = signed_init_data(20051, "offset_caller")
+    # /api/me bootstrap so the test doesn't accidentally trip auth.
+    await client.get("/api/me", headers=auth_headers(caller_init))
+
+    resp = await client.get(
+        "/api/reviews",
+        params={"user": "anyone", "offset": 10_001},
+        headers=auth_headers(caller_init),
+    )
+    assert resp.status_code == 422, resp.text
+
+
+async def test_reviews_offset_at_cap_is_allowed(client):
+    """Boundary: ``offset=10_000`` is the highest accepted value.
+    The user doesn't exist so the router still 404s, but the 422
+    validation gate is past — proving the cap is *inclusive*."""
+    caller_init = signed_init_data(20061, "offset_caller_2")
+    await client.get("/api/me", headers=auth_headers(caller_init))
+
+    resp = await client.get(
+        "/api/reviews",
+        params={"user": "anyone", "offset": 10_000},
+        headers=auth_headers(caller_init),
+    )
+    # 404 because no user; not 422 because offset is exactly the cap.
+    assert resp.status_code == 404, resp.text
+
+
+async def test_reviews_offset_negative_is_rejected(client):
+    """Companion check: negative offsets also 422. Pre-fix the
+    endpoint would silently coerce them and return inconsistent
+    paging. ``ge=0`` on the Query field is the bound."""
+    caller_init = signed_init_data(20071, "offset_caller_3")
+    await client.get("/api/me", headers=auth_headers(caller_init))
+
+    resp = await client.get(
+        "/api/reviews",
+        params={"user": "anyone", "offset": -1},
+        headers=auth_headers(caller_init),
+    )
+    assert resp.status_code == 422, resp.text
