@@ -2,10 +2,12 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { MaintenanceBanner } from "@/components/MaintenanceBanner";
+import { MinimizeButton } from "@/components/MinimizeButton";
 import { PinGate } from "@/components/PinGate";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ToastProvider } from "@/components/ui/Toast";
+import { installDevtoolsGuard } from "@/lib/devtoolsGuard";
 import { useLiveNotifications } from "@/lib/useLiveNotifications";
 import { queryClient } from "@/lib/queryClient";
 import { initTelegram } from "@/lib/tg";
@@ -75,6 +77,12 @@ function RedirectUser() {
 export function App() {
   useEffect(() => {
     initTelegram();
+    // Lock down devtools shortcuts + right-click. The Mini App is a
+    // kiosk-style window (fullscreen on both PC and mobile per the
+    // product spec), so F12 / Ctrl+Shift+I / view-source / right-click
+    // are all preventDefault'd here. Returns a cleanup function so
+    // React Strict Mode double-mounts don't leave duplicate listeners.
+    return installDevtoolsGuard();
   }, []);
 
   return (
@@ -89,6 +97,7 @@ export function App() {
                 router the hook is unreachable and we'd silently lose
                 the navigation. */}
             <LiveNotifications />
+            <MinimizeButton />
             <div className="min-h-full app-container">
               <Suspense fallback={<PageFallback />}>
                 <Routes>
