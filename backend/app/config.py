@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     # PR-3 — periodic sweep of stale deals (0 disables).
     inactivity_sweep_seconds: int = 600
 
+    # M-6 — auto-expire pending wallet deposits the user never paid.
+    # ``wallet_deposit_expiry_seconds`` is the grace window after which a
+    # still-``pending`` deposit row gets flipped to ``expired`` so the
+    # admin queue, user-facing list, and treasury aging report don't
+    # accumulate forever. ``wallet_deposit_sweep_seconds`` is how often
+    # the background loop runs; ``0`` disables the loop entirely (the
+    # default in tests via the env var).
+    wallet_deposit_expiry_seconds: int = 24 * 60 * 60  # 24h
+    wallet_deposit_sweep_seconds: int = 600
+
     # PR-G (L-6) — if the maintenance-flag DB lookup fails the
     # middleware normally falls open (treats maintenance as off and
     # lets writes through) so a flaky DB doesn't lock the whole API.

@@ -150,7 +150,11 @@ def test_bot_profile_summary_uses_deposit_total():
         bad=0,
         deposit_total=250,
     )
-    body = texts.profile_summary(user, buys_count=0, buys_sum=0.0, sales_count=0, sales_sum=0.0)
+    # M-5 — ``profile_summary`` now takes a per-currency breakdown
+    # rather than legacy buys_sum/sales_sum scalars. An empty list
+    # exercises the same "no completed deals" path the original
+    # zero-sum kwargs did.
+    body = texts.profile_summary(user, buys_count=0, sales_count=0, by_currency=[])
     # ``_format_money`` renders integer-valued amounts without
     # decimals; the exact format is "$250". The dash sentinel is
     # what we'd see if the function had silently fallen back to a

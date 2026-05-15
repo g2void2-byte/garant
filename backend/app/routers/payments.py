@@ -14,6 +14,7 @@ from ..rate_limit import rate_limit
 from ..schemas import DepositReq, InvoiceCreateReq, InvoiceOut, InvoiceStatusOut
 from ..services import credit_invoice
 from ..services_payments import (
+    handle_invoice_expired,
     handle_invoice_paid,
     verify_webhook_signature,
     webhook_secret,
@@ -182,7 +183,17 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
     payload = body.get("payload") or {}
 
     if update_type == "invoice_paid":
-        result = await handle_invoice_paid(session, payload)
+        # Crypto Pay sometimes posts ``status="expired"`` on the
+        # ``invoice_paid`` channel too — route those through the
+        # expired handler so we don't accidentally credit a dead row.
+        if payload.get("status") == "expired":
+            result = await handle_invoice_expired(session, payload)
+        else:
+            result = await handle_invoice_paid(session, payload)
+        return {"ok": True, **result}
+
+    if update_type == "invoice_expired":
+        result = await handle_invoice_expired(session, payload)
         return {"ok": True, **result}
 
     logger.info("CryptoBot webhook ignored update_type=%s", update_type)

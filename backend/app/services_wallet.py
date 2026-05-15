@@ -184,6 +184,55 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
     return deposit
 
 
+async def sweep_expired_deposits(session: AsyncSession) -> int:
+    """Mark stale ``pending`` deposits as ``expired``.
+
+    M-6 — pre-fix, a ``WalletDeposit(status=pending)`` row created when
+    the user clicked "deposit" but never paid sat in the admin queue
+    forever. CryptoBot stops issuing webhooks for the invoice once it
+    has expired on their side (default 24h), so the row had no
+    independent path to a terminal state. This sweep closes the loop:
+    every ``wallet_deposit_sweep_seconds`` the loop in
+    :mod:`backend.app.main` runs us and we flip any
+    ``pending`` row older than ``wallet_deposit_expiry_seconds`` to
+    ``expired``. No balance is credited; the user can always create
+    a fresh deposit if they actually wanted to pay.
+
+    Uses ``with_for_update(skip_locked=True)`` so a concurrent sweep
+    in a sibling worker doesn't double-flip rows. Returns the number
+    of rows touched so the caller can log it.
+    """
+    expiry_seconds = int(settings.wallet_deposit_expiry_seconds)
+    if expiry_seconds <= 0:
+        return 0
+
+    cutoff = utcnow() - timedelta(seconds=expiry_seconds)
+
+    rows = (
+        (
+            await session.execute(
+                select(WalletDeposit)
+                .where(
+                    WalletDeposit.status == WalletDepositStatus.pending,
+                    WalletDeposit.created_at <= cutoff,
+                )
+                .with_for_update(skip_locked=True)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    if not rows:
+        return 0
+
+    for row in rows:
+        row.status = WalletDepositStatus.expired
+
+    await session.commit()
+    return len(rows)
+
+
 async def poll_deposit_status(session: AsyncSession, deposit: WalletDeposit) -> WalletDeposit:
     """Refresh a pending deposit's status from CryptoBot. Idempotent."""
     if deposit.status != WalletDepositStatus.pending:
