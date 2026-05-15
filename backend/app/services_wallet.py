@@ -160,7 +160,30 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
     if deposit.status == WalletDepositStatus.paid:
         return deposit
 
-    bal = await get_or_create_balance(session, deposit.user_id, deposit.currency_id)
+    # V5-B-1 — take a FOR UPDATE lock on the user's balance row before
+    # mutating it. Two concurrent webhook deliveries that race past
+    # the deposit-row lock (or a webhook racing with the
+    # ``poll_deposit_status`` polling fallback in services_wallet)
+    # must serialise their balance writes here, otherwise the second
+    # transaction's RMW can clobber the first transaction's
+    # increment. ``lock_user_balance`` mirrors what ``create_withdrawal``
+    # and the deal-creation ``_debit`` path already use.
+    bal = await lock_user_balance(session, deposit.user_id, deposit.currency_id)
+
+    # Re-read the deposit's status under the balance lock as
+    # belt-and-suspenders behind the outer FOR UPDATE lock both
+    # entry points now take on the deposit row before calling us:
+    # the webhook path locks via ``_find_wallet_deposit(lock=True)``
+    # in ``services_payments.handle_invoice_paid``, and the polling
+    # path locks via ``select(...).with_for_update()
+    # .execution_options(populate_existing=True)`` in
+    # ``poll_deposit_status``. Those outer locks are the primary
+    # serialising guard; this refresh+recheck just narrows the
+    # window if a future caller forgets to acquire the deposit-row
+    # lock first.
+    await session.refresh(deposit, attribute_names=["status", "paid_at"])
+    if deposit.status == WalletDepositStatus.paid:
+        return deposit
     # See M5 in services_deals._debit for why this stays Decimal end-
     # to-end instead of round-tripping through ``float``.
     bal.amount = Decimal(str(bal.amount)) + Decimal(str(deposit.amount))
@@ -252,11 +275,57 @@ async def poll_deposit_status(session: AsyncSession, deposit: WalletDeposit) -> 
         return deposit
     row = rows[0]
     if row.status == "paid":
-        return await credit_deposit(session, deposit)
+        # V5-B-1 follow-up — re-load the deposit with ``FOR UPDATE``
+        # before crediting so this polling-fallback path acquires
+        # locks in the same order as the webhook
+        # (``services_payments.handle_invoice_paid``):
+        # WalletDeposit -> UserBalance. Without this, the webhook's
+        # WalletDeposit lock and the poll path's UserBalance lock
+        # form a cycle that Postgres resolves with a deadlock abort
+        # for one of the transactions.
+        #
+        # ``populate_existing=True`` is required because ``deposit``
+        # is already in the session's identity map (the caller
+        # loaded it before calling us). Without it, SQLAlchemy
+        # issues the ``SELECT ... FOR UPDATE`` (acquiring the row
+        # lock) but returns the cached instance with its pre-lock
+        # column values, so ``locked.status`` would read the stale
+        # ``pending`` even after a sibling webhook just committed
+        # ``paid``. With the option set, attribute values are
+        # refreshed from the result row and the recheck below is
+        # the primary serialising guard.
+        locked = (
+            await session.execute(
+                select(WalletDeposit)
+                .where(WalletDeposit.id == deposit.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        if locked.status != WalletDepositStatus.pending:
+            return locked
+        return await credit_deposit(session, locked)
     if row.status == "expired":
-        deposit.status = WalletDepositStatus.expired
+        # Same lock-order rationale as above for the expired branch:
+        # serialise with any concurrent webhook delivery on the same
+        # row and re-check ``status`` so we never clobber a
+        # freshly-paid deposit back to ``expired``.
+        # ``populate_existing=True`` for the same identity-map reason
+        # documented in the ``paid`` branch above.
+        locked = (
+            await session.execute(
+                select(WalletDeposit)
+                .where(WalletDeposit.id == deposit.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        if locked.status != WalletDepositStatus.pending:
+            return locked
+        locked.status = WalletDepositStatus.expired
         await session.commit()
-        await session.refresh(deposit)
+        await session.refresh(locked)
+        return locked
     return deposit
 
 

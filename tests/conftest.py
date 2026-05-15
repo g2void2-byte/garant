@@ -44,6 +44,10 @@ os.environ["INACTIVITY_SWEEP_SECONDS"] = "0"
 # explicit sweep test calls ``sweep_expired_deposits`` directly so the
 # loop just adds nondeterminism otherwise.
 os.environ["WALLET_DEPOSIT_SWEEP_SECONDS"] = "0"
+# V5-B-7 — disable the legacy-invoice expiry background loop in tests
+# for the same reason; ``test_invoice_sweep`` calls the helper
+# directly.
+os.environ["INVOICE_SWEEP_SECONDS"] = "0"
 os.environ["PIN_JWT_SECRET"] = "test-pin-secret-fixed-value-do-not-use-in-prod"
 os.environ["MEDIA_ROOT"] = str(_media_root)
 os.environ["ALLOW_UNSIGNED_INIT_DATA"] = "false"

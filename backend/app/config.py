@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     pin_lock_minutes: int = 60
     pin_reset_code_ttl_seconds: int = 10 * 60
 
+    # V5-A-1 — replay window for Telegram WebApp init data; Telegram
+    # regenerates init-data on every TMA open so 15min is safe;
+    # legacy default was 86400 (24h).
+    init_data_max_age_seconds: int = 900
+
     # PR-3 — periodic sweep of stale deals (0 disables).
     inactivity_sweep_seconds: int = 600
 
@@ -44,6 +49,16 @@ class Settings(BaseSettings):
     # default in tests via the env var).
     wallet_deposit_expiry_seconds: int = 24 * 60 * 60  # 24h
     wallet_deposit_sweep_seconds: int = 600
+
+    # V5-B-7 — auto-expire pending legacy ``Invoice`` rows the user
+    # never paid; mirrors ``wallet_deposit_*``. The legacy
+    # ``POST /api/payments/deposit`` (manual_deposit) creates rows in
+    # the ``invoices`` table that never get a webhook from CryptoBot
+    # (these are placeholder rows, not real provider invoices), so a
+    # background sweep is the only path to a terminal state. ``0``
+    # disables the loop (the default in tests via the env var).
+    invoice_expiry_seconds: int = 24 * 60 * 60  # 24h
+    invoice_sweep_seconds: int = 600
 
     # PR-G (L-6) — if the maintenance-flag DB lookup fails the
     # middleware normally falls open (treats maintenance as off and

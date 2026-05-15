@@ -205,11 +205,25 @@ function useAdminDealAction(action: string) {
         .json<{ deal?: AdminDealDetailDto; deleted?: boolean }>();
       return json.deal ?? json;
     },
-    onSuccess: (_data, vars) => {
+    onSuccess: (data, vars) => {
       qc.invalidateQueries({ queryKey: ["admin", "deals"] });
       qc.invalidateQueries({ queryKey: ["admin", "deal", vars.dealId] });
       qc.invalidateQueries({ queryKey: ["admin", "arbitration"] });
       qc.invalidateQueries({ queryKey: ["admin", "dashboard"] });
+      // V5-F-5: when the response carries the full AdminDealDetailDto,
+      // also invalidate the buyer + seller user-detail queries so an
+      // admin viewing one of the parties sees the post-action balance.
+      // The other branch of the union is `{ deleted?: boolean }`, which
+      // has no party ids and is intentionally skipped.
+      if (
+        data &&
+        typeof data === "object" &&
+        "buyer" in data &&
+        "seller" in data
+      ) {
+        qc.invalidateQueries({ queryKey: ["admin", "user", data.buyer.user_id] });
+        qc.invalidateQueries({ queryKey: ["admin", "user", data.seller.user_id] });
+      }
     },
   });
 }
@@ -262,6 +276,11 @@ export function useAdminClaimArbitration() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "arbitration"] });
       qc.invalidateQueries({ queryKey: ["admin", "deals"] });
+      // V5-F-5: claim response only carries `{ claimed, deal_id, arbiter_id }`
+      // and does NOT expose buyer/seller ids. Fall back to a prefix-only
+      // invalidation — TanStack Query treats `["admin", "user"]` as a
+      // prefix and matches every cached `["admin", "user", N]` query.
+      qc.invalidateQueries({ queryKey: ["admin", "user"] });
     },
   });
 }

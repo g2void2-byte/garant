@@ -23,6 +23,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s: %(messa
 _bot_task: asyncio.Task | None = None
 _inactivity_task: asyncio.Task | None = None
 _deposit_expiry_task: asyncio.Task | None = None
+_invoice_expiry_task: asyncio.Task | None = None
 
 
 async def _inactivity_loop(interval_seconds: int) -> None:
@@ -71,9 +72,33 @@ async def _deposit_expiry_loop(interval_seconds: int) -> None:
         await asyncio.sleep(interval_seconds)
 
 
+async def _invoice_expiry_loop(interval_seconds: int) -> None:
+    """V5-B-7 — periodically expire stale ``pending`` legacy invoices.
+
+    Mirrors :func:`_deposit_expiry_loop`: fresh session per iteration,
+    cancelled cleanly during shutdown. ``manual_deposit`` (legacy
+    ``POST /api/payments/deposit``) creates ``Invoice`` rows whose
+    provider id is hand-stamped — CryptoBot never emits webhooks for
+    them, so without this loop they accumulate as ``pending`` forever.
+    """
+    from .services import sweep_expired_invoices
+
+    while True:
+        try:
+            async with async_session() as session:
+                affected = await sweep_expired_invoices(session)
+            if affected:
+                logger.info("invoice-expiry sweep: marked %d invoice(s) expired", affected)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("invoice-expiry sweep failed")
+        await asyncio.sleep(interval_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _bot_task, _inactivity_task, _deposit_expiry_task
+    global _bot_task, _inactivity_task, _deposit_expiry_task, _invoice_expiry_task
 
     # M-8 — Redis-backed rate limit is the only way to share counters
     # across uvicorn workers / replicas. With ``REDIS_URL`` empty the
@@ -128,9 +153,14 @@ async def lifespan(app: FastAPI):
             _deposit_expiry_loop(settings.wallet_deposit_sweep_seconds)
         )
 
+    if settings.invoice_sweep_seconds > 0:
+        _invoice_expiry_task = asyncio.create_task(
+            _invoice_expiry_loop(settings.invoice_sweep_seconds)
+        )
+
     yield
 
-    for task in (_bot_task, _inactivity_task, _deposit_expiry_task):
+    for task in (_bot_task, _inactivity_task, _deposit_expiry_task, _invoice_expiry_task):
         if task and not task.done():
             task.cancel()
             try:
