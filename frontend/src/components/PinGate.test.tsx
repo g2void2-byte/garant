@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import type { PinStatusDto } from "@/api/types";
 
 type PinStatusState = {
@@ -95,7 +95,7 @@ describe("<PinGate />", () => {
     expect(screen.getByTestId("protected")).toBeInTheDocument();
   });
 
-  it("hides children and renders the PIN page when the token is missing", () => {
+  it("hides children and renders the PIN page when the token is missing", async () => {
     mockState.data = {
       has_pin: true,
       attempts_left: 5,
@@ -105,12 +105,17 @@ describe("<PinGate />", () => {
     };
     pinTokenState.valid = false;
 
-    render(
-      <PinGate>
-        <div data-testid="protected">secret</div>
-      </PinGate>,
-    );
+    await act(async () => {
+      render(
+        <PinGate>
+          <div data-testid="protected">secret</div>
+        </PinGate>,
+      );
+    });
 
+    await waitFor(() => {
+      expect(screen.getByText("Mock PIN page")).toBeInTheDocument();
+    });
     expect(screen.queryByTestId("protected")).not.toBeInTheDocument();
   });
 });

@@ -303,6 +303,16 @@ Two complementary suites live under `frontend/`:
   npm run test             # watch mode
   npm run test:coverage    # v8 coverage report → frontend/coverage/
   ```
+
+  **Exit-code gotcha:** piping vitest output (`npm run test:run | tail`, `... 2>&1 | head`) drops vitest's non-zero exit code because bash returns the exit status of the last command in the pipeline by default. Either run vitest unpiped, or enable pipefail explicitly:
+  ```bash
+  set -o pipefail
+  npm run test:run 2>&1 | tail -40   # now exits non-zero when vitest fails
+  # one-shot equivalent:
+  bash -o pipefail -c 'npm run test:run 2>&1 | tail -40'
+  # or just check ${PIPESTATUS[0]} after the pipe.
+  ```
+  CI is unaffected (it runs vitest unpiped), but local debugging will silently look "green" without this.
 - **Playwright** — specs under `frontend/e2e/`, config in `frontend/playwright.config.ts`. Boots `vite dev` on `127.0.0.1:5174` with mobile viewport 390×844. Run from `frontend/`:
   ```bash
   npm run test:e2e:install   # once per machine, downloads Chromium
