@@ -11,12 +11,14 @@ Deal lifecycle moved to :mod:`backend.app.services_deals` (multi-currency,
 
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import notifier
+from .config import settings
 from .models import (
     Deal,
     DealStatus,
@@ -175,3 +177,54 @@ async def credit_invoice(
     await session.refresh(invoice)
 
     return invoice
+
+
+async def sweep_expired_invoices(session: AsyncSession) -> int:
+    """Mark stale ``pending`` legacy ``Invoice`` rows as ``expired``.
+
+    V5-B-7 — pre-fix, an ``Invoice(status=pending)`` row created by the
+    legacy ``POST /api/payments/deposit`` (``manual_deposit``) sat in
+    the table forever if the user never finished paying. Unlike the
+    real CryptoBot wallet-deposit flow, these rows are placeholder
+    invoices (the provider id is hand-stamped, not issued by
+    CryptoBot), so the webhook side will never emit a state change for
+    them. This sweep closes the loop the same way M-6 closed it for
+    ``WalletDeposit``: every ``invoice_sweep_seconds`` the loop in
+    :mod:`backend.app.main` runs us and we flip any ``pending`` row
+    older than ``invoice_expiry_seconds`` to ``expired``. No balance
+    is credited; the user can always create a fresh invoice if they
+    actually want to pay.
+
+    Uses ``with_for_update(skip_locked=True)`` so a concurrent sweep
+    in a sibling worker doesn't double-flip rows. Returns the number
+    of rows touched so the caller can log it.
+    """
+    expiry_seconds = int(settings.invoice_expiry_seconds)
+    if expiry_seconds <= 0:
+        return 0
+
+    cutoff = utcnow() - timedelta(seconds=expiry_seconds)
+
+    rows = (
+        (
+            await session.execute(
+                select(Invoice)
+                .where(
+                    Invoice.status == InvoiceStatus.pending,
+                    Invoice.created_at <= cutoff,
+                )
+                .with_for_update(skip_locked=True)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    if not rows:
+        return 0
+
+    for row in rows:
+        row.status = InvoiceStatus.expired
+
+    await session.commit()
+    return len(rows)
