@@ -16,6 +16,7 @@ from ..pin import (
     hash_pin,
     hash_reset_code,
     is_pin_format_valid,
+    is_pin_too_common,
     issue_session_token,
     verify_pin,
     verify_reset_code,
@@ -86,8 +87,35 @@ def _attempts_left(user) -> int:
 
 
 def _ensure_format(pin: str) -> None:
+    """Reject obviously-malformed PINs (non-digit, wrong length).
+
+    V5-A-5 (L) — must be called BEFORE :func:`_is_locked`. The
+    invariant is that a malformed payload returns 400 (a client
+    bug) regardless of lock state; otherwise a locked user would
+    see 423 even when their request body was never going to be
+    accepted, which conflates two different failure modes and
+    leaks lock state to clients sending garbage.
+    """
     if not is_pin_format_valid(pin):
         raise HTTPException(400, "PIN должен состоять из 4 цифр")
+
+
+def _ensure_strong(pin: str) -> None:
+    """Reject 4-digit PINs from the leaked-PIN blacklist.
+
+    V5-A-4 (M) — only invoked on the *new* PIN being committed
+    (``/setup``, ``/change`` after old-PIN verification, and
+    ``/reset/confirm`` after reset-code verification). On
+    ``/check`` we deliberately do NOT block weak PINs — a
+    long-time user who picked ``1234`` years ago must still be
+    able to log in, otherwise rolling out the blacklist would
+    instantly lock thousands of users out.
+    """
+    if is_pin_too_common(pin):
+        raise HTTPException(
+            400,
+            "Этот PIN слишком простой. Выберите другой, не входящий в список распространённых.",
+        )
 
 
 def _status(user) -> PinStatusOut:
@@ -126,6 +154,7 @@ async def pin_setup(
     if user.pin_hash:
         raise HTTPException(409, "PIN уже установлен")
     _ensure_format(body.pin)
+    _ensure_strong(body.pin)
     user.pin_hash = hash_pin(body.pin)
     user.pin_attempts = 0
     user.pin_locked_until = None
@@ -180,10 +209,28 @@ async def pin_change(
     _ensure_format(body.new_pin)
     if _is_locked(user):
         raise HTTPException(423, "Слишком много попыток. Попробуйте позже.")
-    # M-10 — make sure any unexpected DB error rolls the transaction
-    # back; without it a half-applied update (e.g. attempts++ but
-    # pin_hash unchanged) could leak across the request boundary if a
-    # later session.commit() ever succeeds in the same request.
+    # V5-A-6 (M) / M-10 — wrap the whole sequence in try/except so an
+    # unexpected exception (DB connectivity blip, asyncpg protocol
+    # error, ORM constraint violation) doesn't leave a partial state
+    # behind. Why is this needed on ``/change`` specifically?
+    #
+    # The wrong-old-PIN branch INCREMENTS ``pin_attempts`` and may
+    # WRITE ``pin_locked_until`` before raising HTTPException. Those
+    # writes are intentional and have their OWN ``session.commit()``
+    # already (see the inner branches): we want lockout-escalation
+    # to persist even when the response is an error. So we cannot
+    # rely on "raise the exception, let FastAPI's session dep do the
+    # rollback at request end" — that would also discard the
+    # intentional attempts++ commit.
+    #
+    # What we DO want to roll back is the happy path's WIP changes
+    # if hashing throws (e.g. bcrypt errors out) or the final commit
+    # fails (network hiccup): in that case ``user.pin_hash`` was
+    # reassigned on the ORM object but the DB never saw it. The
+    # surrounding ``except Exception: rollback`` discards that
+    # in-memory mutation along with anything autoflushed before the
+    # exception. ``HTTPException`` is re-raised untouched so the
+    # already-committed attempts++ write stays persisted.
     try:
         if not verify_pin(body.old_pin, user.pin_hash):
             user.pin_attempts = (user.pin_attempts or 0) + 1
@@ -201,6 +248,11 @@ async def pin_change(
                 401,
                 f"Старый PIN неверен. Осталось попыток: {attempts_left}",
             )
+        # V5-A-4 (M) — blacklist check happens AFTER verify_pin succeeds
+        # so a wrong old-PIN still returns 401 (with the attempts
+        # counter bump) and never leaks whether the *new* PIN is
+        # acceptable to an attacker who doesn't know the old one.
+        _ensure_strong(body.new_pin)
         user.pin_hash = hash_pin(body.new_pin)
         user.pin_attempts = 0
         user.pin_locked_until = None
@@ -305,6 +357,14 @@ async def pin_reset_confirm(
             401,
             f"Неверный код. Осталось попыток: {attempts_left}",
         )
+
+    # V5-A-4 (M) — blacklist check happens AFTER verify_reset_code
+    # succeeds so attackers who don't know the reset code can't probe
+    # which PINs are acceptable (and so a user who got the right
+    # reset code never sees their attempts-left counter bump just
+    # because they typed a weak new PIN — the brute-force window
+    # only protects the code, not the new-PIN field).
+    _ensure_strong(body.new_pin)
 
     user.pin_hash = hash_pin(body.new_pin)
     user.pin_attempts = 0

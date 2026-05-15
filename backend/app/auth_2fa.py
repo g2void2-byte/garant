@@ -17,6 +17,41 @@ header and verifies it against ``user.totp_secret``. Endpoints that
 must be 2FA-gated (treasury withdrawal, user delete) add it to their
 dependency list — it returns the resolved ``User`` so handlers don't
 have to depend on both ``AdminUser`` and the TOTP check.
+
+V5-A-10 (M) — **NTP / PTP requirement.** TOTP is fundamentally a
+clock-comparison protocol: the server and the user's authenticator
+app must agree on ``floor(unix_time / 30)`` (modulo the
+±``_DRIFT_WINDOWS`` tolerance). With ``_DRIFT_WINDOWS = 1`` we admit
+codes from the previous, current, and next 30-second windows, so the
+server tolerates roughly ±60 seconds of skew against the
+authenticator. Beyond that, valid codes typed in good faith by the
+admin will start to 401 and treasury withdrawals will silently fail.
+
+Operational requirements:
+
+* **Production / staging hosts MUST run an NTP client** (``chrony``,
+  ``systemd-timesyncd``, or any RFC 5905 implementation) syncing to
+  a stratum-1 or stratum-2 pool. Cloud VMs typically get this for
+  free via the hypervisor; bare-metal deployments must opt in.
+* On hosts behind a strict NAT / air-gapped network, run a local NTP
+  server (e.g. ``chronyd`` against an in-VPC clock source) rather
+  than disabling sync.
+* **PTP (Precision Time Protocol) is overkill** for our use case
+  — NTP's typical sub-100ms accuracy is already 600× tighter than
+  the 60s drift window. We only mention PTP here because hyperscaler
+  deployments with a PHC-backed clock should NOT be downgraded to
+  plain NTP just to match this code; both work.
+* If you must skew the clock for debugging (e.g. ``date -s``), the
+  TOTP cache in Redis (``totp-claim:{user.id}:{matched}``) will keep
+  the previously-accepted counter pinned. After fixing the clock,
+  flush those keys: ``redis-cli --scan --pattern 'totp-claim:*' |
+  xargs redis-cli del``.
+
+The ``_DRIFT_WINDOWS`` value is intentionally NOT plumbed through to
+the ``Settings`` class — widening it weakens replay protection (a
+wider acceptance window means an attacker has longer to reuse a
+shoulder-surfed code) and tightening it just causes false rejects.
+Fix the clock instead.
 """
 
 from __future__ import annotations
@@ -24,6 +59,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import secrets
 import struct
@@ -35,6 +71,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import User
 from .redis_client import get_redis
+
+logger = logging.getLogger(__name__)
 
 # Default RFC 6238 parameters (we keep them in sync with the popular
 # authenticator apps).
@@ -129,9 +167,42 @@ def otpauth_url(secret: str, *, account: str, issuer: str = "Garant") -> str:
     )
 
 
-# Environment override — when set, bypasses TOTP entirely so e2e tests
-# can exercise treasury endpoints without provisioning a real secret.
-_TOTP_BYPASS = os.environ.get("ADMIN_TOTP_BYPASS") or ""
+# V5-A-9 (L) — ``ADMIN_TOTP_BYPASS`` short-circuits the entire TOTP
+# check when a matching ``X-Totp-Code`` header arrives. Used by the
+# integration test suite so e2e tests don't have to provision a real
+# TOTP secret; in production this must be unset.
+#
+# Read it via a function (NOT a module-level constant) so:
+#
+# 1. Each request re-fetches the current value, which makes
+#    ``monkeypatch.setenv``/``delenv`` in tests work without having
+#    to reload the module.
+# 2. A misconfigured production deploy can be detected and shut down
+#    by external tooling that mutates the env between requests —
+#    e.g. an operator setting it to ``""`` while the process is
+#    running will take effect on the next admin call, not on the
+#    next restart.
+#
+# A loud WARNING is logged at module import / app startup whenever
+# this var is non-empty so the bypass shows up in CloudWatch /
+# stdout for every boot, not just on the request that exercises it.
+def _totp_bypass() -> str:
+    """Return the current ``ADMIN_TOTP_BYPASS`` value, or ``""`` if unset.
+
+    V5-A-9 (L) — read per-request rather than caching at import
+    time. See module docstring for the rationale.
+    """
+    return os.environ.get("ADMIN_TOTP_BYPASS") or ""
+
+
+if _totp_bypass():
+    # Single startup-time WARNING; intentionally NOT logging the
+    # value itself (would defeat the point of treating it as a
+    # shared secret in CI logs).
+    logger.warning(
+        "ADMIN_TOTP_BYPASS is set — 2FA is bypassed for matching "
+        "X-Totp-Code headers. This MUST NOT be set in production."
+    )
 
 
 async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> None:
@@ -141,9 +212,12 @@ async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> 
 
     Raises 401 on missing/invalid code, 403 if TOTP isn't configured.
     The bypass env var (``ADMIN_TOTP_BYPASS``) short-circuits both
-    checks for e2e tests.
+    checks for e2e tests — V5-A-9 (L) re-reads it per-request via
+    :func:`_totp_bypass` so operator-side ``unset`` takes effect on
+    the next request without a process restart.
     """
-    if _TOTP_BYPASS and code == _TOTP_BYPASS:
+    bypass = _totp_bypass()
+    if bypass and code == bypass:
         return
     if not user.totp_enabled or not user.totp_secret:
         raise HTTPException(403, "2FA не настроен — пройдите настройку 2FA")

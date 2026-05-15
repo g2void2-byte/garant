@@ -52,7 +52,14 @@ def with_totp(headers: dict[str, str]) -> dict[str, str]:
     return {**headers, "X-Totp-Code": TOTP_BYPASS_CODE}
 
 
-async def setup_pin(client: AsyncClient, init_data: str, pin: str = "1234") -> str:
+# V5-A-4 (M) — the production blacklist (``backend.app.pin.COMMON_PINS``)
+# rejects 1234/1111/0000/etc at /setup. Tests that don't care about the
+# PIN value go through this helper and get a strong default so they
+# don't have to track which entries the blacklist covers.
+STRONG_TEST_PIN = "3741"
+
+
+async def setup_pin(client: AsyncClient, init_data: str, pin: str = STRONG_TEST_PIN) -> str:
     """Bootstrap a user (POST /api/pin/setup creates the User row) and
     return the X-Pin-Token for PIN-gated endpoints."""
     resp = await client.post("/api/pin/setup", json={"pin": pin}, headers=auth_headers(init_data))

@@ -36,11 +36,11 @@ async def _get_user(tg_user_id: int) -> User:
 
 async def test_pin_change_happy_path(client):
     init = signed_init_data(6001, "pin_change_ok")
-    old_token = await setup_pin(client, init, pin="1111")
+    old_token = await setup_pin(client, init, pin="5837")
 
     resp = await client.post(
         "/api/pin/change",
-        json={"old_pin": "1111", "new_pin": "2222"},
+        json={"old_pin": "5837", "new_pin": "4163"},
         headers=auth_headers(init),
     )
     assert resp.status_code == 200, resp.text
@@ -50,26 +50,30 @@ async def test_pin_change_happy_path(client):
 
     # New PIN hash persisted, attempts reset.
     user = await _get_user(6001)
-    assert verify_pin("2222", user.pin_hash)
-    assert not verify_pin("1111", user.pin_hash)
+    assert verify_pin("4163", user.pin_hash)
+    assert not verify_pin("5837", user.pin_hash)
     assert (user.pin_attempts or 0) == 0
     assert user.pin_locked_until is None
 
 
 async def test_pin_change_wrong_old_pin_increments_attempts(client):
     init = signed_init_data(6002, "pin_change_wrong")
-    await setup_pin(client, init, pin="1111")
+    await setup_pin(client, init, pin="5837")
 
     resp = await client.post(
         "/api/pin/change",
-        json={"old_pin": "9999", "new_pin": "2222"},
+        # ``9999`` is in the blacklist but that's irrelevant here —
+        # the wrong-old-PIN branch returns 401 (with attempts++)
+        # BEFORE the new-PIN strength check, so the new_pin value
+        # being weak doesn't change the response.
+        json={"old_pin": "9999", "new_pin": "4163"},
         headers=auth_headers(init),
     )
     assert resp.status_code == 401, resp.text
     assert "Старый PIN неверен" in resp.json().get("detail", "")
 
     user = await _get_user(6002)
-    assert verify_pin("1111", user.pin_hash), "pin_hash must be unchanged"
+    assert verify_pin("5837", user.pin_hash), "pin_hash must be unchanged"
     assert (user.pin_attempts or 0) == 1
 
 
@@ -82,14 +86,14 @@ async def test_pin_change_locks_after_max_attempts(client):
     window starts fresh.
     """
     init = signed_init_data(6003, "pin_change_lock")
-    await setup_pin(client, init, pin="1111")
+    await setup_pin(client, init, pin="5837")
 
     max_attempts = settings.pin_max_attempts
     last_resp = None
     for _ in range(max_attempts):
         last_resp = await client.post(
             "/api/pin/change",
-            json={"old_pin": "9999", "new_pin": "2222"},
+            json={"old_pin": "9999", "new_pin": "4163"},
             headers=auth_headers(init),
         )
     assert last_resp is not None
@@ -102,7 +106,7 @@ async def test_pin_change_locks_after_max_attempts(client):
     # Even with correct old PIN, change is now blocked while locked.
     blocked = await client.post(
         "/api/pin/change",
-        json={"old_pin": "1111", "new_pin": "3333"},
+        json={"old_pin": "5837", "new_pin": "7592"},
         headers=auth_headers(init),
     )
     assert blocked.status_code == 423, blocked.text
@@ -116,7 +120,7 @@ async def test_pin_change_without_pin_setup(client):
 
     resp = await client.post(
         "/api/pin/change",
-        json={"old_pin": "1111", "new_pin": "2222"},
+        json={"old_pin": "5837", "new_pin": "4163"},
         headers=auth_headers(init),
     )
     assert resp.status_code == 409, resp.text
@@ -129,11 +133,11 @@ async def test_pin_change_format_rejected(client):
     We feed a 4-character non-digit string to hit the 400 branch.
     """
     init = signed_init_data(6005, "pin_change_fmt")
-    await setup_pin(client, init, pin="1111")
+    await setup_pin(client, init, pin="5837")
 
     resp = await client.post(
         "/api/pin/change",
-        json={"old_pin": "1111", "new_pin": "abcd"},
+        json={"old_pin": "5837", "new_pin": "abcd"},
         headers=auth_headers(init),
     )
     assert resp.status_code == 400, resp.text

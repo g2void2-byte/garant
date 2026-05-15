@@ -21,7 +21,7 @@ from tests.helpers import (
 async def test_withdrawal_requires_pin_session(client):
     """Without ``X-Pin-Token`` the endpoint must reject with 401."""
     init = signed_init_data(4001, "wd_no_pin")
-    await setup_pin(client, init, pin="1234")
+    await setup_pin(client, init, pin="3741")
 
     async with async_session() as session:
         uid = await get_user_id_by_tg(session, 4001)
@@ -37,7 +37,7 @@ async def test_withdrawal_requires_pin_session(client):
 
 async def test_withdrawal_rejects_invalid_pin_token(client):
     init = signed_init_data(4002, "wd_bad_pin")
-    await setup_pin(client, init, pin="1234")
+    await setup_pin(client, init, pin="3741")
 
     async with async_session() as session:
         uid = await get_user_id_by_tg(session, 4002)
@@ -53,7 +53,7 @@ async def test_withdrawal_rejects_invalid_pin_token(client):
 
 async def test_withdrawal_succeeds_with_valid_pin_session(client):
     init = signed_init_data(4003, "wd_ok")
-    pin_token = await setup_pin(client, init, pin="1234")
+    pin_token = await setup_pin(client, init, pin="3741")
 
     async with async_session() as session:
         uid = await get_user_id_by_tg(session, 4003)
