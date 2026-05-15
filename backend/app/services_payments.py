@@ -146,11 +146,18 @@ async def handle_invoice_expired(session: AsyncSession, payload: dict[str, Any])
         return {"ok": False, "reason": "missing invoice_id"}
     provider_id = str(invoice_id)
 
-    wallet = await _find_wallet_deposit(session, provider_id)
+    wallet = await _find_wallet_deposit(session, provider_id, lock=True)
     if wallet is not None:
         # Terminal states are sticky — never flip ``paid`` back to
         # ``expired`` even if Crypto Pay sends a stale update; that
-        # would silently de-credit the user.
+        # would silently de-credit the user. The ``lock=True`` above
+        # closes the V5-B-1 follow-up gap: pre-fix, this branch
+        # raced with ``handle_invoice_paid`` (which now takes the
+        # row lock) so a stale ``expired`` delivery could clobber a
+        # freshly-paid row to ``status=expired`` after the balance
+        # had already been credited. With both webhook entry points
+        # serialised on the row lock, the recheck below runs against
+        # the locked, post-paid value and short-circuits cleanly.
         if wallet.status in (
             WalletDepositStatus.paid,
             WalletDepositStatus.expired,
@@ -161,7 +168,7 @@ async def handle_invoice_expired(session: AsyncSession, payload: dict[str, Any])
         await session.commit()
         return {"ok": True, "kind": "wallet", "expired": True}
 
-    legacy = await _find_legacy_invoice(session, provider_id)
+    legacy = await _find_legacy_invoice(session, provider_id, lock=True)
     if legacy is not None:
         if legacy.status in (InvoiceStatus.paid, InvoiceStatus.expired):
             return {"ok": True, "already_terminal": True, "kind": "legacy"}

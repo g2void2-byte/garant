@@ -108,7 +108,24 @@ async def check_invoice(invoice_id: int, user: CurrentUser, session: SessionDep)
             ) as crypto:
                 checks = await crypto.get_invoices(invoice_ids=[int(inv.provider_invoice_id)])
             if checks and checks[0].status == "paid":
-                inv = await credit_invoice(session, inv)
+                # V5-B-2 follow-up — re-load the Invoice with
+                # ``FOR UPDATE`` before crediting so this polling
+                # fallback acquires locks in the same order as the
+                # webhook path (``services_payments.handle_invoice_paid``):
+                # Invoice -> User. Without this, the webhook's
+                # Invoice lock and the poll path's User lock form a
+                # cycle that Postgres resolves with a deadlock abort.
+                # The User-lock + status recheck inside
+                # ``credit_invoice`` remains as defence-in-depth.
+                locked = (
+                    await session.execute(
+                        select(Invoice).where(Invoice.id == inv.id).with_for_update()
+                    )
+                ).scalar_one()
+                if locked.status == InvoiceStatus.pending:
+                    inv = await credit_invoice(session, locked)
+                else:
+                    inv = locked
         except CryptoPayError as e:
             logger.warning("CryptoBot poll error: %s", e)
 

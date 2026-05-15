@@ -270,11 +270,40 @@ async def poll_deposit_status(session: AsyncSession, deposit: WalletDeposit) -> 
         return deposit
     row = rows[0]
     if row.status == "paid":
-        return await credit_deposit(session, deposit)
+        # V5-B-1 follow-up — re-load the deposit with ``FOR UPDATE``
+        # before crediting so this polling-fallback path acquires
+        # locks in the same order as the webhook
+        # (``services_payments.handle_invoice_paid``):
+        # WalletDeposit -> UserBalance. Without this, the webhook's
+        # WalletDeposit lock and the poll path's UserBalance lock
+        # form a cycle that Postgres resolves with a deadlock abort
+        # for one of the transactions. The recheck inside
+        # ``credit_deposit`` is defence-in-depth; this lock here is
+        # what actually serialises the two entry points.
+        locked = (
+            await session.execute(
+                select(WalletDeposit).where(WalletDeposit.id == deposit.id).with_for_update()
+            )
+        ).scalar_one()
+        if locked.status != WalletDepositStatus.pending:
+            return locked
+        return await credit_deposit(session, locked)
     if row.status == "expired":
-        deposit.status = WalletDepositStatus.expired
+        # Same lock-order rationale as above for the expired branch:
+        # serialise with any concurrent webhook delivery on the same
+        # row and re-check ``status`` so we never clobber a
+        # freshly-paid deposit back to ``expired``.
+        locked = (
+            await session.execute(
+                select(WalletDeposit).where(WalletDeposit.id == deposit.id).with_for_update()
+            )
+        ).scalar_one()
+        if locked.status != WalletDepositStatus.pending:
+            return locked
+        locked.status = WalletDepositStatus.expired
         await session.commit()
-        await session.refresh(deposit)
+        await session.refresh(locked)
+        return locked
     return deposit
 
 
