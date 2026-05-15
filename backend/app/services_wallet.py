@@ -160,7 +160,25 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
     if deposit.status == WalletDepositStatus.paid:
         return deposit
 
-    bal = await get_or_create_balance(session, deposit.user_id, deposit.currency_id)
+    # V5-B-1 — take a FOR UPDATE lock on the user's balance row before
+    # mutating it. Two concurrent webhook deliveries that race past
+    # the deposit-row lock (or a webhook racing with the
+    # ``poll_deposit_status`` polling fallback in services_wallet)
+    # must serialise their balance writes here, otherwise the second
+    # transaction's RMW can clobber the first transaction's
+    # increment. ``lock_user_balance`` mirrors what ``create_withdrawal``
+    # and the deal-creation ``_debit`` path already use.
+    bal = await lock_user_balance(session, deposit.user_id, deposit.currency_id)
+
+    # Re-read the deposit's status under the balance lock as a
+    # defence-in-depth guard against the polling fallback racing
+    # with a webhook for the same deposit. The webhook path locks
+    # the deposit row in ``services_payments.handle_invoice_paid``;
+    # the polling path does not, so this refresh+recheck is what
+    # serialises the two against each other in that corner case.
+    await session.refresh(deposit, attribute_names=["status", "paid_at"])
+    if deposit.status == WalletDepositStatus.paid:
+        return deposit
     # See M5 in services_deals._debit for why this stays Decimal end-
     # to-end instead of round-tripping through ``float``.
     bal.amount = Decimal(str(bal.amount)) + Decimal(str(deposit.amount))

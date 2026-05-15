@@ -128,10 +128,37 @@ async def credit_invoice(
     if invoice.status == InvoiceStatus.paid:
         return invoice
 
+    # V5-B-2 — take a FOR UPDATE lock on the User row that holds the
+    # legacy ``balance`` column BEFORE mutating it. ``credit_invoice``
+    # is called from two callers:
+    #
+    # * :func:`services_payments.handle_invoice_paid`, which now also
+    #   locks the Invoice row before getting here (the webhook path,
+    #   V5-B-2 step 1), and
+    # * :func:`backend.app.routers.payments.check_invoice`, the
+    #   polling fallback, which does a plain ``session.get(Invoice,
+    #   ...)`` without a lock.
+    #
+    # Locking the User row serialises the second caller against any
+    # concurrent webhook delivery for the SAME owner: the webhook
+    # holds the User lock while it RMW-s ``owner.balance``, and the
+    # polling path blocks here until that commits. We then refresh
+    # ``invoice`` from the DB and re-check ``invoice.status`` — the
+    # loser of the race observes ``paid`` and returns idempotently
+    # without double-crediting the user.
+    owner = (
+        await session.execute(
+            select(User).where(User.id == invoice.owner_id).with_for_update()
+        )
+    ).scalar_one_or_none()
+
+    await session.refresh(invoice, attribute_names=["status", "paid_at"])
+    if invoice.status == InvoiceStatus.paid:
+        return invoice
+
     invoice.status = InvoiceStatus.paid
     invoice.paid_at = utcnow()
 
-    owner = await session.get(User, invoice.owner_id)
     if owner:
         owner.balance = Decimal(str(owner.balance)) + Decimal(str(invoice.amount))
 
