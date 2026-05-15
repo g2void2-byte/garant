@@ -6,14 +6,31 @@
 type HapticStyle = "light" | "medium" | "heavy" | "soft" | "rigid";
 type HapticNotification = "error" | "success" | "warning";
 
+// Telegram client platform identifiers as reported by ``Telegram.WebApp.platform``.
+// Mobile clients: android / android_x / ios. Everything else (tdesktop, macos,
+// weba, webk, windows, linux, unknown) we treat as desktop / web for layout
+// purposes — the Mini App lives in a separate floating window there and needs
+// the lock-down (fullscreen + no F12) treatment.
+const MOBILE_PLATFORMS = new Set(["android", "android_x", "ios"]);
+
 interface TelegramWebApp {
   initData: string;
   initDataUnsafe: { user?: { id: number; username?: string; first_name?: string } };
   themeParams: Record<string, string>;
+  platform?: string;
+  version?: string;
+  isVersionAtLeast?: (v: string) => boolean;
   ready: () => void;
   expand: () => void;
   close: () => void;
   isExpanded: boolean;
+  isFullscreen?: boolean;
+  requestFullscreen?: () => void;
+  exitFullscreen?: () => void;
+  disableVerticalSwipes?: () => void;
+  enableClosingConfirmation?: () => void;
+  lockOrientation?: () => void;
+  offEvent?: (event: string, handler: () => void) => void;
   HapticFeedback: {
     impactOccurred: (style: HapticStyle) => void;
     notificationOccurred: (type: HapticNotification) => void;
@@ -52,6 +69,10 @@ interface TelegramWebApp {
   onEvent: (event: string, handler: () => void) => void;
 }
 
+// Re-exported so React components can do feature detection without
+// importing ``window.Telegram`` directly.
+export type { TelegramWebApp };
+
 declare global {
   interface Window {
     Telegram?: { WebApp: TelegramWebApp };
@@ -71,6 +92,90 @@ export function initTelegram() {
     // notice when ``ready`` / ``expand`` start failing in production.
     console.warn("initTelegram: Telegram.WebApp call failed", err);
   }
+  lockToFullscreen();
+}
+
+/**
+ * Returns true when the Mini App is running inside a mobile Telegram
+ * client (Android / iOS). Desktop, web and "unknown" all return false.
+ *
+ * Used to decide whether to render the in-app minimize button — on PC
+ * Telegram already provides window controls, on mobile the bot lives
+ * fullscreen with no native chrome so we need our own.
+ */
+export function isMobile(): boolean {
+  const platform = tg?.platform;
+  if (!platform) return false;
+  return MOBILE_PLATFORMS.has(platform.toLowerCase());
+}
+
+/**
+ * Asks Telegram to put the Mini App into fullscreen mode and keep it
+ * there. Telegram Bot API 8.0+ method; older clients silently no-op.
+ *
+ * We also wire up the ``fullscreenChanged`` event so if the user (or a
+ * stray gesture) exits fullscreen we immediately re-request it — this
+ * is what gives the "no way to shrink the window" behaviour the user
+ * asked for.
+ *
+ * Additionally calls ``disableVerticalSwipes`` so a downward swipe on
+ * mobile doesn't dismiss the Mini App, and ``enableClosingConfirmation``
+ * so a stray Esc / window close doesn't lose user state.
+ */
+let fullscreenListenerInstalled = false;
+export function lockToFullscreen() {
+  if (!tg) return;
+  try {
+    tg.disableVerticalSwipes?.();
+    tg.enableClosingConfirmation?.();
+    tg.requestFullscreen?.();
+  } catch (err) {
+    console.warn("lockToFullscreen: Telegram.WebApp call failed", err);
+  }
+  if (fullscreenListenerInstalled) return;
+  try {
+    tg.onEvent("fullscreenChanged", () => {
+      // Telegram fires this on both enter and exit. If the new state
+      // is "not fullscreen" the user (or the platform) just left
+      // fullscreen — re-request immediately to keep the lock in place.
+      if (tg && tg.isFullscreen === false) {
+        try {
+          tg.requestFullscreen?.();
+        } catch (err) {
+          console.warn("lockToFullscreen: re-request failed", err);
+        }
+      }
+    });
+    fullscreenListenerInstalled = true;
+  } catch (err) {
+    console.warn("lockToFullscreen: onEvent failed", err);
+  }
+}
+
+/**
+ * Closes the Mini App, which on Telegram clients effectively
+ * "minimizes" it — the user can re-open the bot from chat and resume
+ * where they left off. Used by the mobile-only minimize button.
+ */
+export function minimizeApp() {
+  if (!tg) return;
+  try {
+    tg.exitFullscreen?.();
+  } catch (err) {
+    console.warn("minimizeApp: exitFullscreen failed", err);
+  }
+  try {
+    tg.close();
+  } catch (err) {
+    console.warn("minimizeApp: close failed", err);
+  }
+}
+
+// Test-only hook: reset module-level state between tests so installing
+// the fullscreen listener twice in a row in a single test process
+// doesn't silently no-op the second call.
+export function __resetTgModuleStateForTests() {
+  fullscreenListenerInstalled = false;
 }
 
 export function haptic(kind: "light" | "medium" | "heavy" | "success" | "error" | "warning" | "select") {
