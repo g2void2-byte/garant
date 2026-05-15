@@ -27,7 +27,7 @@ def _review_out(r: Review) -> ReviewOut:
 @router.get("", response_model=list[ReviewOut])
 async def list_reviews(
     session: SessionDep,
-    _viewer: CurrentUser,
+    viewer: CurrentUser,
     _rl: RLReviewsList,
     user: str = Query(...),
     limit: int = Query(50, ge=1, le=100),
@@ -39,10 +39,20 @@ async def list_reviews(
     # yet — it receives the first 50 rows which is enough for the
     # current profile UI; pagination params let admins/tools page
     # through the rest without DoS-ing the DB.
+    #
+    # R7/H-12 — if the target has flipped ``is_hidden_profile`` we
+    # return 404 to mirror ``GET /api/users/{username}``. The owner
+    # themself (e.g. checking their own profile review feed) and
+    # admins keep seeing the rows so a moderator can investigate
+    # complaints without flipping the toggle.
+    target = (await session.execute(select(User).where(User.username == user))).scalar_one_or_none()
+    if target is None:
+        raise HTTPException(404, "Пользователь не найден")
+    if target.is_hidden_profile and not (viewer.is_admin or viewer.id == target.id):
+        raise HTTPException(404, "Пользователь не найден")
     stmt = (
         select(Review)
-        .join(Review.target)
-        .where(User.username == user)
+        .where(Review.target_id == target.id)
         .order_by(Review.created_at.desc())
         .limit(limit)
         .offset(offset)

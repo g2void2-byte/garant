@@ -349,16 +349,33 @@ async def health():
     return {"status": "ok", "db": "ok"}
 
 
+def resolve_spa_path(full_path: str, dist: Path) -> Path:
+    """Map a SPA fallback request path to a file inside ``dist``.
+
+    Returns the resolved absolute path. If the request's path attempts
+    to escape ``dist`` (via ``..`` segments, an embedded absolute path,
+    or any other trick that ``Path.resolve`` normalises), the function
+    returns ``dist / "index.html"`` — the SPA shell — instead. The
+    same fallback applies when the resolved target points inside the
+    dist but doesn't actually exist on disk (e.g. a client-side route
+    like ``/deals/123``).
+
+    R1/C-3 — extracted from the route handler so the traversal
+    semantics can be unit-tested without spinning up a real built
+    frontend bundle on disk.
+    """
+    dist_resolved = dist.resolve()
+    candidate = (dist / full_path).resolve()
+    if not candidate.is_relative_to(dist_resolved):
+        return dist / "index.html"
+    if candidate.is_file():
+        return candidate
+    return dist / "index.html"
+
+
 if FRONTEND_DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
-    _FRONTEND_DIST_RESOLVED = FRONTEND_DIST.resolve()
-
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):
-        file = (FRONTEND_DIST / full_path).resolve()
-        if not file.is_relative_to(_FRONTEND_DIST_RESOLVED):
-            return FileResponse(FRONTEND_DIST / "index.html")
-        if file.is_file():
-            return FileResponse(file)
-        return FileResponse(FRONTEND_DIST / "index.html")
+        return FileResponse(resolve_spa_path(full_path, FRONTEND_DIST))
