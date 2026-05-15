@@ -16,7 +16,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select
 
-from ..auth_2fa import TotpUser
+from ..admin_guard import TotpUser
 from ..deps import AdminUser, CurrentUser, SessionDep
 from ..models import (
     AppSettings,
