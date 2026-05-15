@@ -137,6 +137,20 @@ async def get_current_user(
             # writer committed first) or our INSERT just landed.
             raise HTTPException(500, "Failed to create user account")
     else:
+        # Comment 50 (M) — refuse banned / frozen accounts BEFORE
+        # writing anything to their row. Pre-fix the access check
+        # lived after the ``last_login_at`` / ``login_count`` /
+        # ``last_ip`` bump, so every request from a banned user
+        # still landed an UPDATE on ``users`` — wasting WAL and
+        # silently extending the admin panel's "last seen" column
+        # to show that a *blocked* user was just active. Cheap
+        # role gate first; the DB-write side effects only run for
+        # callers who would actually get past the 403.
+        if user.is_banned:
+            raise HTTPException(403, "Аккаунт заблокирован")
+        if user.is_frozen:
+            raise HTTPException(403, "Аккаунт заморожен")
+
         dirty = False
         if tg_user.get("username") and user.username != tg_user["username"]:
             user.username = tg_user["username"]
@@ -158,11 +172,11 @@ async def get_current_user(
             await session.commit()
             await session.refresh(user)
 
-    # Comment 50 (M) — re-fetch ``is_banned`` / ``is_frozen`` BEFORE
-    # we've committed anything that could ride on a now-banned account.
-    # The ``commit + refresh`` above already covers the "existing
-    # user" path; for the new-user path the row we just SELECTed is
-    # fresh from the DB, so no extra refresh is needed.
+    # New-user path drops here directly: the row we just inserted
+    # has the model defaults (``is_banned=False`` / ``is_frozen=False``),
+    # so the gate above is a no-op for first-touch callers — but we
+    # still keep a belt-and-braces check here in case a future
+    # migration starts seeding banned rows.
     if user.is_banned:
         raise HTTPException(403, "Аккаунт заблокирован")
     if user.is_frozen:
