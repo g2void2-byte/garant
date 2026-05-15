@@ -293,6 +293,54 @@ curl -s http://localhost:8080/api/users/testbuyer   # online=false
 - **Cyrillic input drops characters when typed via the keyboard layer.** Direct keystroke injection (xdotool-style `type` actions) often drops or rearranges Cyrillic characters in input/textarea fields. Workarounds: use English content for adversarial assertions where the body text is incidental, or paste from the clipboard if Russian text is actually required (e.g. `xdotool key ctrl+v` after `xclip -selection clipboard`).
 - **Chrome address-bar autocomplete reuses previous paths.** Typing `localhost:5173/services/1` may autocomplete to `/services/123` (or any previously-visited path with the same prefix) and silently send you to the wrong URL. Always include the full origin, screenshot the address bar before pressing Enter, or click into the bar and press `Ctrl+A` + `Delete` before typing.
 
+## Automated Frontend Tests (vitest + playwright)
+
+Two complementary suites live under `frontend/`:
+
+- **Vitest + React Testing Library** — `frontend/src/**/*.test.{ts,tsx}` with global setup in `frontend/src/test/setup.ts` and config in `frontend/vitest.config.ts`. jsdom env, shared `@/` alias with `vite.config.ts`. Run from `frontend/`:
+  ```bash
+  npm run test:run         # single pass
+  npm run test             # watch mode
+  npm run test:coverage    # v8 coverage report → frontend/coverage/
+  ```
+- **Playwright** — specs under `frontend/e2e/`, config in `frontend/playwright.config.ts`. Boots `vite dev` on `127.0.0.1:5174` with mobile viewport 390×844. Run from `frontend/`:
+  ```bash
+  npm run test:e2e:install   # once per machine, downloads Chromium
+  npm run test:e2e           # full run
+  npx playwright test --headed --debug   # interactive debugging
+  ```
+
+### Why `vite dev` (not `vite preview`)
+
+`src/lib/tg.ts` reads `localStorage.dev_init_data` only when `import.meta.env.DEV` is true. `vite preview` serves a production bundle where that branch is dead-code-eliminated, so the seeded init data is never consulted and every API call returns 401. The playwright `webServer` config intentionally invokes `npm run dev` for that reason.
+
+### E2E harness (`frontend/e2e/fixtures.ts`)
+
+The harness deliberately bypasses the real auth + PIN flow so smoke tests run without backend/DB:
+
+1. `seedSession(page)` writes three keys to `localStorage` via `page.addInitScript`:
+   - `dev_init_data` — picked up by `src/lib/tg.ts` in DEV mode
+   - `garant.pin_token` — the **PIN session token** that `PinGate` accepts directly
+   - `garant.pin_token_expires` — far-future ISO timestamp
+2. `mockApi(page)` registers Playwright routes for each endpoint with regex-anchored `^https?://[^/]+/api/<endpoint>(\?.*)?$` patterns. **Do NOT use `**/api/**`** — Vite serves real module URLs like `/src/api/client.ts` and that glob will intercept them, returning JSON where the browser expects JavaScript.
+3. The catch-all route (`/.*/`) is registered **first**. Playwright matches the **last-registered** matching route, so explicit endpoint routes registered after the catch-all win.
+
+### Adversarial verification rule
+
+If you change the e2e harness or vitest specs, prove they are still sensitive by mutating **product code** they cover — not just fixture data:
+
+- Example that does **not** work: flipping `pin/status` mock to `has_pin: false`. `seedSession()` writes a valid PIN token to `localStorage` and `PinGate` accepts it without ever calling `/api/pin/status`. The test still passes — that's correct, resilient harness behavior, not a test gap.
+- Example that **does** work: change `<Route path="/" element={<Navigate to="/search" />}>` in `frontend/src/App.tsx` to a different target. The redirect spec fails with `toHaveURL` mismatch as expected.
+- General rule: if you can't break a test by mutating a real source file, the test isn't actually constraining anything yet.
+
+### Keeping fixtures in sync with backend
+
+The playwright fixture mocks real DTOs. If you change a backend response shape (e.g. `me`, `services`, `deals`, `users`, `wallet/balances`), update the matching mock in `frontend/e2e/fixtures.ts` in the same PR — otherwise the e2e suite will pass against the old shape and silently mask real regressions.
+
+### CI integration
+
+`.github/workflows/ci.yml` runs vitest as a step inside the `frontend` job and playwright as a separate `frontend-e2e` job. The e2e job caches `~/.cache/ms-playwright` keyed by `@playwright/test` version, so Chromium is only re-downloaded on dep bumps (cold cache ≈ 3–4 min, warm ≈ 30s). On failure the job uploads `playwright-report/` as an artifact.
+
 ## Testing the Bot (aiogram menu)
 
 The bot lives in `backend/app/bot/` (handlers, keyboards, sections, texts). It exposes a persistent reply keyboard with 4 sections and inline WebApp buttons that open the TMA at specific routes.
@@ -352,4 +400,3 @@ Override DB connection via env vars: `POSTGRES_HOST`, `POSTGRES_PORT`,
 - The `arbitrate` endpoint uses a query parameter `reason`, not a request body
 - Admin withdrawal `/decide` and service `/moderate` endpoints require TotpUser (2FA) — cannot test via simple curl without TOTP setup
 - `wallet_deposits` table has a NOT NULL `provider` column — direct psql inserts need to include it
-- `wallet_withdrawals` table has NOT NULL `admin_note` column and foreign key constraints on `user_id`/`currency_id` — direct psql inserts must satisfy these
