@@ -70,6 +70,17 @@ async def push(
 ) -> Notification:
     """Persist a notification, publish it on WS, fire a DM.
 
+    Security contract (V5-A-7): ``body`` may contain user-visible
+    secrets (PIN reset codes, OTP codes, account-transfer codes) and
+    MUST NEVER be logged in plaintext. The current code does NOT log
+    it: ``_safe_send_dm`` logs only the recipient ``tg_user_id`` and
+    the exception type via ``logger.exception``, and no other
+    ``logger.*`` call in this module interpolates ``body``, ``title``,
+    or ``payload``. Future maintainers and any future Sentry
+    integration must preserve this contract (``send_default_pii=False``
+    and disabled ``LoggingIntegration`` breadcrumb capture for
+    ``backend.app.notifier`` and ``backend.app.bot.notify``).
+
     The caller **owns the transaction**: we ``flush()`` so the notif
     row has a primary key for WS/DM dispatch, but the commit happens
     in the caller (M-17). That makes the in-app notification atomic

@@ -39,6 +39,19 @@ def get_bot() -> Optional[Bot]:
 async def send_dm(tg_user_id: int, text: str) -> bool:
     """Send an HTML-formatted DM to the given Telegram user.
 
+    Security contract (V5-A-7): ``text`` may contain user-visible
+    secrets (PIN reset codes, OTP codes, account-transfer codes) and
+    MUST NEVER be logged in plaintext. The current implementation logs
+    only the bot configuration state (``logger.warning`` when the bot
+    is not configured) and the API failure (``logger.warning`` with the
+    ``TelegramAPIError`` message, no body interpolation). Future
+    maintainers: do NOT add ``logger.*(..., text)`` or
+    ``logger.*(..., extra={"text": text})`` calls to this function or
+    to its callers without redacting the text first. If a Sentry SDK
+    is ever wired up, configure ``send_default_pii=False`` and disable
+    ``LoggingIntegration`` breadcrumb capture for this module so the
+    secret cannot leak via breadcrumbs either.
+
     Returns True on success, False if the bot is not configured or the
     Telegram API rejected the call (e.g. user has not /start'ed the bot).
     """

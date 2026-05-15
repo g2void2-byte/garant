@@ -250,6 +250,13 @@ async def pin_reset_request(
     await session.commit()
     await session.refresh(user)
 
+    # V5-A-7 — ``code`` is the plaintext PIN-reset secret. It must
+    # never appear in logs, breadcrumbs, or Sentry events. Only
+    # ``send_dm`` and the recipient see it; the ``logger.warning``
+    # below intentionally logs only ``user.id`` (no ``text``, no
+    # ``code``, no ``extra=`` payload). See the docstrings on
+    # ``backend.app.bot.notify.send_dm`` and
+    # ``backend.app.notifier.push`` for the full contract.
     text = (
         "🔐 Сброс PIN в Garant\n\n"
         f"Ваш код: <b>{code}</b>\n\n"
