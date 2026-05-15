@@ -20,10 +20,9 @@ from sqlalchemy import text
 
 from ... import version as app_version
 from ...admin_audit import log_admin_action
-from ...auth_2fa import require_totp
+from ...admin_guard import TotpUser
 from ...config import settings as app_settings_env
 from ...deps import AdminUser, SessionDep
-from ...models import User
 from ...rate_limit import rate_limit
 from ...redis_client import get_redis
 from ...schemas import AdminSystemStatusOut
@@ -82,9 +81,9 @@ async def status(_admin: AdminUser, session: SessionDep):
 
 @router.post("/redis/flush")
 async def flush_redis(
+    admin: TotpUser,
     request: Request,
     session: SessionDep,
-    admin: User = Depends(require_totp),
 ):
     """Wipe the Redis database used by the backend.
 

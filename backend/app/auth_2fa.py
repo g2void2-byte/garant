@@ -28,13 +28,11 @@ import os
 import secrets
 import struct
 import time
-from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .deps import AdminUser, SessionDep
 from .models import User
 
 # Default RFC 6238 parameters (we keep them in sync with the popular
@@ -160,27 +158,8 @@ async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> 
     session.add(user)
 
 
-async def require_totp(
-    user: AdminUser,
-    session: SessionDep,
-    x_totp_code: Annotated[str | None, Header(alias="X-Totp-Code")] = None,
-) -> User:
-    """FastAPI dependency that gates a route behind a valid TOTP code.
-
-    Returns the resolved admin ``User`` so handlers don't have to
-    re-declare ``AdminUser``. Raises 403 if TOTP isn't configured for
-    the actor; 401 if the code is wrong, missing, or already used.
-
-    The accepted code's counter is persisted on ``user.totp_last_counter``
-    so the same 6-digit value can't be reused within its 30-second
-    window. The change is staged on the dependency-injected session
-    and committed by the route handler at the end of the transaction;
-    if the handler raises, the bump rolls back, leaving the code
-    consumable again — that's intentional (we only burn the code on
-    success).
-    """
-    await _consume_totp(session, user, x_totp_code)
-    return user
-
-
-TotpUser = Annotated[User, Depends(require_totp)]
+# ``TotpUser`` lives in :mod:`backend.app.admin_guard` now (R2 —
+# unified admin dependency). Importing it back here would create a
+# circular import (``admin_guard`` imports ``_consume_totp`` from this
+# module). Routers should ``from .admin_guard import TotpUser`` going
+# forward.

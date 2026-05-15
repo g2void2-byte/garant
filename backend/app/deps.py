@@ -173,35 +173,27 @@ async def require_pin_session(
     return user
 
 
-async def require_admin(
-    user: User = Depends(get_current_user),
-) -> User:
-    """Gate an endpoint behind ``is_admin``.
-
-    Used by every ``/api/admin/*`` route. The two privileged roles are
-    ``admin`` (full access) and ``arbiter`` (only the arbitration tab,
-    handled by its own dep).
-    """
-    if not user.is_admin:
-        raise HTTPException(403, "Доступ запрещён")
-    return user
-
-
-async def require_admin_or_arbiter(
-    user: User = Depends(get_current_user),
-) -> User:
-    """Gate an endpoint behind ``is_admin`` OR ``is_arbiter``.
-
-    Used by arbitration-only endpoints in the admin panel: arbiters can
-    read their own dispute queue, admins see everything.
-    """
-    if not (user.is_admin or user.is_arbiter):
-        raise HTTPException(403, "Доступ запрещён")
-    return user
-
-
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 PinUser = Annotated[User, Depends(require_pin_session)]
-AdminUser = Annotated[User, Depends(require_admin)]
-AdminOrArbiterUser = Annotated[User, Depends(require_admin_or_arbiter)]
+
+
+# Admin gating moved to :mod:`backend.app.admin_guard` (R2 — unified
+# admin dependency). The legacy type aliases are re-exported here so
+# existing ``from .deps import AdminUser`` imports keep working.
+#
+# Lazy re-export via :pep:`562` module-level ``__getattr__``: a direct
+# top-level ``from .admin_guard import ...`` would deadlock because
+# ``admin_guard`` itself imports ``CurrentUser`` / ``SessionDep`` from
+# this module. ``__getattr__`` only fires when an attribute is looked
+# up *after* both modules have finished loading, so the cycle is
+# avoided at import time. Once resolved, the value is cached in the
+# module's ``__dict__`` so subsequent lookups are direct.
+def __getattr__(name: str):
+    if name in ("AdminUser", "AdminOrArbiterUser"):
+        from . import admin_guard
+
+        value = getattr(admin_guard, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(name)

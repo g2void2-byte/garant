@@ -24,11 +24,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select, text
 
 from ...admin_audit import log_admin_action
-from ...auth_2fa import require_totp
+from ...admin_guard import TotpUser
 from ...config import settings as app_settings_env
 from ...cryptopay import CryptoPay, CryptoPayError
 from ...deps import AdminUser, SessionDep
-from ...models import Currency, Deal, DealStatus, TreasuryWithdrawal, User
+from ...models import Currency, Deal, DealStatus, TreasuryWithdrawal
 from ...rate_limit import rate_limit
 from ...schemas import (
     AdminTreasuryBalanceOut,
@@ -181,9 +181,9 @@ async def list_treasury_withdrawals(
 @router.post("/withdraw", response_model=AdminTreasuryWithdrawOut)
 async def treasury_withdraw(
     body: AdminTreasuryWithdrawIn,
+    admin: TotpUser,
     request: Request,
     session: SessionDep,
-    admin: User = Depends(require_totp),
 ):
     """Withdraw accumulated commission to an external address.
 

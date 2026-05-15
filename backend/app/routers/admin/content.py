@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...admin_audit import log_admin_action
-from ...auth_2fa import TotpUser
+from ...admin_guard import TotpUser
 from ...deps import AdminUser, SessionDep
 from ...models import (
     Category,

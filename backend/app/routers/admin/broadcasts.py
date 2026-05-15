@@ -22,7 +22,7 @@ from sqlalchemy import and_, func, select
 
 from ... import notifier
 from ...admin_audit import log_admin_action
-from ...auth_2fa import TotpUser
+from ...admin_guard import TotpUser
 from ...bot.notify import send_dm as bot_send_dm
 from ...deps import AdminUser, SessionDep
 from ...models import Broadcast, NotificationType, User
