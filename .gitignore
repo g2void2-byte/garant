@@ -32,6 +32,12 @@ build/
 *.tsbuildinfo
 .parcel-cache/
 
+# --- Test artefacts ---
+coverage/
+playwright-report/
+test-results/
+.playwright/
+
 # --- Logs / OS ---
 *.log
 Thumbs.db
