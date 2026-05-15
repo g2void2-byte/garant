@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
@@ -93,26 +94,48 @@ async def get_current_user(
     if not tg_user_id:
         raise HTTPException(401, "User ID not found in init data")
 
+    ip = _client_ip(request)
+    now = utcnow()
+
     stmt = select(User).where(User.tg_user_id == tg_user_id)
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
 
-    ip = _client_ip(request)
-    now = utcnow()
-
     if user is None:
-        user = User(
-            tg_user_id=tg_user_id,
-            username=tg_user.get("username"),
-            display_name=tg_user.get("first_name", ""),
-            photo_url=tg_user.get("photo_url"),
-            last_ip=ip,
-            last_login_at=now,
-            login_count=1,
+        # Comment 28 (H) — Several parallel ``/api/me``,
+        # ``/api/wallet/balances``, ``/api/notifications``, ``/api/categories``
+        # calls from a brand-new client race the initial SELECT. Two
+        # of them see no row, both call ``session.add(User(...))``,
+        # the second commit explodes with an IntegrityError on
+        # ``users.tg_user_id``. We instead emit an
+        # ``INSERT ... ON CONFLICT (tg_user_id) DO NOTHING`` so the
+        # loser of the race commits a no-op, then re-SELECT to load
+        # whichever row actually persisted. The ON CONFLICT path is
+        # idempotent and safe to retry — and required, because every
+        # downstream endpoint depends on ``current_user`` being
+        # populated.
+        ins = (
+            pg_insert(User)
+            .values(
+                tg_user_id=tg_user_id,
+                username=tg_user.get("username"),
+                display_name=tg_user.get("first_name", ""),
+                photo_url=tg_user.get("photo_url"),
+                last_ip=ip,
+                last_login_at=now,
+                login_count=1,
+            )
+            .on_conflict_do_nothing(index_elements=["tg_user_id"])
         )
-        session.add(user)
+        await session.execute(ins)
         await session.commit()
-        await session.refresh(user)
+        user = (
+            await session.execute(select(User).where(User.tg_user_id == tg_user_id))
+        ).scalar_one_or_none()
+        if user is None:
+            # Should be unreachable — the row either existed (other
+            # writer committed first) or our INSERT just landed.
+            raise HTTPException(500, "Failed to create user account")
     else:
         dirty = False
         if tg_user.get("username") and user.username != tg_user["username"]:
@@ -135,6 +158,11 @@ async def get_current_user(
             await session.commit()
             await session.refresh(user)
 
+    # Comment 50 (M) — re-fetch ``is_banned`` / ``is_frozen`` BEFORE
+    # we've committed anything that could ride on a now-banned account.
+    # The ``commit + refresh`` above already covers the "existing
+    # user" path; for the new-user path the row we just SELECTed is
+    # fresh from the DB, so no extra refresh is needed.
     if user.is_banned:
         raise HTTPException(403, "Аккаунт заблокирован")
     if user.is_frozen:

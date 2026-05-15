@@ -31,7 +31,13 @@ async def list_reviews(
     _rl: RLReviewsList,
     user: str = Query(...),
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    # V5-D-4 (M) — cap ``offset`` at 10 000. Without an upper bound a
+    # scraper could request ``offset=10_000_000`` and force Postgres
+    # to walk the full review index just to skip rows we already
+    # paged past. 10 000 rows is more reviews than any single profile
+    # is realistically going to accumulate; anyone needing deeper
+    # pagination should switch to a cursor-based API.
+    offset: int = Query(0, ge=0, le=10_000),
 ):
     # Cap the page at 100 to avoid an attacker (or a misbehaving
     # client) walking every review on a popular profile in one shot.

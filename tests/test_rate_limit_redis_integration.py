@@ -86,15 +86,17 @@ async def test_account_transfer_rate_limit_429s_via_redis(client, fake_redis):
     assert resp.status_code == 429, resp.text
 
     # Confirm Redis was actually used: the rl:pin:* key family must
-    # have at least one bucket with our 5 in-budget hits accounted
-    # for. (The 6th over-limit hit may or may not be visible
-    # depending on the ``incr`` ordering; the lower bound of 5 is
-    # enough to prove the path ran.)
+    # have at least one sorted-set with our 5 in-budget hits
+    # accounted for. The sliding-window backend stores one ZSET
+    # member per hit, so summing ZCARDs over matching keys is the
+    # natural counter readout. The over-limit 6th call is rejected
+    # *without* being added to the ZSET (the Lua script checks
+    # ``count >= limit`` before ``ZADD``), so we expect exactly 5.
     keys = await fake_redis.keys("rl:pin:*")
     assert keys, "expected an rl:pin:* bucket key in Redis"
     total = 0
     for k in keys:
-        total += int(await fake_redis.get(k))
+        total += int(await fake_redis.zcard(k))
     assert total >= 5
 
 

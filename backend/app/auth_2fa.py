@@ -34,6 +34,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import User
+from .redis_client import get_redis
 
 # Default RFC 6238 parameters (we keep them in sync with the popular
 # authenticator apps).
@@ -154,6 +155,39 @@ async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> 
     if matched <= (user.totp_last_counter or -1):
         # Replay: code already accepted in this (or an earlier) window.
         raise HTTPException(401, "Код 2FA уже использован — дождитесь следующего")
+    # V5-C-6 (M) — claim the counter in Redis BEFORE we trust the DB
+    # commit. Pre-fix, replay protection lived only in
+    # ``users.totp_last_counter`` which the caller would persist
+    # later via ``session.commit()``. If two parallel withdrawal
+    # requests both passed verification before either commit landed,
+    # they would both see the OLD high-water mark and both succeed —
+    # i.e. a 30-second replay window for a stolen code. ``SET NX EX``
+    # in Redis is an atomic claim that holds for the full TOTP
+    # period plus a small drift buffer, so the second request
+    # immediately 401s without touching the DB. When Redis is
+    # disabled we fall back to the DB counter, which is still
+    # correct for single-worker deployments.
+    r = await get_redis()
+    if r is not None:
+        try:
+            key = f"totp-claim:{user.id}:{matched}"
+            # Hold for one full period on each side of ``matched``
+            # (covers ``_DRIFT_WINDOWS=1``) plus a safety second.
+            claimed = await r.set(
+                key,
+                "1",
+                nx=True,
+                ex=_PERIOD * (2 * _DRIFT_WINDOWS + 1) + 1,
+            )
+            if not claimed:
+                raise HTTPException(401, "Код 2FA уже использован — дождитесь следующего")
+        except HTTPException:
+            raise
+        except Exception:
+            # Redis hiccup must not lock out admins; the DB counter
+            # below is still a working second line of defence. The
+            # caller already logs Redis failures in ``get_redis``.
+            pass
     user.totp_last_counter = matched
     session.add(user)
 

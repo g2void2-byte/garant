@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -19,9 +19,17 @@ from alembic import context
 # Import all models so ``Base.metadata`` is fully populated for
 # autogenerate. Re-exports aren't relied on; the import itself is the
 # side effect we need.
-from backend.app import models  # noqa: F401
-from backend.app.config import settings
-from backend.app.db import Base
+from backend.app import models  # noqa: F401, E402
+from backend.app.config import settings  # noqa: E402
+from backend.app.db import Base  # noqa: E402
+
+# V5-D-9 — fixed advisory-lock key. ``pg_advisory_lock(bigint)`` takes
+# any signed 64-bit integer; we use a constant unique to this codebase
+# so two ``alembic upgrade head`` processes during a rolling deploy
+# serialise on the same key. Computed once via
+# ``hashtext('garant_alembic_migrations')`` — written as a literal to
+# avoid an extra SELECT round-trip at every Alembic invocation.
+_ALEMBIC_ADVISORY_LOCK = 7237_4203_1881_4729
 
 config = context.config
 
@@ -53,7 +61,25 @@ def do_run_migrations(connection: Connection) -> None:
         target_metadata=target_metadata,
         compare_type=True,
     )
+    # V5-D-9 (M) — serialize concurrent ``alembic upgrade`` calls via
+    # a PostgreSQL session-level advisory lock. During a rolling
+    # deploy the new container can start before the old one has
+    # exited, and both ``CMD ["alembic", "upgrade", "head"]`` will
+    # race. The two-step ``ALTER TYPE`` / ``UPDATE`` migrations we
+    # use today are NOT idempotent under concurrency — a second
+    # writer can see the old enum, try to insert the new value, and
+    # crash with ``unsafe_use_of_new_value_of_enum_type``. Holding
+    # the advisory lock for the duration of the upgrade is the
+    # smallest change that closes the window. The lock is acquired
+    # INSIDE ``begin_transaction`` so the txn boundaries Alembic
+    # manages (which differ between ``transactional_ddl`` and
+    # legacy modes) wrap both the lock and the migration ops.
+    is_postgres = connection.dialect.name == "postgresql"
     with context.begin_transaction():
+        if is_postgres:
+            connection.execute(
+                text("SELECT pg_advisory_xact_lock(:k)").bindparams(k=_ALEMBIC_ADVISORY_LOCK)
+            )
         context.run_migrations()
 
 

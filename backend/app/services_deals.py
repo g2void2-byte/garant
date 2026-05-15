@@ -194,8 +194,15 @@ async def create_deal(
         status=DealStatus.pending_confirmation,
     )
     session.add(deal)
-    buyer.deals_total += 1
-    seller.deals_total += 1
+    # Comment 31 (H, anti-griefing) — ``deals_total`` is bumped on
+    # acceptance, not creation. Otherwise a malicious buyer could
+    # spam ``POST /api/deals`` against a victim seller (who can only
+    # decline 10/min via RLDealCreate, but those 10 still inflate
+    # the seller's ``deals_total`` counter) — up to ~10 000 rows over
+    # a few days, all visible on the seller's profile until they
+    # cancel each one. Moving the increment to ``accept_deal`` /
+    # ``finish_deal`` means a pending-confirmation row no longer
+    # counts towards the public profile metric.
     await session.flush()
     await notifier.push(
         session,
@@ -220,6 +227,15 @@ async def accept_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     deal.in_progress_at = utcnow()
     deal.confirm_buyer = True
     deal.confirm_seller = True
+    # Comment 31 (H) — bump ``deals_total`` only once the seller has
+    # accepted, so unilateral spam from a malicious buyer can't
+    # inflate the seller's public profile counter.
+    buyer = await session.get(User, deal.buyer_id)
+    seller = await session.get(User, deal.seller_id)
+    if buyer is not None:
+        buyer.deals_total = (buyer.deals_total or 0) + 1
+    if seller is not None:
+        seller.deals_total = (seller.deals_total or 0) + 1
     await notifier.push(
         session,
         deal.buyer_id,
