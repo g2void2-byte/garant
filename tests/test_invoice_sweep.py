@@ -138,9 +138,7 @@ async def test_sweep_leaves_terminal_invoice_states_alone():
 
     async with async_session() as session:
         for st, inv_id in ids.items():
-            row = (
-                await session.execute(select(Invoice).where(Invoice.id == inv_id))
-            ).scalar_one()
+            row = (await session.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
             assert row.status == st
 
 

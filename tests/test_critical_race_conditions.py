@@ -222,9 +222,7 @@ async def test_concurrent_invoice_paid_webhook_credits_wallet_only_once(client):
 
     async with async_session() as session:
         user_id = await get_user_id_by_tg(session, 7401)
-        usdt = (
-            await session.execute(select(Currency).where(Currency.code == "USDT"))
-        ).scalar_one()
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         usdt_id = usdt.id
         session.add(
             WalletDeposit(
@@ -287,9 +285,7 @@ async def test_concurrent_invoice_paid_webhook_credits_wallet_only_once(client):
 
         dep = (
             await session.execute(
-                select(WalletDeposit).where(
-                    WalletDeposit.provider_invoice_id == provider_id
-                )
+                select(WalletDeposit).where(WalletDeposit.provider_invoice_id == provider_id)
             )
         ).scalar_one()
         assert dep.status == WalletDepositStatus.paid
@@ -384,17 +380,13 @@ async def test_concurrent_invoice_paid_webhook_credits_legacy_only_once(client):
     assert len(credited) == 1, [r.json() for r in responses]
 
     async with async_session() as session:
-        owner = (
-            await session.execute(select(User).where(User.id == user_id))
-        ).scalar_one()
+        owner = (await session.execute(select(User).where(User.id == user_id))).scalar_one()
         # ``User.balance`` ends at exactly the invoice amount, NOT
         # N × amount.
         assert Decimal(str(owner.balance)) == invoice_amount
 
         inv = (
-            await session.execute(
-                select(Invoice).where(Invoice.provider_invoice_id == provider_id)
-            )
+            await session.execute(select(Invoice).where(Invoice.provider_invoice_id == provider_id))
         ).scalar_one()
         assert inv.status == InvoiceStatus.paid
 

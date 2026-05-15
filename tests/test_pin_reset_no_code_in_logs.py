@@ -116,9 +116,7 @@ async def test_pin_reset_request_does_not_log_plaintext_code(client, caplog, mon
     _assert_no_sentinel_in_logs(caplog.records, SENTINEL_CODE)
 
 
-async def test_send_dm_is_called_with_plaintext_code_but_not_logged(
-    client, caplog, monkeypatch
-):
+async def test_send_dm_is_called_with_plaintext_code_but_not_logged(client, caplog, monkeypatch):
     """Sanity check: the user does receive the code via ``send_dm``,
     but no logger captures it. Together with the previous test this
     proves the leak path is closed end-to-end (the code reaches the DM
@@ -155,9 +153,7 @@ async def test_send_dm_is_called_with_plaintext_code_but_not_logged(
     args, kwargs = send_dm_spy.await_args
     # ``send_dm(tg_user_id, text)`` — text is the second positional.
     text_arg = args[1] if len(args) >= 2 else kwargs.get("text", "")
-    assert SENTINEL_CODE in text_arg, (
-        "send_dm must receive the plaintext code in its text argument"
-    )
+    assert SENTINEL_CODE in text_arg, "send_dm must receive the plaintext code in its text argument"
 
     # …yet no logger on the request path captured it.
     _assert_no_sentinel_in_logs(caplog.records, SENTINEL_CODE)

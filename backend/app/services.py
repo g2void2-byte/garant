@@ -149,9 +149,7 @@ async def credit_invoice(
     # loser of the race observes ``paid`` and returns idempotently
     # without double-crediting the user.
     owner = (
-        await session.execute(
-            select(User).where(User.id == invoice.owner_id).with_for_update()
-        )
+        await session.execute(select(User).where(User.id == invoice.owner_id).with_for_update())
     ).scalar_one_or_none()
 
     await session.refresh(invoice, attribute_names=["status", "paid_at"])
