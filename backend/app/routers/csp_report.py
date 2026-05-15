@@ -6,11 +6,10 @@ up in the normal application log; nothing in this endpoint is allowed
 to talk back to the client (the only response is a 204 — the spec
 asks user-agents to ignore the body anyway).
 
-Why this exists despite ``style-src 'unsafe-inline'`` still being in
-the policy: telemetry is the prerequisite for tightening the policy
-later. Once we see *which* inline styles are firing in real traffic,
-we can scope-shop a CSS-class-only refactor or add per-component
-``style=`` audit fixes before flipping ``'unsafe-inline'`` off.
+Why this exists now that ``'unsafe-inline'`` has been removed from
+``style-src``: telemetry guards against regressions. If a future change
+re-introduces inline ``style=`` attributes in markup, the CSP report
+will surface it here before users notice breakage.
 
 Public + unauthenticated by design (CSP reports come from the browser
 without any of our cookies), and rate-limited by client IP to keep a

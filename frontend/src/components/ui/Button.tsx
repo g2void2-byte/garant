@@ -1,12 +1,11 @@
-import { motion, type HTMLMotionProps } from "framer-motion";
-import { forwardRef } from "react";
+import { forwardRef, type ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 import { haptic } from "@/lib/tg";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md" | "lg";
 
-interface ButtonProps extends Omit<HTMLMotionProps<"button">, "ref"> {
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
   fullWidth?: boolean;
@@ -38,18 +37,16 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref,
 ) {
   return (
-    <motion.button
+    <button
       ref={ref}
-      whileTap={{ scale: disabled ? 1 : 0.98 }}
-      transition={{ type: "spring", stiffness: 500, damping: 30 }}
       disabled={disabled}
       className={cn(
         "inline-flex items-center justify-center gap-1.5 font-medium select-none rounded-button",
-        "transition-colors",
+        "transition-colors active:scale-[0.98] transition-transform duration-100",
         VARIANT[variant],
         SIZE[size],
         fullWidth && "w-full",
-        disabled && "!bg-secondary !text-text-disabled !cursor-not-allowed",
+        disabled && "!bg-secondary !text-text-disabled !cursor-not-allowed !scale-100",
         className,
       )}
       onClick={(e) => {
@@ -59,6 +56,6 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       {...rest}
     >
       {children}
-    </motion.button>
+    </button>
   );
 });

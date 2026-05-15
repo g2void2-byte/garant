@@ -99,7 +99,6 @@ export default function NotificationsPage() {
             count: counters ? (counters as any)[t.value] : undefined,
           }))}
           onChange={setTab}
-          layoutId="notif-tabs"
         />
 
         {isLoading ? (

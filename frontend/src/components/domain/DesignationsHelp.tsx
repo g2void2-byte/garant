@@ -1,7 +1,7 @@
-import { motion, AnimatePresence } from "framer-motion";
 import { Star, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useUI } from "@/stores/ui";
+import { cn } from "@/lib/cn";
 
 function ExampleCard({
   withPrefix,
@@ -47,53 +47,47 @@ export function DesignationsHelp() {
   const hideDesignations = useUI((s) => s.hideDesignations);
   const setHide = useUI((s) => s.setHideDesignations);
 
+  if (hideDesignations) return null;
+
   return (
-    <AnimatePresence initial={false}>
-      {!hideDesignations && (
-        <motion.section
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          exit={{ opacity: 0, height: 0 }}
-          transition={{ duration: 0.25 }}
-          className="overflow-hidden"
+    <section
+      className={cn("overflow-hidden animate-fadein")}
+    >
+      <div className="bg-panel border border-border rounded-card p-4 relative">
+        <button
+          className="absolute top-3 right-3 text-text-muted hover:text-text"
+          aria-label="Скрыть"
+          onClick={() => setHide(true)}
         >
-          <div className="bg-panel border border-border rounded-card p-4 relative">
-            <button
-              className="absolute top-3 right-3 text-text-muted hover:text-text"
-              aria-label="Скрыть"
-              onClick={() => setHide(true)}
-            >
-              <X className="size-4" />
-            </button>
-            <div className="font-semibold">Обозначения</div>
-            <p className="mt-1 text-sm text-text-muted">
-              Небольшая памятка по обозначениям в карточке пользователя
-            </p>
+          <X className="size-4" />
+        </button>
+        <div className="font-semibold">Обозначения</div>
+        <p className="mt-1 text-sm text-text-muted">
+          Небольшая памятка по обозначениям в карточке пользователя
+        </p>
 
-            <div className="mt-4 grid grid-cols-4 gap-2 text-[11px] text-text-muted text-center">
-              <div>Префикс</div>
-              <div>Статус сети</div>
-              <div>Депозит</div>
-              <div>Рейтинг</div>
-            </div>
+        <div className="mt-4 grid grid-cols-4 gap-2 text-[11px] text-text-muted text-center">
+          <div>Префикс</div>
+          <div>Статус сети</div>
+          <div>Депозит</div>
+          <div>Рейтинг</div>
+        </div>
 
-            <div className="mt-3 space-y-2">
-              <ExampleCard withPrefix rating="4.6" deposit="$4.8k+" />
-              <ExampleCard rating="4.5" deposit="$2.9k+" />
-            </div>
+        <div className="mt-3 space-y-2">
+          <ExampleCard withPrefix rating="4.6" deposit="$4.8k+" />
+          <ExampleCard rating="4.5" deposit="$2.9k+" />
+        </div>
 
-            <Button
-              variant="primary"
-              size="md"
-              fullWidth
-              className="mt-4"
-              onClick={() => setHide(true)}
-            >
-              Не показывать снова
-            </Button>
-          </div>
-        </motion.section>
-      )}
-    </AnimatePresence>
+        <Button
+          variant="primary"
+          size="md"
+          fullWidth
+          className="mt-4"
+          onClick={() => setHide(true)}
+        >
+          Не показывать снова
+        </Button>
+      </div>
+    </section>
   );
 }

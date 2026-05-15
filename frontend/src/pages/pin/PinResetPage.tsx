@@ -1,4 +1,3 @@
-import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
@@ -15,14 +14,6 @@ import { haptic } from "@/lib/tg";
 
 type Step = "request" | "code" | "new" | "confirm";
 
-/**
- * Dedicated «Сменить PIN-код» page reached from `/profile/settings`.
- *
- * Unlike :file:`PinPage` (which interleaves login, setup, and reset on the
- * single splash screen), this page is **only** the password-reset flow:
- * `request → code → new PIN → confirm new PIN`. Used when the user already
- * has an active PIN session but wants to set a new one.
- */
 export default function PinResetPage() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -123,19 +114,13 @@ export default function PinResetPage() {
           <ArrowLeft className="size-4" /> К настройкам
         </button>
 
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={step}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.18 }}
-            className="text-center mb-10 max-w-xs"
-          >
-            <h1 className="text-2xl font-semibold">{heading.title}</h1>
-            <p className="text-text-muted mt-2 text-sm">{heading.subtitle}</p>
-          </motion.div>
-        </AnimatePresence>
+        <div
+          key={step}
+          className="text-center mb-10 max-w-xs animate-fadein"
+        >
+          <h1 className="text-2xl font-semibold">{heading.title}</h1>
+          <p className="text-text-muted mt-2 text-sm">{heading.subtitle}</p>
+        </div>
 
         {step === "request" && (
           <div className="w-full max-w-xs flex flex-col items-center gap-3">

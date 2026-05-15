@@ -1,4 +1,3 @@
-import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import {
   useCheckPin,
@@ -155,19 +154,13 @@ export default function PinPage({ status, onUnlocked }: PinPageProps) {
 
   return (
     <div className="min-h-full flex flex-col items-center justify-center px-6 py-10 bg-bg text-text">
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={mode}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -12 }}
-          transition={{ duration: 0.18 }}
-          className="text-center mb-10"
-        >
-          <h1 className="text-2xl font-semibold">{heading.title}</h1>
-          <p className="text-text-muted mt-2 text-sm max-w-xs">{heading.subtitle}</p>
-        </motion.div>
-      </AnimatePresence>
+      <div
+        key={mode}
+        className="text-center mb-10 animate-fadein"
+      >
+        <h1 className="text-2xl font-semibold">{heading.title}</h1>
+        <p className="text-text-muted mt-2 text-sm max-w-xs">{heading.subtitle}</p>
+      </div>
 
       {showPad ? (
         <PinPad

@@ -1,4 +1,3 @@
-import { motion } from "framer-motion";
 import {
   Plane,
   Bitcoin,
@@ -21,6 +20,7 @@ import {
 import { Link } from "react-router-dom";
 import type { CategoryDto } from "@/api/types";
 import { cn } from "@/lib/cn";
+import { staggerDelay } from "@/lib/animate";
 
 const ICON_MAP: Record<string, LucideIcon> = {
   plane: Plane,
@@ -43,10 +43,9 @@ const ICON_MAP: Record<string, LucideIcon> = {
 export function CategoryTile({ category, index = 0 }: { category: CategoryDto; index?: number }) {
   const IconCmp = ICON_MAP[category.icon_key] ?? Briefcase;
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay: Math.min(index * 0.03, 0.3), duration: 0.2 }}
+    <div
+      className="animate-fade-in-scale"
+      style={staggerDelay(index)}
     >
       <Link
         to={`/search/categories/${category.slug}`}
@@ -63,6 +62,6 @@ export function CategoryTile({ category, index = 0 }: { category: CategoryDto; i
           <IconCmp className="size-5" />
         </div>
       </Link>
-    </motion.div>
+    </div>
   );
 }

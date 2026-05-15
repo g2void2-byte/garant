@@ -1,5 +1,4 @@
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Database, Activity, Bot, ShieldAlert, RotateCcw } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -73,9 +72,7 @@ export default function AdminSystemPage() {
                     : "API ключ не задан"
                 }
               />
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
+              <div
                 className="bg-panel rounded-card p-3 text-xs text-text-muted space-y-1"
               >
                 <div>Версия: {data.backend_version}</div>
@@ -83,7 +80,7 @@ export default function AdminSystemPage() {
                   Аптайм: {formatUptime(data.uptime_seconds)}
                   {data.started_at && ` (с ${new Date(data.started_at).toLocaleString()})`}
                 </div>
-              </motion.div>
+              </div>
 
               <div className="pt-2">
                 <Button
@@ -139,9 +136,7 @@ function Lamp({
       ? "bg-warning/15 text-warning"
       : "bg-danger/15 text-danger";
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
+    <div
       className="bg-panel rounded-card p-3 flex items-center gap-3"
     >
       <div className={`size-9 rounded-full grid place-items-center ${color}`}>
@@ -160,7 +155,7 @@ function Lamp({
               : "bg-danger"
         }`}
       />
-    </motion.div>
+    </div>
   );
 }
 

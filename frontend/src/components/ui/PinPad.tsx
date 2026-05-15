@@ -1,4 +1,3 @@
-import { motion } from "framer-motion";
 import { cn } from "@/lib/cn";
 import { haptic } from "@/lib/tg";
 
@@ -31,14 +30,12 @@ export function PinPad({ value, length = 4, disabled, onChange, onComplete }: Pi
     <div className="flex flex-col items-center gap-10 select-none">
       <div className="flex items-center gap-5">
         {Array.from({ length }).map((_, i) => (
-          <motion.span
+          <span
             key={i}
             className={cn(
               "block h-3 w-3 rounded-full transition-colors duration-150",
-              i < value.length ? "bg-text" : "bg-panel-2",
+              i < value.length ? "bg-text animate-pop-dot" : "bg-panel-2",
             )}
-            animate={i < value.length ? { scale: [1.4, 1] } : {}}
-            transition={{ duration: 0.18 }}
           />
         ))}
       </div>

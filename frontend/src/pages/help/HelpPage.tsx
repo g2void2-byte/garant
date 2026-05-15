@@ -26,7 +26,6 @@ export default function HelpPage() {
             { value: "arbiters", label: "Арбитры", count: arbiters?.length ?? 0 },
           ]}
           onChange={setTab}
-          layoutId="help-tabs"
         />
 
         {loading ? (

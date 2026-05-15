@@ -132,7 +132,6 @@ export default function AccountTransferPage() {
             { value: "receive", label: "Ввести код" },
           ]}
           onChange={setTab}
-          layoutId="account-transfer-tabs"
         />
 
         {tab === "send" && (

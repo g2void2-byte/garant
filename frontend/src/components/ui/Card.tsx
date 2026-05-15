@@ -1,5 +1,4 @@
 import { forwardRef, type HTMLAttributes } from "react";
-import { motion } from "framer-motion";
 import { cn } from "@/lib/cn";
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
@@ -16,21 +15,13 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
   { className, interactive, inset, children, ...rest },
   ref,
 ) {
-  const base = cn("bg-panel rounded-card p-4", inset && "bg-secondary", className);
+  const base = cn(
+    "bg-panel rounded-card p-4",
+    inset && "bg-secondary",
+    interactive && "active:scale-[0.99] transition-transform duration-100",
+    className,
+  );
 
-  if (interactive) {
-    const motionProps = rest as React.ComponentProps<typeof motion.div>;
-    return (
-      <motion.div
-        ref={ref as React.Ref<HTMLDivElement>}
-        whileTap={{ scale: 0.99 }}
-        className={base}
-        {...motionProps}
-      >
-        {children}
-      </motion.div>
-    );
-  }
   return (
     <div ref={ref} className={base} {...rest}>
       {children}

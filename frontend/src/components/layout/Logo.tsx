@@ -1,13 +1,8 @@
-import { motion } from "framer-motion";
-
 export function Logo({ size = 64 }: { size?: number }) {
   return (
-    <motion.div
+    <div
       style={{ width: size, height: size }}
-      className="relative grid place-items-center"
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.3 }}
+      className="relative grid place-items-center animate-fade-in-logo"
     >
       <div className="absolute inset-0 rounded-full bg-accent/15 blur-2xl animate-breathe" />
       <svg
@@ -33,6 +28,6 @@ export function Logo({ size = 64 }: { size?: number }) {
         <circle cx="32" cy="40" r="2" fill="#0E0E0F" />
         <circle cx="42" cy="40" r="2" fill="#0E0E0F" />
       </svg>
-    </motion.div>
+    </div>
   );
 }

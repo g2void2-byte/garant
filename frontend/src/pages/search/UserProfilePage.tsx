@@ -64,7 +64,6 @@ export default function UserProfilePage() {
             { value: "reviews", label: "Отзывы", count: reviews?.length ?? 0 },
           ]}
           onChange={setTab}
-          layoutId={`profile-tabs-${username}`}
         />
 
         {tab === "services" && (

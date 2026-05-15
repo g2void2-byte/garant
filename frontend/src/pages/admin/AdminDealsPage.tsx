@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Filter, ChevronLeft, ChevronRight, AlertTriangle, Gavel, Search } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -104,10 +103,9 @@ export default function AdminDealsPage() {
       {/* Status chips — horizontally scrollable */}
       <div className="px-4 -mx-1 overflow-x-auto no-scrollbar flex gap-2 mb-3 pb-1">
         {STATUSES.map((s) => (
-          <motion.button
+          <button
             key={s}
             type="button"
-            whileTap={{ scale: 0.95 }}
             onClick={() => update({ status: s === "any" ? undefined : s })}
             className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs border transition-colors ${
               status === s
@@ -116,7 +114,7 @@ export default function AdminDealsPage() {
             }`}
           >
             {STATUS_LABEL[s]}
-          </motion.button>
+          </button>
         ))}
       </div>
 
@@ -166,14 +164,13 @@ export default function AdminDealsPage() {
       ) : (
         <ul className="px-4 space-y-2">
           {items.map((deal, idx) => (
-            <motion.li
+            <li
               key={deal.id}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(idx, 8) * 0.03, duration: 0.18 }}
+              className="animate-fadein"
+              style={{ animationDelay: `${Math.min(idx, 8) * 30}ms` }}
             >
               <DealRow deal={deal} onOpen={() => navigate(`/admin/deals/${deal.id}`)} />
-            </motion.li>
+            </li>
           ))}
         </ul>
       )}
@@ -335,12 +332,10 @@ function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen: () => v
       : "border-border";
 
   return (
-    <motion.button
+    <button
       type="button"
-      whileHover={{ scale: 1.005 }}
-      whileTap={{ scale: 0.98 }}
       onClick={onOpen}
-      className={`w-full text-left bg-panel rounded-card p-3 flex items-center gap-3 border ${accent} hover:bg-panel-2 transition-colors`}
+      className={`w-full text-left bg-panel rounded-card p-3 flex items-center gap-3 border ${accent} hover:bg-panel-2 transition-colors active:scale-[0.98]`}
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 text-sm font-semibold">
@@ -380,6 +375,6 @@ function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen: () => v
         </div>
       </div>
       <ChevronRight size={16} className="text-text-muted shrink-0" />
-    </motion.button>
+    </button>
   );
 }

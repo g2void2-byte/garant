@@ -102,7 +102,6 @@ export default function ProfilePage() {
             { value: "reviews", label: "Отзывы", count: reviews?.length ?? 0 },
           ]}
           onChange={setTab}
-          layoutId="profile-self-tabs"
         />
 
         {tab === "services" &&

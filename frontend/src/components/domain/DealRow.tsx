@@ -1,9 +1,9 @@
-import { motion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { DealDto } from "@/api/types";
 import { formatAmount, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { staggerDelay } from "@/lib/animate";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string; icon: string }> = {
   pending_confirmation: {
@@ -41,10 +41,9 @@ const STATUS_LABEL: Record<string, { text: string; cls: string; icon: string }> 
 export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) {
   const status = STATUS_LABEL[deal.status] ?? { text: deal.status, cls: "bg-panel-2 text-text-muted", icon: "•" };
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.025, 0.25), duration: 0.2 }}
+    <div
+      className="animate-fadein"
+      style={staggerDelay(index, 25, 250)}
     >
       <Link to={`/deals/${deal.id}`} className="block bg-panel border border-border rounded-card p-3 active:scale-[.99] transition-transform">
         <div className="flex items-start justify-between gap-3">
@@ -80,6 +79,6 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
           </div>
         </div>
       </Link>
-    </motion.div>
+    </div>
   );
 }

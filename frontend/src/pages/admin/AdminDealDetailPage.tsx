@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
   Check,
@@ -131,9 +130,7 @@ function StatusBanner({ deal }: { deal: AdminDealDetailDto }) {
   const isArb = deal.status === "arbitration";
   const hasCancel = deal.cancellation_requested_at && !TERMINAL.has(deal.status);
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
+    <section
       className={`rounded-card p-4 ${
         isArb ? "bg-danger/10 border border-danger/30" : hasCancel ? "bg-warning/10 border border-warning/30" : "bg-panel"
       }`}
@@ -153,7 +150,7 @@ function StatusBanner({ deal }: { deal: AdminDealDetailDto }) {
       {deal.arbitration_resolution && (
         <div className="mt-2 text-xs text-text-muted">Решение: {deal.arbitration_resolution}</div>
       )}
-    </motion.section>
+    </section>
   );
 }
 
@@ -337,12 +334,9 @@ function ActionPanel({ deal }: { deal: AdminDealDetailDto }) {
     <section className="bg-panel rounded-card p-4 space-y-2">
       <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-1">Действия</h3>
       <div className="grid grid-cols-2 gap-2">
-        {buttons.map((btn, idx) => (
-          <motion.div
+        {buttons.map((btn, _idx) => (
+          <div
             key={btn.key}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.04 }}
           >
             <Button
               size="sm"
@@ -354,7 +348,7 @@ function ActionPanel({ deal }: { deal: AdminDealDetailDto }) {
               <btn.icon size={14} className="-ml-0.5" />
               <span className="ml-1.5">{btn.label}</span>
             </Button>
-          </motion.div>
+          </div>
         ))}
       </div>
 
@@ -422,13 +416,9 @@ function EventsTimeline({ deal }: { deal: AdminDealDetailDto }) {
     <section className="bg-panel rounded-card p-4">
       <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-2">События</h3>
       <ul className="space-y-2">
-        <AnimatePresence>
           {deal.events.map((ev, idx) => (
-            <motion.li
+            <li
               key={`${ev.kind}-${ev.at}-${idx}`}
-              initial={{ opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.04 }}
               className="flex items-start gap-2 text-sm"
             >
               <CornerDownRight size={14} className="text-text-muted mt-0.5 shrink-0" />
@@ -439,9 +429,8 @@ function EventsTimeline({ deal }: { deal: AdminDealDetailDto }) {
                   {ev.actor ? ` · ${ev.actor}` : ""} · {ev.description}
                 </div>
               </div>
-            </motion.li>
+            </li>
           ))}
-        </AnimatePresence>
       </ul>
     </section>
   );
@@ -483,10 +472,8 @@ function MessagesFeed({ deal }: { deal: AdminDealDetailDto }) {
             const isSeller = m.sender_id === deal.seller.user_id;
             const side = isBuyer ? "buyer" : isSeller ? "seller" : "staff";
             return (
-              <motion.li
+              <li
                 key={m.id}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
                 className={`rounded-card p-2 text-sm ${
                   side === "buyer"
                     ? "bg-panel-2"
@@ -500,7 +487,7 @@ function MessagesFeed({ deal }: { deal: AdminDealDetailDto }) {
                   {m.sender_username ?? "—"} · {shortDate(m.created_at)}
                 </div>
                 <div className="whitespace-pre-wrap">{m.text}</div>
-              </motion.li>
+              </li>
             );
           })}
         </ul>

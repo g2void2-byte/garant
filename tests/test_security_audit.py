@@ -408,9 +408,10 @@ async def test_security_response_headers_present(client):
     assert "default-src 'self'" in csp
     # The only cross-origin script the TMA loads is Telegram's SDK.
     assert "script-src 'self' https://telegram.org" in csp
-    # React + Framer Motion set inline ``style=`` attributes at runtime;
-    # ``'unsafe-inline'`` is intentional and documented in main.py.
-    assert "style-src 'self' 'unsafe-inline'" in csp
+    # Framer Motion was removed; all animations now use CSS classes.
+    # ``'unsafe-inline'`` is no longer needed for style-src.
+    assert "style-src 'self'" in csp
+    assert "'unsafe-inline'" not in csp.split("style-src")[1].split(";")[0]
     # Avatars/screenshots come from ``/media/`` (same origin); ``data:``
     # covers tiny placeholder SVGs Vite may inline, ``blob:`` covers
     # client-side previews of uploads before submit.

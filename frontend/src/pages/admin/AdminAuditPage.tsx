@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { History, Filter } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -42,9 +41,7 @@ export default function AdminAuditPage() {
         }
       />
       {showFilters && (
-        <motion.div
-          initial={{ opacity: 0, y: -6 }}
-          animate={{ opacity: 1, y: 0 }}
+        <div
           className="px-4 mb-3 space-y-2"
         >
           <Input
@@ -64,7 +61,7 @@ export default function AdminAuditPage() {
             }}
             placeholder="actor_id"
           />
-        </motion.div>
+        </div>
       )}
       <div className="px-4 space-y-2 pb-24">
         {isLoading ? (
@@ -76,12 +73,9 @@ export default function AdminAuditPage() {
             Событий не найдено
           </p>
         ) : (
-          data?.items.map((row, idx) => (
-            <motion.div
+          data?.items.map((row, _idx) => (
+            <div
               key={row.id}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.01 }}
               className="bg-panel rounded-card p-3 text-sm"
             >
               <div className="flex items-baseline justify-between">
@@ -107,7 +101,7 @@ export default function AdminAuditPage() {
               {row.payload && Object.keys(row.payload).length > 0 && (
                 <PayloadPreview payload={row.payload} />
               )}
-            </motion.div>
+            </div>
           ))
         )}
       </div>

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Coins, Tags, Plus, Pencil } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -80,12 +79,9 @@ function CategoriesPane() {
           <Skeleton key={i} className="h-14 rounded-card" />
         ))
       ) : (
-        data?.map((c, idx) => (
-          <motion.div
+        data?.map((c, _idx) => (
+          <div
             key={c.id}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.03 }}
             className="bg-panel rounded-card p-3 flex items-center gap-3"
           >
             <div className="text-2xl">{c.icon || "📦"}</div>
@@ -119,7 +115,7 @@ function CategoriesPane() {
             >
               ×
             </button>
-          </motion.div>
+          </div>
         ))
       )}
       <Sheet
@@ -210,12 +206,9 @@ function CurrenciesPane() {
           <Skeleton key={i} className="h-14 rounded-card" />
         ))
       ) : (
-        data?.map((c, idx) => (
-          <motion.div
+        data?.map((c, _idx) => (
+          <div
             key={c.id}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.03 }}
             className="bg-panel rounded-card p-3 flex items-center gap-3"
           >
             <div className="flex-1">
@@ -236,7 +229,7 @@ function CurrenciesPane() {
             >
               <Pencil size={16} />
             </button>
-          </motion.div>
+          </div>
         ))
       )}
       <Sheet

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Vault, ShieldCheck } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -54,12 +53,9 @@ export default function AdminTreasuryPage() {
           ? Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-24 rounded-card" />
             ))
-          : data?.balances.map((b, idx) => (
-              <motion.div
+          : data?.balances.map((b, _idx) => (
+              <div
                 key={b.currency_id}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.03 }}
                 className="bg-panel rounded-card p-3"
               >
                 <div className="flex items-center gap-2 mb-1">
@@ -73,7 +69,7 @@ export default function AdminTreasuryPage() {
                   Накоплено: {parseDecimal(b.accrued).toFixed(b.decimals)} · Выведено:{" "}
                   {parseDecimal(b.withdrawn).toFixed(b.decimals)}
                 </div>
-              </motion.div>
+              </div>
             ))}
       </div>
       <div className="px-4">
@@ -82,12 +78,9 @@ export default function AdminTreasuryPage() {
           <p className="text-sm text-text-muted text-center py-8">Выводов нет</p>
         ) : (
           <div className="space-y-2 pb-24">
-            {history.map((h, idx) => (
-              <motion.div
+            {history.map((h, _idx) => (
+              <div
                 key={h.id}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.03 }}
                 className="bg-panel rounded-card p-3"
               >
                 <div className="flex items-start justify-between">
@@ -111,7 +104,7 @@ export default function AdminTreasuryPage() {
                     CB id: {h.cryptobot_transfer_id}
                   </div>
                 )}
-              </motion.div>
+              </div>
             ))}
           </div>
         )}

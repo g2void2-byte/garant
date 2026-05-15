@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { ChevronRight, Gavel, Inbox, CheckCheck, type LucideIcon } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -71,10 +70,9 @@ export default function AdminArbitrationPage() {
           const count = counters[t.key];
           const active = queue === t.key;
           return (
-            <motion.button
+            <button
               key={t.key}
               type="button"
-              whileTap={{ scale: 0.97 }}
               onClick={() => {
                 haptic("light");
                 setQueue(t.key);
@@ -94,7 +92,7 @@ export default function AdminArbitrationPage() {
                   {count}
                 </span>
               )}
-            </motion.button>
+            </button>
           );
         })}
       </div>
@@ -121,12 +119,9 @@ export default function AdminArbitrationPage() {
         />
       ) : (
         <ul className="px-4 space-y-2">
-          {items.map((d, idx) => (
-            <motion.li
+          {items.map((d, _idx) => (
+            <li
               key={d.id}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(idx, 8) * 0.03, duration: 0.18 }}
             >
               <ArbRow
                 deal={d}
@@ -135,7 +130,7 @@ export default function AdminArbitrationPage() {
                 onClaim={() => onClaim(d.id)}
                 claiming={claim.isPending}
               />
-            </motion.li>
+            </li>
           ))}
         </ul>
       )}
