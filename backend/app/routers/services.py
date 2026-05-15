@@ -13,7 +13,7 @@ The number of simultaneously-active services per user is capped by
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select
 
 from ..auth_2fa import TotpUser
@@ -118,6 +118,7 @@ async def _count_active(session, owner_id: int) -> int:
 async def list_services(
     session: SessionDep,
     user: CurrentUser,
+    response: Response,
     category: str | None = Query(None),
     q: str | None = Query(None),
     owner: str | None = Query(None),
@@ -126,8 +127,23 @@ async def list_services(
         description="Filter by status; default behaviour is 'active' for the public catalog. "
         "Owners and admins can pass any of draft|active|paused|banned.",
     ),
+    limit: int = Query(
+        100,
+        ge=1,
+        le=200,
+        description="Max rows to return. Capped at 200 to protect the DB.",
+    ),
+    offset: int = Query(
+        0,
+        ge=0,
+        description="Row offset for cursorless pagination.",
+    ),
 ):
-    stmt = select(Service)
+    # R7/H-12 \u2014 always join ``Service.owner`` so we have a single
+    # well-known join target for the ``is_hidden_profile`` filter below.
+    # The owner relation is also already eager-loaded by the ORM for
+    # ``_service_out``, so the extra join is free.
+    stmt = select(Service).join(Service.owner)
     if category:
         stmt = stmt.join(Category).where(Category.slug == category)
     ts_q = build_prefix_tsquery(q) if q else None
@@ -137,7 +153,7 @@ async def list_services(
         stmt = stmt.where(Service.search_vector.op("@@")(tsq))
         fts_rank = func.ts_rank(Service.search_vector, tsq)
     if owner:
-        stmt = stmt.join(Service.owner).where(User.username == owner)
+        stmt = stmt.where(User.username == owner)
 
     target_owner_self = owner and owner == (user.username or "")
 
@@ -157,12 +173,27 @@ async def list_services(
         # public catalog: active only
         stmt = stmt.where(Service.status == ServiceStatus.active)
 
+    # R7/H-12 — services whose owner has flipped the "hide my profile"
+    # switch are excluded from the public catalog. The owner themself
+    # and admins keep seeing them so the owner can still toggle paused/
+    # active without losing visibility into their own catalogue.
+    if not (user.is_admin or target_owner_self):
+        stmt = stmt.where(User.is_hidden_profile.is_(False))
+
+    # Materialise the total before pagination so the client can render
+    # a "page N of M" affordance without a second round-trip. Surface it
+    # through ``X-Total-Count`` rather than wrapping the body in an
+    # envelope so the existing TanStack-Query clients (``useServices``
+    # decodes ``ServiceDto[]``) keep working unchanged.
+    total = (await session.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+
     if fts_rank is not None:
         stmt = stmt.order_by(fts_rank.desc(), Service.created_at.desc())
     else:
         stmt = stmt.order_by(Service.created_at.desc())
-    stmt = stmt.limit(200)
+    stmt = stmt.offset(offset).limit(limit)
     result = await session.execute(stmt)
+    response.headers["X-Total-Count"] = str(int(total))
     return [_service_out(s) for s in result.scalars().all()]
 
 
