@@ -12,8 +12,11 @@ and ``TRUNCATE`` + reseed runs between each test for isolation.
 from __future__ import annotations
 
 import asyncio
+import atexit
 import os
 import pathlib
+import secrets
+import shutil
 import socket
 import tempfile
 
@@ -22,9 +25,22 @@ import pytest_asyncio
 
 # ── 1. Configure the test environment ──────────────────────────────────────
 
+# V12-M9 — use ``TemporaryDirectory`` semantics (auto-cleanup via
+# ``atexit``) rather than a bare ``mkdtemp`` that the OS never removes.
+# Pre-fix every pytest run left a stray ``/tmp/garant-pytest-*`` tree
+# behind containing avatar/banner/attachment uploads from that session,
+# which accumulated across runs on long-lived CI runners and developer
+# laptops. ``shutil.rmtree(..., ignore_errors=True)`` is forgiving so a
+# crashed pytest doesn't leak a file-lock complaint into the next run.
 _test_dir = pathlib.Path(tempfile.mkdtemp(prefix="garant-pytest-"))
 _media_root = _test_dir / "media"
 _media_root.mkdir(exist_ok=True)
+
+
+@atexit.register
+def _cleanup_test_dir() -> None:
+    shutil.rmtree(_test_dir, ignore_errors=True)
+
 
 _PG_HOST = os.environ.get("POSTGRES_HOST", "localhost")
 _PG_PORT = os.environ.get("POSTGRES_PORT", "5432")
@@ -51,23 +67,34 @@ os.environ["INVOICE_SWEEP_SECONDS"] = "0"
 os.environ["PIN_JWT_SECRET"] = "test-pin-secret-fixed-value-do-not-use-in-prod"
 os.environ["MEDIA_ROOT"] = str(_media_root)
 os.environ["ALLOW_UNSIGNED_INIT_DATA"] = "false"
-# Admin-side TOTP gate: pick a sentinel that the test helpers know
-# about so tests can hit 2FA-gated endpoints without going through the
-# full enrolment flow. The real TOTP-rejection tests in
-# ``test_admin_misc.py`` continue to exercise the production path —
-# they don't send this header, they enrol a fresh secret.
-#
-# Guard against an accidental ``pytest`` invocation against a deployed
-# environment: the bypass sentinel must never reach a process whose
-# ``ENVIRONMENT`` is production/staging.
-_env_value = os.environ.get("ENVIRONMENT", "test").lower()
-if _env_value in ("production", "staging"):
+# V12-H1 — strict environment gate for the TOTP-bypass escape hatch.
+# Pre-fix the guard was an *opt-out* deny-list (``in {"production",
+# "staging"}``) which silently passed any other value — a typo
+# (``prod``, ``Production``, trailing whitespace, missing var) reads
+# as "not production" and the bypass would be installed against a
+# real deploy. We now default-deny: only the two values we explicitly
+# expect (``test``, ``development``) are accepted. Anything else
+# (``""``, ``"prod"``, ``"Staging"``, …) refuses to install the
+# bypass.
+_env_value = os.environ.get("ENVIRONMENT", "test").strip().lower()
+if _env_value not in ("test", "development"):
     raise RuntimeError(
         f"Refusing to run tests with ENVIRONMENT='{_env_value}'; "
-        "ADMIN_TOTP_BYPASS is a test-only escape hatch and must never be "
-        "configured against a production/staging deployment."
+        "ADMIN_TOTP_BYPASS is a test-only escape hatch and only "
+        "ENVIRONMENT='test' or 'development' is accepted."
     )
-os.environ.setdefault("ADMIN_TOTP_BYPASS", "test-totp-bypass-do-not-use-in-prod")
+# V12-H1 — pick a fresh random sentinel for every pytest invocation
+# instead of the previous repo-checked-in string. The old constant
+# made every reader of the repo a holder of the bypass secret — if it
+# ever ended up configured on a deployed instance (env-var copy/paste,
+# k8s secret churn), every 2FA-gated admin route would be open to any
+# attacker who knew to send the literal in ``X-Totp-Code``. The
+# random per-run value never escapes the test process; the helpers in
+# ``tests/helpers.py`` read the live env var so call sites stay
+# unchanged. ``setdefault`` is preserved so a caller can still pin a
+# specific value via the env (handy for the rare debugging session
+# where you want to reproduce a CI failure with a known token).
+os.environ.setdefault("ADMIN_TOTP_BYPASS", secrets.token_urlsafe(32))
 
 
 # ── 2. Provision the test database (once per session) ─────────────────────
@@ -89,10 +116,32 @@ async def _recreate_test_db() -> None:
         database=_PG_ADMIN_DB,
     )
     try:
-        await conn.execute(f'DROP DATABASE IF EXISTS "{_TEST_DB_NAME}" WITH (FORCE)')
-        await conn.execute(f'CREATE DATABASE "{_TEST_DB_NAME}"')
+        await conn.execute(f"SELECT pg_advisory_lock({_TEST_DB_ADVISORY_LOCK})")
+        try:
+            await conn.execute(f'DROP DATABASE IF EXISTS "{_TEST_DB_NAME}" WITH (FORCE)')
+            await conn.execute(f'CREATE DATABASE "{_TEST_DB_NAME}"')
+        finally:
+            # Best-effort release; the connection is about to close
+            # which would release the session lock anyway, but an
+            # explicit unlock keeps the lock-table tidy in case the
+            # admin connection is recycled by the driver.
+            await conn.execute(f"SELECT pg_advisory_unlock({_TEST_DB_ADVISORY_LOCK})")
     finally:
         await conn.close()
+
+
+# V12-M8 — race-free DROP/CREATE across parallel pytest workers.
+# Two pytest-xdist workers booting at the same time both hit
+# ``_recreate_test_db`` against the same admin connection; pre-fix one
+# would ``DROP DATABASE`` while the other was midway through
+# ``CREATE``, producing flaky "database already exists" / "does not
+# exist" errors. ``pg_advisory_lock(bigint)`` on the *admin* DB
+# connection serialises the recreate phase across workers (the
+# session-level lock is released when the admin connection closes).
+# The key is the same constant used by ``alembic/env.py`` for
+# migrations — they're never held concurrently from this codebase,
+# and reusing the key keeps the lock namespace self-documenting.
+_TEST_DB_ADVISORY_LOCK = 7237_4203_1881_4729
 
 
 def _alembic_upgrade_head() -> None:
@@ -132,25 +181,29 @@ _notifier._safe_send_dm = _noop_dm  # type: ignore[assignment]
 # ── 4. Per-test fresh data ────────────────────────────────────────────────
 
 
-_TABLES_TO_TRUNCATE: tuple[str, ...] = (
-    "reviews",
-    "deal_messages",
-    "deals",
-    "wallet_withdrawals",
-    "wallet_deposits",
-    "user_balances",
-    "invoices",
-    "media",
-    "notifications",
-    "account_transfer_codes",
-    "service_comments",
-    "services",
-    "forums",
-    "users",
-    "app_settings",
-    "currencies",
-    "categories",
-)
+# V12-H6 — derive the truncate set from the ORM metadata at first use
+# rather than maintaining a hand-edited tuple. Pre-fix every new model
+# silently leaked state into subsequent tests (the table simply
+# wasn't in ``_TABLES_TO_TRUNCATE``); broadcasts, treasury withdrawals
+# and admin audit-log rows accumulated across the run. Introspection
+# also keeps the list FK-aware automatically — ``metadata.sorted_tables``
+# returns dependency order so ``CASCADE`` is a safety net rather than
+# the load-bearing primitive. Cached because the metadata is static
+# once ``backend.app.models`` is imported.
+_truncate_targets: tuple[str, ...] | None = None
+
+
+def _tables_to_truncate() -> tuple[str, ...]:
+    global _truncate_targets
+    if _truncate_targets is None:
+        from backend.app.db import Base
+
+        # Reverse so the children-first ordering is preferred when we
+        # join the table list into a single TRUNCATE statement — Postgres
+        # does the actual cascading either way, but reverse-dep order
+        # is what you'd want if a future change drops ``CASCADE``.
+        _truncate_targets = tuple(table.name for table in reversed(Base.metadata.sorted_tables))
+    return _truncate_targets
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -174,7 +227,7 @@ async def reset_db():
 
     await engine.dispose()
 
-    table_list = ", ".join(_TABLES_TO_TRUNCATE)
+    table_list = ", ".join(f'"{name}"' for name in _tables_to_truncate())
     async with engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE TABLE {table_list} RESTART IDENTITY CASCADE"))
 

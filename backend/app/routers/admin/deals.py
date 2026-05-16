@@ -559,7 +559,10 @@ async def force_release(
         session,
         deal.seller_id,
         "Сделка завершена администратором",
-        f"Сделка #{deal.id} завершена в вашу пользу. Сумма {payout} {currency.code} зачислена на баланс.",
+        (
+            f"Сделка #{deal.id} завершена в вашу пользу. "
+            f"Сумма {payout} {currency.code} зачислена на баланс."
+        ),
         deal.id,
     )
     await _notify_party(
@@ -619,7 +622,10 @@ async def force_refund(
         session,
         deal.buyer_id,
         "Сделка возвращена администратором",
-        f"Сделка #{deal.id} закрыта в вашу пользу, возвращено {refunded} {currency.code} (комиссия удержана).",
+        (
+            f"Сделка #{deal.id} закрыта в вашу пользу, "
+            f"возвращено {refunded} {currency.code} (комиссия удержана)."
+        ),
         deal.id,
     )
     await _notify_party(

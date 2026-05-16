@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import time
 from urllib.parse import urlencode
 
@@ -38,18 +39,29 @@ def auth_headers(init_data: str) -> dict[str, str]:
     return {"Authorization": f"tma {init_data}"}
 
 
-# Pre-shared sentinel that the conftest installs as ``ADMIN_TOTP_BYPASS``.
-# Sending it as ``X-Totp-Code`` short-circuits ``require_totp`` so tests
-# can hit 2FA-gated admin endpoints without provisioning a real secret.
-# Tests in ``test_admin_misc.py`` that exercise the *real* TOTP flow
-# avoid this helper and go through ``/api/admin/2fa/enable`` instead.
-TOTP_BYPASS_CODE = "test-totp-bypass-do-not-use-in-prod"
+# V12-H1 — read the live ``ADMIN_TOTP_BYPASS`` value the conftest
+# generated for this pytest invocation. The previous module-level
+# constant string is gone; the sentinel is now a random per-run value
+# that never escapes the test process. Sending it as ``X-Totp-Code``
+# short-circuits ``require_totp`` so tests can hit 2FA-gated admin
+# endpoints without provisioning a real secret. Tests in
+# ``test_admin_misc.py`` that exercise the *real* TOTP flow avoid
+# this helper and go through ``/api/admin/2fa/enable`` instead.
+def _totp_bypass_code() -> str:
+    """Return the active TOTP bypass sentinel.
+
+    Read from the env at call time (not at import) so a test that
+    uses ``monkeypatch.setenv("ADMIN_TOTP_BYPASS", "...")`` to verify
+    the per-request re-read behaviour (V5-A-9) doesn't desync its
+    own helper from the value the server sees.
+    """
+    return os.environ["ADMIN_TOTP_BYPASS"]
 
 
 def with_totp(headers: dict[str, str]) -> dict[str, str]:
     """Augment ``headers`` with the TOTP-bypass header for tests that
     hit a now-2FA-gated admin endpoint."""
-    return {**headers, "X-Totp-Code": TOTP_BYPASS_CODE}
+    return {**headers, "X-Totp-Code": _totp_bypass_code()}
 
 
 # V5-A-4 (M) — the production blacklist (``backend.app.pin.COMMON_PINS``)
