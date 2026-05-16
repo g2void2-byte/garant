@@ -22,6 +22,16 @@ non-zero values are themselves pre-migration artefacts and not part
 of the live state. If you ever need them back, restore from a
 pre-cutover backup.
 
+V5-E-1 — irreversible data loss on downgrade
+--------------------------------------------
+This migration drops the ``frozen_balance`` column.  The downgrade
+re-adds the column with ``DEFAULT 0`` so the schema shape matches,
+but every row's individual ``frozen_balance`` value is lost — it
+cannot be recomputed from any other column in the live schema.
+Recovery requires a pre-cutover backup as noted above.  Do NOT
+downgrade past this revision in production unless the original
+values are already considered abandoned.
+
 Revision ID: 9f3c1a0b8e21
 Revises: a4e1b8d72f63
 Create Date: 2026-05-14 15:00:00.000000
