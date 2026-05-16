@@ -24,19 +24,32 @@ RUN apt-get update \
         libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python deps from pyproject.toml (cached layer when deps don't
-# change). We copy only pyproject.toml first so source edits don't bust
-# the dep-install cache.
+# V12-L10 — install Python deps against the real package source instead
+# of a placeholder ``backend/app/__init__.py`` stub. The pre-fix recipe
+# created an empty stub so ``pip install -e .`` could find *something*
+# named ``backend.app`` at build time, then re-ran ``pip install -e .``
+# from CMD every container start to "rebind" the editable install
+# against the bind-mounted source. The editable install records a
+# ``.pth`` entry pointing at ``/app`` either way, so once the bind
+# mount supplies the real tree the import resolves correctly without
+# the runtime re-install; the stub was load-bearing for the original
+# build only. By copying the actual ``backend`` and ``alembic`` trees
+# into the image we get a working editable install at build time, no
+# stub, and the CMD can drop the redundant ``pip install -e .`` call.
+# Source edits still take effect via the bind mount + uvicorn reload;
+# pyproject changes require a rebuild (same as the previous flow,
+# since adding a new transitive dep can't be done by a quiet pip
+# install over an already-installed editable package without churn).
 COPY pyproject.toml ./
+COPY backend/ ./backend/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
 RUN pip install --upgrade pip \
-    && pip install -e ".[dev]" \
-    # `pip install -e .` needs the package to exist; we re-install at
-    # runtime when the source is mounted, but for now create a stub:
-    && mkdir -p backend/app \
-    && touch backend/app/__init__.py
+    && pip install -e ".[dev]"
 
 EXPOSE 8080
 
-# Entrypoint: re-install the editable package (in case pyproject changed
-# since image build), apply migrations, then start uvicorn with reload.
-CMD ["sh", "-c", "pip install -e . --quiet && alembic upgrade head && uvicorn backend.app.main:app --host 0.0.0.0 --port 8080 --reload"]
+# Entrypoint: apply migrations, then start uvicorn with reload. The
+# FastAPI lifespan also runs ``alembic upgrade head`` so this is
+# idempotent if you bypass CMD (e.g. ``docker run ... uvicorn ...``).
+CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.app.main:app --host 0.0.0.0 --port 8080 --reload"]

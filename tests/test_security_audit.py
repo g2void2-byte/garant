@@ -27,6 +27,7 @@ from tests.helpers import (
     get_user_id_by_tg,
     setup_pin,
     signed_init_data,
+    with_totp,
 )
 
 # ── 1. Account-transfer brute-force protection ────────────────────────────
@@ -235,10 +236,7 @@ async def test_invalidate_sessions_revokes_active_pin_token(client):
     resp = await client.post(
         f"/api/admin/users/{target_id}/invalidate-sessions",
         json={"reason": "leaked device"},
-        headers={
-            **auth_headers(admin_init),
-            "X-Totp-Code": "test-totp-bypass-do-not-use-in-prod",
-        },
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
 

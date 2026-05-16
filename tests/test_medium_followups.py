@@ -31,7 +31,7 @@ from backend.app.security import InitDataError, verify_init_data
 from backend.app.services_deals import _debit, _refund, _release_to
 from backend.app.services_wallet import get_or_create_balance
 
-from .helpers import TOTP_BYPASS_CODE, auth_headers, signed_init_data
+from .helpers import auth_headers, signed_init_data, with_totp
 
 # --- M1: maintenance cache --------------------------------------------------
 
@@ -128,7 +128,7 @@ async def test_admin_settings_patch_invalidates_maintenance_cache(client):
     # PATCH the settings via the admin endpoint.
     resp = await client.patch(
         "/api/admin/settings",
-        headers={**headers, "X-Totp-Code": TOTP_BYPASS_CODE},
+        headers=with_totp(headers),
         json={"maintenance_enabled": True, "maintenance_message": "test-m1"},
     )
     assert resp.status_code == 200, resp.text

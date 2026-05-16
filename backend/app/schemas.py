@@ -849,7 +849,11 @@ class AdminDealEventItem(BaseModel):
     """
 
     at: datetime
-    kind: str  # 'created' | 'in_progress' | 'cancel_request' | 'arbitration_started' | 'arbitration_resolved' | 'completed'
+    # Discriminator for the timeline UI: one of 'created', 'in_progress',
+    # 'cancel_request', 'arbitration_started', 'arbitration_resolved',
+    # 'completed'. Kept as a free-form ``str`` instead of an Enum because
+    # the timeline grows by adding rows, not by changing client code.
+    kind: str
     actor: str | None  # 'buyer' | 'seller' | 'admin' | 'arbiter' | None
     description: str
 

@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: ["**"]
 
+# V12-L6 — cancel superseded runs on the same ref. Pre-fix a
+# ``git push --force-with-lease`` after a rebase left the previous
+# 10-minute backend/frontend/e2e fan-out running to completion before
+# the new run picked up; the old runs were always stale (their commit
+# isn't the tip anymore) so we just drop them.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     runs-on: ubuntu-latest
@@ -78,8 +87,16 @@ jobs:
       - name: Lint (eslint)
         run: npm run lint
 
+      # V12-M4 — call the package script so any future tweak (e.g.
+      # turning on ``--incremental`` or pointing at a different
+      # tsconfig) goes through one definition rather than diverging
+      # between CI and developer machines. ``npm run typecheck`` runs
+      # ``tsc --noEmit -p tsconfig.json`` which is the right behaviour
+      # for a pure type-check; the previous ``npx tsc -b`` invocation
+      # wrote ``.tsbuildinfo`` files and didn't actually fail when
+      # ``noEmit`` was off in a referenced project.
       - name: Typecheck (tsc)
-        run: npx tsc -b
+        run: npm run typecheck
 
       - name: Unit + component tests (vitest)
         run: npm run test:run
