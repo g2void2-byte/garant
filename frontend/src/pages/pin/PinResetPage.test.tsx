@@ -29,6 +29,7 @@ const mockState = vi.hoisted(() => ({
 vi.mock("@/api/hooks", () => ({
   useRequestPinReset: () => mockState.requestReset,
   useConfirmPinReset: () => mockState.confirmReset,
+  usePinStatus: () => ({ data: { attempts_left: 3 }, isLoading: false }),
 }));
 
 const setPinTokenSpy = vi.hoisted(() => vi.fn());

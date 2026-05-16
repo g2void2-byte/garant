@@ -117,6 +117,12 @@ function useAdminUserAction(action: string) {
       qc.invalidateQueries({ queryKey: ["admin", "users"] });
       qc.invalidateQueries({ queryKey: ["admin", "user", vars.userId] });
       qc.invalidateQueries({ queryKey: ["admin", "dashboard"] });
+      // V5-F-1: invalidate related detail caches.
+      qc.invalidateQueries({ queryKey: ["admin", "user-services", vars.userId] });
+      qc.invalidateQueries({ queryKey: ["admin", "user-reviews", vars.userId] });
+      qc.invalidateQueries({ queryKey: ["admin", "user-wallet", vars.userId] });
+      qc.invalidateQueries({ queryKey: ["admin", "user-comments", vars.userId] });
+      qc.invalidateQueries({ queryKey: ["admin", "audit"] });
     },
   });
 }
@@ -442,6 +448,9 @@ export function useAdminAdjustBalance(userId: number) {
       qc.invalidateQueries({ queryKey: ["admin", "wallets"] });
       qc.invalidateQueries({ queryKey: ["admin", "user-wallet", userId] });
       qc.invalidateQueries({ queryKey: ["admin", "treasury"] });
+      // V5-F-3: invalidate user detail + audit caches.
+      qc.invalidateQueries({ queryKey: ["admin", "user", userId] });
+      qc.invalidateQueries({ queryKey: ["admin", "audit"] });
     },
   });
 }
@@ -512,6 +521,11 @@ export function useAdminDecideWithdrawal() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "withdrawals"] });
       qc.invalidateQueries({ queryKey: ["admin", "wallets"] });
+      // V5-F-2: invalidate wallet detail + treasury + audit caches.
+      qc.invalidateQueries({ queryKey: ["admin", "user-wallet"] });
+      qc.invalidateQueries({ queryKey: ["admin", "user"] });
+      qc.invalidateQueries({ queryKey: ["admin", "treasury"] });
+      qc.invalidateQueries({ queryKey: ["admin", "audit"] });
     },
   });
 }
@@ -626,7 +640,11 @@ export function useAdminCreateBroadcast() {
   const qc = useQueryClient();
   return useMutation<AdminBroadcastDto, Error, AdminBroadcastCreateBody>({
     mutationFn: (body) => api.post("api/admin/broadcasts", { json: body }).json(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "broadcasts"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "broadcasts"] });
+      // V5-F-4: invalidate audit cache.
+      qc.invalidateQueries({ queryKey: ["admin", "audit"] });
+    },
   });
 }
 

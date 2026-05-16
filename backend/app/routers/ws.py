@@ -146,10 +146,34 @@ async def websocket_endpoint(websocket: WebSocket):
     # reaper can evict sockets whose initData has aged past the cap
     # (see backend/app/ws.py: WS_MAX_AGE_SECONDS).
     await manager.connect(user_id, websocket, auth_date_epoch=_parse_auth_date(init_data))
+
+    # Comment 38: heartbeat loop — keeps NAT/proxy connections alive
+    # and lets the client detect silent drops.
+    from ..config import settings as app_settings
+
+    hb_interval = app_settings.ws_heartbeat_interval_seconds
+
+    async def _heartbeat() -> None:
+        try:
+            while True:
+                await asyncio.sleep(hb_interval)
+                await manager.send_heartbeat(websocket)
+        except asyncio.CancelledError:
+            pass
+
+    hb_task = asyncio.create_task(_heartbeat())
+
     try:
         while True:
             await websocket.receive_text()
+            # Comment 38: inbound rate check.
+            if not manager.check_recv_rate(websocket):
+                await websocket.close(code=4008, reason="Rate limit exceeded")
+                break
     except WebSocketDisconnect:
-        manager.disconnect(user_id, websocket)
+        pass
     except Exception:
+        pass
+    finally:
+        hb_task.cancel()
         manager.disconnect(user_id, websocket)

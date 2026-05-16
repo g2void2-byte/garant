@@ -270,7 +270,9 @@ class ServiceComment(Base):
     __tablename__ = "service_comments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    service_id: Mapped[int] = mapped_column(ForeignKey("services.id"), index=True)
+    service_id: Mapped[int] = mapped_column(
+        ForeignKey("services.id", ondelete="CASCADE"), index=True
+    )
     author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     text: Mapped[str] = mapped_column(Text, default="")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -360,7 +362,9 @@ class Review(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     target_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    deal_id: Mapped[int | None] = mapped_column(ForeignKey("deals.id"), nullable=True)
+    deal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("deals.id", ondelete="SET NULL"), nullable=True
+    )
     rating: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

@@ -24,6 +24,9 @@ could silently swap the secret to one the attacker controls.
 
 from __future__ import annotations
 
+import logging
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ...admin_audit import log_admin_action
@@ -34,12 +37,20 @@ from ...auth_2fa import (
 )
 from ...deps import AdminUser, SessionDep
 from ...rate_limit import rate_limit
+from ...redis_client import get_redis
 from ...schemas import (
     Admin2faConfirmIn,
     Admin2faSetupOut,
     Admin2faStatusOut,
     Admin2faVerifyIn,
 )
+
+logger = logging.getLogger(__name__)
+
+# Comment 49: pending TOTP secret TTL (10 minutes).
+_PENDING_TTL = 10 * 60
+# In-process fallback when Redis is unavailable.
+_pending_secrets: dict[int, tuple[str, float]] = {}
 
 router = APIRouter(
     prefix="/api/admin/2fa",
@@ -53,9 +64,41 @@ async def status(admin: AdminUser):
     return Admin2faStatusOut(enabled=bool(admin.totp_enabled and admin.totp_secret))
 
 
+async def _store_pending(user_id: int, secret: str) -> None:
+    """Store a pending TOTP secret in Redis (or in-process fallback)."""
+    r = await get_redis()
+    if r is not None:
+        try:
+            await r.setex(f"totp:pending:{user_id}", _PENDING_TTL, secret)
+            return
+        except Exception:  # noqa: BLE001
+            logger.warning("Redis setex failed for pending TOTP; using fallback")
+    _pending_secrets[user_id] = (secret, time.monotonic() + _PENDING_TTL)
+
+
+async def _pop_pending(user_id: int) -> str | None:
+    """Retrieve and delete the pending secret."""
+    r = await get_redis()
+    if r is not None:
+        try:
+            val = await r.getdel(f"totp:pending:{user_id}")
+            if val is not None:
+                return val if isinstance(val, str) else val.decode()
+        except Exception:  # noqa: BLE001
+            logger.warning("Redis getdel failed for pending TOTP; using fallback")
+    entry = _pending_secrets.pop(user_id, None)
+    if entry is None:
+        return None
+    secret, expires = entry
+    if time.monotonic() > expires:
+        return None
+    return secret
+
+
 @router.post("/setup", response_model=Admin2faSetupOut)
 async def setup(admin: AdminUser):
     secret = generate_secret()
+    await _store_pending(admin.id, secret)
     account = admin.username or f"id{admin.id}"
     return Admin2faSetupOut(secret=secret, otpauth_url=otpauth_url(secret, account=account))
 
@@ -80,11 +123,20 @@ async def enable(
         admin.totp_last_counter = current_counter
         rotated = True
 
-    new_counter = verify_totp_and_counter(body.secret, body.code)
+    # Comment 49: resolve the secret from the pending cache when the
+    # client omits ``body.secret`` (the setup endpoint already stored
+    # it server-side).
+    secret = body.secret
+    if not secret:
+        secret = await _pop_pending(admin.id)
+    if not secret:
+        raise HTTPException(400, "TOTP секрет не найден. Повторите /setup.")
+
+    new_counter = verify_totp_and_counter(secret, body.code)
     if new_counter is None:
         raise HTTPException(401, "Неверный код")
 
-    admin.totp_secret = body.secret
+    admin.totp_secret = secret
     admin.totp_enabled = True
     admin.totp_last_counter = new_counter
     session.add(admin)

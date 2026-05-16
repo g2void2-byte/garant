@@ -88,6 +88,16 @@ class Settings(BaseSettings):
     # in-process state (WS broadcasts stay local; rate-limit stays in-memory).
     redis_url: str = ""
 
+    # Comment 38 (audit v10) — WS DoS hardening tunables.
+    ws_max_sockets_per_user: int = 5
+    ws_recv_max_messages_per_second: float = 10.0
+    ws_heartbeat_interval_seconds: int = 30
+
+    # Comment 45 (audit v10) — GDPR: purge ``users.last_ip`` after
+    # the retention window so we don't hold PII forever.
+    last_ip_retention_seconds: int = 90 * 24 * 60 * 60  # 90 days
+    last_ip_purge_sweep_seconds: int = 3600  # 1 h
+
     # P3.2 — bot menu external links. Empty values hide the button.
     bot_forums_url: str = ""
     bot_community_chat_url: str = ""
