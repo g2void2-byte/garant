@@ -16,7 +16,7 @@ from ..models import (
     WalletDeposit,
     WalletWithdrawal,
 )
-from ..rate_limit import RLWalletPoll, RLWithdrawal
+from ..rate_limit import RLDeposit, RLWalletPoll, RLWithdrawal
 from ..schemas import (
     CurrencyOut,
     WalletBalanceOut,
@@ -114,7 +114,21 @@ async def get_balances(user: CurrentUser, session: SessionDep):
 
 
 @router.post("/deposits", response_model=WalletDepositOut)
-async def create_deposit(body: WalletDepositCreateReq, user: CurrentUser, session: SessionDep):
+async def create_deposit(
+    body: WalletDepositCreateReq,
+    user: CurrentUser,
+    session: SessionDep,
+    _rl: RLDeposit,
+):
+    # V11-H-4 — ``_rl`` is resolved by FastAPI before this handler
+    # runs, so a stolen initData can't burn CryptoBot quota by
+    # spamming invoice creation: the rate limiter raises 429 before
+    # ``create_deposit_invoice`` makes the upstream HTTP call. Note
+    # we intentionally keep this on ``CurrentUser`` (not ``PinUser``)
+    # — the deposit lands in the *legitimate* user's balance either
+    # way, so the spam vector is "burn upstream quota / pollute audit
+    # trail", not theft. PIN-gating creates UX friction without
+    # blocking that vector; rate-limiting blocks the vector directly.
     deposit = await create_deposit_invoice(session, user, body.currency_code, body.amount)
     currency = await session.get(Currency, deposit.currency_id)
     if currency is None:

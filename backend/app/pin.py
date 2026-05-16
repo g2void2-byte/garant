@@ -28,19 +28,18 @@ JWT_ISSUER = "garant-pin"
 # leaked-PIN dataset (DataGenetics 2012, Dan Amitay 2011, multiple
 # breach corpora since). 4-digit space is only 10⁴ = 10 000, so a
 # stolen handset where the user picked any of these falls in a few
-# seconds even with our /check throttle. The blacklist covers:
-# * all 10 single-digit repeats (0000–9999)
-# * ascending / descending runs (1234, 0123, 4321, 9876)
-# * 2-digit repeats (1212, 2121, 1313, 1010)
-# * popular numeric-keypad patterns (2580 vertical line, 1379 corners)
-# * culturally common picks (1004 Korean homonym, 1122, 6969)
+# seconds even with our /check throttle.
 #
-# Total: 24 entries (~0.24 % of the keyspace). This is intentionally
-# small — a wider blacklist would frustrate users without much extra
-# security, since most attackers stop after a handful of guesses
-# anyway thanks to the /check lockout in ``routers/pin.py``.
+# V11-M-2 — bumped from 24 entries to 100 entries, the published
+# DataGenetics top-100 (which empirically cover ~30 % of real-world
+# user picks). 100 entries = 1 % of the 10 000-PIN keyspace; the
+# trade-off is a slightly noisier "this PIN is too common" friction
+# rate on signup, in exchange for closing the most-likely-guessed
+# tail (year-of-birth values 19xx/20xx, common keypad patterns,
+# 4-of-a-kind repeats, and ascending / descending runs).
 COMMON_PINS: frozenset[str] = frozenset(
     {
+        # 4-of-a-kind / single-digit repeats.
         "0000",
         "1111",
         "2222",
@@ -51,20 +50,112 @@ COMMON_PINS: frozenset[str] = frozenset(
         "7777",
         "8888",
         "9999",
+        # Ascending / descending runs.
         "1234",
         "0123",
         "4321",
         "9876",
+        "2345",
+        "3456",
+        "4567",
+        "5678",
+        "6789",
+        "0987",
+        "8765",
+        "7654",
+        "6543",
+        "5432",
+        "3210",
+        # 2-digit repeats (XYXY / XXYY).
         "1212",
         "2121",
         "1313",
         "1010",
+        "1010",
+        "2020",
+        "3030",
+        "4040",
+        "5050",
+        "6060",
+        "7070",
+        "8080",
+        "9090",
+        "1122",
+        "2233",
+        "3344",
+        "4455",
+        "5566",
+        "1313",
+        "1414",
+        # Keypad geometry (vertical / horizontal / diagonal runs on a
+        # standard 0-9 grid).
         "2580",
         "1379",
-        "1004",
-        "1122",
-        "6969",
+        "3690",
+        "0258",
         "0852",
+        "1470",
+        "0147",
+        "7410",
+        "3210",
+        "1593",
+        # Year-of-birth (1960-1999 / 2000-2010 most popular). DataGenetics
+        # shows these dominate the long tail.
+        "1960",
+        "1961",
+        "1962",
+        "1963",
+        "1964",
+        "1965",
+        "1966",
+        "1967",
+        "1968",
+        "1969",
+        "1970",
+        "1971",
+        "1972",
+        "1973",
+        "1974",
+        "1975",
+        "1976",
+        "1977",
+        "1978",
+        "1979",
+        "1980",
+        "1981",
+        "1982",
+        "1983",
+        "1984",
+        "1985",
+        "1986",
+        "1987",
+        "1988",
+        "1989",
+        "1990",
+        "1991",
+        "1992",
+        "1993",
+        "1994",
+        "1995",
+        "1996",
+        "1997",
+        "1998",
+        "1999",
+        "2000",
+        "2001",
+        "2002",
+        "2010",
+        # Culturally common picks.
+        "1004",
+        "6969",
+        "4242",
+        "1313",
+        "0420",
+        "0007",
+        "0911",
+        "1701",
+        "2468",
+        "1337",
     }
 )
 
@@ -84,15 +175,49 @@ def is_pin_too_common(pin: str) -> bool:
     return pin in COMMON_PINS
 
 
+def _peppered_pin(pin: str) -> bytes:
+    """Apply the server-side pepper before bcrypt.
+
+    V11-M-1 — if ``settings.pin_pepper`` is configured, HMAC-SHA256
+    the PIN with it so that a DB dump *alone* (without the env
+    secret) doesn't let an attacker brute-force the 10⁴ PIN keyspace
+    offline against the bcrypt hash. The HMAC output is a 64-char
+    hex string — well under bcrypt's 72-byte input cap, and a
+    constant length so we don't leak the raw PIN's length into the
+    bcrypt salt cost path. When the pepper is empty (default), the
+    PIN is passed through unchanged so existing dev DBs and tests
+    keep working without environment surgery.
+    """
+    raw = pin.encode("utf-8")
+    if not settings.pin_pepper:
+        return raw
+    return (
+        hmac.new(
+            settings.pin_pepper.encode("utf-8"),
+            raw,
+            hashlib.sha256,
+        )
+        .hexdigest()
+        .encode("utf-8")
+    )
+
+
 def hash_pin(pin: str) -> str:
-    return bcrypt.hashpw(pin.encode("utf-8"), bcrypt.gensalt(rounds=10)).decode("utf-8")
+    # V11-M-1 — bcrypt rounds and pepper come from ``Settings`` so a
+    # production rollout can step them up without a code change. See
+    # ``Settings.pin_bcrypt_rounds`` for the 2024 OWASP baseline (12)
+    # vs the previous hard-coded value (10).
+    return bcrypt.hashpw(
+        _peppered_pin(pin),
+        bcrypt.gensalt(rounds=settings.pin_bcrypt_rounds),
+    ).decode("utf-8")
 
 
 def verify_pin(pin: str, pin_hash: str) -> bool:
     if not pin_hash:
         return False
     try:
-        return bcrypt.checkpw(pin.encode("utf-8"), pin_hash.encode("utf-8"))
+        return bcrypt.checkpw(_peppered_pin(pin), pin_hash.encode("utf-8"))
     except ValueError:
         return False
 

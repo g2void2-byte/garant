@@ -259,6 +259,18 @@ RLMarkAllRead = Annotated[None, Depends(rate_limit("mark-all-read", limit=10, wi
 # the upstream API rate to ≤4/min/user even under attack.
 RLWalletPoll = Annotated[None, Depends(rate_limit("wallet-poll", limit=2, window=30))]
 
+# V11-H-4 — ``POST /api/wallet/deposits`` is the *creation* side of
+# the same CryptoBot integration. Unlike withdrawals it isn't
+# PIN-gated (the legitimate user gets the money back anyway, so the
+# PIN UX cost isn't worth the gain), but a hijacked initData could
+# still burn the platform's CryptoBot quota by spamming invoice
+# creation. 3/min/user covers the realistic UX (user opens the
+# deposit page, mistypes the amount, retries) while pinning the
+# upstream call rate to ≤3/min/user even under attack — well below
+# any provider quota and tight enough that abuse is logged in our
+# rate-limit counters before it can DoS the integration.
+RLDeposit = Annotated[None, Depends(rate_limit("deposit", limit=3, window=60))]
+
 
 __all__ = [
     "User",
@@ -278,4 +290,5 @@ __all__ = [
     "RLSupport",
     "RLMarkAllRead",
     "RLWalletPoll",
+    "RLDeposit",
 ]

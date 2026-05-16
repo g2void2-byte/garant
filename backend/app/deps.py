@@ -155,18 +155,29 @@ async def get_current_user(
         if tg_user.get("username") and user.username != tg_user["username"]:
             user.username = tg_user["username"]
             dirty = True
-        if user.last_ip != ip:
-            user.last_ip = ip
-            dirty = True
         # "Session ping": stamp ``last_login_at`` / bump ``login_count``
         # for the admin panel's "last seen" column. Debounced to at
         # most once per ``_LAST_LOGIN_DEBOUNCE`` so we don't UPDATE the
         # row on every API call — a single active user paging the deal
         # list otherwise generates hundreds of writes/hour, drowning
         # WAL and conflicting with admin updates on the same row.
-        if user.last_login_at is None or (now - user.last_login_at) >= _LAST_LOGIN_DEBOUNCE:
+        #
+        # V11-M-4 — ``last_ip`` is now debounced into the same window.
+        # Pre-fix, ``user.last_ip != ip`` ran every request, so a
+        # mobile user whose CGN address bounces between cells (or any
+        # Wi-Fi ↔ LTE handoff) generated a write per API call. The new
+        # rule: if we're inside the debounce window, leave ``last_ip``
+        # alone; the next session-ping refresh will stamp the freshest
+        # observed IP. This collapses the worst case to one UPDATE per
+        # 5 min instead of one per HTTP request.
+        should_ping = (
+            user.last_login_at is None or (now - user.last_login_at) >= _LAST_LOGIN_DEBOUNCE
+        )
+        if should_ping:
             user.last_login_at = now
             user.login_count = (user.login_count or 0) + 1
+            if user.last_ip != ip:
+                user.last_ip = ip
             dirty = True
         if dirty:
             await session.commit()
