@@ -79,11 +79,15 @@ WS_SLOW_CONSUMER_CLOSE_CODE = 4003
 # a wide-awake client typically holds <1 message at a time.
 #
 # V11-L-1 — moved to ``Settings.ws_send_queue_size`` /
-# ``Settings.ws_send_timeout_seconds`` so production can resize the
-# queue and the per-send ceiling without a code change. The
-# module-level names are kept as a thin alias for legacy tests that
-# monkey-patch them; new call sites read ``settings`` directly so
-# runtime overrides land without an extra reassignment dance.
+# ``Settings.ws_send_timeout_seconds`` so a deploy can resize the
+# queue and the per-send ceiling via env var without a code change.
+# The module-level names are kept as a thin alias because
+# ``test_ws_hardening.py`` monkey-patches
+# ``backend.app.ws.WS_SEND_QUEUE_SIZE`` directly; the runtime path
+# (the deque ``maxlen=`` and the ``asyncio.wait_for(timeout=)`` call)
+# reads the alias, so the monkey-patch keeps working. Both the
+# alias and the underlying setting are import-time snapshots, so
+# this is a deploy-time knob, not a runtime one.
 WS_SEND_QUEUE_SIZE = settings.ws_send_queue_size
 # Per-send timeout. The default is a long-but-finite ceiling so a
 # half-open TCP socket can't hang the writer forever; the OS keep-

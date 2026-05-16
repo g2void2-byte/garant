@@ -46,10 +46,12 @@ from .time_utils import utcnow
 logger = logging.getLogger(__name__)
 
 # V11-L-1 — module-level aliases for backwards-compat with existing
-# call sites and tests that import these names directly. The runtime
-# source of truth is :mod:`backend.app.config.settings`; resolving via
-# ``settings`` at call-time means a production knob lifts through to
-# every caller (issue, generate, confirm) without a code change.
+# call sites and tests that import these names directly. The source
+# of truth is :mod:`backend.app.config.settings`, which itself
+# snapshots its values from the environment at ``Settings()``
+# instantiation. Aliases and direct ``settings.X`` reads are both
+# import-time snapshots; the lever this fix unlocks is deploy-time
+# tunability via env var, not in-process runtime mutation.
 CODE_LEN = settings.account_transfer_code_len
 
 # Max number of failed ``confirm_transfer`` attempts allowed against a
@@ -67,8 +69,10 @@ def _now() -> datetime:
 
 
 def _generate_code() -> str:
-    # V11-L-1 — read length from settings every call so a runtime
-    # config change is observed without re-importing the module.
+    # V11-L-1 — read length from settings rather than the
+    # module-level ``CODE_LEN`` alias so the two stay in sync if a
+    # test (or future caller) reassigns one but not the other.
+    # ``settings.account_transfer_code_len`` is the source of truth.
     return "".join(secrets.choice("0123456789") for _ in range(settings.account_transfer_code_len))
 
 
@@ -329,10 +333,14 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     await _purge_expired(session)
 
     code = (code or "").strip()
-    if len(code) != settings.account_transfer_code_len or not code.isdigit():
+    expected_len = settings.account_transfer_code_len
+    if len(code) != expected_len or not code.isdigit():
         # V11-M-11 — no DB write: brute-force protection is the
         # endpoint rate-limit, not a per-code counter.
-        raise ValueError("Введите код из 6 цифр")
+        # V11 review-follow-up — length is now a deploy-time knob
+        # (``settings.account_transfer_code_len``); render the real
+        # expected count instead of the previous hard-coded "6".
+        raise ValueError(f"Введите код из {expected_len} цифр")
 
     stmt = (
         select(AccountTransferCode)
