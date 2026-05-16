@@ -9,6 +9,18 @@ Postgres does not support ``ALTER TYPE ... DROP VALUE``, so we juggle a
 shadow enum: create the new one, swap the column over, drop the old one,
 rename the new one back to ``dealstatus``.
 
+V5-E-1 — irreversible data loss on downgrade
+--------------------------------------------
+The downgrade recreates the enum with the legacy values appended, so
+*new* rows can again use ``wait_confirm`` etc.  Existing rows are
+unaffected because their text representation survives the
+``USING status::text::dealstatus_new`` cast.  However, the upgrade
+side already silently dropped any pre-P3.3 SQLite-era row that the
+``USING`` cast couldn't translate to a current value — that data was
+considered legacy garbage at cutover time and is *not* recoverable
+from the live schema.  If you ever need it back, restore from a
+pre-cutover backup.
+
 Revision ID: 411cbe508b97
 Revises: b8adfad43818
 Create Date: 2026-05-13 17:30:00.000000

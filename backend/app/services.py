@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import notifier
@@ -47,17 +47,18 @@ async def _recompute_user_rating(session: AsyncSession, target: User) -> None:
     * ``rating >= 4`` → good
     * ``rating <= 2`` → bad
     * ``rating == 3`` → neutral (excluded from both counters)
+
+    V5-D-10 — single round-trip ``SUM(CASE ...)`` instead of two
+    ``SELECT COUNT(...)``.  ``post_review`` is on the hot path for
+    every newly-finished deal; cutting the recompute from two
+    sequential queries to one halves the DB round-trips per review
+    and lets Postgres scan the per-target index just once.
     """
-    good = (
-        await session.execute(
-            select(func.count(Review.id)).where(Review.target_id == target.id, Review.rating >= 4)
-        )
-    ).scalar_one()
-    bad = (
-        await session.execute(
-            select(func.count(Review.id)).where(Review.target_id == target.id, Review.rating <= 2)
-        )
-    ).scalar_one()
+    good_expr = func.coalesce(func.sum(case((Review.rating >= 4, 1), else_=0)), 0)
+    bad_expr = func.coalesce(func.sum(case((Review.rating <= 2, 1), else_=0)), 0)
+    good, bad = (
+        await session.execute(select(good_expr, bad_expr).where(Review.target_id == target.id))
+    ).one()
     target.good = int(good or 0)
     target.bad = int(bad or 0)
 
