@@ -112,7 +112,21 @@ def _parse_unsigned(init_data: str) -> dict:
 
 
 def build_dev_init_data(user_id: int, username: str = "dev_user") -> str:
-    """Build fake init data for local development testing."""
+    """Build fake init data for local development testing.
+
+    V11-L-5 — refuse to run outside dev/test even if a caller imports
+    the helper directly. The pair of unsigned-init-data guards in
+    :func:`_parse_unsigned` and the lifespan startup already prevent
+    a forged token from authenticating in production, but the helper
+    itself was previously importable from anywhere — including from a
+    dev script accidentally shipped into a production container. Hard
+    failing at the entry point removes that whole class of foot-gun.
+    """
+    if settings.environment in ("production", "staging"):
+        raise RuntimeError(
+            "build_dev_init_data is a development-only helper; refusing "
+            f"to run with ENVIRONMENT='{settings.environment}'"
+        )
     user = json.dumps(
         {"id": user_id, "first_name": username, "username": username},
         separators=(",", ":"),

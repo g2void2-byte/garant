@@ -14,6 +14,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
@@ -518,9 +519,21 @@ class UserBalance(Base):
 
     Funds are split into ``amount`` (spendable) and ``locked`` (held
     while a withdrawal is pending or during the 72h cool-down).
+
+    V11-L-20 — at-most-one row per ``(user_id, currency_id)`` pair
+    is enforced by the unique constraint
+    ``uq_user_balances_user_currency`` (migration
+    ``e7a3c1b9d4f6``). Application code in
+    ``services_wallet.get_or_create_balance`` /
+    ``lock_user_balance`` upserts via
+    ``INSERT ... ON CONFLICT (user_id, currency_id) DO NOTHING``
+    and relies on this constraint being present.
     """
 
     __tablename__ = "user_balances"
+    __table_args__ = (
+        UniqueConstraint("user_id", "currency_id", name="uq_user_balances_user_currency"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
