@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,7 +19,20 @@ from .seed import run_seed
 from .ws import manager as ws_manager
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s: %(message)s")
+# V11-M-13 — only install the default root handler when no other
+# handler is configured yet. Pre-fix the unconditional
+# ``basicConfig(...)`` call meant that if an embedder (gunicorn,
+# uvicorn ``--log-config``, a test harness) had already wired up
+# structured / JSON logging at import time, our naive
+# ``"%(levelname)s: %(name)s: %(message)s"`` format silently replaced
+# theirs — because ``basicConfig`` was a no-op on the first call
+# (theirs), then theirs ran ours and ours installed an *additional*
+# stream handler. Guarding on ``root.handlers`` is the documented way
+# to opt in to the default config only when the embedder hasn't said
+# otherwise; tests / production logging frameworks now keep their
+# handlers intact.
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s: %(message)s")
 
 _bot_task: asyncio.Task | None = None
 _inactivity_task: asyncio.Task | None = None
@@ -26,92 +40,120 @@ _deposit_expiry_task: asyncio.Task | None = None
 _invoice_expiry_task: asyncio.Task | None = None
 _last_ip_purge_task: asyncio.Task | None = None
 
+# V11-L-17 — exponential backoff ceiling for sweep loop error retries.
+# Without a ceiling a database that stays down would accelerate the
+# back-off arbitrarily; capping at 5 min means even a multi-hour
+# outage produces at most ~12 retries / hour per loop. The base unit
+# is the loop's own configured ``interval_seconds`` so a sweep that
+# normally runs every 30 s caps its retries way earlier than one that
+# runs every 10 min.
+_SWEEP_BACKOFF_MAX_SECONDS = 300.0
 
-async def _inactivity_loop(interval_seconds: int) -> None:
-    """Periodically sweep stale deals.
 
-    Runs forever; cancelled cleanly during shutdown. Uses a fresh
-    session per iteration so a transient SQLite write lock doesn't
-    poison subsequent runs.
+def _make_sweep_loop(
+    name: str,
+    work: Callable[[], Awaitable[int | None]],
+    success_message: str,
+) -> Callable[[int], Awaitable[None]]:
+    """Build a background sweep loop with logging + exponential backoff.
+
+    V11-L-8 / V11-L-17 — pre-fix every sweep (inactivity, deposit
+    expiry, invoice expiry, last-IP purge) had its own near-identical
+    while-True body. Four duplicated try/except/sleep blocks meant
+    four places to forget to update the next time we add a retry
+    semantic. This factory centralises:
+
+    1. The error try/except (cancellation passes through, anything
+       else is logged with traceback rather than crashing the loop).
+    2. The success log line — only emitted when ``work()`` returned
+       a truthy affected-count, so silent sweeps stay silent.
+    3. Exponential backoff on errors. The first failure waits the
+       full ``interval``, the second waits ``2 × interval``, capped
+       at :data:`_SWEEP_BACKOFF_MAX_SECONDS`. A successful iteration
+       resets the backoff. This protects the DB from getting pinned
+       by tight-loop reconnect storms during an outage; pre-fix every
+       sweep would hammer the broken connection every ``interval_seconds``
+       indefinitely.
+
+    ``work`` is an ``async`` zero-arg callable that returns the
+    affected-row count (or ``None`` for a no-op).
     """
+
+    async def loop(interval_seconds: int) -> None:
+        backoff_multiplier = 1
+        while True:
+            try:
+                affected = await work()
+                if affected:
+                    logger.info(success_message, affected)
+                backoff_multiplier = 1
+                await asyncio.sleep(interval_seconds)
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001
+                logger.exception("%s sweep failed", name)
+                sleep_for = min(
+                    interval_seconds * backoff_multiplier,
+                    _SWEEP_BACKOFF_MAX_SECONDS,
+                )
+                backoff_multiplier = min(backoff_multiplier * 2, 64)
+                await asyncio.sleep(sleep_for)
+
+    loop.__name__ = f"_sweep_loop_{name}"
+    return loop
+
+
+async def _inactivity_work() -> int | None:
     from .services_deals import sweep_inactivity
 
-    while True:
-        try:
-            async with async_session() as session:
-                affected = await sweep_inactivity(session)
-            if affected:
-                logger.info("inactivity sweep: cancelled %d deal(s)", affected)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("inactivity sweep failed")
-        await asyncio.sleep(interval_seconds)
+    async with async_session() as session:
+        return await sweep_inactivity(session)
 
 
-async def _deposit_expiry_loop(interval_seconds: int) -> None:
-    """M-6 — periodically expire stale ``pending`` wallet deposits.
-
-    Mirrors :func:`_inactivity_loop`: fresh session per iteration,
-    cancelled cleanly during shutdown. Without this loop a deposit
-    that the user never paid would sit in ``pending`` forever because
-    CryptoBot doesn't keep emitting webhooks once the invoice has
-    expired on their side.
-    """
+async def _deposit_expiry_work() -> int | None:
     from .services_wallet import sweep_expired_deposits
 
-    while True:
-        try:
-            async with async_session() as session:
-                affected = await sweep_expired_deposits(session)
-            if affected:
-                logger.info("deposit-expiry sweep: marked %d deposit(s) expired", affected)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("deposit-expiry sweep failed")
-        await asyncio.sleep(interval_seconds)
+    async with async_session() as session:
+        return await sweep_expired_deposits(session)
 
 
-async def _invoice_expiry_loop(interval_seconds: int) -> None:
-    """V5-B-7 — periodically expire stale ``pending`` legacy invoices.
-
-    Mirrors :func:`_deposit_expiry_loop`: fresh session per iteration,
-    cancelled cleanly during shutdown. ``manual_deposit`` (legacy
-    ``POST /api/payments/deposit``) creates ``Invoice`` rows whose
-    provider id is hand-stamped — CryptoBot never emits webhooks for
-    them, so without this loop they accumulate as ``pending`` forever.
-    """
+async def _invoice_expiry_work() -> int | None:
     from .services import sweep_expired_invoices
 
-    while True:
-        try:
-            async with async_session() as session:
-                affected = await sweep_expired_invoices(session)
-            if affected:
-                logger.info("invoice-expiry sweep: marked %d invoice(s) expired", affected)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("invoice-expiry sweep failed")
-        await asyncio.sleep(interval_seconds)
+    async with async_session() as session:
+        return await sweep_expired_invoices(session)
 
 
-async def _last_ip_purge_loop(interval_seconds: int) -> None:
-    """Comment 45 (audit v10) — periodically purge stale ``users.last_ip``."""
+async def _last_ip_purge_work() -> int | None:
     from .services import sweep_user_last_ip
 
-    while True:
-        try:
-            async with async_session() as session:
-                purged = await sweep_user_last_ip(session)
-            if purged:
-                logger.info("last-ip purge: scrubbed %d user(s)", purged)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("last-ip purge failed")
-        await asyncio.sleep(interval_seconds)
+    async with async_session() as session:
+        return await sweep_user_last_ip(session)
+
+
+# Concrete loops are produced via the factory. Names kept identical
+# to the legacy hand-rolled functions so external imports / tests that
+# monkey-patch by module attribute keep working.
+_inactivity_loop = _make_sweep_loop(
+    "inactivity",
+    _inactivity_work,
+    "inactivity sweep: cancelled %d deal(s)",
+)
+_deposit_expiry_loop = _make_sweep_loop(
+    "deposit-expiry",
+    _deposit_expiry_work,
+    "deposit-expiry sweep: marked %d deposit(s) expired",
+)
+_invoice_expiry_loop = _make_sweep_loop(
+    "invoice-expiry",
+    _invoice_expiry_work,
+    "invoice-expiry sweep: marked %d invoice(s) expired",
+)
+_last_ip_purge_loop = _make_sweep_loop(
+    "last-ip-purge",
+    _last_ip_purge_work,
+    "last-ip purge: scrubbed %d user(s)",
+)
 
 
 @asynccontextmanager
@@ -388,7 +430,17 @@ app.mount(
     name="media",
 )
 
-FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+# V11-M-15 — frontend dist directory is overridable via
+# ``settings.frontend_dist_dir``. Pre-fix the path was hard-coded to
+# the monorepo layout (``<repo>/frontend/dist``), which is fine for a
+# Docker build but broken for deploys where the SPA is served by a
+# CDN / S3 and the backend container has no ``frontend/`` directory
+# at all. Empty (default) preserves the legacy resolution so existing
+# monorepo deploys are unaffected.
+if settings.frontend_dist_dir:
+    FRONTEND_DIST = Path(settings.frontend_dist_dir).expanduser().resolve()
+else:
+    FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
 
 @app.get("/api/settings/maintenance")

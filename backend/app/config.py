@@ -94,6 +94,25 @@ class Settings(BaseSettings):
 
     # PR-CA — TTL for account-transfer one-time codes.
     account_transfer_code_ttl_seconds: int = 15 * 60
+    # V11-L-1 — operational tuning surface for account-transfer brute-force
+    # protection. ``account_transfer_max_confirm_attempts`` is the number of
+    # failed ``/api/account/confirm`` attempts that burn a single
+    # ``AccountTransferCode`` row; ``account_transfer_max_code_generation_attempts``
+    # bounds the collision-avoidance loop in ``_generate_unique_code`` so a
+    # pathologically full keyspace doesn't spin forever; ``account_transfer_code_len``
+    # is the digit-count of the OTP. Moved out of module-level constants in
+    # ``services_account.py`` so production can dial each lever without a
+    # code change. Defaults match the previous in-code values.
+    account_transfer_max_confirm_attempts: int = 5
+    account_transfer_max_code_generation_attempts: int = 100
+    account_transfer_code_len: int = 6
+    # V11-M-12 — emit a ``logger.warning`` when ``_generate_unique_code``
+    # had to retry more than this many times. With a 10⁶ keyspace and the
+    # default 15-min TTL the live code set is tiny, so retrying more than
+    # a handful of times is the early warning sign of pressure on the
+    # keyspace. Default is 5: well above normal jitter, well below the
+    # 100-iteration cap.
+    account_transfer_code_generation_warn_threshold: int = 5
 
     # PR-E — uploaded media storage.
     media_root: str = "./media-uploads"
@@ -114,6 +133,16 @@ class Settings(BaseSettings):
     ws_max_sockets_per_user: int = 5
     ws_recv_max_messages_per_second: float = 10.0
     ws_heartbeat_interval_seconds: int = 30
+    # V11-L-1 — bounded send queue per socket. Pre-fix this was a
+    # module-level constant in ``ws.py``; production can now resize
+    # it without a code change. The default (100) matches the prior
+    # hard-coded value: enough to absorb a normal notification burst
+    # for a single user, small enough to bound memory at scale.
+    ws_send_queue_size: int = 100
+    # V11-L-1 — per-send timeout. Same rationale: lifted from a
+    # module-level constant so production can tune the
+    # back-pressure-vs-latency trade-off.
+    ws_send_timeout_seconds: float = 10.0
     # V11-H-7 — how often the per-socket reaper sweeps to evict
     # connections whose ``auth_date`` has aged past
     # ``ws_max_age_seconds``. Previously hard-coded to 5 min which
@@ -130,6 +159,22 @@ class Settings(BaseSettings):
     # the retention window so we don't hold PII forever.
     last_ip_retention_seconds: int = 90 * 24 * 60 * 60  # 90 days
     last_ip_purge_sweep_seconds: int = 3600  # 1 h
+
+    # V11-L-1 — withdrawal cool-down before the admin queue can act on
+    # a user-submitted ``WalletWithdrawal``. Pre-fix this was a
+    # module-level constant in ``services_wallet.py``. Default 24 h
+    # matches the existing behaviour; tunable so production can shorten
+    # / lengthen the dispute window without a code change.
+    withdraw_lock_hours: int = 24
+
+    # V11-M-15 — optional override for the SPA dist directory. Empty
+    # string (default) falls back to the legacy
+    # ``Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"``,
+    # which is right for a monorepo Docker build. Set this when the
+    # frontend is deployed separately (CDN, S3, etc.) so the backend
+    # doesn't try to serve a non-existent SPA shell — or to point a
+    # specific deploy at a custom build path.
+    frontend_dist_dir: str = ""
 
     # P3.2 — bot menu external links. Empty values hide the button.
     bot_forums_url: str = ""

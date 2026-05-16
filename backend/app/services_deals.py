@@ -27,7 +27,8 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import or_, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import notifier
@@ -52,13 +53,31 @@ logger = logging.getLogger(__name__)
 
 
 async def _settings(session: AsyncSession) -> AppSettings:
+    # V11-M-7 — the singleton ``app_settings`` row is protected by the
+    # partial unique index ``ix_app_settings_singleton`` (see migration
+    # ``d2a7c9b5e4f1``). Pre-fix this helper used a plain
+    # ``session.add()`` which, under two parallel cold-start workers,
+    # produced an ``IntegrityError`` on the loser of the race. We now
+    # do an ``INSERT ... ON CONFLICT DO NOTHING`` so the loser commits
+    # a no-op, then re-SELECT to pick up whichever row landed first.
+    # The empty ``index_elements=[]`` + ``index_where=text("true")``
+    # form targets the partial unique index by its predicate; an
+    # explicit ``constraint=`` would also work but couples this code
+    # to the migration's constraint name.
     result = await session.execute(select(AppSettings).limit(1))
     s = result.scalar_one_or_none()
-    if s is None:
-        s = AppSettings()
-        session.add(s)
-        await session.commit()
-        await session.refresh(s)
+    if s is not None:
+        return s
+    ins = (
+        pg_insert(AppSettings)
+        .values()
+        .on_conflict_do_nothing(index_elements=[], index_where=text("true"))
+    )
+    await session.execute(ins)
+    await session.commit()
+    s = (await session.execute(select(AppSettings).limit(1))).scalar_one_or_none()
+    if s is None:  # pragma: no cover — unreachable; either branch above commits a row.
+        raise RuntimeError("app_settings row failed to materialise")
     return s
 
 

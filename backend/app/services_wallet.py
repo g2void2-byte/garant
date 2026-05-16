@@ -14,6 +14,7 @@ from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import notifier
@@ -35,7 +36,12 @@ from .time_utils import utcnow
 logger = logging.getLogger(__name__)
 
 
-WITHDRAW_LOCK_HOURS = 24
+# V11-L-1 — withdrawal cool-down before the admin queue can act on a
+# user-submitted ``WalletWithdrawal``. Pre-fix this was a module-level
+# constant; production can now shorten or extend the dispute window
+# via ``settings.withdraw_lock_hours`` without a code change. Kept as
+# a module-level alias so existing imports keep working.
+WITHDRAW_LOCK_HOURS = settings.withdraw_lock_hours
 
 
 async def get_currency_by_code(session: AsyncSession, code: str) -> Currency:
@@ -51,16 +57,39 @@ async def get_currency_by_code(session: AsyncSession, code: str) -> Currency:
 async def get_or_create_balance(
     session: AsyncSession, user_id: int, currency_id: int
 ) -> UserBalance:
+    """Return (or create) the user/currency balance row.
+
+    V11-L-20 — pre-fix the missing-row branch did a naked
+    ``session.add()`` which, under two concurrent first-touch
+    requests for the same (user_id, currency_id) pair, blew up on
+    the unique constraint of the loser. We now use
+    ``INSERT ... ON CONFLICT DO NOTHING`` so the loser commits a
+    no-op and re-SELECTs whichever row landed first. The
+    ``flush()`` after the INSERT guarantees the row is visible to
+    the follow-up SELECT inside the same transaction.
+    """
     result = await session.execute(
         select(UserBalance).where(
             UserBalance.user_id == user_id, UserBalance.currency_id == currency_id
         )
     )
     bal = result.scalar_one_or_none()
-    if bal is None:
-        bal = UserBalance(user_id=user_id, currency_id=currency_id, amount=0, locked=0)
-        session.add(bal)
-        await session.flush()
+    if bal is not None:
+        return bal
+    await session.execute(
+        pg_insert(UserBalance)
+        .values(user_id=user_id, currency_id=currency_id, amount=0, locked=0)
+        .on_conflict_do_nothing(index_elements=["user_id", "currency_id"])
+    )
+    await session.flush()
+    bal = (
+        await session.execute(
+            select(UserBalance).where(
+                UserBalance.user_id == user_id,
+                UserBalance.currency_id == currency_id,
+            )
+        )
+    ).scalar_one()
     return bal
 
 
@@ -69,8 +98,16 @@ async def lock_user_balance(session: AsyncSession, user_id: int, currency_id: in
 
     Used by money-moving flows (withdrawal, deal creation) where two
     concurrent requests must not both pass an ``amount >= price``
-    check. A newly inserted row is implicitly locked by the inserting
-    transaction, so the missing-row branch needs no extra select.
+    check.
+
+    V11-L-20 — pre-fix the cold-path "row doesn't exist yet" branch
+    did a naked ``session.add()`` which races identically to
+    :func:`get_or_create_balance`. We now upsert with
+    ``ON CONFLICT DO NOTHING`` and then ``SELECT ... FOR UPDATE``
+    once we know the row exists. The lock acquired by the follow-up
+    SELECT is the same one production callers rely on; the INSERT
+    itself implicitly row-locks the newly created row, so even if
+    the cold path takes it the contract holds.
     """
     bal = (
         await session.execute(
@@ -82,10 +119,24 @@ async def lock_user_balance(session: AsyncSession, user_id: int, currency_id: in
             .with_for_update()
         )
     ).scalar_one_or_none()
-    if bal is None:
-        bal = UserBalance(user_id=user_id, currency_id=currency_id, amount=0, locked=0)
-        session.add(bal)
-        await session.flush()
+    if bal is not None:
+        return bal
+    await session.execute(
+        pg_insert(UserBalance)
+        .values(user_id=user_id, currency_id=currency_id, amount=0, locked=0)
+        .on_conflict_do_nothing(index_elements=["user_id", "currency_id"])
+    )
+    await session.flush()
+    bal = (
+        await session.execute(
+            select(UserBalance)
+            .where(
+                UserBalance.user_id == user_id,
+                UserBalance.currency_id == currency_id,
+            )
+            .with_for_update()
+        )
+    ).scalar_one()
     return bal
 
 

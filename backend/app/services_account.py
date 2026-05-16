@@ -45,13 +45,19 @@ from .time_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
-CODE_LEN = 6
+# V11-L-1 — module-level aliases for backwards-compat with existing
+# call sites and tests that import these names directly. The runtime
+# source of truth is :mod:`backend.app.config.settings`; resolving via
+# ``settings`` at call-time means a production knob lifts through to
+# every caller (issue, generate, confirm) without a code change.
+CODE_LEN = settings.account_transfer_code_len
 
 # Max number of failed ``confirm_transfer`` attempts allowed against a
 # single ``AccountTransferCode`` before we burn it. The hash space is
 # only 10⁶ so we have to cap probing aggressively — anything ≥10
-# attempts is well past "user mistyped twice".
-MAX_CONFIRM_ATTEMPTS = 5
+# attempts is well past "user mistyped twice". Lifted to
+# ``settings.account_transfer_max_confirm_attempts`` (V11-L-1).
+MAX_CONFIRM_ATTEMPTS = settings.account_transfer_max_confirm_attempts
 
 
 def _now() -> datetime:
@@ -61,7 +67,9 @@ def _now() -> datetime:
 
 
 def _generate_code() -> str:
-    return "".join(secrets.choice("0123456789") for _ in range(CODE_LEN))
+    # V11-L-1 — read length from settings every call so a runtime
+    # config change is observed without re-importing the module.
+    return "".join(secrets.choice("0123456789") for _ in range(settings.account_transfer_code_len))
 
 
 def _hash_code(code: str) -> str:
@@ -79,18 +87,31 @@ def _verify_code(code: str, code_hash: str) -> bool:
 # a fresh ``issue_code`` could (with non-negligible probability under
 # load) generate a digit-string that already belongs to another live
 # transfer and the verifier would happily accept it for either source.
-MAX_CODE_GENERATION_ATTEMPTS = 100
+# V11-L-1 — value is now sourced from
+# ``settings.account_transfer_max_code_generation_attempts`` so it can be
+# tuned without a code change. Default 100 matches the previous value.
+MAX_CODE_GENERATION_ATTEMPTS = settings.account_transfer_max_code_generation_attempts
 
 
 async def _generate_unique_code(session: AsyncSession) -> str:
-    """Return a 6-digit code whose hash is not currently active.
+    """Return a code whose hash is not currently active.
 
-    Walks at most :data:`MAX_CODE_GENERATION_ATTEMPTS` iterations — in
-    practice we collide ~0 times because the live code set is tiny, but
-    we bail loudly rather than spinning forever if the table ever fills
-    up beyond what a 6-digit code space can address.
+    Walks at most ``settings.account_transfer_max_code_generation_attempts``
+    iterations — in practice we collide ~0 times because the live code
+    set is tiny, but we bail loudly rather than spinning forever if the
+    table ever fills up beyond what the configured digit-count can
+    address.
+
+    V11-M-12 — emit a ``logger.warning`` once the iteration count
+    crosses ``settings.account_transfer_code_generation_warn_threshold``.
+    Pre-fix the helper silently retried up to 100 times and only
+    surfaced anything once it had blown the cap; that hides the early
+    warning signs of pressure on the OTP keyspace (table not getting
+    purged, TTL too long, etc.) until the first user hits a 500.
     """
-    for _ in range(MAX_CODE_GENERATION_ATTEMPTS):
+    max_attempts = settings.account_transfer_max_code_generation_attempts
+    warn_threshold = settings.account_transfer_code_generation_warn_threshold
+    for iteration in range(1, max_attempts + 1):
         candidate = _generate_code()
         existing = await session.execute(
             select(AccountTransferCode.id).where(
@@ -100,10 +121,18 @@ async def _generate_unique_code(session: AsyncSession) -> str:
             )
         )
         if existing.first() is None:
+            if iteration > warn_threshold:
+                logger.warning(
+                    "account-transfer code generation took %d attempts "
+                    "(warn_threshold=%d, max_attempts=%d) — investigate "
+                    "live-code purge / TTL pressure",
+                    iteration,
+                    warn_threshold,
+                    max_attempts,
+                )
             return candidate
     raise RuntimeError(
-        "unable to generate a unique account-transfer code after %d tries"
-        % MAX_CODE_GENERATION_ATTEMPTS
+        "unable to generate a unique account-transfer code after %d tries" % max_attempts
     )
 
 
@@ -300,7 +329,7 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     await _purge_expired(session)
 
     code = (code or "").strip()
-    if len(code) != CODE_LEN or not code.isdigit():
+    if len(code) != settings.account_transfer_code_len or not code.isdigit():
         # V11-M-11 — no DB write: brute-force protection is the
         # endpoint rate-limit, not a per-code counter.
         raise ValueError("Введите код из 6 цифр")

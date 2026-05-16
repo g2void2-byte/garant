@@ -77,12 +77,19 @@ WS_SLOW_CONSUMER_CLOSE_CODE = 4003
 # Bounded outgoing queue per socket. 100 messages × ~512 B per JSON
 # event ≈ 50 KiB worst-case per slow consumer — acceptable; meanwhile
 # a wide-awake client typically holds <1 message at a time.
-WS_SEND_QUEUE_SIZE = 100
+#
+# V11-L-1 — moved to ``Settings.ws_send_queue_size`` /
+# ``Settings.ws_send_timeout_seconds`` so production can resize the
+# queue and the per-send ceiling without a code change. The
+# module-level names are kept as a thin alias for legacy tests that
+# monkey-patch them; new call sites read ``settings`` directly so
+# runtime overrides land without an extra reassignment dance.
+WS_SEND_QUEUE_SIZE = settings.ws_send_queue_size
 # Per-send timeout. The default is a long-but-finite ceiling so a
 # half-open TCP socket can't hang the writer forever; the OS keep-
 # alive will reap the underlying connection eventually but we don't
 # want to wait that long with messages stacking up in our queue.
-WS_SEND_TIMEOUT_SECONDS = 10.0
+WS_SEND_TIMEOUT_SECONDS = settings.ws_send_timeout_seconds
 # Connection-age cap (B.2). Telegram's ``initData`` is signed against
 # the bot token and stamped with ``auth_date``; ``verify_init_data``
 # rejects blobs older than ``settings.init_data_max_age_seconds`` at
