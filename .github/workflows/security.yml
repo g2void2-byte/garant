@@ -27,7 +27,11 @@ on:
 # push-then-rebase-and-push lights up two long-running scans against
 # the same PR; the older one is wasted compute.
 concurrency:
-  group: security-${{ github.workflow }}-${{ github.ref }}
+  # ``github.workflow`` is already unique per workflow file so we don't
+  # need a literal ``security-`` prefix here — ``ci.yml`` and this file
+  # land in disjoint groups by virtue of having different workflow
+  # names.
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -59,10 +63,16 @@ jobs:
       # exclude was dead config. Bandit is now invoked against
       # ``backend/app`` only — tests aren't shipped in the runtime
       # image and the scanner doesn't need to walk them.
+      # ``set -e`` is the default in ``run:`` blocks, so the first
+      # bandit/pip-audit invocation has to tolerate a non-zero exit
+      # (which is how the scanners signal "findings exist") — without
+      # ``|| true`` the second, human-readable invocation never runs
+      # whenever the JSON report would be most interesting to read.
+      # The gate step below is what actually fails the build.
       - name: Bandit
         continue-on-error: true
         run: |
-          bandit -r backend/app -ll -ii -f json -o bandit-report.json
+          bandit -r backend/app -ll -ii -f json -o bandit-report.json || true
           bandit -r backend/app -ll -ii
 
       # pip-audit: checks every installed package against the PyPI
@@ -76,7 +86,7 @@ jobs:
         run: |
           pip install -e .
           pip-audit --strict --skip-editable --progress-spinner=off \
-            --format json --output pip-audit-report.json
+            --format json --output pip-audit-report.json || true
           pip-audit --strict --skip-editable --progress-spinner=off
 
       # Always upload the JSON reports so reviewers can read them
@@ -109,11 +119,23 @@ jobs:
 
           failed = False
 
-          try:
-              with open("bandit-report.json", encoding="utf-8") as fh:
-                  bandit = json.load(fh)
-          except FileNotFoundError:
-              bandit = {"results": []}
+          def _load(path: str, default):
+              # Missing report -> nothing was scanned (e.g. the scanner
+              # step itself crashed before writing). Skip rather than
+              # raise. Corrupted JSON -> fail loudly: it almost always
+              # means the scanner was interrupted mid-write and pretending
+              # nothing was found would mask a real CI issue.
+              try:
+                  with open(path, encoding="utf-8") as fh:
+                      return json.load(fh)
+              except FileNotFoundError:
+                  print(f"{path}: not found, skipping")
+                  return default
+              except json.JSONDecodeError as exc:
+                  print(f"{path}: invalid JSON ({exc}); failing the gate")
+                  sys.exit(1)
+
+          bandit = _load("bandit-report.json", {"results": []})
           high = [
               r for r in bandit.get("results", [])
               if r.get("issue_severity", "").upper() == "HIGH"
@@ -125,11 +147,7 @@ jobs:
                   loc = f"{r.get('filename')}:{r.get('line_number')}"
                   print(f"  - {r.get('test_id')} {r.get('issue_text')} ({loc})")
 
-          try:
-              with open("pip-audit-report.json", encoding="utf-8") as fh:
-                  audit = json.load(fh)
-          except FileNotFoundError:
-              audit = {"dependencies": []}
+          audit = _load("pip-audit-report.json", {"dependencies": []})
           vulns = [
               (dep.get("name"), v)
               for dep in audit.get("dependencies", [])
@@ -194,8 +212,16 @@ jobs:
             try {
               report = JSON.parse(fs.readFileSync("npm-audit-report.json", "utf8"));
             } catch (err) {
-              console.log("no npm-audit report; skipping gate");
-              process.exit(0);
+              // Mirror the backend gate: missing report -> skip (scanner
+              // step crashed before writing), corrupt JSON -> fail loudly
+              // (almost always a mid-write interruption, pretending
+              // nothing was found would hide a real CI break).
+              if (err.code === "ENOENT") {
+                console.log("npm-audit-report.json: not found, skipping");
+                process.exit(0);
+              }
+              console.error("npm-audit-report.json: " + err.message + "; failing the gate");
+              process.exit(1);
             }
             const counts = (report.metadata && report.metadata.vulnerabilities) || {};
             const high = (counts.high || 0) + (counts.critical || 0);

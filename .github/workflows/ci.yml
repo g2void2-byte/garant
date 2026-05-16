@@ -12,7 +12,11 @@ on:
 # the new run picked up; the old runs were always stale (their commit
 # isn't the tip anymore) so we just drop them.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # ``github.workflow`` is already unique per workflow file so we don't
+  # need a literal ``ci-`` prefix here — ``security.yml`` and this file
+  # land in disjoint groups by virtue of having different workflow
+  # names.
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
