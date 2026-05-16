@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import AppSettings, Category, Currency
@@ -68,17 +69,31 @@ async def seed_categories(session: AsyncSession) -> None:
 
 
 async def seed_settings(session: AsyncSession) -> None:
+    # V11 review-follow-up — the singleton ``app_settings`` row is
+    # protected by the unique expression-index
+    # ``ix_app_settings_singleton`` (migration ``d2a7c9b5e4f1``).
+    # Pre-fix this seeder did a naked ``session.add()`` which, under
+    # two parallel cold-start workers, would race the SELECT guard
+    # and explode on the loser with an ``IntegrityError`` that
+    # propagated up as a startup crash. Same class of bug the
+    # ``services_deals._settings()`` change fixed; same remedy here:
+    # an unqualified ``ON CONFLICT DO NOTHING`` lets the loser commit
+    # a no-op against any row-level uniqueness violation (the
+    # singleton index is the only one on this table, so we can't
+    # accidentally swallow an unrelated conflict).
     result = await session.execute(select(AppSettings).limit(1))
     if result.scalar_one_or_none() is not None:
         return
 
-    session.add(
-        AppSettings(
+    await session.execute(
+        pg_insert(AppSettings)
+        .values(
             deal_commission_percent=5.0,
             invoice_commission_percent=0.0,
             min_deposit=1.0,
             min_withdraw=1.0,
         )
+        .on_conflict_do_nothing()
     )
     await session.commit()
 

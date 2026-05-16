@@ -37,10 +37,14 @@ logger = logging.getLogger(__name__)
 
 
 # V11-L-1 — withdrawal cool-down before the admin queue can act on a
-# user-submitted ``WalletWithdrawal``. Pre-fix this was a module-level
-# constant; production can now shorten or extend the dispute window
-# via ``settings.withdraw_lock_hours`` without a code change. Kept as
-# a module-level alias so existing imports keep working.
+# user-submitted ``WalletWithdrawal``. Pre-fix this was a hard-coded
+# module-level constant. Lifted to ``settings.withdraw_lock_hours``
+# so a deploy can shorten or extend the dispute window via env var
+# without a code change. Kept as a module-level alias so existing
+# imports keep working; both the alias and the underlying setting
+# are import-time snapshots (pydantic-settings reads env at
+# ``Settings()`` instantiation), so this is a deploy-time knob, not
+# a runtime one.
 WITHDRAW_LOCK_HOURS = settings.withdraw_lock_hours
 
 
