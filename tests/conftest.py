@@ -100,48 +100,23 @@ os.environ.setdefault("ADMIN_TOTP_BYPASS", secrets.token_urlsafe(32))
 # ── 2. Provision the test database (once per session) ─────────────────────
 
 
-async def _recreate_test_db() -> None:
-    """Drop + create the dedicated test database via the admin connection.
-
-    ``WITH (FORCE)`` evicts any straggling connections from a previous
-    pytest run so DROP doesn't hang. Requires PostgreSQL 13+.
-    """
-    import asyncpg  # local import: only needed during test setup.
-
-    conn = await asyncpg.connect(
-        host=_PG_HOST,
-        port=int(_PG_PORT),
-        user=_PG_USER,
-        password=_PG_PASSWORD,
-        database=_PG_ADMIN_DB,
-    )
-    try:
-        await conn.execute(f"SELECT pg_advisory_lock({_TEST_DB_ADVISORY_LOCK})")
-        try:
-            await conn.execute(f'DROP DATABASE IF EXISTS "{_TEST_DB_NAME}" WITH (FORCE)')
-            await conn.execute(f'CREATE DATABASE "{_TEST_DB_NAME}"')
-        finally:
-            # Best-effort release; the connection is about to close
-            # which would release the session lock anyway, but an
-            # explicit unlock keeps the lock-table tidy in case the
-            # admin connection is recycled by the driver.
-            await conn.execute(f"SELECT pg_advisory_unlock({_TEST_DB_ADVISORY_LOCK})")
-    finally:
-        await conn.close()
-
-
-# V12-M8 — race-free DROP/CREATE across parallel pytest workers.
-# Two pytest-xdist workers booting at the same time both hit
-# ``_recreate_test_db`` against the same admin connection; pre-fix one
-# would ``DROP DATABASE`` while the other was midway through
-# ``CREATE``, producing flaky "database already exists" / "does not
-# exist" errors. ``pg_advisory_lock(bigint)`` on the *admin* DB
-# connection serialises the recreate phase across workers (the
-# session-level lock is released when the admin connection closes).
-# The key is the same constant used by ``alembic/env.py`` for
-# migrations — they're never held concurrently from this codebase,
-# and reusing the key keeps the lock namespace self-documenting.
-_TEST_DB_ADVISORY_LOCK = 7237_4203_1881_4729
+# V12-M8 (follow-up) — serialise the *entire* test-DB bootstrap
+# (DROP + CREATE + ``alembic upgrade head``) across parallel
+# pytest-xdist workers, not just the DROP/CREATE pair. Pre-fix the
+# lock was released as soon as ``CREATE`` returned, so worker A
+# could be midway through alembic when worker B reacquired the
+# admin lock and re-DROP'd the same database under A's feet.
+#
+# The lock key is deliberately *distinct* from the one
+# ``alembic/env.py`` uses inside ``do_run_migrations``. Both keys
+# live in the same Postgres-server-wide advisory-lock namespace, so
+# reusing the alembic key here would have alembic block on its own
+# ``pg_advisory_xact_lock`` call while *we* held the same key on the
+# admin connection — a deterministic deadlock. The bootstrap key is
+# the ``hashtext('garant_test_db_bootstrap')`` value (1_075_088_959)
+# while alembic uses its own constant; the comment in
+# ``alembic/env.py`` documents the alembic side.
+_TEST_DB_BOOTSTRAP_LOCK = 1_075_088_959
 
 
 def _alembic_upgrade_head() -> None:
@@ -157,8 +132,51 @@ def _alembic_upgrade_head() -> None:
     command.upgrade(cfg, "head")
 
 
-asyncio.run(_recreate_test_db())
-_alembic_upgrade_head()
+async def _bootstrap_test_db() -> None:
+    """Drop + create + migrate the dedicated test database.
+
+    All three phases run under a single session-level advisory lock
+    held on the admin connection so concurrent xdist workers serialise
+    here, not just on the DROP/CREATE pair. ``WITH (FORCE)`` evicts any
+    straggling connections from a previous pytest run so DROP doesn't
+    hang (requires PostgreSQL 13+).
+    """
+    import asyncpg  # local import: only needed during test setup.
+
+    conn = await asyncpg.connect(
+        host=_PG_HOST,
+        port=int(_PG_PORT),
+        user=_PG_USER,
+        password=_PG_PASSWORD,
+        database=_PG_ADMIN_DB,
+    )
+    try:
+        await conn.execute(f"SELECT pg_advisory_lock({_TEST_DB_BOOTSTRAP_LOCK})")
+        try:
+            await conn.execute(f'DROP DATABASE IF EXISTS "{_TEST_DB_NAME}" WITH (FORCE)')
+            await conn.execute(f'CREATE DATABASE "{_TEST_DB_NAME}"')
+            # Migrate while we still hold the lock: alembic's own
+            # ``pg_advisory_xact_lock`` uses a different key (see
+            # ``alembic/env.py``) and won't contend with this one, but
+            # another xdist worker waiting on the bootstrap lock will
+            # block here until migrations complete. ``to_thread`` is
+            # required because ``command.upgrade`` ultimately calls
+            # ``asyncio.run`` itself (via ``run_migrations_online`` in
+            # ``alembic/env.py``) and nested ``asyncio.run`` invocations
+            # raise; off-loading to a worker thread gives alembic a
+            # fresh event loop.
+            await asyncio.to_thread(_alembic_upgrade_head)
+        finally:
+            # Best-effort release; the connection is about to close
+            # which would release the session lock anyway, but an
+            # explicit unlock keeps the lock-table tidy in case the
+            # admin connection is recycled by the driver.
+            await conn.execute(f"SELECT pg_advisory_unlock({_TEST_DB_BOOTSTRAP_LOCK})")
+    finally:
+        await conn.close()
+
+
+asyncio.run(_bootstrap_test_db())
 
 
 # ── 3. Stub the Telegram-DM fan-out ────────────────────────────────────────
