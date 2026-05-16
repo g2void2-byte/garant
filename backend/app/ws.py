@@ -43,6 +43,7 @@ from typing import Any
 
 from fastapi import WebSocket
 
+from .config import settings
 from .redis_client import get_redis
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,14 @@ WS_AGE_CHECK_INTERVAL_SECONDS = 5 * 60  # 5 min
 
 
 @dataclass
+class _RecvRateState:
+    """Per-socket inbound rate tracking (Comment 38)."""
+
+    window_start: float = 0.0
+    count: int = 0
+
+
+@dataclass
 class _SocketState:
     """Per-socket bookkeeping for the bounded-queue writer + age check."""
 
@@ -108,6 +117,7 @@ class _SocketState:
     # consumer wasn't keeping up. Logged once per ramp-up so the
     # operator can correlate with client-side reconnect spam.
     dropped: int = 0
+    recv_rate: _RecvRateState = field(default_factory=_RecvRateState)
 
 
 class ConnectionManager:
@@ -135,6 +145,21 @@ class ConnectionManager:
         # The caller is expected to have already called ``websocket.accept()``
         # — the notifications endpoint accepts up-front so it can run a
         # first-message auth handshake before registering the socket.
+        # Comment 38: socket cap per user.
+        existing = self._connections.get(user_id, [])
+        cap = settings.ws_max_sockets_per_user
+        if cap and len(existing) >= cap:
+            logger.warning(
+                "WS socket cap reached: user_id=%d cap=%d — rejecting",
+                user_id,
+                cap,
+            )
+            try:
+                await websocket.close(code=4008, reason="Too many connections")
+            except Exception:  # noqa: BLE001
+                pass
+            return
+
         self._connections.setdefault(user_id, []).append(websocket)
         state = _SocketState(
             user_id=user_id,
@@ -462,6 +487,26 @@ class ConnectionManager:
             raise
         except Exception:  # noqa: BLE001
             logger.exception("WS subscriber: listen loop crashed")
+
+    def check_recv_rate(self, websocket: WebSocket) -> bool:
+        """Return True if the inbound rate is within limits."""
+        state = self._states.get(id(websocket))
+        if state is None:
+            return True
+        now = time.monotonic()
+        rr = state.recv_rate
+        if now - rr.window_start >= 1.0:
+            rr.window_start = now
+            rr.count = 0
+        rr.count += 1
+        return rr.count <= settings.ws_recv_max_messages_per_second
+
+    async def send_heartbeat(self, websocket: WebSocket) -> None:
+        """Send a ping/heartbeat frame."""
+        try:
+            await websocket.send_text('{"type":"ping"}')
+        except Exception:  # noqa: BLE001
+            pass
 
 
 manager = ConnectionManager()

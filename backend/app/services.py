@@ -178,6 +178,33 @@ async def credit_invoice(
     return invoice
 
 
+async def sweep_user_last_ip(session: AsyncSession) -> int:
+    """Null out ``users.last_ip`` older than the retention window.
+
+    Comment 45 (audit v10, GDPR): IP addresses are PII. We keep them
+    for the configured retention period (default 90 days) for abuse
+    investigation, then scrub them so the platform doesn't accumulate
+    PII indefinitely.
+    """
+    retention = int(settings.last_ip_retention_seconds)
+    if retention <= 0:
+        return 0
+    cutoff = utcnow() - timedelta(seconds=retention)
+    from sqlalchemy import update
+
+    result = await session.execute(
+        update(User)
+        .where(
+            User.last_ip.is_not(None),
+            User.last_login_at.is_not(None),
+            User.last_login_at <= cutoff,
+        )
+        .values(last_ip=None)
+    )
+    await session.commit()
+    return result.rowcount  # type: ignore[return-value]
+
+
 async def sweep_expired_invoices(session: AsyncSession) -> int:
     """Mark stale ``pending`` legacy ``Invoice`` rows as ``expired``.
 

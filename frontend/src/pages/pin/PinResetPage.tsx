@@ -7,6 +7,7 @@ import { PinPad } from "@/components/ui/PinPad";
 import { useToast } from "@/components/ui/Toast";
 import {
   useConfirmPinReset,
+  usePinStatus,
   useRequestPinReset,
 } from "@/api/hooks";
 import { setPinToken } from "@/lib/pin";
@@ -19,6 +20,7 @@ export default function PinResetPage() {
   const toast = useToast();
   const requestReset = useRequestPinReset();
   const confirmReset = useConfirmPinReset();
+  const pinStatus = usePinStatus();
 
   const [step, setStep] = useState<Step>("request");
   const [code, setCode] = useState("");
@@ -145,6 +147,11 @@ export default function PinResetPage() {
               placeholder="000000"
               className="w-full text-center text-2xl tracking-[0.5em] bg-panel border border-border rounded-button py-3 outline-none focus:border-accent"
             />
+            {typeof pinStatus.data?.attempts_left === "number" && (
+              <p className="text-text-muted text-xs" data-testid="pin-reset-attempts-left">
+                Осталось попыток: {pinStatus.data.attempts_left}
+              </p>
+            )}
             <Button variant="primary" fullWidth disabled={code.length !== 6} onClick={onCodeContinue}>
               Продолжить
             </Button>

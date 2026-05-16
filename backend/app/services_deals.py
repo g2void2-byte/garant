@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +36,7 @@ from .models import (
     Currency,
     Deal,
     DealStatus,
+    Notification,
     NotificationType,
     PayCommission,
     User,
@@ -585,10 +587,13 @@ async def sweep_inactivity(session: AsyncSession) -> int:
     )
     # Hold the row locks for the whole sweep so a parallel sweeper or
     # admin force action can't double-process the same row. One commit
-    # at the end releases them. Notifications are pushed after the
-    # commit so they don't get included in the same transaction (and
-    # so a notifier failure can't roll back the refund).
-    notifications: list[tuple[int, int]] = []
+    # at the end releases them.
+    #
+    # Comment 32 (audit v10): insert notification rows BEFORE commit
+    # (so they're atomic with the refund), but defer WS/DM dispatch
+    # until AFTER commit — prevents broadcasting events for a
+    # transaction that might still roll back.
+    pending_dispatch: list[tuple[Notification, dict[str, Any] | None]] = []
     for deal in rows:
         if deal.currency_id is None or deal.amount is None:
             continue
@@ -610,18 +615,26 @@ async def sweep_inactivity(session: AsyncSession) -> int:
         )
         deal.status = target_status
         deal.completed_at = now
-        notifications.append((deal.id, deal.buyer_id))
-        notifications.append((deal.id, deal.seller_id))
+        for recipient_id in (deal.buyer_id, deal.seller_id):
+            notif, ws_payload = await notifier.insert(
+                session,
+                recipient_id,
+                NotificationType.deals,
+                "Сделка отменена за неактивность",
+                f"Сделка #{deal.id} автоматически закрыта.",
+                {"deal_id": deal.id},
+            )
+            pending_dispatch.append((notif, ws_payload))
         affected += 1
 
-    for deal_id, recipient_id in notifications:
-        await notifier.push(
-            session,
-            recipient_id,
-            NotificationType.deals,
-            "Сделка отменена за неактивность",
-            f"Сделка #{deal_id} автоматически закрыта.",
-            {"deal_id": deal_id},
-        )
     await session.commit()
+
+    for notif, ws_payload in pending_dispatch:
+        try:
+            await notifier.dispatch_after_commit(session, notif, ws_payload)
+        except Exception:
+            logger.exception(
+                "sweep_inactivity: post-commit dispatch failed for notif id=%s",
+                notif.id,
+            )
     return affected

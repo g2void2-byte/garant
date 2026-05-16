@@ -40,6 +40,21 @@ export default function PinPage({ status, onUnlocked }: PinPageProps) {
   const requestReset = useRequestPinReset();
   const confirmReset = useConfirmPinReset();
 
+  // V5-F-7: keep memo/pin in sync with mode flips.
+  useEffect(() => {
+    if (mode === "setup_first" || mode === "reset_new") {
+      setMemo("");
+    }
+    setPin("");
+  }, [mode]);
+
+  // V5-F-7: mount-time wipe (KeepAlive safety).
+  useEffect(() => {
+    setMemo("");
+    setPin("");
+    setResetCode("");
+  }, []);
+
   useEffect(() => {
     if (!status.locked_until) return setLockMessage(null);
     setLockMessage(formatLock(status.locked_until));

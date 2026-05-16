@@ -24,6 +24,7 @@ _bot_task: asyncio.Task | None = None
 _inactivity_task: asyncio.Task | None = None
 _deposit_expiry_task: asyncio.Task | None = None
 _invoice_expiry_task: asyncio.Task | None = None
+_last_ip_purge_task: asyncio.Task | None = None
 
 
 async def _inactivity_loop(interval_seconds: int) -> None:
@@ -96,9 +97,31 @@ async def _invoice_expiry_loop(interval_seconds: int) -> None:
         await asyncio.sleep(interval_seconds)
 
 
+async def _last_ip_purge_loop(interval_seconds: int) -> None:
+    """Comment 45 (audit v10) — periodically purge stale ``users.last_ip``."""
+    from .services import sweep_user_last_ip
+
+    while True:
+        try:
+            async with async_session() as session:
+                purged = await sweep_user_last_ip(session)
+            if purged:
+                logger.info("last-ip purge: scrubbed %d user(s)", purged)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("last-ip purge failed")
+        await asyncio.sleep(interval_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _bot_task, _inactivity_task, _deposit_expiry_task, _invoice_expiry_task
+    global \
+        _bot_task, \
+        _inactivity_task, \
+        _deposit_expiry_task, \
+        _invoice_expiry_task, \
+        _last_ip_purge_task
 
     # M-8 — Redis-backed rate limit is the only way to share counters
     # across uvicorn workers / replicas. With ``REDIS_URL`` empty the
@@ -158,9 +181,20 @@ async def lifespan(app: FastAPI):
             _invoice_expiry_loop(settings.invoice_sweep_seconds)
         )
 
+    if settings.last_ip_purge_sweep_seconds > 0:
+        _last_ip_purge_task = asyncio.create_task(
+            _last_ip_purge_loop(settings.last_ip_purge_sweep_seconds)
+        )
+
     yield
 
-    for task in (_bot_task, _inactivity_task, _deposit_expiry_task, _invoice_expiry_task):
+    for task in (
+        _bot_task,
+        _inactivity_task,
+        _deposit_expiry_task,
+        _invoice_expiry_task,
+        _last_ip_purge_task,
+    ):
         if task and not task.done():
             task.cancel()
             try:

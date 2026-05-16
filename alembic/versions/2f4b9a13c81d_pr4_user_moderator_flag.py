@@ -5,6 +5,8 @@ Continental's "Префикс" filter offers three options:
 had ``is_admin`` and ``is_arbiter`` — this migration adds the missing
 ``is_moderator`` flag so the search filter can target it 1:1.
 
+Comment V5-E-6: column dropped by revision d4f1a8c92e34.
+
 Revision ID: 2f4b9a13c81d
 Revises: c3a7e1f24d12
 Create Date: 2026-05-13 22:00:00.000000
