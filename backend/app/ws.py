@@ -24,11 +24,15 @@ items B.2 + B.3):
   rather than letting the send buffer balloon and OOM the server.
 * **Connection age cap by ``auth_date`` (B.2).** ``connect`` records
   the Telegram ``initData.auth_date`` epoch. A background reaper
-  scans every ``WS_AGE_CHECK_INTERVAL_SECONDS`` and closes any socket
-  whose ``auth_date`` is older than ``WS_MAX_AGE_SECONDS`` (default
-  12 h). That bounds how long a stolen/forwarded initData can keep a
-  live notifications channel alive past the 24 h ``initData`` window
-  the auth check itself enforces at handshake time.
+  scans every ``settings.ws_age_check_interval_seconds`` and closes
+  any socket whose ``auth_date`` is older than
+  ``settings.ws_max_age_seconds`` (default 12 h). That bounds how
+  long a stolen/forwarded initData can keep a live notifications
+  channel alive past the ``settings.init_data_max_age_seconds``
+  window the auth check itself enforces at handshake time. (V11-H-9
+  — the previous docstring claimed 24 h, but ``verify_init_data``
+  reuses the same configurable TTL as REST routes; in stock config
+  that's 15 min, *not* 24 h.)
 """
 
 from __future__ import annotations
@@ -81,11 +85,25 @@ WS_SEND_QUEUE_SIZE = 100
 WS_SEND_TIMEOUT_SECONDS = 10.0
 # Connection-age cap (B.2). Telegram's ``initData`` is signed against
 # the bot token and stamped with ``auth_date``; ``verify_init_data``
-# already rejects blobs older than 24 h at handshake time. The cap
-# below ensures that *already-established* sockets don't outlive that
-# window either.
-WS_MAX_AGE_SECONDS = 12 * 60 * 60  # 12 h
-WS_AGE_CHECK_INTERVAL_SECONDS = 5 * 60  # 5 min
+# rejects blobs older than ``settings.init_data_max_age_seconds`` at
+# handshake time. The cap below ensures that *already-established*
+# sockets don't outlive that window either.
+#
+# V11-H-7 — moved to ``Settings`` so production can tune both the cap
+# and the sweep interval without a code change. The module-level
+# names are kept as a thin alias for legacy tests that monkey-patch
+# them. New call sites read ``settings.ws_max_age_seconds`` /
+# ``settings.ws_age_check_interval_seconds`` directly so they pick
+# up runtime overrides.
+WS_MAX_AGE_SECONDS = settings.ws_max_age_seconds
+WS_AGE_CHECK_INTERVAL_SECONDS = settings.ws_age_check_interval_seconds
+
+# V11-L-14 — hard ceiling on a single Redis pub/sub envelope. The
+# largest legitimate payload is the 4 KB-capped audit envelope plus
+# wrapper IDs, so 64 KiB is ~16× headroom — enough to absorb future
+# field growth without giving a malicious or buggy publisher room to
+# OOM every subscriber.
+_WS_MAX_ENVELOPE_BYTES = 64 * 1024
 
 
 @dataclass
@@ -456,15 +474,34 @@ class ConnectionManager:
             async for message in ps.listen():
                 if message is None or message.get("type") != "message":
                     continue
+                # V11-L-14 — size sanity-check on the envelope before
+                # ``json.loads``. Redis pub/sub doesn't enforce a max
+                # message size, but the WS notification envelopes we
+                # send through this channel are always small (a JSON
+                # blob with a couple of IDs + a payload). A malformed
+                # or hostile publisher dumping a multi-MB string would
+                # otherwise allocate the entire string in Python on
+                # every backend instance before we even check it. The
+                # cap below is well above legitimate traffic (the
+                # largest notification payload is ~4 KB, capped by
+                # audit-log encoding) but small enough to bound the
+                # blast radius.
+                raw = message.get("data")
+                if isinstance(raw, (str, bytes)) and len(raw) > _WS_MAX_ENVELOPE_BYTES:
+                    logger.warning(
+                        "WS subscriber: oversized envelope (%d bytes) dropped",
+                        len(raw),
+                    )
+                    continue
                 channel = message.get("channel")
                 if channel == WS_INVALIDATE_CHANNEL:
                     try:
-                        envelope = json.loads(message["data"])
+                        envelope = json.loads(raw)
                         user_id = int(envelope["user_id"])
                     except (KeyError, ValueError, TypeError):
                         logger.warning(
                             "WS subscriber: malformed invalidate envelope %r",
-                            message.get("data"),
+                            raw,
                         )
                         continue
                     try:
@@ -473,11 +510,11 @@ class ConnectionManager:
                         logger.exception("WS subscriber: local invalidate failed")
                     continue
                 try:
-                    envelope = json.loads(message["data"])
+                    envelope = json.loads(raw)
                     user_id = int(envelope["user_id"])
                     data = envelope["data"]
                 except (KeyError, ValueError, TypeError):
-                    logger.warning("WS subscriber: malformed envelope %r", message.get("data"))
+                    logger.warning("WS subscriber: malformed envelope %r", raw)
                     continue
                 try:
                     await self._send_local(user_id, data)

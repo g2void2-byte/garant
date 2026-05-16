@@ -6,7 +6,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # V11-M-6 — ``extra="forbid"`` so a typo in an env var
+    # (``POSTGRES_URI`` instead of ``DATABASE_URL``) fails loudly at
+    # startup instead of silently falling back to the default. The
+    # tradeoff: any env var name we don't model here also fails — see
+    # also the explicit allowlist below for that reason.
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="forbid")
 
     # Deployment mode. ``production`` enables fail-fast checks for
     # critical secrets (PIN JWT key, etc.) that would otherwise
@@ -31,6 +36,23 @@ class Settings(BaseSettings):
     pin_max_attempts: int = 3
     pin_lock_minutes: int = 60
     pin_reset_code_ttl_seconds: int = 10 * 60
+
+    # V11-M-1 — bcrypt rounds for PIN hashing. 12 rounds is the 2024
+    # OWASP baseline (~200 ms / hash on a modern CPU). Bumped from
+    # 10 (~50 ms / hash) to slow down offline brute-force on a leaked
+    # PIN hash dump; combined with a 4-digit PIN keyspace of 10⁴,
+    # rounds=12 stretches a full enumeration on commodity CPU from
+    # ~8 min to ~30 min. Tunable so production can step it up further
+    # without a code change.
+    pin_bcrypt_rounds: int = 12
+    # V11-M-1 — server-side pepper HMACed into the PIN *before* bcrypt
+    # so a DB dump alone (without the env secret) is useless to an
+    # attacker. Empty string disables the pepper for backwards-compat
+    # with existing dev DBs (existing hashes remain valid; new hashes
+    # use whatever value is set at hash time). MUST NOT be set in
+    # production without a rollout plan — changing this AFTER hashes
+    # exist breaks every existing PIN session.
+    pin_pepper: str = ""
 
     # V5-A-1 — replay window for Telegram WebApp init data; Telegram
     # regenerates init-data on every TMA open so 15min is safe;
@@ -92,6 +114,17 @@ class Settings(BaseSettings):
     ws_max_sockets_per_user: int = 5
     ws_recv_max_messages_per_second: float = 10.0
     ws_heartbeat_interval_seconds: int = 30
+    # V11-H-7 — how often the per-socket reaper sweeps to evict
+    # connections whose ``auth_date`` has aged past
+    # ``ws_max_age_seconds``. Previously hard-coded to 5 min which
+    # left a stolen initData usable on an active WS for up to that
+    # long past nominal expiry. 60 s is the new floor — load is
+    # negligible (O(n_sockets) Python pass, no I/O).
+    ws_age_check_interval_seconds: int = 60
+    # V11-L-1 — auth_date age cap for an active WS socket. Once the
+    # socket's initData is older than this, the per-socket reaper
+    # closes it with code 4001.
+    ws_max_age_seconds: int = 12 * 60 * 60
 
     # Comment 45 (audit v10) — GDPR: purge ``users.last_ip`` after
     # the retention window so we don't hold PII forever.

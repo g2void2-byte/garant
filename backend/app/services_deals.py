@@ -27,7 +27,7 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import notifier
@@ -232,12 +232,21 @@ async def accept_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     # Comment 31 (H) — bump ``deals_total`` only once the seller has
     # accepted, so unilateral spam from a malicious buyer can't
     # inflate the seller's public profile counter.
-    buyer = await session.get(User, deal.buyer_id)
-    seller = await session.get(User, deal.seller_id)
-    if buyer is not None:
-        buyer.deals_total = (buyer.deals_total or 0) + 1
-    if seller is not None:
-        seller.deals_total = (seller.deals_total or 0) + 1
+    #
+    # V11-H-3 — issue a single SQL ``UPDATE users SET deals_total =
+    # deals_total + 1 WHERE id IN (...)`` instead of the previous
+    # ``session.get`` + Python ``+= 1`` + commit pattern. The old
+    # pattern read-modify-wrote in Python so two concurrent
+    # ``accept_deal`` transactions touching the same user could both
+    # load the same counter value, both add one, and one commit would
+    # overwrite the other — under load the public profile counter
+    # silently drifted downward. The new pattern hands the increment
+    # to Postgres which serialises row-level writes for us.
+    await session.execute(
+        update(User)
+        .where(User.id.in_([deal.buyer_id, deal.seller_id]))
+        .values(deals_total=User.deals_total + 1)
+    )
     await notifier.push(
         session,
         deal.buyer_id,
@@ -261,7 +270,13 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
 
     settings = await _settings(session)
     currency = await session.get(Currency, deal.currency_id)
-    assert currency is not None
+    # V11-L-18 — ``assert`` is stripped under ``python -O`` so it is
+    # not a safety net in production. The ``deal.currency_id is None``
+    # guard above already protects the happy path; the explicit raise
+    # here covers the (otherwise impossible) case where the currency
+    # row got deleted out from under us.
+    if currency is None:
+        raise ValueError("currency vanished")
     amt = _q(Decimal(str(deal.amount)), currency.decimals)
     commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals) or _commission(
         amt, settings.deal_commission_percent, currency.decimals
@@ -297,7 +312,10 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         raise ValueError("У сделки не задана валюта")
 
     currency = await session.get(Currency, deal.currency_id)
-    assert currency is not None
+    # V11-L-18 — explicit raise instead of ``assert`` (which is
+    # stripped under ``python -O``).
+    if currency is None:
+        raise ValueError("currency vanished")
     amt = _q(Decimal(str(deal.amount)), currency.decimals)
     commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals)
 
@@ -312,12 +330,12 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
 
     deal.status = DealStatus.completed
     deal.completed_at = utcnow()
-    buyer = await session.get(User, deal.buyer_id)
-    seller = await session.get(User, deal.seller_id)
-    if buyer:
-        buyer.deals_success += 1
-    if seller:
-        seller.deals_success += 1
+    # V11-H-3 — atomic counter bump; see comment in ``accept_deal``.
+    await session.execute(
+        update(User)
+        .where(User.id.in_([deal.buyer_id, deal.seller_id]))
+        .values(deals_success=User.deals_success + 1)
+    )
     await notifier.push(
         session,
         deal.seller_id,
@@ -394,7 +412,9 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
 
     settings = await _settings(session)
     currency = await session.get(Currency, deal.currency_id)
-    assert currency is not None
+    # V11-L-18 — explicit raise instead of ``assert``.
+    if currency is None:
+        raise ValueError("currency vanished")
     amt = _q(Decimal(str(deal.amount)), currency.decimals)
     commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals) or _commission(
         amt, settings.deal_commission_percent, currency.decimals
@@ -444,12 +464,12 @@ async def start_arbitration(session: AsyncSession, deal: Deal, user: User, reaso
     # Legacy mirror for any old readers.
     deal.arbitrage_reason = reason
 
-    buyer = await session.get(User, deal.buyer_id)
-    seller = await session.get(User, deal.seller_id)
-    if buyer:
-        buyer.deals_arbitrage += 1
-    if seller:
-        seller.deals_arbitrage += 1
+    # V11-H-3 — atomic counter bump; see comment in ``accept_deal``.
+    await session.execute(
+        update(User)
+        .where(User.id.in_([deal.buyer_id, deal.seller_id]))
+        .values(deals_arbitrage=User.deals_arbitrage + 1)
+    )
 
     arbiters = (
         (await session.execute(select(User).where(User.is_arbiter.is_(True)))).scalars().all()
@@ -490,7 +510,9 @@ async def resolve_arbitration(
         raise ValueError("У сделки не задана валюта")
 
     currency = await session.get(Currency, deal.currency_id)
-    assert currency is not None
+    # V11-L-18 — explicit raise instead of ``assert``.
+    if currency is None:
+        raise ValueError("currency vanished")
     amt = _q(Decimal(str(deal.amount)), currency.decimals)
     commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals)
 

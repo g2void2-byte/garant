@@ -222,12 +222,28 @@ if not origins:
         "ALLOWED_ORIGINS=https://your-domain.example,http://localhost:5173). "
         "Refusing to start with a wildcard CORS policy."
     )
+# V11-M-17 — replaced wildcard ``allow_methods=["*"]`` /
+# ``allow_headers=["*"]`` with explicit allowlists. With
+# ``allow_credentials=True`` browsers already refuse to honour ``*``,
+# so the wildcards were functionally inert — but they made it easy
+# to miss a CORS misconfig in code review. The explicit lists below
+# cover every method and header that ``frontend/src/api/client.ts``
+# actually sends; anything outside this set is now refused at the
+# preflight stage rather than silently working in some browsers and
+# failing in others.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Authorization",
+        "Content-Type",
+        "X-Pin-Token",
+        "X-Requested-With",
+    ],
 )
 
 
@@ -285,18 +301,26 @@ _CSP_DIRECTIVES = (
 @app.middleware("http")
 async def _security_headers(request, call_next):
     response = await call_next(request)
+    # V11-M-16 — direct assignment, NOT ``setdefault``. Security
+    # headers are policy from this middleware; a downstream handler
+    # that happens to set ``X-Content-Type-Options`` (or, worse,
+    # ``Content-Security-Policy: ""``) must not be able to weaken
+    # the global policy by accident. If a specific route ever needs
+    # a different CSP (e.g. an embed page) it has to be whitelisted
+    # by ``request.url.path`` here, never by overriding a header in
+    # the route body.
     # Stop browsers from second-guessing our Content-Type — relevant
     # for the /media/ mount, where a confused sniffer used to be how
     # uploaded HTML got executed.
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers["X-Content-Type-Options"] = "nosniff"
     # Don't leak Garant URLs (which encode user IDs in paths) to
     # third-party origins users navigate to from inside the TMA.
-    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers["Referrer-Policy"] = "no-referrer"
     # Stop other origins from framing the app. Telegram embeds via its
     # native WebView, not an iframe, so ``DENY`` is safe.
-    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers["X-Frame-Options"] = "DENY"
     # Full CSP — closes the gap flagged as Info in the security audit.
-    response.headers.setdefault("Content-Security-Policy", _CSP_DIRECTIVES)
+    response.headers["Content-Security-Policy"] = _CSP_DIRECTIVES
     return response
 
 
@@ -443,4 +467,18 @@ if FRONTEND_DIST.is_dir():
 
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):
-        return FileResponse(resolve_spa_path(full_path, FRONTEND_DIST))
+        # V11-H-5 — ``index.html`` MUST NOT be cached by browsers or
+        # intermediary CDNs/proxies. ``/assets/*`` filenames are
+        # content-hashed by Vite so long TTLs on those are safe and
+        # desirable; but the SPA shell itself references hashed asset
+        # paths inline, and any cached copy of ``index.html`` will
+        # keep pointing at asset bundles that have since been deleted
+        # on the server. The symptom is "stale users see a blank
+        # screen for days after a deploy". ``no-store`` is the
+        # strongest CDN signal — stricter than ``no-cache`` (which
+        # only forces revalidation, not eviction) — and is the right
+        # choice for an SPA shell whose response body changes on
+        # every deploy.
+        response = FileResponse(resolve_spa_path(full_path, FRONTEND_DIST))
+        response.headers["Cache-Control"] = "no-store"
+        return response

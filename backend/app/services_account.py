@@ -261,21 +261,25 @@ async def _has_tradable_data(session: AsyncSession, user: User) -> bool:
     return False
 
 
-async def _register_miss(session: AsyncSession, target: User) -> None:
-    """Record a failed confirmation attempt for brute-force tracking.
-
-    Previously this incremented ``attempts`` on EVERY active code in the
-    system, allowing a trivial DoS: an attacker sending random codes
-    would burn all legitimate users' transfer codes in ~5 requests.
-
-    Now a no-op — brute-force protection relies on the per-IP rate
-    limiter (``RLPin``, 5 req/min) at the endpoint level, which caps
-    total probing to ~50 attempts over the 15-min code TTL. With a
-    10⁶ keyspace this gives a ≤0.005% success probability per code.
-
-    Individual codes still have per-code attempt tracking when there
-    IS a hash match (belt-and-braces in ``confirm_transfer``).
-    """
+# V11-M-11 — the legacy ``_register_miss`` helper used to increment
+# ``attempts`` on EVERY active ``AccountTransferCode`` row whenever
+# *anyone* typed a wrong code. That was a textbook DoS: a single
+# attacker spamming random codes burned the legitimate users'
+# transfer windows in ~5 wrong guesses. The function was already
+# neutered to a no-op in a previous review, but the no-op body and
+# every ``await _register_miss(session, target)`` call site survived
+# as a maintenance trap — a future contributor reading the call
+# sites would reasonably infer that "miss tracking" exists somewhere
+# in the system. This audit fixes that by removing the function and
+# the call sites entirely. Brute-force protection is now wholly the
+# job of two layers: the endpoint-level rate limiter
+# (``RLPin`` — 5 req/min/IP) and the per-code ``attempts`` counter
+# that is bumped ONLY when the hash matches an in-flight code (the
+# ``_verify_code`` belt-and-braces branch in ``confirm_transfer``).
+# With a 10⁶ keyspace and a 15-min code TTL that combination puts
+# the per-attempt success probability at ≤0.005 % — well past the
+# point where brute force is more expensive than just abandoning
+# the attack.
 
 
 async def confirm_transfer(session: AsyncSession, target: User, code: str) -> User:
@@ -297,8 +301,8 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
 
     code = (code or "").strip()
     if len(code) != CODE_LEN or not code.isdigit():
-        await _register_miss(session, target)
-        await session.commit()
+        # V11-M-11 — no DB write: brute-force protection is the
+        # endpoint rate-limit, not a per-code counter.
         raise ValueError("Введите код из 6 цифр")
 
     stmt = (
@@ -314,8 +318,8 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     result = await session.execute(stmt)
     row = result.scalar_one_or_none()
     if row is None:
-        await _register_miss(session, target)
-        await session.commit()
+        # V11-M-11 — no DB write: brute-force protection is the
+        # endpoint rate-limit, not a per-code counter.
         raise ValueError("Код недействителен или истёк")
 
     source = await session.get(User, row.source_user_id)
@@ -330,9 +334,9 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
         raise ValueError("Нельзя перенести аккаунт на самого себя")
 
     if not _verify_code(code, row.code_hash):
-        # Belt-and-braces against a hash collision; treat as miss.
-        await _register_miss(session, target)
-        await session.commit()
+        # Belt-and-braces against a hash collision.
+        # V11-M-11 — no DB write: brute-force protection is the
+        # endpoint rate-limit, not a per-code counter.
         raise ValueError("Код недействителен или истёк")
 
     if await _has_tradable_data(session, target):
