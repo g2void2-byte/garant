@@ -62,7 +62,14 @@ services:
       WEBAPP_PORT: "8080"
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
       RUN_BOT: ${RUN_BOT:-0}
-      ALLOW_UNSIGNED_INIT_DATA: ${ALLOW_UNSIGNED_INIT_DATA:-1}
+      # V12-H2 — fail closed: require a signed Telegram initData by
+      # default. Pre-fix the compose default was ``1`` which silently
+      # accepted any forged payload as soon as a developer ran
+      # ``docker compose up`` without first reading the README. Set
+      # ``ALLOW_UNSIGNED_INIT_DATA=1`` in your shell or ``.env`` if you
+      # need to drive the TMA from a regular browser tab without a
+      # real Telegram client signature.
+      ALLOW_UNSIGNED_INIT_DATA: ${ALLOW_UNSIGNED_INIT_DATA:-0}
       BOT_FORUMS_URL: ${BOT_FORUMS_URL:-}
       BOT_COMMUNITY_CHAT_URL: ${BOT_COMMUNITY_CHAT_URL:-}
       BOT_ARBITRATION_URL: ${BOT_ARBITRATION_URL:-}
