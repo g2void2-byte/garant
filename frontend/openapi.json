@@ -5053,6 +5053,7 @@
         "type": "object"
       },
       "UserOut": {
+        "description": "Authenticated user's own profile (``/api/me``).\n\nIncludes Telegram-side identifier (``user_id`` = ``tg_user_id``) and\nDM preferences. For the public listing / detail endpoints used to\nrender *other* users see :class:`UserPublicOut`, which omits these\nfields per audit v9 Comments 29/30.",
         "properties": {
           "admin": {
             "title": "Admin",
@@ -5234,6 +5235,161 @@
           "forums"
         ],
         "title": "UserOut",
+        "type": "object"
+      },
+      "UserPublicOut": {
+        "description": "Public profile shown on ``/api/users`` and ``/api/users/{username}``.\n\nComment 29 (audit v9): omit ``user_id`` (= ``tg_user_id``). Telegram\nIDs were leaking through the search/detail endpoints, which let any\nuser enumerate the tg_user_id of every visible profile.\n\nComment 30 (audit v9): also omit DM-preference flags (``dm_deals`` /\n``dm_deposits`` / ``dm_system``) and the moderation flags\n(``is_banned`` / ``is_frozen``). Those remain in :class:`UserOut`\n(the requester's own ``/api/me``) and :class:`AdminUserDetailOut`\n(admin panel), but they have no business being on the public card.",
+        "properties": {
+          "admin": {
+            "title": "Admin",
+            "type": "integer"
+          },
+          "bad": {
+            "title": "Bad",
+            "type": "integer"
+          },
+          "balance": {
+            "title": "Balance",
+            "type": "number"
+          },
+          "banner_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Banner Url"
+          },
+          "deals_count": {
+            "title": "Deals Count",
+            "type": "integer"
+          },
+          "deals_sum": {
+            "title": "Deals Sum",
+            "type": "number"
+          },
+          "deposit": {
+            "title": "Deposit",
+            "type": "number"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "forums": {
+            "items": {
+              "$ref": "#/components/schemas/ForumOut"
+            },
+            "title": "Forums",
+            "type": "array"
+          },
+          "good": {
+            "title": "Good",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_admin": {
+            "title": "Is Admin",
+            "type": "boolean"
+          },
+          "is_anonymous_deals": {
+            "default": false,
+            "title": "Is Anonymous Deals",
+            "type": "boolean"
+          },
+          "is_arbiter": {
+            "title": "Is Arbiter",
+            "type": "boolean"
+          },
+          "is_hidden_profile": {
+            "default": false,
+            "title": "Is Hidden Profile",
+            "type": "boolean"
+          },
+          "is_vip": {
+            "default": false,
+            "title": "Is Vip",
+            "type": "boolean"
+          },
+          "online": {
+            "title": "Online",
+            "type": "boolean"
+          },
+          "photo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Photo Url"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix"
+          },
+          "rating": {
+            "title": "Rating",
+            "type": "number"
+          },
+          "reviews_count": {
+            "title": "Reviews Count",
+            "type": "integer"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "display_name",
+          "photo_url",
+          "banner_url",
+          "balance",
+          "deposit",
+          "description",
+          "prefix",
+          "is_admin",
+          "is_arbiter",
+          "admin",
+          "good",
+          "bad",
+          "rating",
+          "reviews_count",
+          "deals_count",
+          "deals_sum",
+          "online",
+          "forums"
+        ],
+        "title": "UserPublicOut",
         "type": "object"
       },
       "UserUpdate": {
@@ -12234,6 +12390,55 @@
             }
           },
           {
+            "description": "ISO-8601 timestamp from the last seen notification.",
+            "in": "query",
+            "name": "before_created_at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO-8601 timestamp from the last seen notification.",
+              "title": "Before Created At"
+            }
+          },
+          {
+            "description": "Id from the last seen notification (must accompany before_created_at).",
+            "in": "query",
+            "name": "before_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Id from the last seen notification (must accompany before_created_at).",
+              "title": "Before Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": true,
@@ -13001,6 +13206,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 10000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -13888,7 +14094,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/UserOut"
+                    "$ref": "#/components/schemas/UserPublicOut"
                   },
                   "title": "Response List Users Api Users Get",
                   "type": "array"
@@ -13933,7 +14139,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserOut"
+                  "$ref": "#/components/schemas/UserPublicOut"
                 }
               }
             },

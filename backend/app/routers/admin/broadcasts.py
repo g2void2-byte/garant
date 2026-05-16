@@ -14,6 +14,7 @@ sub-second; we don't fan out to ``len(users)`` row-by-row.
 
 from __future__ import annotations
 
+import html
 import logging
 from datetime import timedelta
 
@@ -129,10 +130,16 @@ async def create_broadcast(
                     {"deeplink": body.deeplink} if body.deeplink else None,
                 )
             if body.dispatch_dm and u.tg_user_id:
+                # Comment 34 (audit v9): the Telegram bot is configured with
+                # ``parse_mode=HTML`` (see ``bot.notify._bot``). Unescaped
+                # angle brackets / ampersands in admin-authored copy made
+                # the API reject the message with 400 ("can't parse entities").
+                # ``html.escape`` keeps the wrapping ``<b>...</b>`` markup
+                # intact while neutralising everything inside.
                 title = body.title or "Сообщение от администрации"
-                dm_text = f"<b>{title}</b>\n\n{body.body}"
+                dm_text = f"<b>{html.escape(title)}</b>\n\n{html.escape(body.body)}"
                 if body.deeplink:
-                    dm_text += f"\n\n{body.deeplink}"
+                    dm_text += f"\n\n{html.escape(body.deeplink)}"
                 ok = await bot_send_dm(u.tg_user_id, dm_text)
                 if not ok:
                     # In-app counted as delivered; DM-only failure shouldn't

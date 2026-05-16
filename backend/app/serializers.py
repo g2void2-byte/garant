@@ -9,25 +9,18 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from .models import User
-from .schemas import ForumOut, UserOut
+from .schemas import ForumOut, UserOut, UserPublicOut
 
 _ONLINE_THRESHOLD = timedelta(minutes=5)
 
 
-def user_to_out(
+def _common_user_fields(
     user: User,
     *,
-    deposit: float | None = None,
-    deals_sum: float = 0.0,
-) -> UserOut:
-    """Convert a :class:`User` ORM row into a :class:`UserOut` DTO.
-
-    ``deposit`` defaults to ``user.deposit_total`` — the lifetime
-    deposit aggregate maintained by the admin panel. Pass an explicit
-    value when the caller has a per-currency aggregate to surface
-    instead. (The legacy ``frozen_balance`` column was dropped in
-    favour of ``deposit_total``; see ``alembic/versions/9f3c1a0b8e21``.)
-    """
+    deposit: float | None,
+    deals_sum: float,
+) -> dict:
+    """Fields shared between :func:`user_to_out` and :func:`user_to_public_out`."""
     reviews_count = user.good + user.bad
     total = reviews_count or 1
     computed_rating = round(user.good / total * 5, 1)
@@ -57,9 +50,8 @@ def user_to_out(
         admin_level = 2
     else:
         admin_level = 0
-    return UserOut(
+    return dict(
         id=user.id,
-        user_id=user.tg_user_id,
         username=user.username or "",
         display_name=user.display_name,
         photo_url=user.photo_url,
@@ -71,8 +63,6 @@ def user_to_out(
         is_admin=user.is_admin,
         is_arbiter=user.is_arbiter,
         is_vip=bool(user.is_vip),
-        is_banned=bool(user.is_banned),
-        is_frozen=bool(user.is_frozen),
         admin=admin_level,
         good=user.good,
         bad=user.bad,
@@ -86,9 +76,54 @@ def user_to_out(
             < _ONLINE_THRESHOLD
         ),
         forums=[ForumOut(name=f.name, url=f.url) for f in user.forums],
-        dm_deals=bool(user.dm_deals),
-        dm_deposits=bool(user.dm_deposits),
-        dm_system=bool(user.dm_system),
         is_anonymous_deals=bool(user.is_anonymous_deals),
         is_hidden_profile=bool(user.is_hidden_profile),
     )
+
+
+def user_to_out(
+    user: User,
+    *,
+    deposit: float | None = None,
+    deals_sum: float = 0.0,
+) -> UserOut:
+    """Convert a :class:`User` ORM row into a :class:`UserOut` DTO.
+
+    Used by ``/api/me`` and ``/api/me`` PATCH: includes ``user_id``
+    (= ``tg_user_id``), DM preferences and ban/freeze flags. For the
+    public listing endpoints use :func:`user_to_public_out` instead
+    (audit v9 Comments 29/30).
+
+    ``deposit`` defaults to ``user.deposit_total`` — the lifetime
+    deposit aggregate maintained by the admin panel. Pass an explicit
+    value when the caller has a per-currency aggregate to surface
+    instead. (The legacy ``frozen_balance`` column was dropped in
+    favour of ``deposit_total``; see ``alembic/versions/9f3c1a0b8e21``.)
+    """
+    base = _common_user_fields(user, deposit=deposit, deals_sum=deals_sum)
+    return UserOut(
+        **base,
+        user_id=user.tg_user_id,
+        is_banned=bool(user.is_banned),
+        is_frozen=bool(user.is_frozen),
+        dm_deals=bool(user.dm_deals),
+        dm_deposits=bool(user.dm_deposits),
+        dm_system=bool(user.dm_system),
+    )
+
+
+def user_to_public_out(
+    user: User,
+    *,
+    deposit: float | None = None,
+    deals_sum: float = 0.0,
+) -> UserPublicOut:
+    """Convert a :class:`User` row into the public :class:`UserPublicOut` DTO.
+
+    Used by ``/api/users`` (list) and ``/api/users/{username}`` (detail).
+    Per audit v9 Comments 29/30: omits ``tg_user_id``, DM-preference
+    flags, and ``is_banned``/``is_frozen``. The shared logic lives in
+    :func:`_common_user_fields` so both serializers stay in sync.
+    """
+    base = _common_user_fields(user, deposit=deposit, deals_sum=deals_sum)
+    return UserPublicOut(**base)
