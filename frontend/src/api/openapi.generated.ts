@@ -3906,7 +3906,15 @@ export interface components {
             /** Has Active */
             has_active: boolean;
         };
-        /** UserOut */
+        /**
+         * UserOut
+         * @description Authenticated user's own profile (``/api/me``).
+         *
+         *     Includes Telegram-side identifier (``user_id`` = ``tg_user_id``) and
+         *     DM preferences. For the public listing / detail endpoints used to
+         *     render *other* users see :class:`UserPublicOut`, which omits these
+         *     fields per audit v9 Comments 29/30.
+         */
         UserOut: {
             /** Admin */
             admin: number;
@@ -3988,6 +3996,77 @@ export interface components {
             reviews_count: number;
             /** User Id */
             user_id: number;
+            /** Username */
+            username: string | null;
+        };
+        /**
+         * UserPublicOut
+         * @description Public profile shown on ``/api/users`` and ``/api/users/{username}``.
+         *
+         *     Comment 29 (audit v9): omit ``user_id`` (= ``tg_user_id``). Telegram
+         *     IDs were leaking through the search/detail endpoints, which let any
+         *     user enumerate the tg_user_id of every visible profile.
+         *
+         *     Comment 30 (audit v9): also omit DM-preference flags (``dm_deals`` /
+         *     ``dm_deposits`` / ``dm_system``) and the moderation flags
+         *     (``is_banned`` / ``is_frozen``). Those remain in :class:`UserOut`
+         *     (the requester's own ``/api/me``) and :class:`AdminUserDetailOut`
+         *     (admin panel), but they have no business being on the public card.
+         */
+        UserPublicOut: {
+            /** Admin */
+            admin: number;
+            /** Bad */
+            bad: number;
+            /** Balance */
+            balance: number;
+            /** Banner Url */
+            banner_url: string | null;
+            /** Deals Count */
+            deals_count: number;
+            /** Deals Sum */
+            deals_sum: number;
+            /** Deposit */
+            deposit: number;
+            /** Description */
+            description: string;
+            /** Display Name */
+            display_name: string;
+            /** Forums */
+            forums: components["schemas"]["ForumOut"][];
+            /** Good */
+            good: number;
+            /** Id */
+            id: number;
+            /** Is Admin */
+            is_admin: boolean;
+            /**
+             * Is Anonymous Deals
+             * @default false
+             */
+            is_anonymous_deals: boolean;
+            /** Is Arbiter */
+            is_arbiter: boolean;
+            /**
+             * Is Hidden Profile
+             * @default false
+             */
+            is_hidden_profile: boolean;
+            /**
+             * Is Vip
+             * @default false
+             */
+            is_vip: boolean;
+            /** Online */
+            online: boolean;
+            /** Photo Url */
+            photo_url: string | null;
+            /** Prefix */
+            prefix: string | null;
+            /** Rating */
+            rating: number;
+            /** Reviews Count */
+            reviews_count: number;
             /** Username */
             username: string | null;
         };
@@ -7283,6 +7362,11 @@ export interface operations {
         parameters: {
             query?: {
                 type?: string | null;
+                /** @description ISO-8601 timestamp from the last seen notification. */
+                before_created_at?: string | null;
+                /** @description Id from the last seen notification (must accompany before_created_at). */
+                before_id?: number | null;
+                limit?: number;
             };
             header: {
                 authorization: string;
@@ -8262,7 +8346,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserOut"][];
+                    "application/json": components["schemas"]["UserPublicOut"][];
                 };
             };
             /** @description Validation Error */
@@ -8293,7 +8377,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserOut"];
+                    "application/json": components["schemas"]["UserPublicOut"];
                 };
             };
             /** @description Validation Error */

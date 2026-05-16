@@ -7,9 +7,9 @@ from sqlalchemy import case, func, literal, select
 
 from ..deps import SessionDep
 from ..models import User
-from ..schemas import UserOut
+from ..schemas import UserPublicOut
 from ..search import build_prefix_tsquery
-from ..serializers import user_to_out
+from ..serializers import user_to_public_out
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -49,7 +49,7 @@ def _parse_date(value: str | None) -> datetime | None:
         raise HTTPException(400, f"Неверная дата: {value}") from exc
 
 
-@router.get("", response_model=list[UserOut])
+@router.get("", response_model=list[UserPublicOut])
 async def list_users(
     session: SessionDep,
     q: str | None = Query(None),
@@ -139,14 +139,16 @@ async def list_users(
 
     stmt = stmt.limit(100)
     result = await session.execute(stmt)
-    return [user_to_out(u) for u in result.scalars().all()]
+    # Comment 29/30 (audit v9): public listing exposes ``UserPublicOut``
+    # — no ``tg_user_id`` leak, no DM preferences, no ban/freeze flags.
+    return [user_to_public_out(u) for u in result.scalars().all()]
 
 
-@router.get("/{username}", response_model=UserOut)
+@router.get("/{username}", response_model=UserPublicOut)
 async def get_user(username: str, session: SessionDep):
     stmt = select(User).where(User.username == username)
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
     if not user or user.is_hidden_profile:
         raise HTTPException(404, "Пользователь не найден")
-    return user_to_out(user)
+    return user_to_public_out(user)

@@ -29,23 +29,30 @@ class ForumOut(BaseModel):
     @field_validator("url")
     @classmethod
     def _url_ok(cls, v: str) -> str:
+        # Comment 36 (audit v9): forum links — whitelist ``https://`` only
+        # (``https://t.me/`` is a subset). ``http://`` was downgrade-friendly
+        # and ``tg://`` lets a forum entry deep-link straight into Telegram
+        # clients without an explicit https handoff; both are dropped.
         v = (v or "").strip()
         if not v:
             raise ValueError("Ссылка не может быть пустой")
         if len(v) > 512:
             raise ValueError("Ссылка слишком длинная")
         low = v.lower()
-        if not (
-            low.startswith("http://")
-            or low.startswith("https://")
-            or low.startswith("tg://")
-            or low.startswith("https://t.me/")
-        ):
-            raise ValueError("Ссылка должна начинаться с http(s):// или t.me/")
+        if not low.startswith("https://"):
+            raise ValueError("Ссылка должна начинаться с https://")
         return v
 
 
 class UserOut(BaseModel):
+    """Authenticated user's own profile (``/api/me``).
+
+    Includes Telegram-side identifier (``user_id`` = ``tg_user_id``) and
+    DM preferences. For the public listing / detail endpoints used to
+    render *other* users see :class:`UserPublicOut`, which omits these
+    fields per audit v9 Comments 29/30.
+    """
+
     id: int
     user_id: int
     username: str | None
@@ -77,6 +84,45 @@ class UserOut(BaseModel):
     is_hidden_profile: bool = False
 
 
+class UserPublicOut(BaseModel):
+    """Public profile shown on ``/api/users`` and ``/api/users/{username}``.
+
+    Comment 29 (audit v9): omit ``user_id`` (= ``tg_user_id``). Telegram
+    IDs were leaking through the search/detail endpoints, which let any
+    user enumerate the tg_user_id of every visible profile.
+
+    Comment 30 (audit v9): also omit DM-preference flags (``dm_deals`` /
+    ``dm_deposits`` / ``dm_system``) and the moderation flags
+    (``is_banned`` / ``is_frozen``). Those remain in :class:`UserOut`
+    (the requester's own ``/api/me``) and :class:`AdminUserDetailOut`
+    (admin panel), but they have no business being on the public card.
+    """
+
+    id: int
+    username: str | None
+    display_name: str
+    photo_url: str | None
+    banner_url: str | None
+    balance: float
+    deposit: float
+    description: str
+    prefix: str | None
+    is_admin: bool
+    is_arbiter: bool
+    is_vip: bool = False
+    admin: int
+    good: int
+    bad: int
+    rating: float
+    reviews_count: int
+    deals_count: int
+    deals_sum: float
+    online: bool
+    forums: list[ForumOut]
+    is_anonymous_deals: bool = False
+    is_hidden_profile: bool = False
+
+
 class UserUpdate(BaseModel):
     display_name: str | None = None
     description: str | None = None
@@ -92,16 +138,18 @@ class UserUpdate(BaseModel):
     @field_validator("photo_url")
     @classmethod
     def _photo_url_ok(cls, v: str | None) -> str | None:
+        # Comment 35 (audit v9): drop ``http://`` from the whitelist.
+        # Plaintext avatar URLs were a downgrade vector inside a TMA that
+        # otherwise only emits https resources; ``/media/...`` is the
+        # self-hosted path served by the backend.
         if v is None or v == "":
             return v
         v = v.strip()
         if len(v) > 1024:
             raise ValueError("Ссылка на фото слишком длинная")
         low = v.lower()
-        if not (
-            low.startswith("http://") or low.startswith("https://") or low.startswith("/media/")
-        ):
-            raise ValueError("Фото должно быть http(s):// или /media/... ссылкой")
+        if not (low.startswith("https://") or low.startswith("/media/")):
+            raise ValueError("Фото должно быть https:// или /media/... ссылкой")
         return v
 
     @field_validator("display_name")
@@ -126,14 +174,17 @@ class UserUpdate(BaseModel):
     @field_validator("banner_url")
     @classmethod
     def _banner_url_ok(cls, v: str | None) -> str | None:
+        # Comment 35 (audit v9): drop ``http://`` from the whitelist.
+        # ``/media/...`` is allowed so admins can pin a self-hosted
+        # banner the same way they do for avatars.
         if v is None or v == "":
             return v
         v = v.strip()
         if len(v) > 1024:
             raise ValueError("Ссылка на баннер слишком длинная")
         low = v.lower()
-        if not (low.startswith("http://") or low.startswith("https://")):
-            raise ValueError("Баннер должен быть http(s):// ссылкой")
+        if not (low.startswith("https://") or low.startswith("/media/")):
+            raise ValueError("Баннер должен быть https:// или /media/... ссылкой")
         return v
 
     @field_validator("forums")
