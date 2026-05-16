@@ -28,6 +28,36 @@ from .ws import manager
 
 logger = logging.getLogger(__name__)
 
+# Comment 39 (audit v9): cap the serialised ``payload`` JSON at 4 KB.
+# Notifications fan out to the DB row, to every open WebSocket of the
+# recipient, and (indirectly) into ``logger.exception`` traceback frames
+# on DM failure. An unbounded payload there is both a DoS knob (any
+# router could enqueue a megabyte) and a privacy footgun (more PII
+# spreads further). 4 KB is enough room for the structured deal/wallet
+# events we actually emit; anything larger is almost certainly a bug.
+NOTIFICATION_PAYLOAD_MAX_BYTES = 4096
+
+
+def _serialize_payload(payload: dict[str, Any] | None) -> str | None:
+    """Serialise ``payload`` and enforce the 4 KB cap.
+
+    Returns ``None`` when there is no payload, or when the JSON exceeds
+    :data:`NOTIFICATION_PAYLOAD_MAX_BYTES` (we log a warning and drop the
+    payload rather than truncating — half-JSON is worse than no JSON
+    for downstream consumers).
+    """
+    if not payload:
+        return None
+    encoded = json.dumps(payload)
+    if len(encoded.encode("utf-8")) > NOTIFICATION_PAYLOAD_MAX_BYTES:
+        logger.warning(
+            "notification payload exceeds %d bytes, dropping (keys=%s)",
+            NOTIFICATION_PAYLOAD_MAX_BYTES,
+            sorted(payload.keys()),
+        )
+        return None
+    return encoded
+
 
 def _dm_enabled(recipient: User, type_: NotificationType) -> bool:
     if type_ is NotificationType.deals:
@@ -88,12 +118,14 @@ async def push(
     commit later raises, neither the state change nor the notif is
     visible to anyone.
     """
+    serialized_payload = _serialize_payload(payload)
+    ws_payload = payload if serialized_payload is not None else None
     notif = Notification(
         recipient_id=recipient_id,
         type=type_,
         title=title,
         body=body,
-        payload=json.dumps(payload) if payload else None,
+        payload=serialized_payload,
     )
     session.add(notif)
     await session.flush()
@@ -107,7 +139,7 @@ async def push(
                 "type": notif.type.value,
                 "title": notif.title,
                 "body": notif.body,
-                "payload": payload,
+                "payload": ws_payload,
                 "is_read": False,
             },
         },

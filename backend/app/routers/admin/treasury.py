@@ -202,6 +202,17 @@ async def treasury_withdraw(
     if not body.confirm:
         raise HTTPException(400, "Подтверждение не получено (confirm=false)")
 
+    # Comment 48 (audit v9): without a configured CryptoBot token there is
+    # no way to actually move funds, so the post-2026 codepath silently
+    # marked the row ``status="sent"`` and committed — making the
+    # accounting ledger believe a payout had been made while no transfer
+    # ever happened. Reject early with 503 instead, before we touch the
+    # DB or burn the per-currency advisory lock, so misconfigured envs
+    # fail loudly rather than silently double-spending the treasury.
+    token = app_settings_env.cryptobot_token or ""
+    if not token or token.startswith("000"):
+        raise HTTPException(503, "CryptoBot не настроен: вывод казны недоступен")
+
     currency = (
         await session.execute(select(Currency).where(Currency.code == body.currency_code))
     ).scalar_one_or_none()
@@ -227,42 +238,43 @@ async def treasury_withdraw(
     session.add(row)
     await session.flush()
 
-    transfer_id: int | None = None
-    if app_settings_env.cryptobot_token and not app_settings_env.cryptobot_token.startswith("000"):
-        try:
-            async with CryptoPay(
-                app_settings_env.cryptobot_token,
-                testnet=app_settings_env.cryptobot_testnet,
-            ) as cp:
-                tr = await cp.transfer(
-                    user_id=int(body.address) if body.address.isdigit() else admin.tg_user_id,
-                    asset=currency.code,
-                    amount=str(body.amount),
-                    spend_id=f"treas:{row.id}",
-                    comment="Garant treasury withdrawal",
-                )
-            transfer_id = tr.transfer_id
-        except CryptoPayError as e:
-            logger.error("treasury withdraw failed: %s", e)
-            row.status = "failed"
-            row.note = (row.note or "") + f"\nfailed: {e}"
-            await log_admin_action(
-                session,
-                actor=admin,
-                action="treasury.withdraw_failed",
-                target_type="treasury",
-                target_id=row.id,
-                reason=body.note,
-                payload={
-                    "currency": currency.code,
-                    "amount": str(body.amount),
-                    "address": body.address,
-                    "error": str(e),
-                },
-                request=request,
+    # Token presence was already validated at the top of the handler;
+    # the inner ``startswith("000")`` guard would now be unreachable.
+    transfer_id: int | None
+    try:
+        async with CryptoPay(
+            app_settings_env.cryptobot_token,
+            testnet=app_settings_env.cryptobot_testnet,
+        ) as cp:
+            tr = await cp.transfer(
+                user_id=int(body.address) if body.address.isdigit() else admin.tg_user_id,
+                asset=currency.code,
+                amount=str(body.amount),
+                spend_id=f"treas:{row.id}",
+                comment="Garant treasury withdrawal",
             )
-            await session.commit()
-            raise HTTPException(502, f"Ошибка CryptoBot: {e}")
+        transfer_id = tr.transfer_id
+    except CryptoPayError as e:
+        logger.error("treasury withdraw failed: %s", e)
+        row.status = "failed"
+        row.note = (row.note or "") + f"\nfailed: {e}"
+        await log_admin_action(
+            session,
+            actor=admin,
+            action="treasury.withdraw_failed",
+            target_type="treasury",
+            target_id=row.id,
+            reason=body.note,
+            payload={
+                "currency": currency.code,
+                "amount": str(body.amount),
+                "address": body.address,
+                "error": str(e),
+            },
+            request=request,
+        )
+        await session.commit()
+        raise HTTPException(502, f"Ошибка CryptoBot: {e}") from e
 
     row.status = "sent"
     row.cryptobot_transfer_id = str(transfer_id) if transfer_id is not None else None

@@ -592,7 +592,14 @@ async def test_concurrent_webhook_and_poll_credits_legacy_only_once(client, monk
     await setup_pin(client, init)
 
     invoice_amount = Decimal("57.25")
-    provider_id = "cb-race-webhook-poll-legacy-1"
+    # ``check_invoice`` (legacy poll path) coerces the stored
+    # ``provider_invoice_id`` via ``int(...)`` before calling the
+    # CryptoBot ``get_invoices`` API — real invoice IDs are numeric.
+    # Using a ``"cb-…"`` placeholder (matching the wallet sibling
+    # fixture) raced against the webhook arm of the test depending on
+    # task ordering and caused ``ValueError`` ~40% of the time. Mirror
+    # the numeric fix that the wallet test already applies.
+    provider_id = "780011001"
 
     async with async_session() as session:
         user_id = await get_user_id_by_tg(session, 7502)

@@ -74,21 +74,60 @@ def _verify_code(code: str, code_hash: str) -> bool:
     return hmac.compare_digest(_hash_code(code), code_hash)
 
 
+# Comment 43 (audit v9): never hand out a code that collides with an
+# already-active one. The hash space is only 10⁶, so without this guard
+# a fresh ``issue_code`` could (with non-negligible probability under
+# load) generate a digit-string that already belongs to another live
+# transfer and the verifier would happily accept it for either source.
+MAX_CODE_GENERATION_ATTEMPTS = 100
+
+
+async def _generate_unique_code(session: AsyncSession) -> str:
+    """Return a 6-digit code whose hash is not currently active.
+
+    Walks at most :data:`MAX_CODE_GENERATION_ATTEMPTS` iterations — in
+    practice we collide ~0 times because the live code set is tiny, but
+    we bail loudly rather than spinning forever if the table ever fills
+    up beyond what a 6-digit code space can address.
+    """
+    for _ in range(MAX_CODE_GENERATION_ATTEMPTS):
+        candidate = _generate_code()
+        existing = await session.execute(
+            select(AccountTransferCode.id).where(
+                AccountTransferCode.code_hash == _hash_code(candidate),
+                AccountTransferCode.consumed_at.is_(None),
+                AccountTransferCode.expires_at > _now(),
+            )
+        )
+        if existing.first() is None:
+            return candidate
+    raise RuntimeError(
+        "unable to generate a unique account-transfer code after %d tries"
+        % MAX_CODE_GENERATION_ATTEMPTS
+    )
+
+
 async def _purge_expired(session: AsyncSession) -> None:
     """Remove codes that have already expired or been consumed.
 
     Keeps the table small and avoids accidentally matching against a
     stale row (the hash space is small — 1 in 10⁶ — so we must rotate
     aggressively).
+
+    Comment 43 (audit v9): previously this kept rows for up to 24 h
+    (``created_at < now - 1 day`` AND-gate). With the default 5-min TTL
+    that left dead codes sitting in the table for the rest of the day
+    — they could not be used anymore, but they bloated the table and
+    let a new ``issue_code`` waste collision-check work. We now purge
+    every expired or consumed row immediately; the `created_at`
+    floor was redundant guard rail that has no useful effect.
     """
-    cutoff = _now() - timedelta(days=1)
     await session.execute(
         delete(AccountTransferCode).where(
             or_(
                 AccountTransferCode.expires_at < _now(),
                 AccountTransferCode.consumed_at.is_not(None),
             ),
-            AccountTransferCode.created_at < cutoff,
         )
     )
 
@@ -135,7 +174,7 @@ async def issue_code(session: AsyncSession, source: User) -> tuple[str, datetime
     await _purge_expired(session)
     await _invalidate_active_for(session, source.id)
 
-    code = _generate_code()
+    code = await _generate_unique_code(session)
     expires = _now() + timedelta(seconds=settings.account_transfer_code_ttl_seconds)
     row = AccountTransferCode(
         source_user_id=source.id,

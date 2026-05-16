@@ -42,4 +42,13 @@ async def update_me(body: UserUpdate, user: CurrentUser, session: SessionDep):
         user.is_hidden_profile = body.is_hidden_profile
     await session.commit()
     await session.refresh(user)
+    # Comment 44 (audit v9): the ``forums`` collection was mutated via
+    # ``session.delete`` / ``session.add`` above. ``session.refresh(user)``
+    # without ``attribute_names`` does not reload eager relationships,
+    # so the cached ``user.forums`` could still reference the just-
+    # deleted ``Forum`` rows when the serializer iterates them. Force a
+    # selectin reload of just that collection so the response always
+    # reflects the post-commit state.
+    if body.forums is not None:
+        await session.refresh(user, attribute_names=["forums"])
     return user_to_out(user)
