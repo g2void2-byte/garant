@@ -223,7 +223,7 @@ async def adjust_user_balance(
         # pipeline can alert when an admin repeatedly attempts to
         # debit below zero (typo, off-by-decimals, or someone
         # exploring the API). Numbers are stringified to preserve
-        # full ``Numeric(18,8)`` precision in the log record.
+        # full ``Numeric(28,8)`` precision in the log record.
         logger.warning(
             "admin wallet.adjust: insufficient funds",
             extra={
@@ -239,7 +239,7 @@ async def adjust_user_balance(
             400,
             f"Недостаточно средств: текущий баланс {before_amount}, корректировка {delta}",
         )
-    # M5: persist as Decimal so the ``Numeric(18,8)`` precision is
+    # M5: persist as Decimal so the ``Numeric(28,8)`` precision is
     # preserved end-to-end — admin adjustments on the BTC/USDT side
     # otherwise lose the last few sat / cents on every save.
     bal.amount = new_amount
@@ -254,7 +254,7 @@ async def adjust_user_balance(
         payload={
             "currency": currency.code,
             # M-20: persist audit numbers as strings so the trail keeps
-            # full ``Numeric(18,8)`` precision instead of losing the
+            # full ``Numeric(28,8)`` precision instead of losing the
             # tail digits to a ``float`` round-trip in the JSONB column.
             "delta": str(delta),
             "before_amount": str(before_amount),
@@ -266,7 +266,7 @@ async def adjust_user_balance(
     await session.refresh(bal)
     # V11-L-15 — operational log alongside the audit-log row so ops
     # can pulse-check admin balance edits without joining the audit
-    # table. Numbers stringified to keep ``Numeric(18,8)`` precision.
+    # table. Numbers stringified to keep ``Numeric(28,8)`` precision.
     logger.info(
         "admin wallet.adjust ok",
         extra={

@@ -514,8 +514,11 @@ class Currency(Base):
     network: Mapped[str] = mapped_column(String(32), default="")
     icon_url: Mapped[str] = mapped_column(Text, default="")
     decimals: Mapped[int] = mapped_column(Integer, default=2)
-    min_deposit: Mapped[float] = mapped_column(Numeric(18, 8), default=1)
-    min_withdraw: Mapped[float] = mapped_column(Numeric(18, 8), default=1)
+    # H-2 — match the Deal.amount precision (Numeric(28,8)) so a
+    # ``min_deposit`` / ``min_withdraw`` of order 10¹⁰ doesn't silently
+    # truncate. Migration ``9c3a4d2e1f08`` widens these columns in DB.
+    min_deposit: Mapped[float] = mapped_column(Numeric(28, 8), default=1)
+    min_withdraw: Mapped[float] = mapped_column(Numeric(28, 8), default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     # V5-B-4 — anchored regex applied to user-supplied payout addresses
@@ -552,8 +555,12 @@ class UserBalance(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
-    amount: Mapped[float] = mapped_column(Numeric(18, 8), default=0)
-    locked: Mapped[float] = mapped_column(Numeric(18, 8), default=0)
+    # H-2 — Numeric(28,8) so a balance can hold the full domain of
+    # ``Deal.amount`` (also Numeric(28,8)) without silent truncation
+    # at the 10¹⁰ scale. The migration ``9c3a4d2e1f08`` widens both
+    # ``amount`` and ``locked`` in the DB.
+    amount: Mapped[float] = mapped_column(Numeric(28, 8), default=0)
+    locked: Mapped[float] = mapped_column(Numeric(28, 8), default=0)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
@@ -570,7 +577,10 @@ class WalletDeposit(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
-    amount: Mapped[float] = mapped_column(Numeric(18, 8))
+    # H-2 — Numeric(28,8) so a single invoice can ledger an amount
+    # bigger than 10¹⁰ without truncation; matches ``UserBalance.amount``
+    # and ``Deal.amount``.
+    amount: Mapped[float] = mapped_column(Numeric(28, 8))
     provider: Mapped[InvoiceProvider] = mapped_column(
         Enum(InvoiceProvider), default=InvoiceProvider.cryptobot
     )
@@ -599,7 +609,9 @@ class WalletWithdrawal(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
-    amount: Mapped[float] = mapped_column(Numeric(18, 8))
+    # H-2 — Numeric(28,8) so withdrawals match ``UserBalance.amount``
+    # / ``Deal.amount`` precision and don't lose data at the 10¹⁰ scale.
+    amount: Mapped[float] = mapped_column(Numeric(28, 8))
     address: Mapped[str] = mapped_column(String(256))
     status: Mapped[WalletWithdrawStatus] = mapped_column(
         Enum(WalletWithdrawStatus), default=WalletWithdrawStatus.pending
@@ -657,7 +669,9 @@ class TreasuryWithdrawal(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
-    amount: Mapped[float] = mapped_column(Numeric(18, 8))
+    # H-2 — Numeric(28,8) so treasury payouts match the rest of the
+    # money ledger and don't truncate at the 10¹⁰ scale.
+    amount: Mapped[float] = mapped_column(Numeric(28, 8))
     address: Mapped[str] = mapped_column(String(256))
     status: Mapped[str] = mapped_column(
         String(16), default="sent", server_default="sent", index=True

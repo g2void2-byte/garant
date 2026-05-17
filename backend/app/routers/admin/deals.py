@@ -550,7 +550,7 @@ async def force_release(
             "before_status": before_status,
             "after_status": deal.status.value,
             "currency": currency.code,
-            # M-23: keep Numeric(18,8) precision in the JSONB audit trail.
+            # M-23: keep Numeric(28,8) precision in the JSONB audit trail.
             "locked": str(locked),
             "payout": str(payout),
         },
@@ -613,7 +613,7 @@ async def force_refund(
             "before_status": before_status,
             "after_status": deal.status.value,
             "currency": currency.code,
-            # M-23: keep Numeric(18,8) precision in the JSONB audit trail.
+            # M-23: keep Numeric(28,8) precision in the JSONB audit trail.
             "locked": str(locked),
             "refunded": str(refunded),
         },
@@ -683,7 +683,7 @@ async def split_deal(
             "after_status": deal.status.value,
             "currency": currency.code,
             "buyer_percent": body.buyer_percent,
-            # M-23: keep Numeric(18,8) precision in the JSONB audit trail.
+            # M-23: keep Numeric(28,8) precision in the JSONB audit trail.
             "buyer_share": str(buyer_share),
             "seller_share": str(seller_share),
             "locked": str(locked),
@@ -817,7 +817,7 @@ async def delete_deal(
     currency = await session.get(Currency, deal.currency_id) if deal.currency_id else None
 
     # M-23: store amount columns as strings in the JSONB audit payload so
-    # the full ``Numeric(18,8)`` precision survives. The previous
+    # the full ``Numeric(28,8)`` precision survives. The previous
     # ``float(...)`` cast silently dropped trailing satoshi on large
     # BTC deals, which made the snapshot unsafe to use for reconciliation.
     snapshot: dict[str, object] = {
@@ -848,7 +848,7 @@ async def delete_deal(
         else:
             locked_pot = amt
         buyer_balance = await get_or_create_balance(session, deal.buyer_id, currency.id)
-        # M-23: assign ``Decimal`` directly to the ``Numeric(18,8)``
+        # M-23: assign ``Decimal`` directly to the ``Numeric(28,8)``
         # columns. The previous ``float(...)`` wrapper round-tripped
         # through float64 and dropped the last few satoshi units on
         # large BTC balances; this matches the canonical pattern in
