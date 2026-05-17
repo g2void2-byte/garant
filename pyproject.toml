@@ -13,7 +13,7 @@ dependencies = [
     "pydantic-settings==2.14.1",
     "aiogram>=3.7,<4",
     "httpx>=0.27,<1",
-    "websockets==12.0",
+    "websockets==16.0",
     "python-multipart==0.0.28",
     "bcrypt==5.0.0",
     "PyJWT==2.12.1",
