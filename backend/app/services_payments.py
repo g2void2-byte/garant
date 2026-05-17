@@ -125,7 +125,17 @@ async def handle_invoice_paid(session: AsyncSession, payload: dict[str, Any]) ->
         await credit_invoice(session, legacy)
         return {"ok": True, "kind": "legacy"}
 
-    logger.warning("CryptoBot webhook for unknown invoice_id=%s", provider_id)
+    logger.warning(
+        "CryptoBot webhook for unknown invoice_id=%s",
+        provider_id,
+        # V11-L-15 — structured-logging fields so Loki/Sentry can
+        # pivot on ``event`` + ``provider_invoice_id`` instead of
+        # regexing the human-readable message.
+        extra={
+            "event": "cryptobot.webhook.unknown_invoice_paid",
+            "provider_invoice_id": provider_id,
+        },
+    )
     return {"ok": False, "reason": "unknown invoice"}
 
 
@@ -176,7 +186,14 @@ async def handle_invoice_expired(session: AsyncSession, payload: dict[str, Any])
         await session.commit()
         return {"ok": True, "kind": "legacy", "expired": True}
 
-    logger.info("CryptoBot webhook expire for unknown invoice_id=%s", provider_id)
+    logger.info(
+        "CryptoBot webhook expire for unknown invoice_id=%s",
+        provider_id,
+        extra={
+            "event": "cryptobot.webhook.unknown_invoice_expired",
+            "provider_invoice_id": provider_id,
+        },
+    )
     return {"ok": False, "reason": "unknown invoice"}
 
 

@@ -255,7 +255,20 @@ async def treasury_withdraw(
             )
         transfer_id = tr.transfer_id
     except CryptoPayError as e:
-        logger.error("treasury withdraw failed: %s", e)
+        # V11-L-15 — structured-logging context so the JSON-logger
+        # downstream surfaces actor/currency/amount as queryable
+        # fields rather than substrings of the message.
+        logger.error(
+            "treasury withdraw failed: %s",
+            e,
+            extra={
+                "event": "cryptobot.treasury_withdraw.failed",
+                "treasury_withdrawal_id": row.id,
+                "actor_id": admin.id,
+                "currency": currency.code,
+                "amount": str(body.amount),
+            },
+        )
         row.status = "failed"
         row.note = (row.note or "") + f"\nfailed: {e}"
         await log_admin_action(

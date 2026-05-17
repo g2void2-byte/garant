@@ -148,7 +148,21 @@ async def create_broadcast(
                     continue
             delivered += 1
         except Exception:  # noqa: BLE001
-            logger.exception("broadcast: delivery failed for user_id=%s", u.id)
+            # V11-L-15 — structured-logging fields so a partially-failed
+            # broadcast is correlatable to specific recipients in
+            # JSON-logger pipelines (Loki/Sentry) without regex.
+            logger.exception(
+                "broadcast: delivery failed for user_id=%s",
+                u.id,
+                extra={
+                    "event": "broadcast.delivery_failed",
+                    "actor_id": admin.id,
+                    "recipient_user_id": u.id,
+                    "recipient_tg_user_id": u.tg_user_id,
+                    "dispatch_inapp": bool(body.dispatch_inapp),
+                    "dispatch_dm": bool(body.dispatch_dm),
+                },
+            )
             failed += 1
 
     bcast = Broadcast(

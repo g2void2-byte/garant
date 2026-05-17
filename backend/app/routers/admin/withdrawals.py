@@ -204,7 +204,23 @@ async def decide_withdrawal(
                     )
                 transfer_id = tr.transfer_id
             except CryptoPayError as e:
-                logger.error("withdrawal #%s CryptoBot transfer failed: %s", w.id, e)
+                # V11-L-15 — surface withdrawal/user/currency context
+                # as structured log fields so the JSON-logger downstream
+                # (Loki/Sentry) can query by user/currency without
+                # regexing the human message body.
+                logger.error(
+                    "withdrawal #%s CryptoBot transfer failed: %s",
+                    w.id,
+                    e,
+                    extra={
+                        "event": "cryptobot.admin_decide_transfer.failed",
+                        "withdrawal_id": w.id,
+                        "user_id": w.user_id,
+                        "currency": currency.code if currency else None,
+                        "amount": str(w.amount),
+                        "actor_id": admin.id,
+                    },
+                )
                 raise HTTPException(502, f"Ошибка CryptoBot: {e}")
 
         if auto and transfer_id is not None:

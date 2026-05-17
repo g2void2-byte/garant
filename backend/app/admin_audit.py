@@ -88,9 +88,16 @@ def _serialize_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
         # ``__repr__``.  We catch them all because the audit row is
         # *advisory* — failing the surrounding admin transaction would
         # be a far worse outcome than silently dropping the payload.
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream surfaces *which* admin action lost its payload
+        # (rather than a free-form keys list buried in the message).
         logger.warning(
             "admin audit payload is not JSON-serialisable; dropping (keys=%s)",
             sorted(payload.keys()) if isinstance(payload, dict) else None,
+            extra={
+                "event": "admin_audit.payload.non_serialisable",
+                "payload_keys": (sorted(payload.keys()) if isinstance(payload, dict) else None),
+            },
         )
         return None
     if len(encoded.encode("utf-8")) > ADMIN_AUDIT_PAYLOAD_MAX_BYTES:
@@ -98,6 +105,12 @@ def _serialize_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
             "admin audit payload exceeds %d bytes, dropping (keys=%s)",
             ADMIN_AUDIT_PAYLOAD_MAX_BYTES,
             sorted(payload.keys()),
+            extra={
+                "event": "admin_audit.payload.oversize",
+                "payload_size_bytes": len(encoded.encode("utf-8")),
+                "payload_max_bytes": ADMIN_AUDIT_PAYLOAD_MAX_BYTES,
+                "payload_keys": sorted(payload.keys()),
+            },
         )
         return None
     return payload
