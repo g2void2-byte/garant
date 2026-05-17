@@ -55,6 +55,28 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
+      # V12-L4 — assert that ``uv.lock`` is in sync with
+      # ``pyproject.toml``. Pre-fix transitive deps drifted between
+      # builds because nothing pinned the resolver output; the
+      # lockfile is the source of truth for the *transitive* dep
+      # tree (the runtime `==` pins in pyproject.toml only cover the
+      # direct deps). ``uv lock --check`` is a pure read of both
+      # files and a re-resolve in-memory — it does not install
+      # anything, so the actual install step below stays on pip.
+      # Refactoring CI / Dockerfile to install via ``uv sync
+      # --frozen`` is a follow-up; this gate at least prevents the
+      # committed ``uv.lock`` from going stale silently.
+      - name: Install uv (for lockfile drift check)
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.7.9"
+
+      - name: Verify uv.lock matches pyproject.toml
+        run: |
+          uv lock --check \
+            || (echo "::error::uv.lock is out of date — run 'uv lock' and commit the result." \
+                && exit 1)
+
       - name: Install backend deps (with dev extras)
         run: |
           python -m pip install --upgrade pip
