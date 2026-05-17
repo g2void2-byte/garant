@@ -312,7 +312,7 @@ async def send_profile(
         by_currency=stats["by_currency"],
     )
     photo = BufferedInputFile(
-        banners.render_profile(username=user.username, deposit=float(user.balance or 0)),
+        banners.render_profile(username=user.username, deposit=float(user.deposit_total or 0)),
         filename="profile.jpg",
     )
     await _send(message, body, keyboard=keyboards.profile_keyboard(), photo=photo)

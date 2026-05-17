@@ -96,16 +96,24 @@ async def _balance_snapshot(
     # ``total`` we hand to the schema is computed exactly. The schema
     # still declares ``float`` (legacy wire format); the full Decimal
     # wire format change is tracked under M-3 / M-9.
+    #
+    # H-1: post-migration ``deal.currency_id`` is non-null on every
+    # row (legacy USD-only deals were backfilled to USDT by the H-1
+    # migration). The ``currency is None`` branch is kept as a
+    # defensive empty snapshot for the (theoretical) case of a deal
+    # whose ``currency_id`` references a row that has since been
+    # purged from ``currencies``; it no longer carries the dead
+    # ``user.balance`` USD column.
     if currency is None:
-        legacy = Decimal(str(user.balance))
+        zero = Decimal(0)
         return AdminBalanceSnapshot(
             user_id=user.id,
             username=user.username,
             display_name=user.display_name,
             currency_code=None,
-            amount=legacy,
-            locked=Decimal(0),
-            total=legacy,
+            amount=zero,
+            locked=zero,
+            total=zero,
         )
     balance = await get_or_create_balance(session, user.id, currency.id)
     amount = Decimal(str(balance.amount))

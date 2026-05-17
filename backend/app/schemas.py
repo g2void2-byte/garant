@@ -59,7 +59,6 @@ class UserOut(BaseModel):
     display_name: str
     photo_url: str | None
     banner_url: str | None
-    balance: float
     deposit: float
     description: str
     prefix: str | None
@@ -103,7 +102,6 @@ class UserPublicOut(BaseModel):
     display_name: str
     photo_url: str | None
     banner_url: str | None
-    balance: float
     deposit: float
     description: str
     prefix: str | None
@@ -469,27 +467,10 @@ class NotificationCountersOut(BaseModel):
 # ── Payments ───────────────────────────────────────────
 
 
-class InvoiceCreateReq(BaseModel):
-    amount: float
-
-
-class InvoiceOut(BaseModel):
-    invoice_id: str
-    pay_url: str
-    amount: float
-    asset: str
-
-
-class InvoiceStatusOut(BaseModel):
-    id: int
-    amount: float
-    status: str
-    created_at: datetime
-    paid_at: datetime | None
-
-
-class DepositReq(BaseModel):
-    amount: float
+# H-1 — ``InvoiceCreateReq`` / ``InvoiceOut`` / ``InvoiceStatusOut`` /
+# ``DepositReq`` retired alongside the legacy ``User.balance`` ledger.
+# Multi-currency wallet deposits use ``WalletDepositCreateReq`` /
+# ``WalletDepositOut`` defined below.
 
 
 # ── Wallet (multi-currency) ────────────────────────────
@@ -624,7 +605,6 @@ class AdminUserListItem(BaseModel):
     is_vip: bool
     is_banned: bool
     is_frozen: bool
-    balance: float
     deposit_total: float
     rating: float
     deals_total: int
@@ -655,7 +635,6 @@ class AdminUserDetailOut(BaseModel):
     photo_url: str | None
     banner_url: str | None
     description: str
-    balance: float
     deposit_total: float
     rating_auto: float
     rating_manual: float | None
@@ -829,7 +808,13 @@ class AdminDealListOut(BaseModel):
 
 
 class AdminBalanceSnapshot(BaseModel):
-    """``user.balance`` + per-currency lock state at request time."""
+    """Per-currency wallet balance + lock state at request time.
+
+    H-1: previously this DTO included the legacy USD ``user.balance``
+    column. After the legacy ledger was retired the snapshot is
+    purely the per-currency ``UserBalance`` row pair (``amount`` +
+    ``locked``); ``currency_code`` is non-null on every live deal.
+    """
 
     user_id: int
     username: str | None

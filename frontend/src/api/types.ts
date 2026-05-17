@@ -56,7 +56,6 @@ export interface UserCardDto {
   username: string;
   display_name: string;
   photo_url: string | null;
-  balance: number;
   admin: number;
   prefix: "admin" | "arbiter" | "vip" | null;
   is_admin?: boolean;
@@ -159,20 +158,9 @@ export interface SupportPersonDto {
   prefix: "admin" | "arbiter";
 }
 
-export interface InvoiceDto {
-  invoice_id: string | number;
-  pay_url: string;
-  amount: number;
-  asset: string;
-}
-
-export interface DepositDto {
-  id: number;
-  amount: number;
-  status: string;
-  created_at: string;
-  paid_at: string | null;
-}
+// H-1 — ``InvoiceDto`` / ``DepositDto`` retired alongside the legacy
+// ``/api/payments/deposit*`` endpoints. The multi-currency wallet
+// flow uses ``WalletDepositDto`` / ``WalletDepositCreateReq`` below.
 
 export interface PinStatusDto {
   has_pin: boolean;
@@ -282,7 +270,6 @@ export interface AdminUserListItemDto {
   is_vip: boolean;
   is_banned: boolean;
   is_frozen: boolean;
-  balance: number;
   deposit_total: number;
   rating: number;
   deals_total: number;
@@ -307,7 +294,6 @@ export interface AdminUserDetailDto {
   photo_url: string | null;
   banner_url: string | null;
   description: string;
-  balance: number;
   deposit_total: number;
   rating_auto: number;
   rating_manual: number | null;

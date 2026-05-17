@@ -36,7 +36,6 @@ function makeUser(overrides: Partial<UserCardDto> = {}): UserCardDto {
     username: "me",
     display_name: "Me",
     photo_url: null,
-    balance: 0,
     admin: 0,
     prefix: null,
     good: 5,

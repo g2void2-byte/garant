@@ -1,18 +1,10 @@
 from __future__ import annotations
 
 import logging
-from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException, Request
 
-from ..config import settings
-from ..cryptopay import CryptoPay, CryptoPayError
-from ..deps import CurrentUser, SessionDep
-from ..models import Invoice, InvoiceProvider, InvoiceStatus
-from ..rate_limit import rate_limit
-from ..schemas import DepositReq, InvoiceCreateReq, InvoiceOut, InvoiceStatusOut
-from ..services import credit_invoice
+from ..deps import SessionDep
 from ..services_payments import (
     handle_invoice_expired,
     handle_invoice_paid,
@@ -20,206 +12,9 @@ from ..services_payments import (
     webhook_secret,
 )
 
-# Legacy USD-invoice creation. Keeping it ungated previously let any
-# authenticated user spam thousands of pending ``Invoice`` rows; cap to
-# a few per minute per user. The cap is intentionally generous because
-# the surface is only kept for backward-compat with the old DepositPage.
-_LIMIT_MANUAL_DEPOSIT = rate_limit("manual-deposit", limit=10, window=60)
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
-
-
-@router.get("/deposit", response_model=list[InvoiceStatusOut])
-async def list_deposits(user: CurrentUser, session: SessionDep):
-    stmt = (
-        select(Invoice)
-        .where(Invoice.owner_id == user.id)
-        .order_by(Invoice.created_at.desc())
-        .limit(50)
-    )
-    result = await session.execute(stmt)
-    return [
-        InvoiceStatusOut(
-            id=inv.id,
-            amount=float(inv.amount),
-            status=inv.status.value,
-            created_at=inv.created_at,
-            paid_at=inv.paid_at,
-        )
-        for inv in result.scalars().all()
-    ]
-
-
-@router.post("/deposit/invoice", response_model=InvoiceOut)
-async def create_deposit_invoice(
-    body: InvoiceCreateReq,
-    user: CurrentUser,
-    session: SessionDep,
-):
-    if not settings.cryptobot_token or settings.cryptobot_token.startswith("000"):
-        raise HTTPException(502, "CryptoBot не настроен")
-
-    try:
-        async with CryptoPay(
-            settings.cryptobot_token, testnet=settings.cryptobot_testnet
-        ) as crypto:
-            invoice = await crypto.create_invoice(asset="USDT", amount=body.amount)
-    except CryptoPayError as e:
-        # V11-L-15 — structured-logging fields so the JSON-logger
-        # downstream (Loki/Sentry) can pivot on event/user without
-        # regexing the message body.
-        logger.error(
-            "CryptoBot error: %s",
-            e,
-            extra={
-                "event": "cryptobot.legacy_create_invoice.failed",
-                "user_id": user.id,
-                "amount": float(body.amount),
-            },
-        )
-        raise HTTPException(502, f"Ошибка CryptoBot: {e}")
-
-    # V5-B-3 — same pay_url fallback chain as the wallet path. The
-    # legacy Invoice model only persists ``provider_invoice_id`` (not
-    # the URL), so if CryptoBot returns an invoice with no URL the
-    # frontend has no fallback at all — the response below would set
-    # ``pay_url=""`` and the deposit button would be inert. Fail loud
-    # with 502 instead of silently handing the client a broken row.
-    pay_url = (
-        invoice.mini_app_invoice_url
-        or invoice.bot_invoice_url
-        or invoice.pay_url
-        or invoice.web_app_invoice_url
-        or ""
-    )
-    if not pay_url:
-        logger.error(
-            "CryptoBot create_invoice returned no pay_url for legacy USD invoice_id=%s",
-            invoice.invoice_id,
-            extra={
-                "event": "cryptobot.legacy_create_invoice.empty_pay_url",
-                "provider_invoice_id": str(invoice.invoice_id),
-                "user_id": user.id,
-            },
-        )
-        raise HTTPException(502, "CryptoBot не вернул ссылку для оплаты")
-
-    db_invoice = Invoice(
-        owner_id=user.id,
-        provider=InvoiceProvider.cryptobot,
-        provider_invoice_id=str(invoice.invoice_id),
-        amount=body.amount,
-        status=InvoiceStatus.pending,
-    )
-    session.add(db_invoice)
-    await session.commit()
-
-    return InvoiceOut(
-        invoice_id=str(invoice.invoice_id),
-        pay_url=pay_url,
-        amount=float(body.amount),
-        asset="USDT",
-    )
-
-
-@router.get("/deposit/invoice/{invoice_id}", response_model=InvoiceStatusOut)
-async def check_invoice(invoice_id: int, user: CurrentUser, session: SessionDep):
-    """Polling fallback for legacy USD invoices.
-
-    Webhook (``POST /api/payments/webhook/cryptobot``) is the primary
-    path; this endpoint stays so the legacy DepositPage can still pull
-    state directly if a webhook is missed.
-    """
-    inv = await session.get(Invoice, invoice_id)
-    if not inv or inv.owner_id != user.id:
-        raise HTTPException(404, "Инвойс не найден")
-
-    if inv.status == InvoiceStatus.pending and settings.cryptobot_token:
-        try:
-            async with CryptoPay(
-                settings.cryptobot_token, testnet=settings.cryptobot_testnet
-            ) as crypto:
-                checks = await crypto.get_invoices(invoice_ids=[int(inv.provider_invoice_id)])
-            if checks and checks[0].status == "paid":
-                # V5-B-2 follow-up — re-load the Invoice with
-                # ``FOR UPDATE`` before crediting so this polling
-                # fallback acquires locks in the same order as the
-                # webhook path (``services_payments.handle_invoice_paid``):
-                # Invoice -> User. Without this, the webhook's
-                # Invoice lock and the poll path's User lock form a
-                # cycle that Postgres resolves with a deadlock abort.
-                #
-                # ``populate_existing=True`` is required because
-                # ``inv`` is already in the session's identity map
-                # (the ``session.get(Invoice, invoice_id)`` above
-                # loaded it). Without it, SQLAlchemy issues the
-                # ``SELECT ... FOR UPDATE`` (acquiring the row lock)
-                # but returns the cached instance with its pre-lock
-                # column values, so ``locked.status`` would read the
-                # stale ``pending`` even after a sibling webhook
-                # just committed ``paid``. With the option set,
-                # attribute values are refreshed from the result row
-                # and the recheck below is the primary serialising
-                # guard. The User-lock + status recheck inside
-                # ``credit_invoice`` remains as defence-in-depth.
-                locked = (
-                    await session.execute(
-                        select(Invoice)
-                        .where(Invoice.id == inv.id)
-                        .with_for_update()
-                        .execution_options(populate_existing=True)
-                    )
-                ).scalar_one()
-                if locked.status == InvoiceStatus.pending:
-                    inv = await credit_invoice(session, locked)
-                else:
-                    inv = locked
-        except CryptoPayError as e:
-            logger.warning(
-                "CryptoBot poll error: %s",
-                e,
-                extra={
-                    "event": "cryptobot.legacy_poll.failed",
-                    "invoice_id": inv.id,
-                    "provider_invoice_id": inv.provider_invoice_id,
-                },
-            )
-
-    return InvoiceStatusOut(
-        id=inv.id,
-        amount=float(inv.amount),
-        status=inv.status.value,
-        created_at=inv.created_at,
-        paid_at=inv.paid_at,
-    )
-
-
-@router.post(
-    "/deposit",
-    response_model=InvoiceStatusOut,
-    dependencies=[Depends(_LIMIT_MANUAL_DEPOSIT)],
-)
-async def manual_deposit(body: DepositReq, user: CurrentUser, session: SessionDep):
-    # ``Invoice.provider_invoice_id`` is UNIQUE, so the suffix has to
-    # be globally unique per row — a UUID is the cheapest way.
-    inv = Invoice(
-        owner_id=user.id,
-        provider=InvoiceProvider.cryptobot,
-        provider_invoice_id=f"manual-{user.id}-{body.amount}-{uuid4().hex}",
-        amount=body.amount,
-        status=InvoiceStatus.pending,
-    )
-    session.add(inv)
-    await session.commit()
-    return InvoiceStatusOut(
-        id=inv.id,
-        amount=float(inv.amount),
-        status=inv.status.value,
-        created_at=inv.created_at,
-        paid_at=inv.paid_at,
-    )
 
 
 @router.post("/webhook/cryptobot")
@@ -230,6 +25,13 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
     We verify ``crypto-pay-api-signature`` against the bot token, then
     dispatch by ``update_type``. Response is always 200 (with an ``ok``
     bool) so Crypto Pay doesn't keep retrying on benign duplicates.
+
+    H-1: the legacy USD ``Invoice`` ledger and its
+    ``GET /api/payments/deposit`` / ``POST /api/payments/deposit`` /
+    ``GET /api/payments/deposit/invoice/{id}`` /
+    ``POST /api/payments/deposit/invoice`` endpoints were retired.
+    The webhook URL stays at ``POST /api/payments/webhook/cryptobot``
+    so existing CryptoBot configurations keep working.
     """
     raw = await request.body()
     signature = request.headers.get("crypto-pay-api-signature")

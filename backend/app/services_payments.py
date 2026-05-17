@@ -1,17 +1,18 @@
-"""Unified CryptoBot payment intake.
+"""CryptoBot wallet-deposit intake.
 
-Both the legacy USD ``Invoice`` table (``services.credit_invoice``) and the
-multi-currency ``WalletDeposit`` table (``services_wallet.credit_deposit``)
-ultimately want the same thing on a successful ``invoice_paid`` webhook:
-* look the row up by its ``provider_invoice_id``,
-* mark it paid,
-* credit the user's balance,
-* push a notification,
-* never double-credit on retries.
+The webhook handler for ``invoice_paid`` / ``invoice_expired``:
 
-This module is the single, idempotent entry point for that. It supports
-both legacy and wallet rows so callers don't have to know which one a
-particular ``invoice_id`` belongs to.
+* looks the row up by its ``provider_invoice_id`` in ``wallet_deposits``,
+* marks it paid / expired,
+* credits the user's per-currency balance via
+  :func:`services_wallet.credit_deposit`,
+* pushes a notification,
+* never double-credits on retries (``SELECT ... FOR UPDATE`` lock + a
+  status recheck after the lock returns).
+
+H-1: the legacy USD ``Invoice`` ledger and its ``credit_invoice`` path
+were retired together with the ``users.balance`` column. The webhook
+now serves a single (multi-currency) ledger.
 """
 
 from __future__ import annotations
@@ -25,8 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
-from .models import Invoice, InvoiceStatus, WalletDeposit, WalletDepositStatus
-from .services import credit_invoice
+from .models import WalletDeposit, WalletDepositStatus
 from .services_wallet import credit_deposit
 
 logger = logging.getLogger(__name__)
@@ -46,33 +46,17 @@ def verify_webhook_signature(secret: str, body: bytes, signature: str | None) ->
     return hmac.compare_digest(expected, signature)
 
 
-async def _find_legacy_invoice(
-    session: AsyncSession, provider_invoice_id: str, *, lock: bool = False
-) -> Invoice | None:
-    """Look up a legacy ``Invoice`` row by its CryptoBot id.
-
-    V5-B-2 — when ``lock`` is true, the row is fetched with
-    ``SELECT ... FOR UPDATE`` so two concurrent webhook deliveries
-    serialise on the row instead of both reading ``pending`` and both
-    crediting. The caller is expected to re-check ``status`` after the
-    lock returns to detect the case where the other transaction
-    already flipped the row to ``paid`` while we were blocked.
-    """
-    stmt = select(Invoice).where(Invoice.provider_invoice_id == provider_invoice_id)
-    if lock:
-        stmt = stmt.with_for_update()
-    result = await session.execute(stmt)
-    return result.scalar_one_or_none()
-
-
 async def _find_wallet_deposit(
     session: AsyncSession, provider_invoice_id: str, *, lock: bool = False
 ) -> WalletDeposit | None:
     """Look up a ``WalletDeposit`` row by its CryptoBot id.
 
     V5-B-1 — when ``lock`` is true, the row is fetched with
-    ``SELECT ... FOR UPDATE``. See :func:`_find_legacy_invoice` for the
-    rationale; this is the multi-currency twin.
+    ``SELECT ... FOR UPDATE`` so two concurrent webhook deliveries
+    serialise on the row instead of both reading ``pending`` and both
+    crediting. The caller is expected to re-check ``status`` after the
+    lock returns to detect the case where the other transaction
+    already flipped the row to ``paid`` while we were blocked.
     """
     stmt = select(WalletDeposit).where(WalletDeposit.provider_invoice_id == provider_invoice_id)
     if lock:
@@ -115,15 +99,6 @@ async def handle_invoice_paid(session: AsyncSession, payload: dict[str, Any]) ->
             return {"ok": True, "already_paid": True, "kind": "wallet"}
         await credit_deposit(session, wallet)
         return {"ok": True, "kind": "wallet"}
-
-    legacy = await _find_legacy_invoice(session, provider_id, lock=True)
-    if legacy is not None:
-        # V5-B-2 — same lock-then-recheck pattern for the legacy
-        # Invoice row.
-        if legacy.status == InvoiceStatus.paid:
-            return {"ok": True, "already_paid": True, "kind": "legacy"}
-        await credit_invoice(session, legacy)
-        return {"ok": True, "kind": "legacy"}
 
     logger.warning(
         "CryptoBot webhook for unknown invoice_id=%s",
@@ -177,14 +152,6 @@ async def handle_invoice_expired(session: AsyncSession, payload: dict[str, Any])
         wallet.status = WalletDepositStatus.expired
         await session.commit()
         return {"ok": True, "kind": "wallet", "expired": True}
-
-    legacy = await _find_legacy_invoice(session, provider_id, lock=True)
-    if legacy is not None:
-        if legacy.status in (InvoiceStatus.paid, InvoiceStatus.expired):
-            return {"ok": True, "already_terminal": True, "kind": "legacy"}
-        legacy.status = InvoiceStatus.expired
-        await session.commit()
-        return {"ok": True, "kind": "legacy", "expired": True}
 
     logger.info(
         "CryptoBot webhook expire for unknown invoice_id=%s",

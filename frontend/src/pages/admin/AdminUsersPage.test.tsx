@@ -79,7 +79,6 @@ function makeUser(
     is_vip: false,
     is_banned: false,
     is_frozen: false,
-    balance: 0,
     deposit_total: 10,
     rating: 4.85,
     deals_total: 3,

@@ -25,7 +25,6 @@ const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 const AddServicePage = lazy(() => import("@/pages/profile/AddServicePage"));
 const AddForumPage = lazy(() => import("@/pages/profile/AddForumPage"));
 const SettingsPage = lazy(() => import("@/pages/profile/SettingsPage"));
-const DepositPage = lazy(() => import("@/pages/profile/DepositPage"));
 const AccountTransferPage = lazy(() => import("@/pages/profile/AccountTransferPage"));
 const WalletPage = lazy(() => import("@/pages/wallet/WalletPage"));
 const WalletDepositPage = lazy(() => import("@/pages/wallet/WalletDepositPage"));
@@ -119,8 +118,10 @@ export function App() {
                   <Route path="/profile/add-service" element={<AddServicePage />} />
                   <Route path="/profile/add-forum" element={<AddForumPage />} />
                   <Route path="/profile/settings" element={<SettingsPage />} />
-                  <Route path="/deposit" element={<DepositPage />} />
-                  <Route path="/deposit/:id" element={<DepositPage />} />
+                  {/* H-1 — legacy USD ``/deposit`` retired; redirect to the
+                      multi-currency ``/wallet/deposit`` flow. */}
+                  <Route path="/deposit" element={<Navigate to="/wallet/deposit" replace />} />
+                  <Route path="/deposit/:id" element={<Navigate to="/wallet/deposit" replace />} />
                   <Route path="/change-account" element={<AccountTransferPage />} />
                   <Route path="/pin-reset" element={<PinResetPage />} />
                   <Route path="/arbitration" element={<ArbitrationPage />} />
@@ -150,7 +151,7 @@ export function App() {
                   <Route path="/help" element={<Navigate to="/support" replace />} />
                   <Route path="/u/:username" element={<RedirectUser />} />
                   <Route path="/profile/services/new" element={<Navigate to="/profile/add-service" replace />} />
-                  <Route path="/profile/deposit" element={<Navigate to="/deposit" replace />} />
+                  <Route path="/profile/deposit" element={<Navigate to="/wallet/deposit" replace />} />
                   <Route path="/profile/transfer" element={<Navigate to="/change-account" replace />} />
                   <Route path="*" element={<Navigate to="/search" replace />} />
                 </Routes>

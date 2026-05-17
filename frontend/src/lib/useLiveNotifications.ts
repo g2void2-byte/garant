@@ -54,7 +54,9 @@ export function useLiveNotifications() {
         }
         if (notif.type === "deposits") {
           qc.invalidateQueries({ queryKey: qk.me() });
-          qc.invalidateQueries({ queryKey: qk.payments.all() });
+          // H-1 — legacy ``qk.payments`` was retired; wallet deposits
+          // are surfaced through ``qk.wallet.*``.
+          qc.invalidateQueries({ queryKey: qk.wallet.all() });
         }
         if (notif.type === "system") {
           qc.invalidateQueries({ queryKey: qk.reviews.all() });

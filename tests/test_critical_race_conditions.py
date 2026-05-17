@@ -6,28 +6,27 @@
 * **C2** ``create_deal`` / ``_debit`` race-condition — two concurrent
   deal-creation requests against the same buyer balance must not both
   succeed when the user doesn't have enough funds for both.
-* **C3** ``manual_deposit`` 500 — two requests with the same amount must
-  not collide on ``provider_invoice_id`` and bubble up an
-  ``IntegrityError``.
 
-The fix for C1 and C2 is a ``FOR UPDATE`` row lock on ``UserBalance``;
-the fix for C3 is a UUID-suffixed ``provider_invoice_id``.
+C3 (``manual_deposit`` 500) was retired together with the legacy USD
+``Invoice`` ledger by H-1; the manual-deposit endpoint and its
+collision-prone ``provider_invoice_id`` are gone.
 
-V5-B-1 / V5-B-2 — two more concurrency fixes covered here:
+The fix for C1 and C2 is a ``FOR UPDATE`` row lock on ``UserBalance``.
+
+V5-B-1 — concurrency fix covered here:
 
 * webhook → ``services_payments.handle_invoice_paid`` →
   ``services_wallet.credit_deposit`` for the multi-currency
-  ``WalletDeposit`` path, and
-* webhook → ``services_payments.handle_invoice_paid`` →
-  ``services.credit_invoice`` for the legacy ``Invoice`` path.
+  ``WalletDeposit`` path.
 
-Both close the same shape of race: two concurrent webhook deliveries
-(CryptoBot retry / proxy duplication) read the ``pending`` row,
-both pass the status check, both credit. Fix is ``SELECT ... FOR
-UPDATE`` on the deposit/invoice row inside ``handle_invoice_paid``
-plus a ``FOR UPDATE`` lock on the balance row inside the credit
-helper, with a status recheck after each lock so the loser of the
-race exits idempotently.
+It closes the same shape of race that V5-B-2 closed for the legacy
+``Invoice`` path before H-1 retired that path: two concurrent webhook
+deliveries (CryptoBot retry / proxy duplication) read the ``pending``
+row, both pass the status check, both credit. Fix is
+``SELECT ... FOR UPDATE`` on the deposit row inside
+``handle_invoice_paid`` plus a ``FOR UPDATE`` lock on the balance
+row inside ``credit_deposit``, with a status recheck after each lock
+so the loser of the race exits idempotently.
 """
 
 from __future__ import annotations
@@ -155,30 +154,6 @@ async def test_concurrent_deal_creation_cannot_overdraw(client):
         assert float(bal.locked) == pytest.approx(73.5)
 
 
-@pytest.mark.asyncio
-async def test_manual_deposit_same_amount_does_not_collide(client):
-    """C3 — repeated ``POST /api/payments/deposit`` with identical amount
-    must not blow up on the ``provider_invoice_id`` UNIQUE constraint.
-
-    Before the fix the row id was ``manual-{user.id}-{amount}``, so two
-    requests for the same amount within the rate-limit window raised
-    ``IntegrityError`` → 500. The UUID suffix removes the collision.
-    """
-    init = signed_init_data(7301, "manual_dep")
-    await client.get("/api/me", headers=auth_headers(init))
-
-    r1 = await client.post(
-        "/api/payments/deposit", json={"amount": 25.0}, headers=auth_headers(init)
-    )
-    r2 = await client.post(
-        "/api/payments/deposit", json={"amount": 25.0}, headers=auth_headers(init)
-    )
-
-    assert r1.status_code == 200, r1.text
-    assert r2.status_code == 200, r2.text
-    assert r1.json()["id"] != r2.json()["id"]
-
-
 # ── V5-B-1 / V5-B-2: parallel-webhook double-credit ────────────────────
 
 
@@ -293,103 +268,6 @@ async def test_concurrent_invoice_paid_webhook_credits_wallet_only_once(client):
         # Notifier fires once per ``credit_deposit`` invocation; with
         # the fix only one credit happens, so there must be exactly
         # one ``deposits`` notification for this user.
-        notifs = (
-            (
-                await session.execute(
-                    select(Notification).where(
-                        Notification.recipient_id == user_id,
-                        Notification.type == NotificationType.deposits,
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        assert len(notifs) == 1, [n.title for n in notifs]
-
-
-@pytest.mark.asyncio
-async def test_concurrent_invoice_paid_webhook_credits_legacy_only_once(client):
-    """V5-B-2 — N parallel ``invoice_paid`` webhook deliveries for the
-    SAME pending legacy ``Invoice`` must credit ``User.balance``
-    exactly once.
-
-    Pre-fix race: ``handle_invoice_paid`` looked up the legacy row
-    without a lock and ``credit_invoice`` did a plain
-    ``session.get(User, ...)`` before mutating ``owner.balance``,
-    so two webhook deliveries both passed the ``status=pending`` check
-    and both incremented the User.balance column. The fix is a
-    ``SELECT ... FOR UPDATE`` on the ``Invoice`` row in
-    ``handle_invoice_paid`` plus a ``FOR UPDATE`` lock on the User row
-    in ``credit_invoice`` with a refresh-and-recheck of
-    ``invoice.status`` immediately after the User lock.
-    """
-    from backend.app.db import async_session
-    from backend.app.models import (
-        Invoice,
-        InvoiceProvider,
-        InvoiceStatus,
-        Notification,
-        NotificationType,
-        User,
-    )
-
-    init = signed_init_data(7402, "race_webhook_legacy")
-    await setup_pin(client, init)
-
-    invoice_amount = Decimal("99.50")
-    provider_id = "cb-race-legacy-1"
-
-    async with async_session() as session:
-        user_id = await get_user_id_by_tg(session, 7402)
-        session.add(
-            Invoice(
-                owner_id=user_id,
-                provider=InvoiceProvider.cryptobot,
-                provider_invoice_id=provider_id,
-                amount=invoice_amount,
-                status=InvoiceStatus.pending,
-            )
-        )
-        await session.commit()
-
-    body = json.dumps(
-        {
-            "update_type": "invoice_paid",
-            "payload": {"invoice_id": provider_id, "status": "paid"},
-        }
-    ).encode()
-    sig = _sign_webhook(body)
-    headers = {
-        "crypto-pay-api-signature": sig,
-        "Content-Type": "application/json",
-    }
-
-    responses = await asyncio.gather(
-        *[
-            client.post("/api/payments/webhook/cryptobot", content=body, headers=headers)
-            for _ in range(_WEBHOOK_FANOUT)
-        ]
-    )
-
-    for resp in responses:
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["ok"] is True
-
-    credited = [r for r in responses if not r.json().get("already_paid")]
-    assert len(credited) == 1, [r.json() for r in responses]
-
-    async with async_session() as session:
-        owner = (await session.execute(select(User).where(User.id == user_id))).scalar_one()
-        # ``User.balance`` ends at exactly the invoice amount, NOT
-        # N × amount.
-        assert Decimal(str(owner.balance)) == invoice_amount
-
-        inv = (
-            await session.execute(select(Invoice).where(Invoice.provider_invoice_id == provider_id))
-        ).scalar_one()
-        assert inv.status == InvoiceStatus.paid
-
         notifs = (
             (
                 await session.execute(
@@ -537,145 +415,6 @@ async def test_concurrent_webhook_and_poll_credits_wallet_only_once(client, monk
             )
         ).scalar_one()
         assert dep.status == WalletDepositStatus.paid
-
-        notifs = (
-            (
-                await session.execute(
-                    select(Notification).where(
-                        Notification.recipient_id == user_id,
-                        Notification.type == NotificationType.deposits,
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        assert len(notifs) == 1, [n.title for n in notifs]
-
-
-@pytest.mark.asyncio
-async def test_concurrent_webhook_and_poll_credits_legacy_only_once(client, monkeypatch):
-    """V5-B-2 follow-up — webhook + polling fallback for the SAME
-    pending legacy ``Invoice`` must credit ``User.balance`` exactly
-    once.
-
-    Same shape as the wallet test above for the legacy
-    ``credit_invoice`` path. The polling endpoint
-    (``GET /api/payments/deposit/invoice/{id}``) reloads the
-    ``Invoice`` row with ``FOR UPDATE`` before calling
-    ``credit_invoice``, matching the lock order the webhook
-    (``handle_invoice_paid``) uses: Invoice -> User. Pre-fix the poll
-    path took the User lock first inside ``credit_invoice`` and only
-    updated the unlocked Invoice at commit, forming a cycle.
-
-    Drives the polling fallback through the real router via
-    ``GET /api/payments/deposit/invoice/{id}`` with CryptoPay
-    monkeypatched on ``backend.app.routers.payments.CryptoPay`` (the
-    name resolved by ``from ..cryptopay import CryptoPay`` at the
-    router's module load — patching the source module would not
-    intercept that already-bound reference). The webhook side runs
-    ``handle_invoice_paid`` directly in a parallel session, the same
-    pattern the wallet test uses.
-    """
-    from backend.app.db import async_session
-    from backend.app.models import (
-        Invoice,
-        InvoiceProvider,
-        InvoiceStatus,
-        Notification,
-        NotificationType,
-        User,
-    )
-    from backend.app.services_payments import handle_invoice_paid
-
-    init = signed_init_data(7502, "race_webhook_poll_legacy")
-    await setup_pin(client, init)
-
-    invoice_amount = Decimal("57.25")
-    # ``check_invoice`` (legacy poll path) coerces the stored
-    # ``provider_invoice_id`` via ``int(...)`` before calling the
-    # CryptoBot ``get_invoices`` API — real invoice IDs are numeric.
-    # Using a ``"cb-…"`` placeholder (matching the wallet sibling
-    # fixture) raced against the webhook arm of the test depending on
-    # task ordering and caused ``ValueError`` ~40% of the time. Mirror
-    # the numeric fix that the wallet test already applies.
-    provider_id = "780011001"
-
-    async with async_session() as session:
-        user_id = await get_user_id_by_tg(session, 7502)
-        inv = Invoice(
-            owner_id=user_id,
-            provider=InvoiceProvider.cryptobot,
-            provider_invoice_id=provider_id,
-            amount=invoice_amount,
-            status=InvoiceStatus.pending,
-        )
-        session.add(inv)
-        await session.commit()
-        await session.refresh(inv)
-        invoice_id = inv.id
-
-    # Stub CryptoPay so the polling endpoint
-    # ``GET /api/payments/deposit/invoice/{id}`` returns a fake
-    # ``paid`` invoice without hitting the network. ``check_invoice``
-    # imports CryptoPay via ``from ..cryptopay import CryptoPay``, so
-    # the symbol to patch is the one bound on ``routers.payments``,
-    # not the source module — patching the source module would leave
-    # the already-resolved router-side reference untouched.
-    class _FakeInvoice:
-        status = "paid"
-
-    class _FakeCryptoPay:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_exc):
-            return None
-
-        async def get_invoices(self, *, invoice_ids):  # noqa: ARG002
-            return [_FakeInvoice()]
-
-    import backend.app.routers.payments as payments_router
-
-    monkeypatch.setattr(payments_router, "CryptoPay", _FakeCryptoPay)
-
-    payload = {"invoice_id": provider_id, "status": "paid"}
-
-    async def _run_webhook():
-        async with async_session() as s:
-            return await handle_invoice_paid(s, payload)
-
-    async def _run_poll():
-        # Drive the real router so the V5-B-2 follow-up's
-        # ``select(Invoice).with_for_update()`` reload inside
-        # ``check_invoice`` is exercised. A future regression that
-        # drops the FOR UPDATE reload (or moves it outside the
-        # ``checks[0].status == "paid"`` branch) would surface as a
-        # double-credit / deadlock here.
-        return await client.get(
-            f"/api/payments/deposit/invoice/{invoice_id}",
-            headers=auth_headers(init),
-        )
-
-    webhook_result, poll_resp = await asyncio.gather(_run_webhook(), _run_poll())
-
-    assert webhook_result.get("ok") is True
-    assert poll_resp.status_code == 200, poll_resp.text
-
-    async with async_session() as session:
-        owner = (await session.execute(select(User).where(User.id == user_id))).scalar_one()
-        # Exactly the invoice amount (NOT 2x). Pre-fix this would be
-        # 2 * invoice_amount, or one of the two transactions would
-        # deadlock-abort.
-        assert Decimal(str(owner.balance)) == invoice_amount
-
-        inv_row = (
-            await session.execute(select(Invoice).where(Invoice.provider_invoice_id == provider_id))
-        ).scalar_one()
-        assert inv_row.status == InvoiceStatus.paid
 
         notifs = (
             (

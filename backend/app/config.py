@@ -89,15 +89,10 @@ class Settings(BaseSettings):
     wallet_deposit_expiry_seconds: int = 24 * 60 * 60  # 24h
     wallet_deposit_sweep_seconds: int = 600
 
-    # V5-B-7 — auto-expire pending legacy ``Invoice`` rows the user
-    # never paid; mirrors ``wallet_deposit_*``. The legacy
-    # ``POST /api/payments/deposit`` (manual_deposit) creates rows in
-    # the ``invoices`` table that never get a webhook from CryptoBot
-    # (these are placeholder rows, not real provider invoices), so a
-    # background sweep is the only path to a terminal state. ``0``
-    # disables the loop (the default in tests via the env var).
-    invoice_expiry_seconds: int = 24 * 60 * 60  # 24h
-    invoice_sweep_seconds: int = 600
+    # H-1 — the legacy ``Invoice`` ledger (``invoice_expiry_seconds`` /
+    # ``invoice_sweep_seconds``) was retired together with the
+    # ``users.balance`` USD column. The wallet ledger above is the
+    # only sweep that survives.
 
     # PR-G (L-6) — if the maintenance-flag DB lookup fails the
     # middleware normally falls open (treats maintenance as off and
