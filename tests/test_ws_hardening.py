@@ -19,6 +19,7 @@ real socket is platform-dependent.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 
 import pytest
@@ -26,6 +27,21 @@ import websockets
 
 from backend.app.ws import ConnectionManager
 from tests.helpers import signed_init_data
+
+
+@contextlib.contextmanager
+def _monkeypatch_attr(module, name: str, value):  # type: ignore[no-untyped-def]
+    """Mini ``monkeypatch`` for tests that aren't given the fixture."""
+    sentinel = object()
+    original = getattr(module, name, sentinel)
+    setattr(module, name, value)
+    try:
+        yield
+    finally:
+        if original is sentinel:
+            delattr(module, name)
+        else:
+            setattr(module, name, original)
 
 
 async def _connect_and_auth(ws_server: int, init_data: str):
@@ -233,6 +249,66 @@ async def test_send_queue_normal_flow_delivers_in_order():
         assert state.dropped == 0, state.dropped
     finally:
         mgr.disconnect(2, fake)  # type: ignore[arg-type]
+
+
+async def test_evict_iterates_over_snapshot_under_concurrent_disconnect():
+    """V11-M-20 — :meth:`_evict_expired_once` must iterate over a
+    snapshot of ``_states`` so a concurrent ``disconnect()`` mid-sweep
+    cannot raise ``RuntimeError: dictionary changed size during
+    iteration``.
+
+    We register a batch of stale + fresh sockets, monkey-patch the
+    close coroutine on the stale ones to ``disconnect()`` a *neighbour*
+    while the sweep is in progress, and assert the sweep still returns
+    a coherent eviction count without raising.
+    """
+    import backend.app.ws as ws_mod
+
+    mgr = ConnectionManager()
+    closed_users: list[int] = []
+
+    class _Probe:
+        def __init__(self, mgr_: ConnectionManager, user_id: int) -> None:
+            self._mgr = mgr_
+            self.user_id = user_id
+            self.closed_with: tuple[int, str] | None = None
+
+        async def send_text(self, _text: str) -> None:
+            return None
+
+        async def close(self, code: int = 1000, reason: str = "") -> None:
+            self.closed_with = (code, reason)
+            closed_users.append(self.user_id)
+            # Simulate "the disconnect handler running concurrently with
+            # the sweep": mutate ``_states`` *during* iteration. The
+            # snapshot copy in ``_evict_expired_once`` is what keeps
+            # this safe.
+            for other in list(self._mgr._states.values()):
+                if other.user_id != self.user_id and not other.closed:
+                    self._mgr.disconnect(other.user_id, other.websocket)
+                    break
+
+    stale_age = -1  # forced expired
+    # Lower the cap so every socket below is considered stale.
+    cm = contextlib.ExitStack()
+    cm.enter_context(_monkeypatch_attr(ws_mod, "WS_MAX_AGE_SECONDS", -10))
+    try:
+        for uid in (101, 102, 103, 104):
+            probe = _Probe(mgr, uid)
+            await mgr.connect(user_id=uid, websocket=probe, auth_date_epoch=stale_age)  # type: ignore[arg-type]
+
+        # Must not raise even though probe.close() mutates _states.
+        evicted = await mgr._evict_expired_once()
+        # The exact eviction count depends on how many neighbours got
+        # disconnected mid-sweep, but at least one stale socket must
+        # have been closed and the call must have returned cleanly.
+        assert evicted >= 1, evicted
+        assert closed_users, "no stale socket was closed by the reaper"
+    finally:
+        cm.close()
+        # Clean up whatever survived.
+        for state in list(mgr._states.values()):
+            mgr.disconnect(state.user_id, state.websocket)
 
 
 async def test_disconnect_cancels_writer():

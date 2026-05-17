@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 
 from alembic.config import Config
@@ -18,11 +19,47 @@ from .config import settings
 logger = logging.getLogger(__name__)
 
 engine = create_async_engine(settings.database_url, echo=False)
+# V11-M-19 — ``expire_on_commit=False`` keeps attribute access cheap
+# after ``await session.commit()``: SQLAlchemy doesn't invalidate
+# loaded columns, so a follow-up ``obj.some_field`` doesn't have to
+# issue a SELECT. The tradeoff is that the in-memory ``obj`` is now
+# free to drift from the DB row (another transaction can update it
+# mid-flight, or the commit itself can change a value via
+# ``DEFAULT`` / triggers / ``RETURNING``). Whenever the next code
+# path needs the canonical row state — usually right after the
+# commit that triggered a row-level change we then want to read —
+# call ``await session.refresh(obj)`` (or re-fetch via
+# ``session.get``). The notifier / serialiser layer assumes the
+# attribute access is non-blocking; refresh() is the explicit
+# escape hatch when we want a fresh read. New writers MUST audit
+# their post-commit reads against this rule.
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
     pass
+
+
+def _alembic_root() -> Path:
+    """Locate the directory that holds ``alembic.ini`` + ``alembic/``.
+
+    V11-L-9 — historically this was hard-coded to
+    ``Path(__file__).resolve().parents[2]``, which is fine when the
+    package is editable-installed from the source tree (``parents[2]``
+    points at the repo root) but breaks the moment the package is
+    installed into ``site-packages`` (``parents[2]`` then points at
+    ``…/lib/python3.x/site-packages`` which has no ``alembic.ini``).
+    Allowing ``GARANT_ALEMBIC_ROOT`` to override gives non-editable
+    installs (k8s images that COPY only the ``backend/`` tree, ad-hoc
+    one-shot containers, etc.) a way to point at the migration root
+    without re-vendoring the layout. The fallback still resolves
+    relative to ``__file__`` so the source-tree happy path is
+    unchanged.
+    """
+    override = os.environ.get("GARANT_ALEMBIC_ROOT")
+    if override:
+        return Path(override).resolve()
+    return Path(__file__).resolve().parents[2]
 
 
 def _alembic_config() -> Config:
@@ -32,9 +69,9 @@ def _alembic_config() -> Config:
     current working directory so this also works when uvicorn is launched
     from elsewhere.
     """
-    repo_root = Path(__file__).resolve().parents[2]
-    cfg = Config(str(repo_root / "alembic.ini"))
-    cfg.set_main_option("script_location", str(repo_root / "alembic"))
+    root = _alembic_root()
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "alembic"))
     cfg.set_main_option("sqlalchemy.url", settings.database_url)
     return cfg
 
