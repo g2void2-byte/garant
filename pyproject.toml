@@ -17,7 +17,7 @@ dependencies = [
     "python-multipart==0.0.18",
     "bcrypt==4.2.0",
     "PyJWT==2.9.0",
-    "redis==5.2.0",
+    "redis==7.4.0",
     "Pillow==11.3.0",
 ]
 
