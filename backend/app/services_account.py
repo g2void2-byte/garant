@@ -419,7 +419,6 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     row.target_tg_user_id = new_tg_user_id
 
     await session.commit()
-    await session.refresh(source)
 
     # V11-L-15 — structured-logging fields so the JSON-logger
     # downstream (Loki/Sentry) can pivot on event/user-ids without

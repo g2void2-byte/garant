@@ -573,7 +573,6 @@ async def force_release(
         deal.id,
     )
     await session.commit()
-    await session.refresh(deal)
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -636,7 +635,6 @@ async def force_refund(
         deal.id,
     )
     await session.commit()
-    await session.refresh(deal)
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -704,7 +702,6 @@ async def split_deal(
         deal.id,
     )
     await session.commit()
-    await session.refresh(deal)
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -746,7 +743,6 @@ async def force_arbitration(
             deal.id,
         )
     await session.commit()
-    await session.refresh(deal)
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -793,7 +789,6 @@ async def assign_arbiter(
             deal.id,
         )
     await session.commit()
-    await session.refresh(deal)
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 

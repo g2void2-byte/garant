@@ -119,7 +119,6 @@ async def post_review(
         {"review_id": review.id},
     )
     await session.commit()
-    await session.refresh(review)
 
     return review
 
@@ -173,7 +172,6 @@ async def credit_invoice(
         )
 
     await session.commit()
-    await session.refresh(invoice)
 
     return invoice
 

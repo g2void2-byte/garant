@@ -73,14 +73,17 @@ async def update_me(body: UserUpdate, user: CurrentUser, session: SessionDep):
             "fields": touched,
         },
     )
-    await session.refresh(user)
     # Comment 44 (audit v9): the ``forums`` collection was mutated via
-    # ``session.delete`` / ``session.add`` above. ``session.refresh(user)``
+    # ``session.delete`` / ``session.add`` above. ``session.refresh``
     # without ``attribute_names`` does not reload eager relationships,
     # so the cached ``user.forums`` could still reference the just-
     # deleted ``Forum`` rows when the serializer iterates them. Force a
     # selectin reload of just that collection so the response always
-    # reflects the post-commit state.
+    # reflects the post-commit state. All non-relationship columns are
+    # kept in memory by ``expire_on_commit=False`` and any
+    # ``server_default``s were already filled via SA 2.0 + asyncpg
+    # eager-defaults RETURNING on the INSERT path, so no broader
+    # ``refresh(user)`` is needed.
     if body.forums is not None:
         await session.refresh(user, attribute_names=["forums"])
     return user_to_out(user)

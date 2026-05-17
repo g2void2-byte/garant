@@ -239,7 +239,6 @@ async def create_broadcast(
         request=request,
     )
     await session.commit()
-    await session.refresh(bcast)
     return _to_out(bcast, admin)
 
 

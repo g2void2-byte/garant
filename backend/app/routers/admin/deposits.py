@@ -164,7 +164,6 @@ async def mark_paid(
         request=request,
     )
     await session.commit()
-    await session.refresh(d)
 
     u = await session.get(User, d.user_id)
     return _to_out(d, currency, u)
@@ -239,7 +238,6 @@ async def refund_deposit(
         request=request,
     )
     await session.commit()
-    await session.refresh(d)
 
     u = await session.get(User, d.user_id)
     return _to_out(d, currency, u)

@@ -234,7 +234,17 @@ async def create_deal(
         {"deal_id": deal.id},
     )
     await session.commit()
-    await session.refresh(deal)
+    # L-19 — eager-load the ``buyer`` / ``seller`` / ``currency``
+    # relationships so the caller's response serialiser
+    # (``_deal_out`` / ``_to_detail``) can render
+    # ``deal.buyer.username`` / ``deal.currency.code`` without
+    # triggering a sync lazy-load on this freshly-INSERTed row.
+    # ``lazy="selectin"`` only fires after the row is loaded via a
+    # SELECT; an INSERT-only path leaves the relationships unloaded
+    # even with ``expire_on_commit=False``. The narrow
+    # ``attribute_names=`` form lets us re-fetch *only* the
+    # relationships rather than re-SELECT every column.
+    await session.refresh(deal, attribute_names=["buyer", "seller", "currency"])
     return deal
 
 
@@ -275,7 +285,6 @@ async def accept_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         {"deal_id": deal.id},
     )
     await session.commit()
-    await session.refresh(deal)
     return deal
 
 
@@ -318,7 +327,6 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         {"deal_id": deal.id},
     )
     await session.commit()
-    await session.refresh(deal)
     return deal
 
 
@@ -364,7 +372,6 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         {"deal_id": deal.id},
     )
     await session.commit()
-    await session.refresh(deal)
     return deal
 
 
@@ -391,7 +398,6 @@ async def request_cancel(session: AsyncSession, deal: Deal, user: User, reason: 
         {"deal_id": deal.id},
     )
     await session.commit()
-    await session.refresh(deal)
     return deal
 
 
@@ -415,7 +421,6 @@ async def revoke_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
         {"deal_id": deal.id},
     )
     await session.commit()
-    await session.refresh(deal)
     return deal
 
 
@@ -456,7 +461,6 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
         {"deal_id": deal.id},
     )
     await session.commit()
-    await session.refresh(deal)
     return deal
 
 
@@ -508,7 +512,6 @@ async def start_arbitration(session: AsyncSession, deal: Deal, user: User, reaso
             {"deal_id": deal.id},
         )
     await session.commit()
-    await session.refresh(deal)
     return deal
 
 
@@ -584,7 +587,6 @@ async def resolve_arbitration(
         {"deal_id": deal.id},
     )
     await session.commit()
-    await session.refresh(deal)
     return deal
 
 

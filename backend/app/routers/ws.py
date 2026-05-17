@@ -200,7 +200,6 @@ async def websocket_endpoint(websocket: WebSocket):
             )
             session.add(user)
             await session.commit()
-            await session.refresh(user)
             # V11-L-15 — flag the first-touch auto-create path so ops
             # can correlate a spike in new ``User`` rows to the WS
             # endpoint specifically (vs the REST ``/api/me`` bootstrap).
