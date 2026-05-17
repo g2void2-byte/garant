@@ -30,6 +30,21 @@ docker compose up
 
 Code is bind-mounted, so edits trigger hot-reload without rebuilds. `docker compose down -v` wipes the Postgres volume.
 
+#### Injecting test-only env vars (e.g. `ADMIN_TOTP_BYPASS`)
+
+The committed `docker-compose.yml` does **not** forward `ADMIN_TOTP_BYPASS`, `ENVIRONMENT`, or many other test-only knobs into the backend container — only `ALLOW_UNSIGNED_INIT_DATA`. Putting them in `.env` is not enough on its own. Drop a `docker-compose.override.yml` next to it (gitignored — both `*.env.local` and `.env` are already covered by the existing `.gitignore`):
+
+```yaml
+# docker-compose.override.yml — local testing only, do NOT commit
+services:
+  backend:
+    environment:
+      ADMIN_TOTP_BYPASS: ${ADMIN_TOTP_BYPASS:-localtestbypass}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+```
+
+`docker compose` auto-merges `docker-compose.override.yml` into the main file. With this in place, `ADMIN_TOTP_BYPASS=<value>` in `.env` reaches the container and the admin TOTP gate accepts `X-Totp-Code: <value>`.
+
 ### Option B: Manual (without Docker)
 
 #### 1. Start PostgreSQL
@@ -52,6 +67,7 @@ ALLOWED_ORIGINS=http://localhost:5173,http://localhost:8080
 DATABASE_URL=postgresql+asyncpg://garant:garant@localhost:5432/garant
 RUN_BOT=0
 ALLOW_UNSIGNED_INIT_DATA=1
+ADMIN_TOTP_BYPASS=localtestbypass
 EOF
 ```
 
@@ -90,6 +106,25 @@ curl -H "Authorization: tma $SELLER_INIT" http://localhost:8080/api/me
 
 Users are auto-created on first API call.
 
+#### Admin user + TOTP bypass
+
+```bash
+# 1. Auto-provision via /api/me, then promote.
+ADMIN_INIT='user=%7B%22id%22%3A333%2C%22first_name%22%3A%22admin%22%2C%22username%22%3A%22admin%22%7D'
+curl -H "Authorization: tma $ADMIN_INIT" http://localhost:8080/api/me
+docker exec garant-postgres-1 psql -U garant -d garant -c \
+  "UPDATE users SET is_admin=true, totp_enabled=true, totp_secret='UNUSEDBYPASS' WHERE tg_user_id=333;"
+
+# 2. Drive admin endpoints with X-Totp-Code: <ADMIN_TOTP_BYPASS value>.
+#    The literal must match exactly what's in the backend container env
+#    (see "Injecting test-only env vars" above).
+curl -X POST http://localhost:8080/api/admin/wallets/1/adjust \
+  -H "Authorization: tma $ADMIN_INIT" \
+  -H "X-Totp-Code: localtestbypass" \
+  -H "Content-Type: application/json" \
+  -d '{"currency_code":"USDT","amount":50,"reason":"smoke"}'
+```
+
 ### Frontend (browser)
 
 Set `localStorage.dev_init_data` in the browser console before refreshing:
@@ -110,15 +145,55 @@ Then refresh the page. Without this, API calls from the frontend might return 42
 
 If you re-create the DB between tests, you need to repeat PIN setup. The PIN is stored server-side in the `pin_hash` column on `users`.
 
+#### Leaked-PIN blacklist (`is_pin_too_common`)
+
+`POST /api/pin/setup` and `/api/pin/reset/confirm` reject common 4-digit PINs (`is_pin_too_common` in `backend/app/pin.py`) with HTTP 400. Sequential patterns (`1234`, `4321`), repeats (`0000`, `1111`), and known-leaked PINs (`2580` is the central-column on a phone keypad) are all blocked. `/api/pin/check` does NOT enforce this, so existing weak PINs keep working.
+
+**Workaround for tests:** pick a random non-pattern PIN like `7349`, `5163`, `8246`. If `/setup` returns `{"detail":"Этот PIN слишком простой..."}` you've hit the blacklist — change the PIN, do not retry the same one.
+
 ## Setting User Balance for Deal Testing
 
 Deal creation requires buyer balance >= amount + commission (default 5%). Set
 balance directly with `psql` (inside the running postgres container):
 
 ```bash
-docker exec -i garant-pg psql -U garant -d garant -c \
+# Legacy fiat-only balance column on users.
+docker exec garant-postgres-1 psql -U garant -d garant -c \
   "UPDATE users SET balance=200 WHERE tg_user_id=111"
+
+# Multi-currency wallet (preferred — used by /api/deals).
+docker exec garant-postgres-1 psql -U garant -d garant -c \
+  "INSERT INTO user_balances(user_id, currency_id, amount, locked) VALUES (1, 1, 1000, 0) \
+   ON CONFLICT (user_id, currency_id) DO UPDATE SET amount=EXCLUDED.amount;"
 ```
+
+Currencies are seeded at startup (`SELECT id, code FROM currencies` — USDT=1, TON=2, BTC=3, ETH=4, USDC=5, …). The `user_balances` row stays at amount=0 until you create one explicitly OR until the user touches a path that calls `services_wallet.get_or_create_balance`.
+
+## Service Categories — Russian Slugs
+
+Seeded `categories.slug` values are Russian transliterations, NOT English. Listing the table:
+
+```
+slug                 | name
+---------------------|-------------------------
+avia-i-oteli         | Авиа и отели
+akkaunty-i-podpiski  | Аккаунты и подписки
+verifikaciya         | Верификация
+vizy-shengen         | Визы/шенген
+debetovye-karty      | Дебетовые карты
+dizajn               | Дизайн
+konsultacii          | Консультации
+kopirajting          | Копирайтинг
+obmenniki            | Обменники
+obuchenie-i-kursy    | Обучение и курсы
+perevody-tekstov     | Переводы текстов
+razrabotka           | Разработка
+smm-i-reklama        | SMM и реклама
+yuridicheskie-uslugi | Юридические услуги
+prochee              | Прочее   <-- the catch-all "Other"
+```
+
+**Workaround for tests:** use `prochee` as the catch-all when the actual category doesn't matter, NOT `other`. `POST /api/services {category_slug:"other"}` returns 404 "Категория не найдена".
 
 ## Deal State Machine
 
@@ -139,6 +214,10 @@ wait_confirm → (both confirm) → confirmed → (buyer completes) → success
 - Deal sum=100, commission=5% → buyer frozen=105, buyer balance -= 105
 - On complete: seller gets 100, buyer frozen -= 105
 - On cancel: buyer gets 105 refunded
+
+### Admin force-release terminal status
+
+`POST /api/admin/deals/{id}/force-release {reason}` lands the deal on `resolved_for_seller` (default) or `resolved_for_buyer`, NOT `completed` / `done`. The buyer/seller balance rows on the returned `_to_detail` include the freshly-released funds. Tests asserting on "the deal is terminal" should accept `resolved_for_seller | resolved_for_buyer | completed` rather than just `completed`.
 
 ## Key API Endpoints
 
@@ -172,6 +251,9 @@ wait_confirm → (both confirm) → confirmed → (buyer completes) → success
 | `/api/admin/services` | GET | Admin list services (**requires AdminUser**) |
 | `/api/admin/services/{id}/moderate` | POST | Moderate service (**requires AdminUser + TotpUser**) |
 | `/api/admin/withdrawals/{id}/decide` | POST | Approve/reject withdrawal (**requires AdminUser + TotpUser**) |
+| `/api/admin/deposits/{id}/mark-paid` | POST | Force-credit a pending deposit (**requires AdminUser + TotpUser**) |
+| `/api/admin/deals/{id}/force-release` | POST | Admin terminal resolution (**requires AdminUser + TotpUser**) |
+| `/api/admin/wallets/{id}/adjust` | POST | Adjust user balance (**requires AdminUser + TotpUser**) |
 | `/ws/notifications` | WS | Real-time notifications |
 
 ## Security Testing
@@ -213,7 +295,7 @@ Admin service moderation requires `AdminUser` dependency. Make a test user admin
 ```bash
 docker exec garant-pg psql -U garant -d garant -c "UPDATE users SET is_admin=true WHERE tg_user_id=111"
 ```
-The `/moderate` and `/decide` endpoints additionally require `TotpUser` (2FA) — cannot test via simple curl without TOTP setup.
+The `/moderate`, `/decide`, `/mark-paid`, `/force-release`, and `/wallets/{id}/adjust` endpoints additionally require `TotpUser` (2FA). You can use `ADMIN_TOTP_BYPASS` to skip the real TOTP step in dev — see "Injecting test-only env vars" + "Admin user + TOTP bypass" above.
 
 ### Testing webhook status validation (H-5)
 
@@ -258,6 +340,33 @@ docker exec garant-pg psql -U garant -d garant -c "UPDATE users SET last_login_a
 curl -s http://localhost:8080/api/users/testseller  # online=true
 curl -s http://localhost:8080/api/users/testbuyer   # online=false
 ```
+
+## Adversarial JSON-shape assertions for narrow refresh (L-19 audit template)
+
+PR #137 (L-19) replaced ~51 plain `session.refresh(obj)` calls with the rule
+"refresh only when a column has `onupdate` or a relationship was not
+SELECT-loaded". Six sites retain a narrow `session.refresh(obj, attribute_names=["a", "b"])` call, pinned by `tests/test_l19_no_redundant_refresh.py`. To audit any of them — or any future change to the rule — over the HTTP surface (not just at the pytest layer):
+
+1. Seed three users (buyer/seller/admin), USDT balance, set PIN for buyer/seller.
+2. For each retained site, drive its endpoint with a real `curl` and assert on the **response JSON** — the fields populated by the narrow refresh should be present, non-null, and reflect the just-mutated state. Example assertions for `POST /api/deals` (retained `["buyer","seller","currency"]`):
+   - `response.buyer == "buyer"`
+   - `response.seller == "seller"`
+   - `response.currency_code == "USDT"`
+
+   If any of these are missing/None, the narrow refresh is wrong (or missing). For `onupdate` columns (`admin/wallets.py:adjust_user_balance` → `["updated_at"]`), capture pre/post timestamps via `GET /api/admin/wallets/{id}` and assert `post > pre`.
+3. After running the matrix, scan backend logs for `MissingGreenlet` / `greenlet_spawn` / `500 Internal Server Error` — zero hits is the L-19 invariant.
+
+`run_l19_e2e.sh` + `rerun_l19_e2e.sh` (root of repo, gitignored as part of `.gitignore`'s wildcard for `*.sh` patterns *not* already committed) are working examples covering all 10 surfaces in PR #137. Re-use them whenever you touch refresh-related code or add a new `attribute_names=[...]` site.
+
+## Common test-script bugs to avoid
+
+Gotchas that caused false-positives during L-19 audit and would silently mask future regressions:
+
+- **Absolute balance assertions in multi-step tests.** If your test does `create_deal` (locks/debits buyer balance) and *then* `admin/adjust` (adds N), don't assert `post_amount == start + N` — it'll fail because the deal already moved the balance. Capture pre-balance via `GET /api/admin/wallets/{id}` immediately before the adjust and assert `post − pre == N` instead.
+- **Status set too narrow.** Don't assume `completed` is the only terminal status — admin force-release uses `resolved_for_seller`/`resolved_for_buyer`. Accept the full set when the path can land on more than one.
+- **English category slugs.** As noted above, use Russian slugs (`prochee`, `razrabotka`, …) not English.
+- **PIN blacklist.** As noted above, don't pick patterns like `2580`/`1234`/`0000`.
+- **Direct `wallet_deposits` inserts** must include the `provider` column (NOT NULL). The L-19 R-5 test seeds with `(user_id, currency_id, amount, status, external_id, created_at, provider)`.
 
 ## Frontend Routes
 
@@ -408,5 +517,5 @@ Override DB connection via env vars: `POSTGRES_HOST`, `POSTGRES_PORT`,
 - Telegram WebApp HapticFeedback/BackButton warnings appear in browser console — expected outside Telegram
 - WebSocket connection auto-reconnects with exponential backoff — may see connection closed/reopened in logs
 - The `arbitrate` endpoint uses a query parameter `reason`, not a request body
-- Admin withdrawal `/decide` and service `/moderate` endpoints require TotpUser (2FA) — cannot test via simple curl without TOTP setup
+- Admin withdrawal `/decide` and service `/moderate` endpoints require TotpUser (2FA) — `ADMIN_TOTP_BYPASS` env var short-circuits this via `X-Totp-Code: <bypass-value>` (see "Injecting test-only env vars" above)
 - `wallet_deposits` table has a NOT NULL `provider` column — direct psql inserts need to include it
