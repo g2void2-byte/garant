@@ -183,17 +183,29 @@ asyncio.run(_bootstrap_test_db())
 # ``notifier.push`` does ``asyncio.create_task(_safe_send_dm(...))`` which
 # would otherwise try to hit the real Telegram API with a fake bot token,
 # producing flaky stderr warnings and "Task was destroyed but it is pending"
-# noise. Monkey-patching at module level (before any router imports it)
-# keeps tests quiet and deterministic.
+# noise. The stub is installed per-test via ``monkeypatch`` so pytest
+# auto-reverts it after each test (V12-M7) — pre-fix the patch was
+# applied at module-import time with no teardown, so a future rename
+# of ``_safe_send_dm`` would silently fall back to the real call (and
+# any in-test ``monkeypatch.setattr`` against the symbol would leak
+# across tests).
 
-import backend.app.notifier as _notifier  # noqa: E402
 
-
-async def _noop_dm(*_args, **_kwargs):
+async def _noop_dm(*_args: object, **_kwargs: object) -> None:
     return None
 
 
-_notifier._safe_send_dm = _noop_dm  # type: ignore[assignment]
+@pytest.fixture(autouse=True)
+def _stub_telegram_dm(monkeypatch):
+    """Replace ``notifier._safe_send_dm`` with a no-op for the test duration.
+
+    Autouse so every test benefits without opting in; tests that need
+    to assert real DM dispatch can override the fixture or
+    ``monkeypatch.setattr`` to a different stub.
+    """
+    import backend.app.notifier as _notifier
+
+    monkeypatch.setattr(_notifier, "_safe_send_dm", _noop_dm)
 
 
 # ── 4. Per-test fresh data ────────────────────────────────────────────────

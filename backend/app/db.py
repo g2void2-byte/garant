@@ -7,6 +7,7 @@ from pathlib import Path
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -85,9 +86,27 @@ async def verify_migrations_at_head() -> None:
         logger.warning("alembic script directory has no head revision; skipping DB version check")
         return
 
-    async with engine.begin() as conn:
-        result = await conn.execute(text("SELECT version_num FROM alembic_version"))
-        rows = result.scalars().all()
+    # Pre-fix the bare ``SELECT`` propagated SQLAlchemy's
+    # ``ProgrammingError`` (wrapping asyncpg's ``UndefinedTableError``)
+    # when ``alembic_version`` didn't exist — typically a first boot
+    # against a fresh DB without the compose ``migrate`` service. The
+    # docstring above promises ``RuntimeError`` with a remediation
+    # hint; the raw driver error gave operators a stack trace and no
+    # signal pointing at the actual fix. Catching ``ProgrammingError``
+    # narrowly (rather than the broader ``DBAPIError``) keeps real
+    # connectivity / auth failures bubbling up as-is so they're not
+    # misattributed to a missing migration.
+    try:
+        async with engine.begin() as conn:
+            result = await conn.execute(text("SELECT version_num FROM alembic_version"))
+            rows = result.scalars().all()
+    except ProgrammingError as exc:
+        raise RuntimeError(
+            "alembic_version table does not exist — run 'alembic upgrade head' "
+            f"before starting the API (expected head: {expected}). "
+            "Compose users: the 'migrate' init-service is responsible for this; "
+            "manual setups can set RUN_MIGRATIONS_ON_STARTUP=true."
+        ) from exc
 
     if not rows:
         raise RuntimeError(
