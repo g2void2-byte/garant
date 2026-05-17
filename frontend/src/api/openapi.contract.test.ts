@@ -166,7 +166,6 @@ describe("OpenAPI contract", () => {
     "WalletDepositOut",
     "WalletWithdrawalOut",
     "PinStatusOut",
-    "InvoiceOut",
     "NotificationOut",
     "NotificationCountersOut",
     "TransferStatusOut",

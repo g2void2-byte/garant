@@ -2911,10 +2911,6 @@
             "title": "Bad",
             "type": "integer"
           },
-          "balance": {
-            "title": "Balance",
-            "type": "number"
-          },
           "ban_reason": {
             "anyOf": [
               {
@@ -3102,7 +3098,6 @@
           "photo_url",
           "banner_url",
           "description",
-          "balance",
           "deposit_total",
           "rating_auto",
           "rating_manual",
@@ -3134,10 +3129,6 @@
       "AdminUserListItem": {
         "description": "Single row in the ``/admin/users`` listing.",
         "properties": {
-          "balance": {
-            "title": "Balance",
-            "type": "number"
-          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3260,7 +3251,6 @@
           "is_vip",
           "is_banned",
           "is_frozen",
-          "balance",
           "deposit_total",
           "rating",
           "deals_total",
@@ -4062,19 +4052,6 @@
         "title": "DealResolveRequest",
         "type": "object"
       },
-      "DepositReq": {
-        "properties": {
-          "amount": {
-            "title": "Amount",
-            "type": "number"
-          }
-        },
-        "required": [
-          "amount"
-        ],
-        "title": "DepositReq",
-        "type": "object"
-      },
       "ForumOut": {
         "properties": {
           "name": {
@@ -4104,89 +4081,6 @@
           }
         },
         "title": "HTTPValidationError",
-        "type": "object"
-      },
-      "InvoiceCreateReq": {
-        "properties": {
-          "amount": {
-            "title": "Amount",
-            "type": "number"
-          }
-        },
-        "required": [
-          "amount"
-        ],
-        "title": "InvoiceCreateReq",
-        "type": "object"
-      },
-      "InvoiceOut": {
-        "properties": {
-          "amount": {
-            "title": "Amount",
-            "type": "number"
-          },
-          "asset": {
-            "title": "Asset",
-            "type": "string"
-          },
-          "invoice_id": {
-            "title": "Invoice Id",
-            "type": "string"
-          },
-          "pay_url": {
-            "title": "Pay Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "invoice_id",
-          "pay_url",
-          "amount",
-          "asset"
-        ],
-        "title": "InvoiceOut",
-        "type": "object"
-      },
-      "InvoiceStatusOut": {
-        "properties": {
-          "amount": {
-            "title": "Amount",
-            "type": "number"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "integer"
-          },
-          "paid_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Paid At"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "amount",
-          "status",
-          "created_at",
-          "paid_at"
-        ],
-        "title": "InvoiceStatusOut",
         "type": "object"
       },
       "MediaOut": {
@@ -5157,10 +5051,6 @@
             "title": "Bad",
             "type": "integer"
           },
-          "balance": {
-            "title": "Balance",
-            "type": "number"
-          },
           "banner_url": {
             "anyOf": [
               {
@@ -5312,7 +5202,6 @@
           "display_name",
           "photo_url",
           "banner_url",
-          "balance",
           "deposit",
           "description",
           "prefix",
@@ -5341,10 +5230,6 @@
           "bad": {
             "title": "Bad",
             "type": "integer"
-          },
-          "balance": {
-            "title": "Balance",
-            "type": "number"
           },
           "banner_url": {
             "anyOf": [
@@ -5467,7 +5352,6 @@
           "display_name",
           "photo_url",
           "banner_url",
-          "balance",
           "deposit",
           "description",
           "prefix",
@@ -12766,206 +12650,6 @@
         "summary": "Mark Read",
         "tags": [
           "notifications"
-        ]
-      }
-    },
-    "/api/payments/deposit": {
-      "get": {
-        "operationId": "list_deposits_api_payments_deposit_get",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": true,
-            "schema": {
-              "title": "Authorization",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/InvoiceStatusOut"
-                  },
-                  "title": "Response List Deposits Api Payments Deposit Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Deposits",
-        "tags": [
-          "payments"
-        ]
-      },
-      "post": {
-        "operationId": "manual_deposit_api_payments_deposit_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": true,
-            "schema": {
-              "title": "Authorization",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DepositReq"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvoiceStatusOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Manual Deposit",
-        "tags": [
-          "payments"
-        ]
-      }
-    },
-    "/api/payments/deposit/invoice": {
-      "post": {
-        "operationId": "create_deposit_invoice_api_payments_deposit_invoice_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": true,
-            "schema": {
-              "title": "Authorization",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InvoiceCreateReq"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvoiceOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Deposit Invoice",
-        "tags": [
-          "payments"
-        ]
-      }
-    },
-    "/api/payments/deposit/invoice/{invoice_id}": {
-      "get": {
-        "description": "Polling fallback for legacy USD invoices.\n\nWebhook (``POST /api/payments/webhook/cryptobot``) is the primary\npath; this endpoint stays so the legacy DepositPage can still pull\nstate directly if a webhook is missed.",
-        "operationId": "check_invoice_api_payments_deposit_invoice__invoice_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "invoice_id",
-            "required": true,
-            "schema": {
-              "title": "Invoice Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": true,
-            "schema": {
-              "title": "Authorization",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvoiceStatusOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Check Invoice",
-        "tags": [
-          "payments"
         ]
       }
     },

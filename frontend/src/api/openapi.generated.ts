@@ -1620,65 +1620,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/payments/deposit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Deposits */
-        get: operations["list_deposits_api_payments_deposit_get"];
-        put?: never;
-        /** Manual Deposit */
-        post: operations["manual_deposit_api_payments_deposit_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payments/deposit/invoice": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Deposit Invoice */
-        post: operations["create_deposit_invoice_api_payments_deposit_invoice_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payments/deposit/invoice/{invoice_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check Invoice
-         * @description Polling fallback for legacy USD invoices.
-         *
-         *     Webhook (``POST /api/payments/webhook/cryptobot``) is the primary
-         *     path; this endpoint stays so the legacy DepositPage can still pull
-         *     state directly if a webhook is missed.
-         */
-        get: operations["check_invoice_api_payments_deposit_invoice__invoice_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/payments/webhook/cryptobot": {
         parameters: {
             query?: never;
@@ -3129,8 +3070,6 @@ export interface components {
         AdminUserDetailOut: {
             /** Bad */
             bad: number;
-            /** Balance */
-            balance: number;
             /** Ban Reason */
             ban_reason: string | null;
             /** Banner Url */
@@ -3200,8 +3139,6 @@ export interface components {
          * @description Single row in the ``/admin/users`` listing.
          */
         AdminUserListItem: {
-            /** Balance */
-            balance: number;
             /**
              * Created At
              * Format: date-time
@@ -3531,11 +3468,6 @@ export interface components {
             /** Winner */
             winner: string;
         };
-        /** DepositReq */
-        DepositReq: {
-            /** Amount */
-            amount: number;
-        };
         /** ForumOut */
         ForumOut: {
             /** Name */
@@ -3547,38 +3479,6 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
-        };
-        /** InvoiceCreateReq */
-        InvoiceCreateReq: {
-            /** Amount */
-            amount: number;
-        };
-        /** InvoiceOut */
-        InvoiceOut: {
-            /** Amount */
-            amount: number;
-            /** Asset */
-            asset: string;
-            /** Invoice Id */
-            invoice_id: string;
-            /** Pay Url */
-            pay_url: string;
-        };
-        /** InvoiceStatusOut */
-        InvoiceStatusOut: {
-            /** Amount */
-            amount: number;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Id */
-            id: number;
-            /** Paid At */
-            paid_at: string | null;
-            /** Status */
-            status: string;
         };
         /** MediaOut */
         MediaOut: {
@@ -3933,8 +3833,6 @@ export interface components {
             admin: number;
             /** Bad */
             bad: number;
-            /** Balance */
-            balance: number;
             /** Banner Url */
             banner_url: string | null;
             /** Deals Count */
@@ -4031,8 +3929,6 @@ export interface components {
             admin: number;
             /** Bad */
             bad: number;
-            /** Balance */
-            balance: number;
             /** Banner Url */
             banner_url: string | null;
             /** Deals Count */
@@ -7538,140 +7434,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_deposits_api_payments_deposit_get: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InvoiceStatusOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    manual_deposit_api_payments_deposit_post: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DepositReq"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InvoiceStatusOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_deposit_invoice_api_payments_deposit_invoice_post: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["InvoiceCreateReq"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InvoiceOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    check_invoice_api_payments_deposit_invoice__invoice_id__get: {
-        parameters: {
-            query?: never;
-            header: {
-                authorization: string;
-            };
-            path: {
-                invoice_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InvoiceStatusOut"];
                 };
             };
             /** @description Validation Error */
