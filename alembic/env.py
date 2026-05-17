@@ -26,10 +26,17 @@ from backend.app.db import Base  # noqa: E402
 # V5-D-9 — fixed advisory-lock key. ``pg_advisory_lock(bigint)`` takes
 # any signed 64-bit integer; we use a constant unique to this codebase
 # so two ``alembic upgrade head`` processes during a rolling deploy
-# serialise on the same key. Computed once via
-# ``hashtext('garant_alembic_migrations')`` — written as a literal to
-# avoid an extra SELECT round-trip at every Alembic invocation.
-_ALEMBIC_ADVISORY_LOCK = 7237_4203_1881_4729
+# serialise on the same key.
+#
+# V12-M6 — the literal is the actual value of
+# ``SELECT hashtext('garant_alembic_migrations')`` (int4: 383612681).
+# Pre-fix the comment claimed the literal was derived from ``hashtext``
+# but ``7237_4203_1881_4729`` is a 63-bit value that ``hashtext`` (int4)
+# can't produce, so the claim was provably wrong and a future reader
+# couldn't reproduce the derivation. Writing the actual ``hashtext``
+# output here keeps the round-trip avoidance (a literal, no per-invocation
+# SELECT) and the documented derivation in sync.
+_ALEMBIC_ADVISORY_LOCK = 383_612_681
 
 config = context.config
 
