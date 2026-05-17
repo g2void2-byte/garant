@@ -67,7 +67,18 @@ async def create_deposit_invoice(
         ) as crypto:
             invoice = await crypto.create_invoice(asset="USDT", amount=body.amount)
     except CryptoPayError as e:
-        logger.error("CryptoBot error: %s", e)
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event/user without
+        # regexing the message body.
+        logger.error(
+            "CryptoBot error: %s",
+            e,
+            extra={
+                "event": "cryptobot.legacy_create_invoice.failed",
+                "user_id": user.id,
+                "amount": float(body.amount),
+            },
+        )
         raise HTTPException(502, f"Ошибка CryptoBot: {e}")
 
     # V5-B-3 — same pay_url fallback chain as the wallet path. The
@@ -87,6 +98,11 @@ async def create_deposit_invoice(
         logger.error(
             "CryptoBot create_invoice returned no pay_url for legacy USD invoice_id=%s",
             invoice.invoice_id,
+            extra={
+                "event": "cryptobot.legacy_create_invoice.empty_pay_url",
+                "provider_invoice_id": str(invoice.invoice_id),
+                "user_id": user.id,
+            },
         )
         raise HTTPException(502, "CryptoBot не вернул ссылку для оплаты")
 
@@ -162,7 +178,15 @@ async def check_invoice(invoice_id: int, user: CurrentUser, session: SessionDep)
                 else:
                     inv = locked
         except CryptoPayError as e:
-            logger.warning("CryptoBot poll error: %s", e)
+            logger.warning(
+                "CryptoBot poll error: %s",
+                e,
+                extra={
+                    "event": "cryptobot.legacy_poll.failed",
+                    "invoice_id": inv.id,
+                    "provider_invoice_id": inv.provider_invoice_id,
+                },
+            )
 
     return InvoiceStatusOut(
         id=inv.id,
@@ -219,11 +243,23 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
     # neutral message lets Crypto Pay surface the misconfig in retries
     # without leaking that the token is empty.
     if not secret:
-        logger.error("CryptoBot webhook: token not configured — refusing")
+        logger.error(
+            "CryptoBot webhook: token not configured — refusing",
+            extra={"event": "cryptobot.webhook.token_missing"},
+        )
         raise HTTPException(503, "Webhooks disabled (CryptoBot not configured)")
 
     if not verify_webhook_signature(secret, raw, signature):
-        logger.warning("CryptoBot webhook bad signature")
+        logger.warning(
+            "CryptoBot webhook bad signature",
+            extra={
+                "event": "cryptobot.webhook.bad_signature",
+                # Include the *presence* (boolean) rather than the
+                # actual signature value so log records don't leak
+                # the signature blob into Loki indexes.
+                "signature_present": bool(signature),
+            },
+        )
         raise HTTPException(401, "Bad signature")
 
     try:
@@ -257,5 +293,12 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
         result = await handle_invoice_expired(session, payload)
         return {"ok": True, **result}
 
-    logger.info("CryptoBot webhook ignored update_type=%s", update_type)
+    logger.info(
+        "CryptoBot webhook ignored update_type=%s",
+        update_type,
+        extra={
+            "event": "cryptobot.webhook.ignored",
+            "update_type": update_type or "unknown",
+        },
+    )
     return {"ok": True, "ignored": update_type or "unknown"}

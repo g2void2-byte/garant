@@ -72,7 +72,15 @@ async def _store_pending(user_id: int, secret: str) -> None:
             await r.setex(f"totp:pending:{user_id}", _PENDING_TTL, secret)
             return
         except Exception:  # noqa: BLE001
-            logger.warning("Redis setex failed for pending TOTP; using fallback")
+            # V11-L-15 — ``logger.exception`` (and structured ``event``)
+            # so the redis-fallback transition is traceable in JSON
+            # logs. Pre-fix the warning was a bare message which made
+            # it impossible to correlate a 2FA enrolment failure with
+            # the underlying redis hiccup.
+            logger.exception(
+                "Redis setex failed for pending TOTP; using fallback",
+                extra={"event": "totp.pending.redis_setex_failed", "user_id": user_id},
+            )
     _pending_secrets[user_id] = (secret, time.monotonic() + _PENDING_TTL)
 
 
@@ -85,7 +93,10 @@ async def _pop_pending(user_id: int) -> str | None:
             if val is not None:
                 return val if isinstance(val, str) else val.decode()
         except Exception:  # noqa: BLE001
-            logger.warning("Redis getdel failed for pending TOTP; using fallback")
+            logger.exception(
+                "Redis getdel failed for pending TOTP; using fallback",
+                extra={"event": "totp.pending.redis_getdel_failed", "user_id": user_id},
+            )
     entry = _pending_secrets.pop(user_id, None)
     if entry is None:
         return None

@@ -187,7 +187,19 @@ async def create_deposit_invoice(
         ) as crypto:
             invoice = await crypto.create_invoice(asset=currency.code, amount=amount)
     except CryptoPayError as e:
-        logger.error("CryptoBot invoice error: %s", e)
+        # V11-L-15 — ``extra={}`` puts the user/currency/amount onto the
+        # JSON log record as structured fields so Loki/Sentry queries
+        # can pivot by them without regexing the message body.
+        logger.error(
+            "CryptoBot invoice error: %s",
+            e,
+            extra={
+                "event": "cryptobot.create_invoice.failed",
+                "user_id": user.id,
+                "currency": currency.code,
+                "amount": amount,
+            },
+        )
         raise HTTPException(502, f"Ошибка CryptoBot: {e}")
 
     # V5-B-3 — CryptoBot normally returns at least one non-empty URL,
@@ -211,6 +223,12 @@ async def create_deposit_invoice(
             "CryptoBot create_invoice returned no pay_url for invoice_id=%s asset=%s",
             invoice.invoice_id,
             currency.code,
+            extra={
+                "event": "cryptobot.create_invoice.empty_pay_url",
+                "provider_invoice_id": str(invoice.invoice_id),
+                "user_id": user.id,
+                "currency": currency.code,
+            },
         )
         raise HTTPException(502, "CryptoBot не вернул ссылку для оплаты")
     deposit = WalletDeposit(
@@ -340,7 +358,15 @@ async def poll_deposit_status(session: AsyncSession, deposit: WalletDeposit) -> 
         ) as crypto:
             rows = await crypto.get_invoices(invoice_ids=[int(deposit.provider_invoice_id)])
     except CryptoPayError as e:
-        logger.warning("CryptoBot poll error: %s", e)
+        logger.warning(
+            "CryptoBot poll error: %s",
+            e,
+            extra={
+                "event": "cryptobot.poll_deposit.failed",
+                "deposit_id": deposit.id,
+                "provider_invoice_id": deposit.provider_invoice_id,
+            },
+        )
         return deposit
 
     if not rows:
@@ -502,6 +528,13 @@ async def create_withdrawal(
                 "auto-withdraw #%s CryptoBot transfer failed: %s — leaving pending",
                 withdrawal.id,
                 e,
+                extra={
+                    "event": "cryptobot.auto_withdraw.failed",
+                    "withdrawal_id": withdrawal.id,
+                    "user_id": user.id,
+                    "currency": currency.code,
+                    "amount": amount,
+                },
             )
         else:
             withdrawal.status = WalletWithdrawStatus.sent
