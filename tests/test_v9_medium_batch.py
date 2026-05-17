@@ -155,9 +155,10 @@ async def test_notifier_push_keeps_small_payload(client, monkeypatch):
         row = (
             await session.execute(select(Notification).where(Notification.id == notif_id))
         ).scalar_one()
-        assert row.payload is not None
-        assert '"deal_id"' in row.payload
-        assert '"amount"' in row.payload
+        # V11-M-10 — ``Notification.payload`` is now a JSONB column
+        # mapped to ``dict | None``; assert structural equality rather
+        # than substring matching on a JSON string.
+        assert row.payload == small
 
     assert publish_calls
     assert publish_calls[-1]["data"]["payload"] == small

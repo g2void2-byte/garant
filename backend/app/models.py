@@ -384,7 +384,12 @@ class Notification(Base):
     )
     title: Mapped[str] = mapped_column(String(256))
     body: Mapped[str] = mapped_column(Text, default="")
-    payload: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # V11-M-10 — JSONB so downstream consumers can index into the payload
+    # without a CAST and so Postgres rejects non-JSON garbage at write
+    # time. The notifier still serialises via ``json.dumps`` for the
+    # 4 KB cap check; SQLAlchemy converts ``dict`` ↔ ``jsonb`` on its
+    # own when the column type is JSONB.
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 

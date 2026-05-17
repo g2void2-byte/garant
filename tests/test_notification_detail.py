@@ -16,8 +16,6 @@ async def _seed_notification(
     payload: dict | None = None,
 ) -> int:
     """Insert a notification row directly via the ORM and return its id."""
-    import json
-
     from sqlalchemy import select
 
     from backend.app.db import async_session
@@ -27,12 +25,14 @@ async def _seed_notification(
         user = (
             await session.execute(select(User).where(User.tg_user_id == recipient_tg))
         ).scalar_one()
+        # V11-M-10 — ``Notification.payload`` is now JSONB; pass the
+        # dict straight through and let SQLAlchemy serialise.
         notif = Notification(
             recipient_id=user.id,
             type=NotificationType.deals,
             title=title,
             body=body,
-            payload=json.dumps(payload) if payload else None,
+            payload=payload,
         )
         session.add(notif)
         await session.commit()
