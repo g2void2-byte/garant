@@ -10,7 +10,8 @@ Connection failure is non-fatal: the helper logs a warning and returns
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Awaitable, cast
+from collections.abc import Awaitable
+from typing import TYPE_CHECKING, cast
 
 from .config import settings
 
