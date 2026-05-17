@@ -81,7 +81,13 @@ async def upsert_category(
         request=request,
     )
     await session.commit()
-    await session.refresh(existing)
+    # V11-L-19 — no ``session.refresh()`` here. ``expire_on_commit=False``
+    # keeps the in-memory ``existing`` attributes loaded after commit,
+    # and ``_cat_to_out`` only reads ``id`` / ``slug`` / ``name`` /
+    # ``icon`` — none of which are populated by a server-side default
+    # (``id`` was set by the post-``flush`` INSERT RETURNING, the
+    # rest came straight from the request body). The refresh used to
+    # be a free network round-trip that did nothing observable.
     return _cat_to_out(existing)
 
 
@@ -213,5 +219,8 @@ async def upsert_currency(
         request=request,
     )
     await session.commit()
-    await session.refresh(existing)
+    # V11-L-19 — same as the category upsert above: ``_cur_to_out``
+    # reads only the manually-set fields plus ``id`` (set by INSERT
+    # RETURNING during ``flush``). Nothing reads a server-side
+    # default column, so the post-commit ``refresh`` was redundant.
     return _cur_to_out(existing)

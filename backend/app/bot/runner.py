@@ -15,8 +15,16 @@ logger = logging.getLogger(__name__)
 
 
 async def start_polling() -> None:
+    # V11-L-15 — structured-logging fields so the JSON-logger
+    # downstream (Loki/Sentry) can pivot on event without
+    # regexing the message body. ``BOT_TOKEN`` is deliberately
+    # NOT in ``extra`` (token literal) — only the configured/
+    # placeholder shape is captured.
     if not settings.bot_token or settings.bot_token.startswith("0000"):
-        logger.warning("BOT_TOKEN not configured, skipping bot polling")
+        logger.warning(
+            "BOT_TOKEN not configured, skipping bot polling",
+            extra={"event": "bot.polling.unconfigured"},
+        )
         return
 
     bot = Bot(
@@ -28,10 +36,24 @@ async def start_polling() -> None:
     dp.callback_query.outer_middleware(MaintenanceMiddleware())
     dp.include_router(router)
 
-    logger.info("Starting aiogram polling...")
+    logger.info(
+        "Starting aiogram polling...",
+        extra={"event": "bot.polling.start"},
+    )
     try:
         await dp.start_polling(bot)
     except asyncio.CancelledError:
-        logger.info("Bot polling cancelled")
+        logger.info(
+            "Bot polling cancelled",
+            extra={"event": "bot.polling.cancelled"},
+        )
     except Exception as e:
-        logger.error("Bot polling error: %s", e)
+        logger.error(
+            "Bot polling error: %s",
+            e,
+            exc_info=True,
+            extra={
+                "event": "bot.polling.unexpected_exception",
+                "error_class": type(e).__name__,
+            },
+        )

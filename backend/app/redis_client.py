@@ -40,6 +40,7 @@ async def get_redis() -> Redis | None:
     if not settings.redis_url:
         _resolved = True
         return None
+    redacted_dsn = _redact_dsn(settings.redis_url)
     try:
         import redis.asyncio as aioredis
 
@@ -47,12 +48,23 @@ async def get_redis() -> Redis | None:
         await c.ping()
         _client = c
         _resolved = True
-        logger.info("redis: connected at %s", _redact_dsn(settings.redis_url))
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event without
+        # regexing the message body.
+        logger.info(
+            "redis: connected at %s",
+            redacted_dsn,
+            extra={"event": "redis.connect.ok", "redis_dsn": redacted_dsn},
+        )
     except Exception:  # noqa: BLE001
         logger.warning(
             "redis: %s unreachable, falling back to in-process state",
-            _redact_dsn(settings.redis_url),
+            redacted_dsn,
             exc_info=True,
+            extra={
+                "event": "redis.connect.failed",
+                "redis_dsn": redacted_dsn,
+            },
         )
         _client = None
         # Deliberately do NOT set ``_resolved = True`` here so the next
@@ -67,7 +79,10 @@ async def close_redis() -> None:
         try:
             await _client.aclose()
         except Exception:  # noqa: BLE001
-            logger.exception("redis: error closing client")
+            logger.exception(
+                "redis: error closing client",
+                extra={"event": "redis.close.failed"},
+            )
     _client = None
     _resolved = False
 

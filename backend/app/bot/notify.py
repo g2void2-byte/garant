@@ -57,11 +57,31 @@ async def send_dm(tg_user_id: int, text: str) -> bool:
     """
     bot = get_bot()
     if bot is None:
-        logger.warning("Bot is not configured; cannot send DM to %s", tg_user_id)
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event/recipient
+        # without regexing the message body. ``text`` is deliberately
+        # NOT in ``extra`` per the security contract above.
+        logger.warning(
+            "Bot is not configured; cannot send DM to %s",
+            tg_user_id,
+            extra={
+                "event": "bot.dm.unconfigured",
+                "tg_user_id": tg_user_id,
+            },
+        )
         return False
     try:
         await bot.send_message(tg_user_id, text)
         return True
     except TelegramAPIError as exc:
-        logger.warning("Failed to send DM to %s: %s", tg_user_id, exc)
+        logger.warning(
+            "Failed to send DM to %s: %s",
+            tg_user_id,
+            exc,
+            extra={
+                "event": "bot.dm.api_error",
+                "tg_user_id": tg_user_id,
+                "error_class": type(exc).__name__,
+            },
+        )
         return False
