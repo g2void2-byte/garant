@@ -2,7 +2,7 @@
 
 Implements the deal-related subset of the admin-panel spec:
 
-* List with filters (status, currency, sum range, date range, has-arbitration,
+* List with filters (status, currency, amount range, date range, has-arbitration,
   has-cancel-request) and pagination.
 * Detail view with a reconstructed event timeline, balance snapshot for
   both parties, and the full chat transcript.
@@ -243,7 +243,6 @@ async def _to_detail(session: AsyncSession, deal: Deal) -> AdminDealDetailOut:
         id=deal.id,
         status=deal.status.value,
         description=deal.description,
-        sum=deal.sum,
         currency_code=currency.code if currency else None,
         amount=deal.amount,
         commission_amount=deal.commission_amount,
@@ -273,7 +272,6 @@ def _to_list_item(deal: Deal) -> AdminDealListItem:
     return AdminDealListItem(
         id=deal.id,
         status=deal.status.value,
-        sum=deal.sum,
         currency_code=deal.currency.code if deal.currency else None,
         amount=deal.amount,
         commission_amount=deal.commission_amount,
@@ -352,8 +350,8 @@ async def list_deals(
     session: SessionDep,
     status: Annotated[str, Query()] = "any",
     currency: Annotated[str | None, Query()] = None,
-    min_sum: Annotated[float | None, Query()] = None,
-    max_sum: Annotated[float | None, Query()] = None,
+    min_amount: Annotated[float | None, Query()] = None,
+    max_amount: Annotated[float | None, Query()] = None,
     has_arbitration: Annotated[bool | None, Query()] = None,
     has_cancel_request: Annotated[bool | None, Query()] = None,
     buyer_id: Annotated[int | None, Query()] = None,
@@ -381,10 +379,10 @@ async def list_deals(
         if cur is None:
             raise HTTPException(404, f"Валюта {currency} не поддерживается")
         filters.append(Deal.currency_id == cur.id)
-    if min_sum is not None:
-        filters.append(Deal.sum >= min_sum)
-    if max_sum is not None:
-        filters.append(Deal.sum <= max_sum)
+    if min_amount is not None:
+        filters.append(Deal.amount >= min_amount)
+    if max_amount is not None:
+        filters.append(Deal.amount <= max_amount)
     if has_arbitration is True:
         filters.append(Deal.status == DealStatus.arbitration)
     if has_cancel_request is True:
@@ -828,7 +826,6 @@ async def delete_deal(
         "status": deal.status.value,
         "buyer_id": deal.buyer_id,
         "seller_id": deal.seller_id,
-        "sum": str(deal.sum) if deal.sum is not None else None,
         "currency": currency.code if currency else None,
         "amount": str(deal.amount) if deal.amount is not None else None,
         "commission_amount": (

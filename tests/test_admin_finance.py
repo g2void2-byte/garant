@@ -305,7 +305,6 @@ async def test_treasury_overview_matches_completed_deals(client):
             buyer_id=buyer_id,
             seller_id=seller_id,
             currency_id=cur.id,
-            sum=Decimal("100"),
             amount=Decimal("100"),
             commission_amount=Decimal("5"),
             status=DealStatus.completed,

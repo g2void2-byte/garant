@@ -35,7 +35,7 @@ async def test_sweep_cancels_stale_pending_confirmation(client):
             json={
                 "counterparty": "seller5",
                 "role": "buyer",
-                "sum": 30,
+                "amount": 30,
                 "currency_code": "USDT",
                 "pay_comission": "buyer",
             },

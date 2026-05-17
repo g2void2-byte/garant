@@ -298,7 +298,6 @@ class Deal(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     buyer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    sum: Mapped[float] = mapped_column(Numeric(14, 2))
     description: Mapped[str] = mapped_column(Text, default="")
     pay_commission: Mapped[PayCommission] = mapped_column(
         Enum(PayCommission), default=PayCommission.buyer
@@ -312,16 +311,15 @@ class Deal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
-    # Multi-currency fields (PR-3). ``currency_id`` is non-null on every
-    # deal created since the multi-currency rewrite; legacy USD-only
-    # rows that predated the rewrite were backfilled to ``USDT`` by the
-    # H-1 migration. The column stays nullable in the schema for
-    # safety (a future stalled migration window) but new deals always
-    # set it.
-    currency_id: Mapped[int | None] = mapped_column(
-        ForeignKey("currencies.id"), nullable=True, index=True
+    # Multi-currency fields (PR-3). After L-2 the legacy USD-only
+    # ``Deal.sum`` (Numeric(14,2)) column is gone; ``amount`` /
+    # ``currency_id`` are NOT NULL on every row because the L-2
+    # migration backfilled stragglers (``amount := sum`` for legacy
+    # rows with ``amount IS NULL``) before tightening nullability.
+    currency_id: Mapped[int] = mapped_column(
+        ForeignKey("currencies.id"), nullable=False, index=True
     )
-    amount: Mapped[float | None] = mapped_column(Numeric(28, 8), nullable=True)
+    amount: Mapped[float] = mapped_column(Numeric(28, 8), nullable=False)
     commission_amount: Mapped[float | None] = mapped_column(Numeric(28, 8), nullable=True)
     in_progress_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

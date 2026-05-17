@@ -37,7 +37,7 @@ async def _create_deal(client) -> tuple[int, str, str, str, str]:
         json={
             "counterparty": "chat_seller",
             "role": "buyer",
-            "sum": 10,
+            "amount": 10,
             "currency_code": "USDT",
             "pay_comission": "buyer",
             "description": "chat e2e",

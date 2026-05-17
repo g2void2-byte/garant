@@ -57,7 +57,7 @@ async def _make_deal(client) -> tuple[int, str, str, str, str]:
         json={
             "counterparty": "seller2",
             "role": "buyer",
-            "sum": 100,
+            "amount": 100,
             "description": "for admin testing",
             "pay_comission": "buyer",
             "currency_code": "USDT",
@@ -385,7 +385,6 @@ async def test_admin_delete_deal_writes_audit(client):
     # M-23: audit payload now stores amounts as Decimal-canonical strings
     # so JSONB keeps full ``Numeric`` precision. ``refunded`` is quantised
     # to currency.decimals (USDT=2), ``amount`` reads back at the column's
-    # full ``Numeric(28,8)`` scale, ``sum`` at ``Numeric(14,2)``.
+    # full ``Numeric(28,8)`` scale.
     assert payload["refunded"] == "105.00"
     assert payload["amount"] == "100.00000000"
-    assert payload["sum"] == "100.00"

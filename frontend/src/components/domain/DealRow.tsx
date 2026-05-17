@@ -68,7 +68,7 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
           </div>
           <div className="text-right shrink-0">
             <div className="text-accent font-bold">
-              {formatAmount(deal.amount ?? deal.sum, deal.currency_code ?? "USDT")}{" "}
+              {formatAmount(deal.amount, deal.currency_code ?? "USDT")}{" "}
               <span className="text-text-muted text-xs font-normal">
                 {deal.currency_code ?? ""}
               </span>

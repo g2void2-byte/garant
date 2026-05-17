@@ -114,7 +114,7 @@ export default function AdminDealDetailPage() {
       ) : (
         <div className="px-4 space-y-4 pb-8">
           <StatusBanner deal={deal} />
-          <BalanceSnapshotCard buyer={deal.buyer} seller={deal.seller} sum={deal.sum} commission={deal.commission_amount} />
+          <BalanceSnapshotCard buyer={deal.buyer} seller={deal.seller} amount={deal.amount} commission={deal.commission_amount} />
           {me?.is_admin && <ActionPanel deal={deal} />}
           <EventsTimeline deal={deal} />
           <MessagesFeed deal={deal} />
@@ -159,12 +159,12 @@ function StatusBanner({ deal }: { deal: AdminDealDetailDto }) {
 function BalanceSnapshotCard({
   buyer,
   seller,
-  sum,
+  amount,
   commission,
 }: {
   buyer: AdminBalanceSnapshotDto;
   seller: AdminBalanceSnapshotDto;
-  sum: string;
+  amount: string;
   commission: string | null;
 }) {
   return (
@@ -175,7 +175,7 @@ function BalanceSnapshotCard({
         <div className="flex items-center gap-2">
           <DollarSign size={14} className="text-text-muted" /> Сумма сделки
         </div>
-        <div className="font-semibold">${parseDecimal(sum).toFixed(2)}</div>
+        <div className="font-semibold">${parseDecimal(amount).toFixed(2)}</div>
       </div>
       {commission !== null && (
         <div className="col-span-2 bg-panel rounded-card p-3 flex items-center justify-between text-sm">

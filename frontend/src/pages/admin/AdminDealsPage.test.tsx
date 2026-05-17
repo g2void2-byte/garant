@@ -69,7 +69,6 @@ function makeDeal(
   return {
     id: 42,
     status: "in_progress",
-    sum: "150.00",
     currency_code: "USDT",
     amount: "150.00",
     commission_amount: "3.00",
@@ -127,13 +126,13 @@ describe("<AdminDealsPage />", () => {
   it("reads URL filters and passes them to useAdminDeals", () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
     renderPage([
-      "/admin/deals?status=in_progress&currency=USDT&min_sum=10&max_sum=500&has_arbitration=true&page=3",
+      "/admin/deals?status=in_progress&currency=USDT&min_amount=10&max_amount=500&has_arbitration=true&page=3",
     ]);
     expect(mockState.lastQuery).toEqual({
       status: "in_progress",
       currency: "USDT",
-      min_sum: 10,
-      max_sum: 500,
+      min_amount: 10,
+      max_amount: 500,
       has_arbitration: true,
       has_cancel_request: undefined,
       page: 3,
@@ -162,7 +161,7 @@ describe("<AdminDealsPage />", () => {
   it("renders active filter chips and removes them on click", async () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
     const user = userEvent.setup();
-    renderPage(["/admin/deals?currency=USDT&min_sum=10"]);
+    renderPage(["/admin/deals?currency=USDT&min_amount=10"]);
     expect(screen.getByRole("button", { name: /Валюта: USDT/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Мин: 10/ })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Валюта: USDT/ }));

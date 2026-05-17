@@ -37,7 +37,7 @@ async def _escalate_to_arbitration(
         json={
             "counterparty": "arb_seller",
             "role": "buyer",
-            "sum": sum_,
+            "amount": sum_,
             "description": "test arbitration",
             "pay_comission": "buyer",
             "currency_code": "USDT",

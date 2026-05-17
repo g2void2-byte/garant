@@ -123,7 +123,7 @@ async def test_concurrent_deal_creation_cannot_overdraw(client):
     body = {
         "counterparty": "race_seller",
         "role": "buyer",
-        "sum": 70.0,
+        "amount": 70.0,
         "description": "race test",
         "pay_comission": "buyer",
         "currency_code": "USDT",

@@ -112,7 +112,6 @@ function makeDeal(
     id: 10,
     status: "in_progress",
     description: "Buying widgets",
-    sum: "150.00",
     currency_code: "USDT",
     amount: "150.00",
     commission_amount: "3.00",

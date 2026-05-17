@@ -36,7 +36,6 @@ def _deal_out(deal: Deal, user_id: int) -> DealOut:
         id=deal.id,
         buyer=deal.buyer.username if deal.buyer else None,
         seller=deal.seller.username if deal.seller else None,
-        sum=float(deal.amount if deal.amount is not None else deal.sum),
         description=deal.description,
         pay_comission=deal.pay_commission.value,
         status=deal.status.value,
@@ -45,7 +44,7 @@ def _deal_out(deal: Deal, user_id: int) -> DealOut:
         role=role,
         created_at=deal.created_at,
         currency_code=currency_code,
-        amount=(float(deal.amount) if deal.amount is not None else None),
+        amount=float(deal.amount),
         commission_amount=(
             float(deal.commission_amount) if deal.commission_amount is not None else None
         ),
@@ -151,7 +150,7 @@ async def create_deal_endpoint(
             buyer,
             seller,
             body.currency_code,
-            body.sum,
+            body.amount,
             body.description,
             body.pay_comission,
         )

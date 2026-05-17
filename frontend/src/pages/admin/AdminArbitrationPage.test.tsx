@@ -79,7 +79,6 @@ function makeItem(
   return {
     id: 7,
     status: "arbitration",
-    sum: "150",
     currency_code: "USDT",
     amount: "147",
     commission_amount: "3",

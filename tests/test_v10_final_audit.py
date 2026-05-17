@@ -129,7 +129,7 @@ async def test_sweep_inactivity_uses_split_notifier(client):
         json={
             "counterparty": "seller32011",
             "role": "buyer",
-            "sum": 10,
+            "amount": 10,
             "currency_code": "USDT",
             "pay_comission": "buyer",
         },

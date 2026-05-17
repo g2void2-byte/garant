@@ -96,7 +96,6 @@ async def _seed_arbitration_board(client, *, n: int) -> list[int]:
             deal = Deal(
                 buyer_id=buyer.id,
                 seller_id=seller.id,
-                sum=10.0 + i,
                 description=f"arb #{i}",
                 pay_commission=PayCommission.buyer,
                 status=DealStatus.arbitration,
@@ -381,6 +380,11 @@ _DESTRUCTIVE_DOWNGRADES = (
     # ``user_balances(USDT)``. ``downgrade`` raises immediately;
     # restoring the pre-H-1 state requires a database snapshot.
     "h1a2b3c4d5e6_h1_retire_user_balance_invoice.py",
+    # L-2 — drops the legacy USD-only ``deals.sum`` column after
+    # backfilling ``deals.amount`` from it and tightening
+    # ``amount`` / ``currency_id`` to NOT NULL. ``downgrade`` raises
+    # immediately; restoring the pre-L-2 column requires a snapshot.
+    "l2c1d3e5f7a9_l2_drop_legacy_deal_sum.py",
 )
 
 _CONCURRENT_INDEX_MIGRATIONS = (

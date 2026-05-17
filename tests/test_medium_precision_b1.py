@@ -121,9 +121,10 @@ _BTC_LOSSY = Decimal("1234567890.12345678")
 async def _seed_btc_deal_in_progress(buyer_tg: int, seller_tg: int) -> int:
     """Create an in-progress BTC deal with ``_BTC_LOSSY`` locked from buyer.
 
-    Bypasses the public /api/deals creation flow because that uses Decimal
-    end-to-end and is bounded by ``Deal.sum`` (Numeric(14,2)). We need a
-    BTC ``Numeric(28,8)`` amount that surfaces float-round-trip loss.
+    Bypasses the public /api/deals creation flow because that path
+    uses the API ``DealCreate.amount`` parser; the raw fixture lets
+    us pin a BTC ``Numeric(28,8)`` amount that surfaces
+    float-round-trip loss.
     """
     async with async_session() as session:
         buyer_id = await get_user_id_by_tg(session, buyer_tg)
@@ -142,7 +143,6 @@ async def _seed_btc_deal_in_progress(buyer_tg: int, seller_tg: int) -> int:
         deal = Deal(
             buyer_id=buyer_id,
             seller_id=seller_id,
-            sum=Decimal("1.00"),
             description="precision regression fixture",
             pay_commission=PayCommission.seller,
             status=DealStatus.in_progress,
@@ -233,7 +233,6 @@ async def test_admin_delete_deal_audit_payload_is_string(client):
     # Decimal's canonical form, not a float repr.
     assert payload["amount"] == str(_BTC_LOSSY)
     assert payload["refunded"] == str(_BTC_LOSSY)
-    assert payload["sum"] == "1.00"
     # ``commission_amount`` stored as ``Decimal(0)`` round-trips as some
     # Decimal-shaped string ("0", "0E-8", ...). What matters is that it's
     # NOT a float and NOT lossy when parsed back.
