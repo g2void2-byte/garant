@@ -115,7 +115,6 @@ async def create_deposit_invoice(
     )
     session.add(db_invoice)
     await session.commit()
-    await session.refresh(db_invoice)
 
     return InvoiceOut(
         invoice_id=str(invoice.invoice_id),
@@ -214,7 +213,6 @@ async def manual_deposit(body: DepositReq, user: CurrentUser, session: SessionDe
     )
     session.add(inv)
     await session.commit()
-    await session.refresh(inv)
     return InvoiceStatusOut(
         id=inv.id,
         amount=float(inv.amount),

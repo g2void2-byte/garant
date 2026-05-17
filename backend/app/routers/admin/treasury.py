@@ -308,5 +308,4 @@ async def treasury_withdraw(
         request=request,
     )
     await session.commit()
-    await session.refresh(row)
     return _withdrawal_to_out(row, currency)

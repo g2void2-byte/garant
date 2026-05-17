@@ -68,14 +68,27 @@ def get_async_session() -> async_sessionmaker[AsyncSession]:
     issue a SELECT. The tradeoff is that the in-memory ``obj`` is now
     free to drift from the DB row (another transaction can update it
     mid-flight, or the commit itself can change a value via
-    ``DEFAULT`` / triggers / ``RETURNING``). Whenever the next code
-    path needs the canonical row state — usually right after the
-    commit that triggered a row-level change we then want to read —
-    call ``await session.refresh(obj)`` (or re-fetch via
-    ``session.get``). The notifier / serialiser layer assumes the
-    attribute access is non-blocking; refresh() is the explicit
-    escape hatch when we want a fresh read. New writers MUST audit
-    their post-commit reads against this rule.
+    ``DEFAULT`` / triggers / ``RETURNING``).
+
+    L-19 — combined with SA 2.0 + asyncpg "eager defaults" RETURNING,
+    this means INSERTs already populate the ORM instance with every
+    ``server_default``-backed column (``created_at``, enum defaults,
+    bigint counters, …) without a follow-up SELECT. ``UPDATE``\\s do
+    NOT auto-fetch ``onupdate=`` values; if your code needs the
+    DB-side ``updated_at`` (or any other column written by an
+    ``onupdate`` clause / trigger / external transaction), reach for
+    the *narrow* form ``await session.refresh(obj,
+    attribute_names=[...])`` so the reload only re-issues a SELECT
+    for the column(s) you actually need.
+
+    Plain ``await session.refresh(obj)`` post-commit is redundant
+    under this configuration — it round-trips the DB for columns the
+    ORM already has. Use the narrow ``attribute_names=`` form
+    whenever you genuinely need a fresh read, or fall through and
+    let ``expire_on_commit=False`` serve the cached values. The
+    regression test in ``tests/test_l19_no_redundant_refresh.py``
+    enforces this by checking every ``session.refresh`` call site
+    against an explicit allowlist.
     """
     global _async_session_factory
     if _async_session_factory is None:

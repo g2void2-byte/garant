@@ -371,5 +371,4 @@ async def decide_withdrawal(
         )
 
     await session.commit()
-    await session.refresh(w)
     return _to_out(w, currency, user)

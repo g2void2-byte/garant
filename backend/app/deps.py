@@ -221,7 +221,6 @@ async def get_current_user(
             dirty = True
         if dirty:
             await session.commit()
-            await session.refresh(user)
 
     # New-user path drops here directly: the row we just inserted
     # has the model defaults (``is_banned=False`` / ``is_frozen=False``),

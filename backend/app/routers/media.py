@@ -118,5 +118,4 @@ async def upload_media(
     )
     session.add(media)
     await session.commit()
-    await session.refresh(media)
     return _media_out(media)

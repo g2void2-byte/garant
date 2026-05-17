@@ -185,7 +185,6 @@ async def create_message(
     )
     session.add(msg)
     await session.commit()
-    await session.refresh(msg)
 
     out = await _serialize(session, msg)
 

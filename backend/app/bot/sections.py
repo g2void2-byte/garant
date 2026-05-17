@@ -84,7 +84,6 @@ async def _get_or_create_user(
         changed = True
     if changed:
         await session.commit()
-        await session.refresh(user)
     return user
 
 
@@ -351,7 +350,6 @@ async def _load_user(session: AsyncSession, tg_user_id: int) -> User:
     user = User(tg_user_id=tg_user_id, username=None, display_name="")
     session.add(user)
     await session.commit()
-    await session.refresh(user)
     return user
 
 
@@ -360,7 +358,6 @@ async def toggle_anonymous(tg_user_id: int) -> User:
         user = await _load_user(session, tg_user_id)
         user.is_anonymous_deals = not user.is_anonymous_deals
         await session.commit()
-        await session.refresh(user)
         return user
 
 
@@ -369,7 +366,6 @@ async def toggle_hidden(tg_user_id: int) -> User:
         user = await _load_user(session, tg_user_id)
         user.is_hidden_profile = not user.is_hidden_profile
         await session.commit()
-        await session.refresh(user)
         return user
 
 

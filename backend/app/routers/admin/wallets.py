@@ -263,7 +263,13 @@ async def adjust_user_balance(
         request=request,
     )
     await session.commit()
-    await session.refresh(bal)
+    # V11-L-15 — ``attribute_names=["updated_at"]`` narrows the
+    # post-commit reload to the one column whose value changed via
+    # ``onupdate=func.now()`` on UPDATE. With
+    # ``expire_on_commit=False`` + SA 2.0's eager-defaults RETURNING,
+    # the other columns of ``bal`` are already fresh in memory; the
+    # only DB-side change we still need to fetch is ``updated_at``.
+    await session.refresh(bal, attribute_names=["updated_at"])
     # V11-L-15 — operational log alongside the audit-log row so ops
     # can pulse-check admin balance edits without joining the audit
     # table. Numbers stringified to keep ``Numeric(28,8)`` precision.

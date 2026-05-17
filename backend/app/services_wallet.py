@@ -241,7 +241,6 @@ async def create_deposit_invoice(
     )
     session.add(deposit)
     await session.commit()
-    await session.refresh(deposit)
     return deposit
 
 
@@ -292,7 +291,6 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
         )
 
     await session.commit()
-    await session.refresh(deposit)
 
     return deposit
 
@@ -422,7 +420,6 @@ async def poll_deposit_status(session: AsyncSession, deposit: WalletDeposit) -> 
             return locked
         locked.status = WalletDepositStatus.expired
         await session.commit()
-        await session.refresh(locked)
         return locked
     return deposit
 
@@ -490,7 +487,6 @@ async def create_withdrawal(
     )
     session.add(withdrawal)
     await session.commit()
-    await session.refresh(withdrawal)
 
     # If auto-mode is on and CryptoBot is configured, fire the transfer
     # immediately so the user doesn't wait on an admin. Failures here
@@ -550,7 +546,6 @@ async def create_withdrawal(
                 {"withdrawal_id": withdrawal.id},
             )
             await session.commit()
-            await session.refresh(withdrawal)
             return withdrawal
 
     # Manual mode (or auto failed): queue for admin review.

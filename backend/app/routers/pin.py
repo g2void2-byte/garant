@@ -161,7 +161,6 @@ async def pin_setup(
     user.pin_reset_code_hash = None
     user.pin_reset_expires = None
     await session.commit()
-    await session.refresh(user)
     return _token_response(user)
 
 
@@ -195,7 +194,6 @@ async def pin_check(
     user.pin_attempts = 0
     user.pin_locked_until = None
     await session.commit()
-    await session.refresh(user)
     return _token_response(user)
 
 
@@ -257,7 +255,6 @@ async def pin_change(
         user.pin_attempts = 0
         user.pin_locked_until = None
         await session.commit()
-        await session.refresh(user)
         return _token_response(user)
     except HTTPException:
         # Already-handled flow control (wrong PIN, lockout). Commits
@@ -300,7 +297,6 @@ async def pin_reset_request(
     user.pin_reset_code_hash = hash_reset_code(code)
     user.pin_reset_expires = now + timedelta(seconds=settings.pin_reset_code_ttl_seconds)
     await session.commit()
-    await session.refresh(user)
 
     # V5-A-7 — ``code`` is the plaintext PIN-reset secret. It must
     # never appear in logs, breadcrumbs, or Sentry events. Only
@@ -384,5 +380,4 @@ async def pin_reset_confirm(
     user.pin_reset_code_hash = None
     user.pin_reset_expires = None
     await session.commit()
-    await session.refresh(user)
     return _token_response(user)

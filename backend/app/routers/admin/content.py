@@ -226,7 +226,6 @@ async def update_service(
         request=request,
     )
     await session.commit()
-    await session.refresh(service)
     # V11-L-15 — paired with the audit-log row written above, this
     # gives ops a real-time signal on admin mutations without
     # querying the ``admin_audit_log`` table. ``changed_fields`` is
@@ -364,7 +363,6 @@ async def create_review(
         request=request,
     )
     await session.commit()
-    await session.refresh(review)
     logger.info(
         "admin review.create ok",
         extra={
@@ -414,7 +412,6 @@ async def update_review(
         request=request,
     )
     await session.commit()
-    await session.refresh(review)
     logger.info(
         "admin review.edit ok",
         extra={
@@ -560,7 +557,6 @@ async def update_comment(
         request=request,
     )
     await session.commit()
-    await session.refresh(comment)
     logger.info(
         "admin comment.edit ok",
         extra={

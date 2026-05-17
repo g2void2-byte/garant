@@ -240,7 +240,6 @@ async def create_service(
     )
     session.add(service)
     await session.commit()
-    await session.refresh(service)
     return _service_out(service)
 
 
@@ -338,8 +337,11 @@ async def create_service_comment(
     )
     session.add(comment)
     await session.commit()
-    await session.refresh(comment)
-    # ``refresh`` doesn't materialise the relationship; reload explicitly.
+    # ``expire_on_commit=False`` + SA 2.0 eager-defaults RETURNING
+    # keep the column attributes (``id``, ``created_at``, …) fresh
+    # without an explicit ``refresh``. The relationship is not
+    # materialised by either of those mechanisms, so reload only the
+    # ``author`` collection explicitly.
     await session.refresh(comment, attribute_names=["author"])
     return _comment_out(comment)
 
@@ -417,7 +419,6 @@ async def update_service(
             service.ban_reason = None
 
     await session.commit()
-    await session.refresh(service)
     return _service_out(service)
 
 
@@ -490,5 +491,4 @@ async def admin_moderate(
     else:
         raise HTTPException(400, "Неизвестное действие")
     await session.commit()
-    await session.refresh(service)
     return _service_out(service)
