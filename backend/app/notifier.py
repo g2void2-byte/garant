@@ -38,13 +38,18 @@ logger = logging.getLogger(__name__)
 NOTIFICATION_PAYLOAD_MAX_BYTES = 4096
 
 
-def _serialize_payload(payload: dict[str, Any] | None) -> str | None:
-    """Serialise ``payload`` and enforce the 4 KB cap.
+def _payload_within_cap(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Validate that ``payload`` serialises under :data:`NOTIFICATION_PAYLOAD_MAX_BYTES`.
 
-    Returns ``None`` when there is no payload, or when the JSON exceeds
-    :data:`NOTIFICATION_PAYLOAD_MAX_BYTES` (we log a warning and drop the
-    payload rather than truncating — half-JSON is worse than no JSON
-    for downstream consumers).
+    Returns the payload unchanged when it fits, ``None`` when it is
+    missing, and ``None`` (with a ``logger.warning`` line) when the
+    JSON encoding exceeds the cap. V11-M-10 — ``Notification.payload``
+    is now a JSONB column mapped to ``dict | None``; the DB layer
+    serialises the dict itself, so we no longer hand a pre-encoded
+    string to the ORM (which would double-encode into a JSON-string
+    literal). The size check still happens through ``json.dumps`` so
+    the cap is enforced against the on-the-wire encoding rather than
+    Python object size.
     """
     if not payload:
         return None
@@ -56,7 +61,7 @@ def _serialize_payload(payload: dict[str, Any] | None) -> str | None:
             sorted(payload.keys()),
         )
         return None
-    return encoded
+    return payload
 
 
 def _dm_enabled(recipient: User, type_: NotificationType) -> bool:
@@ -99,14 +104,14 @@ async def insert(
     payload: dict[str, Any] | None = None,
 ) -> tuple[Notification, dict[str, Any] | None]:
     """Insert + flush a Notification row WITHOUT WS/DM dispatch."""
-    serialized_payload = _serialize_payload(payload)
-    ws_payload = payload if serialized_payload is not None else None
+    stored_payload = _payload_within_cap(payload)
+    ws_payload = stored_payload
     notif = Notification(
         recipient_id=recipient_id,
         type=type_,
         title=title,
         body=body,
-        payload=serialized_payload,
+        payload=stored_payload,
     )
     session.add(notif)
     await session.flush()
