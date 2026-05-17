@@ -249,7 +249,9 @@ async def test_admin_reject_clears_locked_until(client):
     """Reject must NULL out ``WalletWithdrawal.locked_until`` so the
     cool-down badge doesn't keep showing for a row whose funds have
     already been refunded to ``UserBalance.amount``."""
-    from datetime import datetime, timedelta
+    from datetime import timedelta
+
+    from backend.app.time_utils import utcnow
 
     admin_init = await _make_admin(client, tg=8201)
     bob_id = await _bootstrap_user(client, tg=8202, username="reject_bob")
@@ -262,7 +264,7 @@ async def test_admin_reject_clears_locked_until(client):
             amount=Decimal("12.5"),
             address="T" + "x" * 33,
             status=WalletWithdrawStatus.pending,
-            locked_until=datetime.utcnow() + timedelta(hours=72),
+            locked_until=utcnow() + timedelta(hours=72),
         )
         session.add(wd)
         bal = UserBalance(user_id=bob_id, currency_id=usdt.id, amount=Decimal("0"), locked=12.5)

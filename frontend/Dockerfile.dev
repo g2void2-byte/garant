@@ -3,8 +3,19 @@
 # Installs node_modules at build time, then expects the repo's frontend/
 # directory to be bind-mounted at /app at runtime. Vite hot-reload picks
 # up edits immediately.
+#
+# V12-L3 — base on ``node:20-slim`` (Debian) instead of
+# ``node:20-alpine`` (musl). The musl variant trips up any
+# dependency that ships only glibc native binaries — historically
+# ``@swc/core`` / ``esbuild`` / ``lightningcss`` have shipped musl
+# wheels at different cadences than the glibc ones, leading to
+# silent JS-fallback compiles that are 10-50x slower than the
+# native path. The slim variant is ~100 MB larger on disk but
+# matches what production node hosts use, so a future native dep
+# can't get accidentally fall back to a JS implementation just because
+# the dev image differs from prod.
 
-FROM node:20-alpine AS base
+FROM node:20-slim AS base
 
 WORKDIR /app
 

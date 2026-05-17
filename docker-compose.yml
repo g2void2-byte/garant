@@ -9,13 +9,22 @@
 # Copy `.env.compose.example` to `.env` and fill in BOT_TOKEN /
 # CRYPTOBOT_TOKEN before `docker compose up`.
 
+# V12-M10 — Postgres credentials are sourced from ``.env`` (or the
+# ambient shell). The defaults below match ``.env.compose.example`` so
+# ``docker compose up`` still works out of the box, but a rotated
+# password set in ``.env`` propagates to every consumer (postgres init,
+# migrate-service DSN, backend DSN, healthcheck) without touching the
+# compose file. Pre-fix the literal ``garant`` was hard-coded in three
+# places and the documentation in ``.env.compose.example`` was inert.
+x-postgres-env: &postgres-env
+  POSTGRES_USER: ${POSTGRES_USER:-garant}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-garant}
+  POSTGRES_DB: ${POSTGRES_DB:-garant}
+
 services:
   postgres:
     image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: garant
-      POSTGRES_PASSWORD: garant
-      POSTGRES_DB: garant
+    environment: *postgres-env
     # Bound to 127.0.0.1 so a dev's Postgres isn't reachable from
     # other machines on their LAN (and especially not from the wider
     # internet if compose ever runs on a server). Use
@@ -26,7 +35,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U garant -d garant"]
+      # ``$$`` escapes a literal ``$`` in compose's variable
+      # interpolation so the shell inside the container expands the
+      # variables that postgres itself sets at boot.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-garant} -d $${POSTGRES_DB:-garant}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -70,7 +82,12 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://garant:garant@postgres:5432/garant
+      # V12-M10 — DSN is built from the shared ``POSTGRES_*`` env so a
+      # rotated password in ``.env`` propagates without editing the
+      # compose file. Defaults match the hard-coded values pre-fix so
+      # an out-of-the-box ``docker compose up`` (no ``.env``) keeps
+      # working.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-garant}:${POSTGRES_PASSWORD:-garant}@postgres:5432/${POSTGRES_DB:-garant}
     volumes:
       - ./backend:/app/backend
       - ./alembic:/app/alembic
@@ -91,7 +108,10 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgresql+asyncpg://garant:garant@postgres:5432/garant
+      # V12-M10 — same shared DSN as the ``migrate`` service so a
+      # rotated ``POSTGRES_PASSWORD`` in ``.env`` is honoured by every
+      # consumer in the stack.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-garant}:${POSTGRES_PASSWORD:-garant}@postgres:5432/${POSTGRES_DB:-garant}
       # Empty REDIS_URL = in-process broadcast + rate-limit; set to
       # redis://redis:6379/0 to exercise the P3.5 multi-replica path.
       REDIS_URL: ${REDIS_URL:-}

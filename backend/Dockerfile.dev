@@ -22,12 +22,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System deps: build tools for asyncpg/Pillow wheels, curl for healthcheck.
+# V12-L2 — system deps trimmed to just ``curl`` (used by the
+# healthcheck) and ``ca-certificates`` (sets up the cert bundle pip
+# needs to talk to PyPI in case the slim image ever drops it).
+# Pre-fix ``build-essential`` + ``libpq-dev`` were carried "for
+# asyncpg/Pillow wheels", but both libraries ship manylinux2014
+# wheels for cp311/cp312 on amd64/arm64 — pip installs them without
+# ever invoking the toolchain, so the apt step was adding ~200 MB of
+# image bloat (and a fresh apt-cache hit on every rebuild) for no
+# upside. If a future dep ever does require a source build, add the
+# minimal toolchain back here rather than pre-installing it
+# speculatively for everyone.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential \
+        ca-certificates \
         curl \
-        libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # V12-L10 — install Python deps against the real package source instead

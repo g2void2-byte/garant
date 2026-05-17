@@ -165,9 +165,20 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
-      # Cache the Playwright browser binaries by the resolved
-      # ``@playwright/test`` version so we only re-download Chromium
-      # when the dependency is bumped.
+      # V12-L9 — Cache the Playwright browser binaries by the resolved
+      # ``@playwright/test`` version AND a hash of the committed
+      # ``package-lock.json``. Pre-fix the cache key was just the
+      # declared major.minor.patch of ``@playwright/test``; patch
+      # releases of Playwright sometimes bump the Chromium revision
+      # they download (changelog notes pinpoint the new revision but
+      # the npm version stays the same), so a cache-hit on the same
+      # ``1.60.0`` could resurrect an older Chromium binary while the
+      # current Playwright client expected the newer one — manifest
+      # as "Executable doesn't exist" or webdriver protocol mismatches
+      # in random e2e runs. Mixing the lockfile hash into the key
+      # invalidates the cache the moment ``npm ci`` materialises a new
+      # tarball for any dep, so we re-download Chromium whenever
+      # Playwright's own dep tree shifts.
       - name: Resolve Playwright version
         id: playwright-version
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
@@ -177,7 +188,9 @@ jobs:
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-
 
       - name: Install Chromium (Playwright)
         if: steps.playwright-cache.outputs.cache-hit != 'true'

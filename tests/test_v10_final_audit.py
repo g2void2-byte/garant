@@ -139,7 +139,9 @@ async def test_sweep_inactivity_uses_split_notifier(client):
 
     async with async_session() as session:
         deal = await session.get(Deal, deal_id)
-        deal.created_at = dt.datetime.utcnow() - dt.timedelta(days=30)
+        from backend.app.time_utils import utcnow
+
+        deal.created_at = utcnow() - dt.timedelta(days=30)
         await session.commit()
 
         affected = await sweep_inactivity(session)
@@ -358,7 +360,9 @@ async def test_sweep_user_last_ip_purges_stale(monkeypatch):
         uid = await get_user_id_by_tg(session, 45001)
         user = await session.get(User, uid)
         user.last_ip = "192.168.1.1"
-        user.last_login_at = dt.datetime.utcnow() - dt.timedelta(days=1)
+        from backend.app.time_utils import utcnow
+
+        user.last_login_at = utcnow() - dt.timedelta(days=1)
         await session.commit()
 
     async with async_session() as session:

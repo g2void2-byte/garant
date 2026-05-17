@@ -63,7 +63,58 @@ select = ["E", "F", "W", "I"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# V12-M2 — narrow the deprecation noise filter. The previous
+# wholesale ``ignore::DeprecationWarning`` /
+# ``ignore::PendingDeprecationWarning`` made every SQLAlchemy 2.x,
+# Pydantic v2, FastAPI, aiogram and stdlib Python 3.13/3.14
+# deprecation invisible — so an upstream migration warning we needed
+# to act on (e.g. ``MovedIn20Warning``) silently passed CI for the
+# entire window in which it would have been easy to fix. We now:
+#
+# 1. ``error`` for every ``DeprecationWarning`` and
+#    ``PendingDeprecationWarning`` from our own code by default so a
+#    new internal deprecation lights up immediately.
+# 2. Re-allow the known-noisy third-party sources we cannot do
+#    anything about in this repo (aiogram polling teardown, asyncio
+#    in 3.12/3.13, websockets handshake helper). Each ignore is
+#    scoped to a single module via the ``module:`` filter syntax so
+#    a new aiogram warning outside the listed path still trips the
+#    gate.
+#
+# Format reminder: ``action:message:category:module:lineno`` — empty
+# components default to "match anything", and the ``module`` filter
+# uses a regex anchored at the start of the dotted module path.
 filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::PendingDeprecationWarning",
+    "error::DeprecationWarning",
+    "error::PendingDeprecationWarning",
+    # aiogram 3.x raises a DeprecationWarning on every polling
+    # shutdown because dispatcher.stop_polling lands inside an
+    # ``asyncio.gather`` whose return type changed; nothing in our
+    # code reaches that path, the warning is purely about aiogram's
+    # own teardown.
+    "ignore::DeprecationWarning:aiogram",
+    # asyncio's own ``get_event_loop`` deprecation fires from
+    # asyncpg / fakeredis during fixture teardown on Python 3.12+;
+    # we can't migrate either library off the legacy API from this
+    # repo.
+    "ignore::DeprecationWarning:asyncio",
+    "ignore::DeprecationWarning:asyncpg",
+    "ignore::DeprecationWarning:fakeredis",
+    # websockets ``loop`` parameter deprecation surfaces during the
+    # uvicorn-driven WS test server bring-up; the parameter is
+    # threaded through by websockets itself, not by us.
+    "ignore::DeprecationWarning:websockets",
+    # Pydantic v2 occasionally emits ``PydanticDeprecatedSince20``
+    # for compatibility shims that we already migrated; the warning
+    # comes from FastAPI's response-model machinery and is fixed
+    # upstream in newer FastAPI versions.
+    "ignore::DeprecationWarning:fastapi",
+    "ignore::DeprecationWarning:pydantic",
+    # ``starlette.formparsers`` imports ``multipart`` (the legacy
+    # package name); the new ``python_multipart`` package warns on
+    # import that the legacy name is deprecated. We already declare
+    # ``python-multipart`` in ``pyproject.toml`` — the warning is
+    # purely about starlette's import path which we don't control.
+    "ignore::PendingDeprecationWarning:multipart",
+    "ignore::PendingDeprecationWarning:starlette",
 ]

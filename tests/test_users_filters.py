@@ -15,6 +15,7 @@ from sqlalchemy import select
 
 from backend.app.db import async_session
 from backend.app.models import User
+from backend.app.time_utils import utcnow
 
 
 async def _make_user(
@@ -149,7 +150,7 @@ async def test_status_invalid(client):
 
 @pytest.mark.asyncio
 async def test_registration_date_range(client):
-    now = datetime.utcnow()
+    now = utcnow()
     await _make_user(1000, "old", created_at=now - timedelta(days=365))
     await _make_user(1001, "recent", created_at=now - timedelta(days=2))
 
