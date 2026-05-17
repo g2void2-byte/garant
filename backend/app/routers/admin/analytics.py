@@ -16,6 +16,7 @@ client-side.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
@@ -41,6 +42,8 @@ from ...schemas import (
     AdminAnalyticsTopUserOut,
 )
 from ...time_utils import utcnow
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/admin/analytics",
@@ -70,10 +73,28 @@ async def _primary_currency_id(session) -> int | None:
     ``None`` if the seed never ran. Callers gate the financial sums on
     this so an unseeded DB produces zeros instead of mixed-currency
     garbage.
+
+    V11-L-15 — when the seed is missing we emit a single structured
+    ``warning`` per call so ops can distinguish "no financial data
+    today" from "USDT row was deleted / migration failed". The event
+    name is fixed so a Loki / Grafana alert can fire on a non-zero
+    rate. We deliberately do NOT include the raw config value
+    (``_PRIMARY_CURRENCY_CODE``) in ``extra`` beyond the constant
+    above — the bounded string is fine to index.
     """
-    return (
+    cur_id = (
         await session.execute(select(Currency.id).where(Currency.code == _PRIMARY_CURRENCY_CODE))
     ).scalar_one_or_none()
+    if cur_id is None:
+        logger.warning(
+            "admin analytics: primary currency %s not seeded — financial sums will be zero",
+            _PRIMARY_CURRENCY_CODE,
+            extra={
+                "event": "admin.analytics.primary_currency_missing",
+                "primary_currency_code": _PRIMARY_CURRENCY_CODE,
+            },
+        )
+    return cur_id
 
 
 @router.get("/kpi", response_model=AdminAnalyticsKpiOut)

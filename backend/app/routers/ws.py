@@ -50,31 +50,75 @@ async def _read_auth_frame(websocket: WebSocket) -> str | None:
 
     Returns the raw initData string on success, or ``None`` after
     closing the socket with the appropriate ``4001`` reason.
+
+    Every rejection path emits a ``logger.warning`` with
+    ``extra={"event": "ws.handshake.*"}`` so the JSON-logger
+    downstream (Loki/Sentry) can pivot on the specific failure mode
+    without scraping the human-readable close ``reason`` out of
+    nginx / ingress access logs. Sensitive fields (the raw
+    ``init_data`` blob, decoded Telegram user payload) are
+    deliberately NOT in ``extra`` — they're either an HMAC-signed
+    secret or PII and don't belong in JSON-logger indexes.
     """
     try:
         raw = await asyncio.wait_for(websocket.receive_text(), timeout=WS_AUTH_TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
+        logger.warning(
+            "ws handshake: auth frame timeout",
+            extra={
+                "event": "ws.handshake.auth_timeout",
+                "timeout_seconds": WS_AUTH_TIMEOUT_SECONDS,
+            },
+        )
         await websocket.close(code=4001, reason="Auth timeout")
         return None
     except WebSocketDisconnect:
         return None
 
     if len(raw) > WS_AUTH_MAX_BYTES:
+        logger.warning(
+            "ws handshake: auth payload too large (%d bytes, cap %d)",
+            len(raw),
+            WS_AUTH_MAX_BYTES,
+            extra={
+                "event": "ws.handshake.payload_too_large",
+                "size_bytes": len(raw),
+                "cap_bytes": WS_AUTH_MAX_BYTES,
+            },
+        )
         await websocket.close(code=4001, reason="Auth payload too large")
         return None
 
     try:
         payload = json.loads(raw)
     except (json.JSONDecodeError, ValueError):
+        logger.warning(
+            "ws handshake: auth frame not valid JSON",
+            extra={"event": "ws.handshake.invalid_json"},
+        )
         await websocket.close(code=4001, reason="Auth: invalid JSON")
         return None
 
     if not isinstance(payload, dict) or payload.get("type") != "auth":
+        logger.warning(
+            "ws handshake: bad envelope (type=%r)",
+            (payload.get("type") if isinstance(payload, dict) else None),
+            extra={
+                "event": "ws.handshake.bad_envelope",
+                # ``type`` is a fixed-cardinality enum-ish value
+                # ("auth" / "ping" / etc); safe to index.
+                "received_type": (payload.get("type") if isinstance(payload, dict) else None),
+            },
+        )
         await websocket.close(code=4001, reason="Auth: bad envelope")
         return None
 
     init_data = payload.get("init_data")
     if not isinstance(init_data, str) or not init_data:
+        logger.warning(
+            "ws handshake: missing init_data in auth frame",
+            extra={"event": "ws.handshake.missing_init_data"},
+        )
         await websocket.close(code=4001, reason="Auth: missing init_data")
         return None
 
@@ -109,11 +153,29 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         tg_user = verify_init_data(init_data)
     except InitDataError as e:
+        # V11-L-15 — structured event so JSON-logger pipelines can
+        # alert on a burst of HMAC / TTL failures (forged or replayed
+        # initData). ``reason`` is the human-readable enum from
+        # ``InitDataError`` (``hash mismatch``, ``auth_date too old``,
+        # …) — fixed-cardinality and safe to index. The raw blob is
+        # intentionally NOT in ``extra``.
+        logger.warning(
+            "ws handshake: initData verification failed (%s)",
+            e,
+            extra={
+                "event": "ws.handshake.verify_failed",
+                "reason": str(e),
+            },
+        )
         await websocket.close(code=4001, reason=str(e))
         return
 
     tg_user_id = tg_user.get("id")
     if not tg_user_id:
+        logger.warning(
+            "ws handshake: verified initData missing user id",
+            extra={"event": "ws.handshake.no_user_id"},
+        )
         await websocket.close(code=4001, reason="No user id")
         return
 
@@ -139,6 +201,17 @@ async def websocket_endpoint(websocket: WebSocket):
             session.add(user)
             await session.commit()
             await session.refresh(user)
+            # V11-L-15 — flag the first-touch auto-create path so ops
+            # can correlate a spike in new ``User`` rows to the WS
+            # endpoint specifically (vs the REST ``/api/me`` bootstrap).
+            logger.info(
+                "ws handshake: auto-created user on first WS connect",
+                extra={
+                    "event": "ws.handshake.user_autocreated",
+                    "user_id": user.id,
+                    "tg_user_id": tg_user_id,
+                },
+            )
         user_id = user.id
 
     # ACK so the client knows the channel is live and can flip its UI
@@ -147,6 +220,18 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.send_text(json.dumps({"type": "auth", "ok": True}))
     except WebSocketDisconnect:
         return
+
+    # V11-L-15 — handshake success counter. Paired with the negative
+    # ``ws.handshake.*`` events above so a single Loki / Grafana
+    # query can produce an auth success-rate panel.
+    logger.info(
+        "ws handshake: ok",
+        extra={
+            "event": "ws.handshake.ok",
+            "user_id": user_id,
+            "tg_user_id": tg_user_id,
+        },
+    )
 
     # Pass ``auth_date`` to the manager so the per-socket age-check
     # reaper can evict sockets whose initData has aged past the cap

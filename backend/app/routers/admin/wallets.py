@@ -18,6 +18,7 @@ two parallel adjustments can't race on the same column.
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -35,6 +36,8 @@ from ...schemas import (
     AdminWalletListOut,
 )
 from ...sql_filters import escape_like_wildcards
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/admin/wallets",
@@ -179,6 +182,20 @@ async def adjust_user_balance(
         await session.execute(select(Currency).where(Currency.code == body.currency_code))
     ).scalar_one_or_none()
     if currency is None:
+        # V11-L-15 — a bad currency_code points at either a stale
+        # admin UI (currency removed/renamed) or a manual API call
+        # with a typo. ``Currency.code`` is a closed catalogue so
+        # the unknown-code count is bounded; safe to index.
+        logger.warning(
+            "admin wallet.adjust: unknown currency_code %r",
+            body.currency_code,
+            extra={
+                "event": "admin.wallet.adjust.currency_not_found",
+                "actor_id": admin.id,
+                "target_user_id": user.id,
+                "currency_code": body.currency_code,
+            },
+        )
         raise HTTPException(404, f"Валюта {body.currency_code} не найдена")
 
     # Lock the balance row for the duration of the adjustment so a
@@ -202,6 +219,22 @@ async def adjust_user_balance(
     delta = Decimal(str(body.amount))
     new_amount = before_amount + delta
     if new_amount < 0:
+        # V11-L-15 — flag rejected adjustments so a JSON-logger
+        # pipeline can alert when an admin repeatedly attempts to
+        # debit below zero (typo, off-by-decimals, or someone
+        # exploring the API). Numbers are stringified to preserve
+        # full ``Numeric(18,8)`` precision in the log record.
+        logger.warning(
+            "admin wallet.adjust: insufficient funds",
+            extra={
+                "event": "admin.wallet.adjust.insufficient_funds",
+                "actor_id": admin.id,
+                "target_user_id": user.id,
+                "currency": currency.code,
+                "before_amount": str(before_amount),
+                "delta": str(delta),
+            },
+        )
         raise HTTPException(
             400,
             f"Недостаточно средств: текущий баланс {before_amount}, корректировка {delta}",
@@ -231,4 +264,19 @@ async def adjust_user_balance(
     )
     await session.commit()
     await session.refresh(bal)
+    # V11-L-15 — operational log alongside the audit-log row so ops
+    # can pulse-check admin balance edits without joining the audit
+    # table. Numbers stringified to keep ``Numeric(18,8)`` precision.
+    logger.info(
+        "admin wallet.adjust ok",
+        extra={
+            "event": "admin.wallet.adjust.ok",
+            "actor_id": admin.id,
+            "target_user_id": user.id,
+            "currency": currency.code,
+            "delta": str(delta),
+            "before_amount": str(before_amount),
+            "after_amount": str(new_amount),
+        },
+    )
     return _balance_row(user, currency, bal)

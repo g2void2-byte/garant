@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 
@@ -8,6 +10,8 @@ from ..models import Review, User
 from ..rate_limit import RLReviewsList
 from ..schemas import ReviewCreate, ReviewOut
 from ..services import post_review
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 
@@ -86,5 +90,22 @@ async def create_review(body: ReviewCreate, author: CurrentUser, session: Sessio
             body.deal_id,
         )
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        # V11-L-15 — surface the rejection reason as a structured event
+        # so JSON-logger pipelines can spot a spike in "duplicate review"
+        # / "deal not completed" / "not a party to the deal" failures
+        # without grepping the message body. The free-text ``str(e)`` is
+        # echoed to the client as the 400 body, so it adds no new PII
+        # vs the existing access log line.
+        logger.warning(
+            "reviews create: rejected by post_review (%s)",
+            e,
+            extra={
+                "event": "reviews.create.rejected",
+                "author_id": author.id,
+                "target_id": target.id,
+                "deal_id": body.deal_id,
+                "reason": str(e),
+            },
+        )
+        raise HTTPException(400, str(e))  # noqa: B904
     return _review_out(review)
