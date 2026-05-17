@@ -4,8 +4,14 @@
 # expects the repository to be bind-mounted at /app at runtime so
 # `uvicorn --reload` picks up source edits without rebuilds.
 #
-# `alembic upgrade head` runs on container start (see CMD); the FastAPI
-# lifespan also runs it, so it's idempotent if you bypass the CMD.
+# V12-H3 — migrations are NOT applied by this image's CMD. The compose
+# stack runs `alembic upgrade head` in a dedicated one-shot `migrate`
+# service that the backend depends on (see ``docker-compose.yml``); the
+# backend container only verifies the DB is at the expected head
+# revision during its lifespan (``verify_migrations_at_head``). Manual
+# (non-compose) setups can either run alembic themselves before starting
+# uvicorn, or keep the legacy in-lifespan upgrade by exporting
+# ``RUN_MIGRATIONS_ON_STARTUP=true`` (the default).
 
 FROM python:3.12-slim AS base
 
@@ -49,7 +55,11 @@ RUN pip install --upgrade pip \
 
 EXPOSE 8080
 
-# Entrypoint: apply migrations, then start uvicorn with reload. The
-# FastAPI lifespan also runs ``alembic upgrade head`` so this is
-# idempotent if you bypass CMD (e.g. ``docker run ... uvicorn ...``).
-CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.app.main:app --host 0.0.0.0 --port 8080 --reload"]
+# Entrypoint: just uvicorn. Migrations are owned by the compose
+# ``migrate`` init-service (see ``docker-compose.yml``); the lifespan
+# (``RUN_MIGRATIONS_ON_STARTUP=false`` in compose) verifies the DB is
+# at the expected alembic head before serving traffic. For manual /
+# non-compose setups, run ``alembic upgrade head`` yourself before
+# uvicorn or set ``RUN_MIGRATIONS_ON_STARTUP=true`` to restore the
+# legacy in-lifespan upgrade.
+CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port 8080 --reload"]

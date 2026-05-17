@@ -63,8 +63,32 @@ jobs:
       - name: Lint (ruff)
         run: ruff check backend/ tests/ alembic/
 
+      # CI-3 — backend type-checking gate. ``pyrightconfig.json`` at
+      # the repo root pins the rule set we currently pass; tightening
+      # is incremental (the SQLAlchemy 2 ``Decimal`` vs ``float`` rule
+      # families are intentionally silenced for now, see the config).
+      # The package is installed as part of the ``[dev]`` extras above
+      # so this step doesn't shell out to ``npm`` or pull a separate
+      # toolchain.
+      - name: Type-check (pyright)
+        run: pyright
+
       - name: Alembic upgrade head (verify migrations apply cleanly)
         run: alembic upgrade head
+
+      # V12-L7 / V12-H5 (part) — OpenAPI drift gate. The committed
+      # ``frontend/openapi.json`` is the canonical contract between
+      # backend and frontend; the frontend uses it to regenerate
+      # ``src/api/openapi.generated.ts`` and to validate its e2e
+      # fixtures. Regenerating from the live FastAPI app and diffing
+      # against the committed copy catches the cases where a backend
+      # route / schema change landed without refreshing the contract.
+      - name: OpenAPI schema drift check
+        run: |
+          python scripts/dump_openapi.py
+          git diff --exit-code -- frontend/openapi.json \
+            || (echo "::error::frontend/openapi.json is out of date — run 'python scripts/dump_openapi.py' and commit." \
+                && exit 1)
 
       - name: Tests (pytest)
         run: pytest -v
@@ -101,6 +125,20 @@ jobs:
       # ``noEmit`` was off in a referenced project.
       - name: Typecheck (tsc)
         run: npm run typecheck
+
+      # V12-L7 / V12-H5 (part) — frontend half of the OpenAPI drift
+      # gate. Regenerates ``src/api/openapi.generated.ts`` from the
+      # committed ``frontend/openapi.json`` (the backend job is what
+      # validates that the JSON itself matches the live FastAPI app)
+      # and fails if the file drifted. We don't shell out to python
+      # here so this step stays self-contained — the only contract is
+      # against the JSON snapshot already in the working tree.
+      - name: Frontend API types drift check
+        run: |
+          npx openapi-typescript openapi.json -o src/api/openapi.generated.ts
+          git diff --exit-code -- src/api/openapi.generated.ts \
+            || (echo "::error::src/api/openapi.generated.ts is out of date — run 'npm run generate:api-types' and commit." \
+                && exit 1)
 
       - name: Unit + component tests (vitest)
         run: npm run test:run

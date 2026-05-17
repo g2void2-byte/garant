@@ -10,7 +10,8 @@ Escrow-сервис для безопасных сделок между поль
 
 ## Quick start — Docker Compose (recommended)
 
-One command brings up the full stack (Postgres + Redis + backend + frontend):
+One command brings up the full stack (Postgres + Redis + a one-shot
+`migrate` init-service + backend + frontend):
 
 ```bash
 git clone https://github.com/g2void2-byte/garant.git && cd garant
@@ -18,10 +19,16 @@ cp .env.compose.example .env          # optional: fill in BOT_TOKEN / CRYPTOBOT_
 docker compose up
 ```
 
-- Backend: <http://localhost:8080> (uvicorn `--reload`, alembic runs on boot)
+- Backend: <http://localhost:8080> (uvicorn `--reload`)
 - Frontend: <http://localhost:5173> (vite hot-reload)
 - Postgres: `localhost:5432` (user/pass/db = `garant`)
 - Redis: `localhost:6379` (set `REDIS_URL=redis://redis:6379/0` in `.env` to enable the P3.5 path)
+
+`alembic upgrade head` runs in the dedicated `migrate` service (which
+exits after applying migrations); the backend service waits on it via
+`depends_on: service_completed_successfully`. The backend lifespan
+only verifies the DB is at the expected head revision before serving
+traffic. To rerun migrations manually: `docker compose up migrate`.
 
 Code is bind-mounted, so edits trigger hot-reload without rebuilds. Add `-d` to detach. Use `docker compose logs -f backend` to tail. Use `docker compose down -v` to wipe the Postgres volume.
 

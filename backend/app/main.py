@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from .config import settings
-from .db import async_session, run_migrations
+from .db import async_session, run_migrations, verify_migrations_at_head
 from .redis_client import close_redis
 from .seed import run_seed
 from .ws import manager as ws_manager
@@ -195,7 +195,18 @@ async def lifespan(app: FastAPI):
             "and is dev-only."
         )
 
-    await run_migrations()
+    # V12-H3 — by default run migrations in-process so single-node
+    # deploys (manual ``uvicorn``, the test suite) keep working. With
+    # ``RUN_MIGRATIONS_ON_STARTUP=false`` (the compose default — see
+    # the dedicated ``migrate`` init-service in ``docker-compose.yml``)
+    # we only assert the DB is already at the head revision this
+    # build expects. The two paths share an advisory lock at the
+    # alembic level so a misconfigured deploy with both paths
+    # enabled still serialises rather than racing.
+    if settings.run_migrations_on_startup:
+        await run_migrations()
+    else:
+        await verify_migrations_at_head()
 
     async with async_session() as session:
         await run_seed(session)

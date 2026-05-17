@@ -42,6 +42,43 @@ services:
       timeout: 3s
       retries: 5
 
+  # V12-H3 — one-shot init-service that runs ``alembic upgrade head``
+  # against the compose-managed Postgres and exits. The backend service
+  # depends on it with ``service_completed_successfully`` so each
+  # ``docker compose up`` migrates exactly once regardless of how many
+  # backend replicas come up afterwards.
+  #
+  # Pre-fix the backend image's CMD ran ``alembic upgrade head``
+  # alongside the FastAPI lifespan's own ``run_migrations()`` call,
+  # so every container boot serialised two upgrade rounds on the
+  # alembic advisory lock for no benefit. Splitting the upgrade into
+  # this dedicated service:
+  #
+  # 1. Makes migration a clearly observable step in ``docker compose
+  #    up`` output (its own service log) instead of mixing into
+  #    backend startup noise.
+  # 2. Lets us horizontally scale ``backend`` later without N replicas
+  #    competing on the same advisory lock during cold start.
+  # 3. Keeps the image build reproducible — re-running ``docker
+  #    compose up`` against an already-migrated DB is still a no-op
+  #    (alembic checks the version row before doing anything).
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://garant:garant@postgres:5432/garant
+    volumes:
+      - ./backend:/app/backend
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+      - ./pyproject.toml:/app/pyproject.toml
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
   backend:
     build:
       context: .
@@ -51,6 +88,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql+asyncpg://garant:garant@postgres:5432/garant
       # Empty REDIS_URL = in-process broadcast + rate-limit; set to
@@ -70,6 +109,12 @@ services:
       # need to drive the TMA from a regular browser tab without a
       # real Telegram client signature.
       ALLOW_UNSIGNED_INIT_DATA: ${ALLOW_UNSIGNED_INIT_DATA:-0}
+      # V12-H3 — the ``migrate`` service above owns the
+      # ``alembic upgrade head`` round-trip; the backend lifespan only
+      # verifies the DB is at the expected head revision. Override to
+      # ``1`` only if you're running the backend standalone (without
+      # the compose ``migrate`` service).
+      RUN_MIGRATIONS_ON_STARTUP: ${RUN_MIGRATIONS_ON_STARTUP:-0}
       BOT_FORUMS_URL: ${BOT_FORUMS_URL:-}
       BOT_COMMUNITY_CHAT_URL: ${BOT_COMMUNITY_CHAT_URL:-}
       BOT_ARBITRATION_URL: ${BOT_ARBITRATION_URL:-}
