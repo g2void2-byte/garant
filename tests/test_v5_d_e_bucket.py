@@ -372,6 +372,10 @@ _DESTRUCTIVE_DOWNGRADES = (
     "9f3c1a0b8e21_drop_users_frozen_balance.py",
     "d4f1a8c92e34_drop_user_moderator_flag.py",
     "c8f4a2e91d35_pr_h_audit_refunded_indexes_softdelete.py",
+    # H-2 — downgrade narrows Numeric(28,8) money columns back to
+    # Numeric(18,8); any value > 10¹⁰ written after the upgrade will
+    # fail with ``numeric field overflow`` on downgrade.
+    "9c3a4d2e1f08_h2_widen_money_columns_to_28_8.py",
 )
 
 _CONCURRENT_INDEX_MIGRATIONS = (

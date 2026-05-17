@@ -6,7 +6,7 @@ Coverage:
   arithmetic in ``Decimal`` so the response ``total`` doesn't surface
   float64 round-trip errors (``0.1 + 0.2 == 0.30000000000000004``).
 * **M-23** — ``routers/admin/deals.py`` admin delete-deal restores
-  locked funds to the buyer's ``Numeric(18,8)`` balance using
+  locked funds to the buyer's ``Numeric(28,8)`` balance using
   ``Decimal`` directly. The previous ``float(...)`` wrapper round-tripped
   through float64 and dropped trailing satoshi on large BTC balances.
   The audit-log JSONB payload also now stores amounts as strings.
@@ -108,13 +108,13 @@ async def test_admin_wallet_total_handles_missing_balance(client):
         assert Decimal(row["total"]) == Decimal(0)
 
 
-# ── M-23: admin delete-deal writes Decimals to Numeric(18,8) columns ────────
+# ── M-23: admin delete-deal writes Decimals to Numeric(28,8) columns ────────
 
 
 # A value that round-trips lossily through float64: 18 significant
 # digits, beyond IEEE-754 double's ~15.95 digits of mantissa. The
 # old ``float(...)`` cast collapses it to 1234567890.1234567 (last
-# satoshi truncated). Numeric(18,8) holds it exactly.
+# satoshi truncated). Numeric(28,8) holds it exactly.
 _BTC_LOSSY = Decimal("1234567890.12345678")
 
 
@@ -163,7 +163,7 @@ async def test_admin_delete_deal_preserves_btc_satoshi_precision(client):
 
     Regression: ``deals.py:836-839`` previously wrote
     ``buyer_balance.amount = float(...)`` which collapses Decimals beyond
-    ~15.95 sig digits. Numeric(18,8) supports the full Decimal range.
+    ~15.95 sig digits. Numeric(28,8) supports the full Decimal range.
     """
     buyer_init = signed_init_data(8001, "buyer_btc")
     seller_init = signed_init_data(8002, "seller_btc")

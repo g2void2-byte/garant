@@ -103,7 +103,7 @@ async def _debit(
     current = Decimal(str(bal.amount))
     if current < amount:
         raise ValueError("Недостаточно средств")
-    # Persist as Decimal so SQLAlchemy's ``Numeric(18,8)`` keeps the
+    # Persist as Decimal so SQLAlchemy's ``Numeric(28,8)`` keeps the
     # full 8-fractional-digit precision. Round-tripping through
     # ``float()`` here was the M5 finding — for crypto amounts at the
     # 10^10 scale a ``float`` re-encode drops the last 2-3 significant

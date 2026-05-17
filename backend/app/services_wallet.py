@@ -473,7 +473,7 @@ async def create_withdrawal(
     if current < amount_d:
         raise HTTPException(400, "Недостаточно средств")
 
-    # Decimal end-to-end: ``Numeric(18,8)`` accepts Decimal natively;
+    # Decimal end-to-end: ``Numeric(28,8)`` accepts Decimal natively;
     # round-tripping through ``float`` (the previous M5 buggy path)
     # drops the last 2-3 significant digits at the 10^10 scale that
     # USDT can hit.
