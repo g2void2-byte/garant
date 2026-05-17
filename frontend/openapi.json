@@ -396,6 +396,7 @@
           "payload": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -457,6 +458,7 @@
         "description": "``user.balance`` + per-currency lock state at request time.",
         "properties": {
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
             "type": "string"
           },
@@ -476,10 +478,12 @@
             "type": "string"
           },
           "locked": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Locked",
             "type": "string"
           },
           "total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total",
             "type": "string"
           },
@@ -1214,6 +1218,7 @@
           "amount": {
             "anyOf": [
               {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               },
               {
@@ -1329,6 +1334,7 @@
           "commission_amount": {
             "anyOf": [
               {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               },
               {
@@ -1419,6 +1425,7 @@
             "type": "string"
           },
           "sum": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Sum",
             "type": "string"
           }
@@ -1515,6 +1522,7 @@
           "amount": {
             "anyOf": [
               {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               },
               {
@@ -1541,6 +1549,7 @@
           "commission_amount": {
             "anyOf": [
               {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               },
               {
@@ -1625,6 +1634,7 @@
             "type": "string"
           },
           "sum": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Sum",
             "type": "string"
           }
@@ -1740,6 +1750,7 @@
       "AdminDepositOut": {
         "properties": {
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
             "type": "string"
           },
@@ -2572,10 +2583,12 @@
         "description": "Per-currency commission accumulator.\n\n``accrued`` sums up ``commission_amount`` on every completed deal in\nthis currency; ``withdrawn`` subtracts the sum of successful\n``treasury_withdrawals`` rows. ``available`` is the diff and the\nonly amount the admin can withdraw.",
         "properties": {
           "accrued": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Accrued",
             "type": "string"
           },
           "available": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Available",
             "type": "string"
           },
@@ -2596,6 +2609,7 @@
             "type": "integer"
           },
           "withdrawn": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Withdrawn",
             "type": "string"
           }
@@ -2684,6 +2698,7 @@
             "type": "string"
           },
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
             "type": "string"
           },
@@ -2738,6 +2753,7 @@
         "description": "A single ``(user, currency, amount, locked)`` row.\n\nReturned in admin wallet views and inside :class:`AdminUserWalletOut`.\n``user_id`` / ``username`` are denormalised so the list page can\nrender without a second fetch.",
         "properties": {
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
             "type": "string"
           },
@@ -2762,10 +2778,12 @@
             "type": "string"
           },
           "locked": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Locked",
             "type": "string"
           },
           "total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total",
             "type": "string"
           },
@@ -3288,6 +3306,7 @@
             "title": "Photo Url"
           },
           "total_usd_estimate": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Usd Estimate",
             "type": "string"
           },
@@ -3419,6 +3438,7 @@
             "type": "string"
           },
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
             "type": "string"
           },
@@ -3490,7 +3510,7 @@
       "Body_upload_media_api_media_upload_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
@@ -4202,6 +4222,7 @@
           "payload": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -5513,6 +5534,13 @@
       },
       "ValidationError": {
         "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
           "loc": {
             "items": {
               "anyOf": [
@@ -6535,6 +6563,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Claim Arbitration Api Admin Arbitration  Deal Id  Claim Post",
                   "type": "object"
                 }
@@ -7332,6 +7361,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Delete Comment Api Admin Comments  Comment Id  Delete Post",
                   "type": "object"
                 }
@@ -7979,6 +8009,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Delete Deal Api Admin Deals  Deal Id  Delete Post",
                   "type": "object"
                 }
@@ -8785,6 +8816,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Delete Review Api Admin Reviews  Review Id  Delete Post",
                   "type": "object"
                 }
@@ -9095,6 +9127,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Delete Service Api Admin Services  Service Id  Delete Post",
                   "type": "object"
                 }
@@ -14023,7 +14056,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "minimum": 0.0,
+                  "minimum": 0,
                   "type": "number"
                 },
                 {

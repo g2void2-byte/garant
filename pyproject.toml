@@ -4,19 +4,19 @@ version = "2.0.0"
 description = "Garant — Telegram Mini App escrow service (SQLAlchemy 2 rewrite)"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi==0.115.0",
-    "uvicorn[standard]==0.30.6",
-    "sqlalchemy[asyncio]==2.0.36",
-    "alembic==1.13.3",
-    "asyncpg==0.30.0",
-    "pydantic==2.10.4",
-    "pydantic-settings==2.7.1",
+    "fastapi==0.136.1",
+    "uvicorn[standard]==0.47.0",
+    "sqlalchemy[asyncio]==2.0.49",
+    "alembic==1.18.4",
+    "asyncpg==0.31.0",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.14.1",
     "aiogram>=3.7,<4",
     "httpx>=0.27,<1",
     "websockets==12.0",
-    "python-multipart==0.0.18",
+    "python-multipart==0.0.28",
     "bcrypt==5.0.0",
-    "PyJWT==2.9.0",
+    "PyJWT==2.12.1",
     "redis==7.4.0",
     "Pillow==12.2.0",
 ]
