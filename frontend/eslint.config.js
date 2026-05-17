@@ -70,6 +70,65 @@ export default [
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-empty-object-type': 'off',
+      // M-5 — keep the CSP contract enforceable from the lint stage.
+      //
+      // The backend serves ``style-src 'self'`` / ``style-src-elem
+      // 'self'`` / ``style-src-attr 'none'`` / ``script-src 'self'
+      // https://telegram.org`` / ``script-src-attr 'none'`` on every
+      // response (see ``backend/app/main.py::_CSP_DIRECTIVES`` and
+      // ``docs/csp-policy.md``). A JSX element that emits an inline
+      // ``<style>`` block, a ``<script>`` tag, a third-party
+      // ``<link rel="stylesheet" href="https://...">``, or that uses
+      // ``dangerouslySetInnerHTML`` reopens exactly the inline-style
+      // / inline-script injection vector M-5 was filed to close.
+      //
+      // ``react/no-danger`` would do the ``dangerouslySetInnerHTML``
+      // check for us but we deliberately avoid pulling in the full
+      // ``eslint-plugin-react`` (the project only depends on
+      // ``-hooks`` / ``-refresh``). ``no-restricted-syntax`` with
+      // ESLint's built-in JSX AST selectors covers all four cases
+      // without a new plugin.
+      //
+      // If a future change genuinely needs one of these — e.g.
+      // server-side rendering pre-loading a critical CSS chunk via
+      // ``<style>`` — the diff has to add a per-file ``eslint-disable``
+      // (NOT a config relax) plus a sibling change to
+      // ``_CSP_DIRECTIVES`` and ``tests/test_csp_policy.py``. The
+      // three-way coupling makes the policy decision explicit in
+      // code review.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "JSXOpeningElement[name.name='style']",
+          message:
+            "CSP forbids inline <style> tags (style-src-elem 'self'). " +
+            'Import a .css module from src/styles.css or src/**/*.module.css. ' +
+            'See docs/csp-policy.md.',
+        },
+        {
+          selector: "JSXOpeningElement[name.name='script']",
+          message:
+            "CSP forbids inline <script> tags (script-src 'self' " +
+            'https://telegram.org). Add a same-origin module under src/ ' +
+            'and import it from main.tsx. See docs/csp-policy.md.',
+        },
+        {
+          selector:
+            "JSXOpeningElement[name.name='link']:has(JSXAttribute[name.name='rel'][value.value='stylesheet'])",
+          message:
+            "CSP forbids cross-origin stylesheets (style-src-elem 'self'). " +
+            'Vendor the stylesheet under src/ or extend script-src in ' +
+            'backend/app/main.py AND tests/test_csp_policy.py. See ' +
+            'docs/csp-policy.md.',
+        },
+        {
+          selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+          message:
+            'dangerouslySetInnerHTML can inject inline <style> / <script> ' +
+            'markup that CSP would silently block on first paint. Render ' +
+            'the value as a React child instead. See docs/csp-policy.md.',
+        },
+      ],
     },
   },
 ];

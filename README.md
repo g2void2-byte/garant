@@ -148,6 +148,20 @@ CI / `backend/Dockerfile.dev` currently use — the lockfile is purely a
 *contract* for now. Migrating the installer to `uv sync --frozen` is
 tracked as a follow-up.
 
+## Content Security Policy (M-5)
+
+The backend serves a strict CSP on every HTTP response — no
+`'unsafe-inline'`, no `'unsafe-eval'`, no nonces. Inline `<style>` /
+`<script>` markup is forbidden by ESLint at the lint stage and by
+`tests/test_csp_policy.py` at the test stage. Adding a frontend
+dependency that injects inline styles or scripts (Framer Motion,
+emotion, styled-components default mode, third-party analytics
+loaders) requires a policy decision, not a workaround.
+
+The full contract — directive-by-directive rationale, contributor
+rules, and the telemetry path through `/api/csp-report` — lives in
+[`docs/csp-policy.md`](docs/csp-policy.md).
+
 ## Environment variables
 
 | Variable | Default | Description |

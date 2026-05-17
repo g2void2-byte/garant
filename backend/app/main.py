@@ -353,9 +353,9 @@ app.add_middleware(
 # duplicates the legacy ``X-Frame-Options: DENY`` for modern browsers
 # that prefer the CSP3 directive.
 #
-# L-2 — ``style-src`` is now ``'self'`` only. Framer Motion was the
-# sole source of dynamic inline ``style=`` attributes, and the full
-# migration to CSS class-based animations (PR «CSP nonce migration»)
+# L-2 / M-5 — ``style-src`` is locked to ``'self'`` (no ``'unsafe-inline'``,
+# no nonces). Framer Motion was the sole source of dynamic inline
+# ``style=`` attributes; the CSS-class-based animation migration
 # eliminated that dependency. React CSR (client-side rendering via
 # ``createRoot``) sets element styles through the CSSOM
 # (``element.style.prop = value``), which is NOT blocked by CSP
@@ -363,6 +363,36 @@ app.add_middleware(
 # are restricted. Since the app is a Vite SPA with no SSR, the
 # remaining dynamic ``style`` props (layout positioning, scroll
 # parallax) go through React DOM's CSSOM path and are safe.
+#
+# M-5 — instead of introducing per-request nonce middleware (would
+# require rewriting ``index.html`` on every SPA fallback hit and
+# threading a nonce through the static-file path), we *enforce* the
+# no-inline-styles invariant the previous Framer-Motion migration
+# established:
+#
+# * ``style-src-elem 'self'`` (CSP3) — only same-origin ``<style>``
+#   and ``<link rel="stylesheet">``; no inline ``<style>``-tag
+#   injection from a 3rd-party library.
+# * ``style-src-attr 'none'`` (CSP3) — refuses HTML ``style=``
+#   attributes in source markup. React's CSSOM path is unaffected
+#   (see above); a transitive dep that ships ``innerHTML =
+#   '<div style="...">'`` is rejected.
+# * Legacy ``style-src 'self'`` is kept as a fallback for browsers
+#   that don't honour the CSP3 ``-elem`` / ``-attr`` split. Per spec
+#   the more specific directives override ``style-src`` where they
+#   are supported, so the policy is *stricter* on modern browsers
+#   without weakening older ones.
+# * ``script-src-attr 'none'`` (CSP3) — same defence-in-depth on the
+#   script axis: refuses inline ``onclick=""``-style HTML event
+#   handlers. React attaches listeners via ``addEventListener`` so
+#   our markup never relies on these.
+#
+# The dependency-side policy ("no library that injects inline styles
+# / scripts") is documented in ``docs/csp-policy.md`` and enforced at
+# the frontend lint stage (``frontend/eslint.config.js`` forbids
+# ``<style>`` / ``<script>`` / ``<link rel="stylesheet">`` JSX
+# elements). ``tests/test_csp_policy.py`` snapshots the directive
+# string below — drift requires an explicit policy decision.
 #
 # The CSP report endpoint is kept as telemetry for regressions:
 # ``report-uri``/``report-to`` so we can SEE what would actually break
@@ -376,7 +406,10 @@ app.add_middleware(
 _CSP_DIRECTIVES = (
     "default-src 'self'; "
     "script-src 'self' https://telegram.org; "
+    "script-src-attr 'none'; "
     "style-src 'self'; "
+    "style-src-elem 'self'; "
+    "style-src-attr 'none'; "
     "img-src 'self' data: blob:; "
     "font-src 'self' data:; "
     "connect-src 'self'; "
