@@ -96,7 +96,6 @@ async def _seed_arbitration_board(client, *, n: int) -> list[int]:
             deal = Deal(
                 buyer_id=buyer.id,
                 seller_id=seller.id,
-                sum=10.0 + i,
                 description=f"arb #{i}",
                 pay_commission=PayCommission.buyer,
                 status=DealStatus.arbitration,
