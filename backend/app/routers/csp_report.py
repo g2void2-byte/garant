@@ -185,9 +185,24 @@ async def csp_report(request: Request, _rl: RLCSPReport) -> Response:
         category = _classify_report(parsed)
 
     truncated = text[:_MAX_BODY]
+    # V11-L-15 — structured-logging fields so the JSON-logger
+    # downstream (Loki/Sentry) can pivot on event/category without
+    # regexing the message body. The full ``truncated`` payload is
+    # deliberately NOT in ``extra`` — it can carry user-supplied
+    # URLs (``blocked-uri``) and would explode log cardinality;
+    # the message body keeps it for the operator who's grepping for
+    # a specific URL.
     if category == "noise":
-        logger.debug("csp violation report (noise): %s", truncated)
+        logger.debug(
+            "csp violation report (noise): %s",
+            truncated,
+            extra={"event": "csp.report.noise"},
+        )
     else:
-        logger.info("csp violation report: %s", truncated)
+        logger.info(
+            "csp violation report: %s",
+            truncated,
+            extra={"event": "csp.report.signal"},
+        )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

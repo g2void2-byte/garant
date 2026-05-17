@@ -126,6 +126,10 @@ async def _generate_unique_code(session: AsyncSession) -> str:
         )
         if existing.first() is None:
             if iteration > warn_threshold:
+                # V11-L-15 — structured-logging fields so the JSON-
+                # logger downstream (Loki/Sentry) can pivot on event
+                # and the collision-count bucket without regexing
+                # the message body.
                 logger.warning(
                     "account-transfer code generation took %d attempts "
                     "(warn_threshold=%d, max_attempts=%d) — investigate "
@@ -133,6 +137,12 @@ async def _generate_unique_code(session: AsyncSession) -> str:
                     iteration,
                     warn_threshold,
                     max_attempts,
+                    extra={
+                        "event": "account_transfer.code_gen.collision_pressure",
+                        "iteration": iteration,
+                        "warn_threshold": warn_threshold,
+                        "max_attempts": max_attempts,
+                    },
                 )
             return candidate
     raise RuntimeError(
@@ -411,10 +421,21 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     await session.commit()
     await session.refresh(source)
 
+    # V11-L-15 — structured-logging fields so the JSON-logger
+    # downstream (Loki/Sentry) can pivot on event/user-ids without
+    # regexing the message body. This is a fully-successful transfer
+    # (post-commit), so it's an ``info`` and the target row no longer
+    # exists — ``target_id`` is captured for forensics.
     logger.info(
         "account transfer: source user_id=%s now tg_user_id=%s (was target_id=%s)",
         source.id,
         new_tg_user_id,
         target_id,
+        extra={
+            "event": "account_transfer.confirm.ok",
+            "source_user_id": source.id,
+            "new_tg_user_id": new_tg_user_id,
+            "deleted_target_user_id": target_id,
+        },
     )
     return source

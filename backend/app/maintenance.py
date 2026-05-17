@@ -131,15 +131,28 @@ def _log_db_lookup_failure() -> None:
     next_emit_at = _db_error_log_state["next_emit_at"]
     suppressed = int(_db_error_log_state["suppressed"])
     if now >= next_emit_at:
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event and the
+        # ``suppressed`` count without regexing the message body.
+        # The two branches use distinct events so dashboards can
+        # tell "first failure in this window" from "burst recap".
         if suppressed:
             logger.exception(
                 "maintenance middleware: settings lookup failed "
                 "(suppressed %d similar failures in the last %.0fs)",
                 suppressed,
                 _DB_ERROR_LOG_INTERVAL_SECONDS,
+                extra={
+                    "event": "maintenance.settings_lookup_failed.burst",
+                    "suppressed": suppressed,
+                    "interval_seconds": _DB_ERROR_LOG_INTERVAL_SECONDS,
+                },
             )
         else:
-            logger.exception("maintenance middleware: settings lookup failed")
+            logger.exception(
+                "maintenance middleware: settings lookup failed",
+                extra={"event": "maintenance.settings_lookup_failed"},
+            )
         _db_error_log_state["next_emit_at"] = now + _DB_ERROR_LOG_INTERVAL_SECONDS
         _db_error_log_state["suppressed"] = 0
     else:

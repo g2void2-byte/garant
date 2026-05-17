@@ -674,8 +674,17 @@ async def sweep_inactivity(session: AsyncSession) -> int:
         try:
             await notifier.dispatch_after_commit(session, notif, ws_payload)
         except Exception:
+            # V11-L-15 — structured-logging fields so the JSON-logger
+            # downstream (Loki/Sentry) can pivot on event/notif_id
+            # without regexing the message body. The sweep is best-
+            # effort — the commit already landed, this is a
+            # delivery-side failure.
             logger.exception(
                 "sweep_inactivity: post-commit dispatch failed for notif id=%s",
                 notif.id,
+                extra={
+                    "event": "sweep_inactivity.dispatch.failed",
+                    "notif_id": notif.id,
+                },
             )
     return affected

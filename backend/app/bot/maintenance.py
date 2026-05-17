@@ -32,7 +32,14 @@ async def _maintenance_payload() -> tuple[bool, str]:
                 await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
             ).scalar_one_or_none()
     except Exception:  # noqa: BLE001
-        logger.exception("bot maintenance: settings lookup failed")
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event without
+        # regexing the message body. ``error_class`` lets us track
+        # the underlying DB failure mode (timeout vs auth vs ...).
+        logger.exception(
+            "bot maintenance: settings lookup failed",
+            extra={"event": "bot.maintenance.settings_lookup_failed"},
+        )
         return False, _DEFAULT_MESSAGE
     if row is None or not row.maintenance_enabled:
         return False, _DEFAULT_MESSAGE

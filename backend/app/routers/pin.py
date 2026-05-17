@@ -317,7 +317,19 @@ async def pin_reset_request(
     )
     delivered = await send_dm(user.tg_user_id, text)
     if not delivered:
-        logger.warning("PIN reset code delivery failed for user %s", user.id)
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event/user_id without
+        # regexing the message body. ``code`` / ``text`` are NOT in
+        # ``extra`` (see V5-A-7 contract above) — the plaintext
+        # PIN-reset secret must never appear in logs.
+        logger.warning(
+            "PIN reset code delivery failed for user %s",
+            user.id,
+            extra={
+                "event": "pin.reset.delivery_failed",
+                "user_id": user.id,
+            },
+        )
     return PinResetRequestOut(delivered=delivered, expires_at=user.pin_reset_expires)
 
 

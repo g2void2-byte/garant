@@ -157,7 +157,15 @@ async def _hit_redis(scope: str, key: str, *, limit: int, window: float) -> None
     except HTTPException:
         raise
     except Exception:  # noqa: BLE001
-        logger.exception("rate-limit: redis hit failed; falling back to in-memory")
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event/scope without
+        # regexing the message body. ``key`` is deliberately NOT in
+        # ``extra`` — it would explode log cardinality (one timeseries
+        # per user/IP) and ``scope`` already gives us the bucket.
+        logger.exception(
+            "rate-limit: redis hit failed; falling back to in-memory",
+            extra={"event": "rate_limit.redis.failed", "scope": scope},
+        )
         await _hit_inmemory(scope, key, limit=limit, window=window)
 
 
