@@ -2,6 +2,7 @@ import ky, { HTTPError } from "ky";
 import { clearPinToken, getPinToken } from "@/lib/pin";
 import { queryClient } from "@/lib/queryClient";
 import { getInitData } from "@/lib/tg";
+import { qk } from "./queryKeys";
 
 const baseURL = import.meta.env.VITE_API_URL || "";
 
@@ -50,7 +51,7 @@ export const api = ky.create({
           // Invalidate the cached PIN status so PinGate (and every
           // other consumer of ``["pin", "status"]``) refetches and
           // re-renders the lock screen.
-          queryClient.invalidateQueries({ queryKey: ["pin", "status"] });
+          queryClient.invalidateQueries({ queryKey: qk.pin.status() });
         }
         return err;
       },

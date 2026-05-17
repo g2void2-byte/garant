@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { connectNotifications, type WsEvent } from "@/lib/ws";
 import { haptic } from "@/lib/tg";
 import { useToast } from "@/components/ui/Toast";
+import { qk } from "@/api/queryKeys";
 import type { NotificationDto } from "@/api/types";
 import type { DealMessageDto } from "@/api/hooks";
 
@@ -25,7 +26,7 @@ export function useLiveNotifications() {
         if (event.event === "deal_message" && event.data) {
           const msg = event.data as DealMessageDto;
           qc.setQueryData<DealMessageDto[] | undefined>(
-            ["deal", msg.deal_id, "messages"],
+            qk.deal.messages(msg.deal_id),
             (prev) => {
               if (!prev) return [msg];
               if (prev.some((m) => m.id === msg.id)) return prev;
@@ -39,25 +40,25 @@ export function useLiveNotifications() {
         const notif = event.data as NotificationDto;
 
         qc.setQueriesData<NotificationDto[] | undefined>(
-          { queryKey: ["notifications"] },
+          { queryKey: qk.notifications.all() },
           (prev) => {
             if (!prev) return prev;
             if (prev.some((n) => n.id === notif.id)) return prev;
             return [notif, ...prev];
           },
         );
-        qc.invalidateQueries({ queryKey: ["notifications", "counters"] });
+        qc.invalidateQueries({ queryKey: qk.notifications.counters() });
         if (notif.type === "deals") {
-          qc.invalidateQueries({ queryKey: ["deals"] });
-          qc.invalidateQueries({ queryKey: ["deal"] });
+          qc.invalidateQueries({ queryKey: qk.deals.all() });
+          qc.invalidateQueries({ queryKey: qk.deal.all() });
         }
         if (notif.type === "deposits") {
-          qc.invalidateQueries({ queryKey: ["me"] });
-          qc.invalidateQueries({ queryKey: ["payments"] });
+          qc.invalidateQueries({ queryKey: qk.me() });
+          qc.invalidateQueries({ queryKey: qk.payments.all() });
         }
         if (notif.type === "system") {
-          qc.invalidateQueries({ queryKey: ["reviews"] });
-          qc.invalidateQueries({ queryKey: ["user"] });
+          qc.invalidateQueries({ queryKey: qk.reviews.all() });
+          qc.invalidateQueries({ queryKey: qk.user.all() });
         }
 
         haptic("light");
