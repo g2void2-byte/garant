@@ -38,7 +38,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ... import notifier
-from ...admin_audit import log_admin_action
+from ...admin_audit import log_admin_action, state_change_payload
 from ...admin_guard import TotpUser
 from ...deps import AdminUser, SessionDep
 from ...models import NotificationType, User
@@ -583,7 +583,7 @@ async def set_role(
         target=target,
         action="user.set_role",
         reason=None,
-        payload={"before": before, "after": after},
+        payload=state_change_payload(before=before, after=after),
         dm_title="Роль обновлена",
         dm_body=_role_change_body(before, after),
     )
@@ -631,7 +631,10 @@ async def set_rating(
         target=target,
         action="user.set_rating",
         reason=None,
-        payload={"before": before, "after": body.rating},
+        payload=state_change_payload(
+            before={"rating": before},
+            after={"rating": body.rating},
+        ),
         dm_title="Рейтинг обновлён",
         dm_body=(
             f"Установлен рейтинг {body.rating}"
@@ -700,7 +703,7 @@ async def set_stats(
         target=target,
         action="user.set_stats",
         reason=None,
-        payload={"before": before, "after": after},
+        payload=state_change_payload(before=before, after=after),
         dm_title=None,
         dm_body=None,
     )

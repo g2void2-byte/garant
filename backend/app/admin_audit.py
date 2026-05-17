@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi import Request
@@ -113,6 +114,74 @@ def _serialize_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
             },
         )
         return None
+    return payload
+
+
+def state_change_payload(
+    *,
+    before: Mapping[str, Any] | None,
+    after: Mapping[str, Any] | None,
+    extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a canonical state-change audit payload.
+
+    V11-L-12 — the ``admin_audit_log.payload`` JSONB column historically
+    accepted any shape; the v9 audit (Comment 39) capped it at 4 KB but
+    didn't standardise the schema, so similar admin actions (settings
+    update, user-role change, taxonomy edit) ended up writing different
+    structures — some used ``{"before": ..., "after": ...}``, others
+    flat key/value, others nested ``{"changes": {...}}``. That made the
+    audit viewer harder to reason about and ad-hoc consumers (Sentry,
+    bigquery export, future diff renderers) had to special-case each
+    action.
+
+    This helper produces the canonical shape for any *state-change*
+    action::
+
+        {
+            "before": {<attr>: <old value>, ...},
+            "after":  {<attr>: <new value>, ...},
+            "diff":   [<attr>, ...],          # keys whose values differ
+            "context": {...},                 # optional caller-supplied extras
+        }
+
+    ``diff`` is precomputed so the viewer / downstream consumers don't
+    need to re-derive it (and so a future schema migration can rely on
+    ``diff`` being authoritative even if ``before``/``after`` get
+    redacted for size). Keys present in only one of ``before`` / ``after``
+    are treated as changed.
+
+    Free-form / non-state-change actions (e.g. ``user.ban`` with just a
+    reason, ``balance.adjust`` recording an immutable transaction)
+    continue to pass ``payload=`` directly to :func:`log_admin_action`
+    — this helper is purely for the diff pattern.
+    """
+    # ``None`` and ``{}`` are *different* states for the schema:
+    # ``before=None`` means "the entity did not exist" (create branch),
+    # ``after=None`` means "the entity was deleted", and ``{}`` would
+    # be a degenerate "exists but has zero recorded attributes". Keep
+    # the distinction so the admin viewer can render
+    # "first-time-creation" vs "no-op patch" differently.
+    before_dict = dict(before) if before is not None else None
+    after_dict = dict(after) if after is not None else None
+    b_keys: set[str] = set(before_dict) if before_dict is not None else set()
+    a_keys: set[str] = set(after_dict) if after_dict is not None else set()
+    keys = sorted(b_keys | a_keys)
+    _missing = object()
+
+    def _get(side: dict[str, Any] | None, key: str) -> Any:
+        if side is None:
+            return _missing
+        return side.get(key, _missing)
+
+    diff_keys = [k for k in keys if _get(before_dict, k) != _get(after_dict, k)]
+    payload: dict[str, Any] = {
+        "before": before_dict,
+        "after": after_dict,
+        "diff": diff_keys,
+    }
+    if extra:
+        payload["context"] = dict(extra)
     return payload
 
 

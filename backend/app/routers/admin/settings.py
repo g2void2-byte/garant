@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 
-from ...admin_audit import log_admin_action
+from ...admin_audit import log_admin_action, state_change_payload
 from ...admin_guard import TotpUser
 from ...deps import AdminUser, SessionDep
 from ...maintenance import invalidate_cache as invalidate_maintenance_cache
@@ -132,7 +132,7 @@ async def update_settings(
         action="settings.update",
         target_type="app_settings",
         target_id=row.id,
-        payload={"before": before, "after": after},
+        payload=state_change_payload(before=before, after=after),
         request=request,
     )
     await session.commit()

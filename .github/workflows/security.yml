@@ -1,7 +1,7 @@
 name: Security
 
 # Security scans. Runs in parallel with the main ``ci`` workflow on
-# every push / PR. V12-H4 — every step used to carry
+# every push / PR. V12-H4 / V12-CI-1 — every step used to carry
 # ``continue-on-error: true`` *and* a trailing ``|| true`` in the shell
 # pipeline, which made the workflow a no-op: bandit / pip-audit / npm
 # audit findings never blocked a merge and were typically never read
@@ -10,12 +10,17 @@ name: Security
 # 1. Runs each scanner in JSON mode so a fresh report is always uploaded
 #    as a build artifact (``backend-security`` / ``frontend-security``)
 #    — readable from the Actions UI even when the job passed cleanly.
-# 2. Keeps ``continue-on-error: true`` *only* on the JSON-emitting step
-#    so a transient scanner crash doesn't abort the artifact upload.
-# 3. Adds an explicit gate step at the end of each job that re-reads
-#    the JSON report and fails the build when any *high* severity
-#    finding is present. Low/medium findings stay warn-only until the
-#    initial backlog is triaged.
+#    The JSON emission tolerates a non-zero scanner exit via ``|| true``
+#    so the report file is always written; this is the *only* place a
+#    soft failure is allowed. ``continue-on-error: true`` has been
+#    dropped from the scanner steps so a genuine scanner crash (e.g.
+#    bandit / pip-audit not installed, network error talking to PyPI)
+#    surfaces as a hard failure on the offending step instead of
+#    silently producing an empty report.
+# 2. The "Fail on high-severity findings" gate step at the end of
+#    each job re-reads the JSON report and fails the build when any
+#    *high* severity finding is present. Low/medium findings stay
+#    warn-only until the initial backlog is triaged.
 
 on:
   push:
@@ -63,17 +68,17 @@ jobs:
       # exclude was dead config. Bandit is now invoked against
       # ``backend/app`` only — tests aren't shipped in the runtime
       # image and the scanner doesn't need to walk them.
-      # ``set -e`` is the default in ``run:`` blocks, so the first
-      # bandit/pip-audit invocation has to tolerate a non-zero exit
-      # (which is how the scanners signal "findings exist") — without
-      # ``|| true`` the second, human-readable invocation never runs
-      # whenever the JSON report would be most interesting to read.
-      # The gate step below is what actually fails the build.
+      #
+      # V12-CI-1 — ``continue-on-error: true`` has been dropped. The
+      # scanner is invoked *once*, in JSON mode, with a trailing
+      # ``|| true`` because bandit exits 1 whenever any finding is
+      # emitted (regardless of severity) and we want the JSON report
+      # to land on disk for the artifact uploader and the high-severity
+      # gate below. A genuine bandit crash (binary missing, exception
+      # during analysis) now surfaces as a hard step failure rather
+      # than silently producing an empty report.
       - name: Bandit
-        continue-on-error: true
-        run: |
-          bandit -r backend/app -ll -ii -f json -o bandit-report.json || true
-          bandit -r backend/app -ll -ii
+        run: bandit -r backend/app -ll -ii -f json -o bandit-report.json || true
 
       # pip-audit: checks every installed package against the PyPI
       # advisory database. We install the project (without dev extras)
@@ -81,13 +86,19 @@ jobs:
       # ``--skip-editable`` tells pip-audit to ignore the local
       # ``garant`` package itself (not published on PyPI, so the
       # advisory lookup would error out).
+      #
+      # V12-CI-1 — same rationale as the Bandit step: drop the
+      # ``continue-on-error`` wrapper and run pip-audit once in JSON
+      # mode with ``|| true``. A scanner crash (e.g. network failure
+      # talking to the advisory DB, or pip-audit itself not installed)
+      # now fails the step instead of silently producing an empty
+      # JSON file that the gate step would helpfully read as "no
+      # vulnerabilities found".
       - name: pip-audit
-        continue-on-error: true
         run: |
           pip install -e .
           pip-audit --strict --skip-editable --progress-spinner=off \
             --format json --output pip-audit-report.json || true
-          pip-audit --strict --skip-editable --progress-spinner=off
 
       # Always upload the JSON reports so reviewers can read them
       # straight from the run summary, regardless of pass/fail. The
@@ -186,11 +197,14 @@ jobs:
       # tree. ``--audit-level=high`` filters out low/moderate noise so
       # the warning surface stays useful. The JSON report is always
       # uploaded so reviewers can drill in even when the gate passes.
+      #
+      # V12-CI-1 — same shape as the backend scanners: drop
+      # ``continue-on-error`` and rely on the trailing ``|| true`` to
+      # let the JSON report land on disk even when ``npm audit`` exits
+      # non-zero (which it does for *any* vuln, not just high+). The
+      # high-severity gate below is authoritative.
       - name: npm audit
-        continue-on-error: true
-        run: |
-          npm audit --json > npm-audit-report.json || true
-          npm audit --audit-level=high
+        run: npm audit --json > npm-audit-report.json || true
 
       - name: Upload frontend security reports
         if: always()

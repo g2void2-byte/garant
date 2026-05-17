@@ -30,6 +30,54 @@ exits after applying migrations); the backend service waits on it via
 only verifies the DB is at the expected head revision before serving
 traffic. To rerun migrations manually: `docker compose up migrate`.
 
+### Kubernetes / Helm deploy (V11-M-14)
+
+The compose `migrate` one-shot has a direct analogue in any
+orchestrator that supports run-once init containers. The contract is:
+
+1. **One** migration runner per release (an `initContainer` on a
+   Deployment, a `Job`, or a Helm `pre-install,pre-upgrade` hook) runs
+   `alembic upgrade head` against the production DB. The backend
+   `Pod`s do **not** run migrations themselves.
+2. The runtime backend container runs `uvicorn backend.app.main:app …`
+   without any migration side-effects. The lifespan verifies the DB
+   is at the expected head revision (raising
+   `MigrationsOutOfSync` if not) but does **not** apply migrations
+   when `RUN_ALEMBIC_ON_START=0`.
+3. Concurrent Pod restarts during a rolling upgrade are safe because
+   the runner holds the Alembic advisory lock
+   (`backend.app.db._upgrade_to_head_sync` issues
+   `pg_advisory_lock(0xa1eb1c)`) — if two runners race, the second
+   waits and then becomes a no-op.
+
+Minimal `Deployment` snippet (Helm values omitted for brevity):
+
+```yaml
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: alembic-upgrade
+          image: ghcr.io/your-org/garant-backend:{{ .Chart.AppVersion }}
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - secretRef: { name: garant-env }
+      containers:
+        - name: backend
+          image: ghcr.io/your-org/garant-backend:{{ .Chart.AppVersion }}
+          env:
+            - { name: RUN_ALEMBIC_ON_START, value: "0" }
+            - { name: RUN_BOT, value: "0" }    # bot lives in its own Deployment
+          envFrom:
+            - secretRef: { name: garant-env }
+```
+
+`alembic-upgrade` runs once per Pod scheduling event; combined with
+the advisory lock, it is safe even when several Pods of the same
+Deployment come up in parallel. For multi-replica deploys prefer a
+`pre-install,pre-upgrade` Helm hook `Job` so the migration runs
+**once per release** instead of **once per replica**.
+
 Code is bind-mounted, so edits trigger hot-reload without rebuilds. Add `-d` to detach. Use `docker compose logs -f backend` to tail. Use `docker compose down -v` to wipe the Postgres volume.
 
 ## Manual setup (without Docker)
