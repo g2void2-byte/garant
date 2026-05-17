@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { DealRow } from "@/components/domain/DealRow";
 import { api } from "@/api/client";
 import { useMe } from "@/api/hooks";
+import { qk } from "@/api/queryKeys";
 import type { DealDto } from "@/api/types";
 
 /**
@@ -20,7 +21,7 @@ import type { DealDto } from "@/api/types";
 export default function ArbitrationPage() {
   const { data: me } = useMe();
   const { data, isLoading } = useQuery<DealDto[]>({
-    queryKey: ["arbitration", "deals"],
+    queryKey: qk.arbitration.deals(),
     queryFn: () => api.get("api/arbitration/deals").json(),
     staleTime: 15_000,
   });

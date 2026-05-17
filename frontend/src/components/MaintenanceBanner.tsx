@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { api } from "@/api/client";
+import { qk } from "@/api/queryKeys";
 import type { MaintenanceStatusDto } from "@/api/types";
 
 export function MaintenanceBanner() {
   const { data } = useQuery<MaintenanceStatusDto>({
-    queryKey: ["maintenance"],
+    queryKey: qk.maintenance(),
     queryFn: () => api.get("api/settings/maintenance").json(),
     refetchInterval: 30_000,
     retry: false,

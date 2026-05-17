@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { useCreateDepositInvoice, useDeposits, useMe } from "@/api/hooks";
 import { api } from "@/api/client";
+import { qk } from "@/api/queryKeys";
 import { formatMoney, relativeTime } from "@/lib/format";
 import { haptic, openTelegramLink } from "@/lib/tg";
 import type { InvoiceDto } from "@/api/types";
@@ -24,7 +25,7 @@ const STATUS_TEXT: Record<string, string> = {
 
 function useInvoiceStatus(invoiceId: number | null, enabled: boolean) {
   return useQuery<{ id: number; amount: number; status: string; paid_at: string | null }>({
-    queryKey: ["invoice-status", invoiceId],
+    queryKey: qk.invoiceStatus(invoiceId),
     queryFn: () => api.get(`api/payments/deposit/invoice/${invoiceId}`).json(),
     enabled: enabled && invoiceId !== null,
     refetchInterval: 4_000,
@@ -56,8 +57,8 @@ export default function DepositPage() {
         title: "Баланс пополнен",
         body: `На баланс зачислено ${formatMoney(status.data.amount)}`,
       });
-      qc.invalidateQueries({ queryKey: ["me"] });
-      qc.invalidateQueries({ queryKey: ["payments"] });
+      qc.invalidateQueries({ queryKey: qk.me() });
+      qc.invalidateQueries({ queryKey: qk.payments.all() });
       setActiveInvoice(null);
     } else if (status.data.status === "expired") {
       toast.show({ kind: "error", title: "Счёт истёк" });

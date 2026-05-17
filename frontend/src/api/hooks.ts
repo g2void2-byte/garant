@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
+import { qk } from "./queryKeys";
 import type {
   AccountTransferConfirmDto,
   AccountTransferStartDto,
@@ -27,7 +28,7 @@ import type {
 
 export function useMe() {
   return useQuery<UserCardDto>({
-    queryKey: ["me"],
+    queryKey: qk.me(),
     queryFn: () => api.get("api/me").json(),
     staleTime: 30_000,
   });
@@ -72,14 +73,14 @@ export function useUpdateMe() {
       }>,
     ) => api.patch("api/me", { json: body }).json<UserCardDto>(),
     onSuccess: (data) => {
-      qc.setQueryData(["me"], data);
+      qc.setQueryData(qk.me(), data);
     },
   });
 }
 
 export function useCategories() {
   return useQuery<CategoryDto[]>({
-    queryKey: ["categories"],
+    queryKey: qk.categories(),
     queryFn: () => api.get("api/categories").json(),
     staleTime: 5 * 60_000,
   });
@@ -94,7 +95,7 @@ export function useServices(
   if (params.owner) searchParams.owner = params.owner;
   if (params.status) searchParams.status = params.status;
   return useQuery<ServiceDto[]>({
-    queryKey: ["services", params],
+    queryKey: qk.services.list(params),
     queryFn: () => api.get("api/services", { searchParams }).json(),
     staleTime: 30_000,
   });
@@ -106,7 +107,7 @@ export function useUpdateService() {
     mutationFn: ({ id, body }: { id: number; body: Partial<{ title: string; description: string; price: number; status: string }> }) =>
       api.patch(`api/services/${id}`, { json: body }).json<ServiceDto>(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["services"] });
+      qc.invalidateQueries({ queryKey: qk.services.all() });
     },
   });
 }
@@ -117,9 +118,9 @@ export function useCreateService() {
     mutationFn: (body: { category_slug: string; title: string; description: string; price: number }) =>
       api.post("api/services", { json: body }).json<ServiceDto>(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["services"] });
-      qc.invalidateQueries({ queryKey: ["categories"] });
-      qc.invalidateQueries({ queryKey: ["me"] });
+      qc.invalidateQueries({ queryKey: qk.services.all() });
+      qc.invalidateQueries({ queryKey: qk.categories() });
+      qc.invalidateQueries({ queryKey: qk.me() });
     },
   });
 }
@@ -129,14 +130,14 @@ export function useDeleteService() {
   return useMutation({
     mutationFn: (id: number) => api.delete(`api/services/${id}`).json(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["services"] });
+      qc.invalidateQueries({ queryKey: qk.services.all() });
     },
   });
 }
 
 export function useServiceDetail(id: number | undefined) {
   return useQuery<ServiceDetailDto>({
-    queryKey: ["service", id],
+    queryKey: qk.service.detail(id),
     queryFn: () => api.get(`api/services/${id}`).json(),
     enabled: !!id,
     staleTime: 30_000,
@@ -145,7 +146,7 @@ export function useServiceDetail(id: number | undefined) {
 
 export function useServiceComments(id: number | undefined) {
   return useQuery<ServiceCommentDto[]>({
-    queryKey: ["service", id, "comments"],
+    queryKey: qk.service.comments(id),
     queryFn: () => api.get(`api/services/${id}/comments`).json(),
     enabled: !!id,
     staleTime: 15_000,
@@ -158,8 +159,8 @@ export function useCreateServiceComment(id: number) {
     mutationFn: (body: { text: string; rating: number | null }) =>
       api.post(`api/services/${id}/comments`, { json: body }).json<ServiceCommentDto>(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["service", id, "comments"] });
-      qc.invalidateQueries({ queryKey: ["service", id] });
+      qc.invalidateQueries({ queryKey: qk.service.comments(id) });
+      qc.invalidateQueries({ queryKey: qk.service.detail(id) });
     },
   });
 }
@@ -170,8 +171,8 @@ export function useDeleteServiceComment(id: number) {
     mutationFn: (commentId: number) =>
       api.delete(`api/services/${id}/comments/${commentId}`).json(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["service", id, "comments"] });
-      qc.invalidateQueries({ queryKey: ["service", id] });
+      qc.invalidateQueries({ queryKey: qk.service.comments(id) });
+      qc.invalidateQueries({ queryKey: qk.service.detail(id) });
     },
   });
 }
@@ -198,7 +199,7 @@ export function useUsers(params: UsersQueryParams = {}) {
   if (params.reg_from) searchParams.reg_from = params.reg_from;
   if (params.reg_to) searchParams.reg_to = params.reg_to;
   return useQuery<UserCardDto[]>({
-    queryKey: ["users", params],
+    queryKey: qk.users.list(params),
     queryFn: () => api.get("api/users", { searchParams }).json(),
     staleTime: 15_000,
   });
@@ -206,7 +207,7 @@ export function useUsers(params: UsersQueryParams = {}) {
 
 export function useUser(username: string | undefined) {
   return useQuery<UserCardDto>({
-    queryKey: ["user", username],
+    queryKey: qk.user.detail(username),
     queryFn: () => api.get(`api/users/${username}`).json(),
     enabled: !!username,
   });
@@ -217,7 +218,7 @@ export function useDeals(params: { role?: string; status?: string } = {}) {
   if (params.role) searchParams.role = params.role;
   if (params.status) searchParams.status = params.status;
   return useQuery<DealDto[]>({
-    queryKey: ["deals", params],
+    queryKey: qk.deals.list(params),
     queryFn: () => api.get("api/deals", { searchParams }).json(),
     staleTime: 15_000,
   });
@@ -225,7 +226,7 @@ export function useDeals(params: { role?: string; status?: string } = {}) {
 
 export function useDeal(id: number | undefined) {
   return useQuery<DealDto>({
-    queryKey: ["deal", id],
+    queryKey: qk.deal.detail(id),
     queryFn: () => api.get(`api/deals/${id}`).json(),
     enabled: !!id,
   });
@@ -253,7 +254,7 @@ export interface DealMessageDto {
 
 export function useDealMessages(dealId: number | undefined) {
   return useQuery<DealMessageDto[]>({
-    queryKey: ["deal", dealId, "messages"],
+    queryKey: qk.deal.messages(dealId),
     queryFn: () => api.get(`api/deals/${dealId}/messages`).json(),
     enabled: !!dealId,
     staleTime: 10_000,
@@ -267,7 +268,7 @@ export function useSendDealMessage(dealId: number) {
       api.post(`api/deals/${dealId}/messages`, { json: body }).json<DealMessageDto>(),
     onSuccess: (msg) => {
       qc.setQueryData<DealMessageDto[] | undefined>(
-        ["deal", dealId, "messages"],
+        qk.deal.messages(dealId),
         (prev) => {
           if (!prev) return [msg];
           if (prev.some((m) => m.id === msg.id)) return prev;
@@ -292,9 +293,9 @@ export function useDealAction(action: DealActionPath) {
         .post(`api/deals/${id}/${action}`, body ? { json: body } : {})
         .json<DealDto>(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["deals"] });
-      qc.invalidateQueries({ queryKey: ["deal"] });
-      qc.invalidateQueries({ queryKey: ["wallet"] });
+      qc.invalidateQueries({ queryKey: qk.deals.all() });
+      qc.invalidateQueries({ queryKey: qk.deal.all() });
+      qc.invalidateQueries({ queryKey: qk.wallet.all() });
     },
   });
 }
@@ -311,15 +312,15 @@ export function useCreateDeal() {
       currency_code: string;
     }) => api.post("api/deals", { json: body }).json<DealDto>(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["deals"] });
-      qc.invalidateQueries({ queryKey: ["wallet"] });
+      qc.invalidateQueries({ queryKey: qk.deals.all() });
+      qc.invalidateQueries({ queryKey: qk.wallet.all() });
     },
   });
 }
 
 export function useReviews(username: string | undefined) {
   return useQuery<ReviewDto[]>({
-    queryKey: ["reviews", username],
+    queryKey: qk.reviews.forUser(username),
     queryFn: () => api.get("api/reviews", { searchParams: { user: username! } }).json(),
     enabled: !!username,
   });
@@ -331,15 +332,15 @@ export function useCreateReview() {
     mutationFn: (body: { target_username: string; rating: number; text: string; deal_id: number }) =>
       api.post("api/reviews", { json: body }).json<ReviewDto>(),
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ["reviews", vars.target_username] });
-      qc.invalidateQueries({ queryKey: ["user", vars.target_username] });
+      qc.invalidateQueries({ queryKey: qk.reviews.forUser(vars.target_username) });
+      qc.invalidateQueries({ queryKey: qk.user.detail(vars.target_username) });
     },
   });
 }
 
 export function useNotifications(type?: string) {
   return useQuery<NotificationDto[]>({
-    queryKey: ["notifications", type ?? "all"],
+    queryKey: qk.notifications.list(type),
     queryFn: () =>
       api.get("api/notifications", { searchParams: type ? { type } : {} }).json(),
     refetchInterval: 30_000,
@@ -348,7 +349,7 @@ export function useNotifications(type?: string) {
 
 export function useNotification(id: number | undefined) {
   return useQuery<NotificationDto>({
-    queryKey: ["notifications", "detail", id],
+    queryKey: qk.notifications.detail(id),
     queryFn: () => api.get(`api/notifications/${id}`).json(),
     enabled: typeof id === "number" && Number.isFinite(id),
   });
@@ -356,7 +357,7 @@ export function useNotification(id: number | undefined) {
 
 export function useNotificationCounters() {
   return useQuery<NotificationCountersDto>({
-    queryKey: ["notifications", "counters"],
+    queryKey: qk.notifications.counters(),
     queryFn: () => api.get("api/notifications/counters").json(),
     refetchInterval: 30_000,
   });
@@ -367,7 +368,7 @@ export function useMarkNotificationRead() {
   return useMutation({
     mutationFn: (id: number) => api.post(`api/notifications/${id}/read`).json(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: qk.notifications.all() });
     },
   });
 }
@@ -376,13 +377,13 @@ export function useMarkAllRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.post("api/notifications/read-all").json(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.notifications.all() }),
   });
 }
 
 export function useAdmins() {
   return useQuery<SupportPersonDto[]>({
-    queryKey: ["support", "admins"],
+    queryKey: qk.support.admins(),
     queryFn: () => api.get("api/support/admins").json(),
     staleTime: 5 * 60_000,
   });
@@ -390,7 +391,7 @@ export function useAdmins() {
 
 export function useArbiters() {
   return useQuery<SupportPersonDto[]>({
-    queryKey: ["support", "arbiters"],
+    queryKey: qk.support.arbiters(),
     queryFn: () => api.get("api/support/arbiters").json(),
     staleTime: 5 * 60_000,
   });
@@ -398,7 +399,7 @@ export function useArbiters() {
 
 export function useDeposits() {
   return useQuery<DepositDto[]>({
-    queryKey: ["payments", "deposits"],
+    queryKey: qk.payments.deposits(),
     queryFn: () => api.get("api/payments/deposit").json(),
     staleTime: 30_000,
   });
@@ -416,8 +417,8 @@ export function useCreateDeposit() {
   return useMutation({
     mutationFn: (amount: number) => api.post("api/payments/deposit", { json: { amount } }).json<DepositDto>(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["payments"] });
-      qc.invalidateQueries({ queryKey: ["me"] });
+      qc.invalidateQueries({ queryKey: qk.payments.all() });
+      qc.invalidateQueries({ queryKey: qk.me() });
     },
   });
 }
@@ -426,7 +427,7 @@ export function useCreateDeposit() {
 
 export function usePinStatus() {
   return useQuery<PinStatusDto>({
-    queryKey: ["pin", "status"],
+    queryKey: qk.pin.status(),
     queryFn: () => api.get("api/pin/status").json(),
     staleTime: 0,
     refetchOnMount: true,
@@ -438,7 +439,7 @@ export function useSetupPin() {
   return useMutation({
     mutationFn: (pin: string) =>
       api.post("api/pin/setup", { json: { pin } }).json<PinTokenDto>(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pin"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.pin.all() }),
   });
 }
 
@@ -447,7 +448,7 @@ export function useCheckPin() {
   return useMutation({
     mutationFn: (pin: string) =>
       api.post("api/pin/check", { json: { pin } }).json<PinTokenDto>(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pin"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.pin.all() }),
   });
 }
 
@@ -456,7 +457,7 @@ export function useChangePin() {
   return useMutation({
     mutationFn: (body: { old_pin: string; new_pin: string }) =>
       api.post("api/pin/change", { json: body }).json<PinTokenDto>(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pin"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.pin.all() }),
   });
 }
 
@@ -471,7 +472,7 @@ export function useConfirmPinReset() {
   return useMutation({
     mutationFn: (body: { code: string; new_pin: string }) =>
       api.post("api/pin/reset/confirm", { json: body }).json<PinTokenDto>(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pin"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.pin.all() }),
   });
 }
 
@@ -479,7 +480,7 @@ export function useConfirmPinReset() {
 
 export function useAccountTransferStatus() {
   return useQuery<AccountTransferStatusDto>({
-    queryKey: ["account", "transfer", "status"],
+    queryKey: qk.account.transfer.status(),
     queryFn: () => api.get("api/account/transfer/status").json(),
     refetchInterval: 30_000,
   });
@@ -490,7 +491,7 @@ export function useStartAccountTransfer() {
   return useMutation({
     mutationFn: () =>
       api.post("api/account/transfer/start").json<AccountTransferStartDto>(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["account", "transfer"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.account.transfer.all() }),
   });
 }
 
@@ -499,7 +500,7 @@ export function useCancelAccountTransfer() {
   return useMutation({
     mutationFn: () =>
       api.post("api/account/transfer/cancel").json<AccountTransferStatusDto>(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["account", "transfer"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.account.transfer.all() }),
   });
 }
 
@@ -520,7 +521,7 @@ export function useConfirmAccountTransfer() {
 
 export function useCurrencies() {
   return useQuery<CurrencyDto[]>({
-    queryKey: ["wallet", "currencies"],
+    queryKey: qk.wallet.currencies(),
     queryFn: () => api.get("api/wallet/currencies").json(),
     staleTime: 60 * 60_000,
   });
@@ -528,7 +529,7 @@ export function useCurrencies() {
 
 export function useWalletBalances() {
   return useQuery<WalletBalanceDto[]>({
-    queryKey: ["wallet", "balances"],
+    queryKey: qk.wallet.balances(),
     queryFn: () => api.get("api/wallet/balances").json(),
     staleTime: 15_000,
   });
@@ -536,14 +537,14 @@ export function useWalletBalances() {
 
 export function useWalletDeposits() {
   return useQuery<WalletDepositDto[]>({
-    queryKey: ["wallet", "deposits"],
+    queryKey: qk.wallet.deposits(),
     queryFn: () => api.get("api/wallet/deposits").json(),
   });
 }
 
 export function useWalletDeposit(id: number | undefined) {
   return useQuery<WalletDepositDto>({
-    queryKey: ["wallet", "deposit", id],
+    queryKey: qk.wallet.deposit(id),
     queryFn: () => api.get(`api/wallet/deposits/${id}`).json(),
     enabled: !!id,
     refetchInterval: (q) => (q.state.data?.status === "pending" ? 5_000 : false),
@@ -556,15 +557,15 @@ export function useCreateWalletDeposit() {
     mutationFn: (body: { currency_code: string; amount: number }) =>
       api.post("api/wallet/deposits", { json: body }).json<WalletDepositDto>(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["wallet", "deposits"] });
-      qc.invalidateQueries({ queryKey: ["wallet", "balances"] });
+      qc.invalidateQueries({ queryKey: qk.wallet.deposits() });
+      qc.invalidateQueries({ queryKey: qk.wallet.balances() });
     },
   });
 }
 
 export function useWalletWithdrawals() {
   return useQuery<WalletWithdrawalDto[]>({
-    queryKey: ["wallet", "withdrawals"],
+    queryKey: qk.wallet.withdrawals(),
     queryFn: () => api.get("api/wallet/withdrawals").json(),
   });
 }
@@ -575,8 +576,8 @@ export function useCreateWalletWithdrawal() {
     mutationFn: (body: { currency_code: string; amount: number; address: string }) =>
       api.post("api/wallet/withdrawals", { json: body }).json<WalletWithdrawalDto>(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["wallet", "withdrawals"] });
-      qc.invalidateQueries({ queryKey: ["wallet", "balances"] });
+      qc.invalidateQueries({ queryKey: qk.wallet.withdrawals() });
+      qc.invalidateQueries({ queryKey: qk.wallet.balances() });
     },
   });
 }
