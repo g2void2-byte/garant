@@ -199,9 +199,14 @@ if _totp_bypass():
     # Single startup-time WARNING; intentionally NOT logging the
     # value itself (would defeat the point of treating it as a
     # shared secret in CI logs).
+    # V11-L-15 — structured-logging fields so the JSON-logger
+    # downstream (Loki/Sentry) can pivot on event without regexing
+    # the message body. The ``event`` name is intentionally loud —
+    # this should fire an alert in any production environment.
     logger.warning(
         "ADMIN_TOTP_BYPASS is set — 2FA is bypassed for matching "
-        "X-Totp-Code headers. This MUST NOT be set in production."
+        "X-Totp-Code headers. This MUST NOT be set in production.",
+        extra={"event": "auth_2fa.bypass.enabled"},
     )
 
 

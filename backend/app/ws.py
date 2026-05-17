@@ -178,10 +178,18 @@ class ConnectionManager:
         existing = self._connections.get(user_id, [])
         cap = settings.ws_max_sockets_per_user
         if cap and len(existing) >= cap:
+            # V11-L-15 — structured-logging fields so the JSON-logger
+            # downstream (Loki/Sentry) can pivot on event/user_id
+            # without regexing the message body.
             logger.warning(
                 "WS socket cap reached: user_id=%d cap=%d — rejecting",
                 user_id,
                 cap,
+                extra={
+                    "event": "ws.connect.socket_cap_reached",
+                    "user_id": user_id,
+                    "cap": cap,
+                },
             )
             try:
                 await websocket.close(code=4008, reason="Too many connections")
@@ -200,10 +208,19 @@ class ConnectionManager:
         # exercise in tests.
         self._states[id(websocket)] = state
         state.writer_task = asyncio.create_task(self._writer(state))
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event/user_id and
+        # the per-user socket count without regexing the message body.
+        total = len(self._connections.get(user_id, []))
         logger.info(
             "WS connected: user_id=%d (total=%d)",
             user_id,
-            len(self._connections.get(user_id, [])),
+            total,
+            extra={
+                "event": "ws.connect.ok",
+                "user_id": user_id,
+                "total_sockets": total,
+            },
         )
 
     def disconnect(self, user_id: int, websocket: WebSocket) -> None:
@@ -238,7 +255,13 @@ class ConnectionManager:
         try:
             await r.publish(WS_CHANNEL, envelope)
         except Exception:  # noqa: BLE001
-            logger.exception("WS publish failed; falling back to local delivery")
+            # V11-L-15 — structured-logging fields so the JSON-logger
+            # downstream (Loki/Sentry) can pivot on event/user_id
+            # without regexing the message body.
+            logger.exception(
+                "WS publish failed; falling back to local delivery",
+                extra={"event": "ws.publish.failed", "user_id": user_id},
+            )
             await self._send_local(user_id, data)
 
     async def invalidate_user(self, user_id: int) -> None:
@@ -258,7 +281,13 @@ class ConnectionManager:
         try:
             await r.publish(WS_INVALIDATE_CHANNEL, envelope)
         except Exception:  # noqa: BLE001
-            logger.exception("WS invalidate publish failed; falling back to local close")
+            # V11-L-15 — structured-logging fields so the JSON-logger
+            # downstream (Loki/Sentry) can pivot on event/user_id
+            # without regexing the message body.
+            logger.exception(
+                "WS invalidate publish failed; falling back to local close",
+                extra={"event": "ws.invalidate.publish_failed", "user_id": user_id},
+            )
             await self._close_local(user_id)
 
     # ``send_to_user`` is kept for direct local delivery (used by the
@@ -297,11 +326,21 @@ class ConnectionManager:
         if len(state.queue) == state.queue.maxlen:
             state.dropped += 1
             if state.dropped == 1 or state.dropped % 100 == 0:
+                # V11-L-15 — structured-logging fields so the JSON-
+                # logger downstream (Loki/Sentry) can pivot on event/
+                # user_id and the cumulative drop count without
+                # regexing the message body.
                 logger.warning(
                     "WS slow consumer: user_id=%d dropped=%d (queue cap=%d)",
                     state.user_id,
                     state.dropped,
                     state.queue.maxlen,
+                    extra={
+                        "event": "ws.writer.slow_consumer",
+                        "user_id": state.user_id,
+                        "dropped": state.dropped,
+                        "queue_cap": state.queue.maxlen,
+                    },
                 )
         state.queue.append(payload)
         state.wake.set()
@@ -329,9 +368,18 @@ class ConnectionManager:
                             timeout=WS_SEND_TIMEOUT_SECONDS,
                         )
                     except asyncio.TimeoutError:
+                        # V11-L-15 — structured-logging fields so the
+                        # JSON-logger downstream (Loki/Sentry) can
+                        # pivot on event/user_id without regexing the
+                        # message body.
                         logger.warning(
                             "WS writer: send timeout user_id=%d — closing socket",
                             state.user_id,
+                            extra={
+                                "event": "ws.writer.send_timeout",
+                                "user_id": state.user_id,
+                                "timeout_seconds": WS_SEND_TIMEOUT_SECONDS,
+                            },
                         )
                         state.closed = True
                         try:
@@ -340,7 +388,14 @@ class ConnectionManager:
                                 reason="Send timeout",
                             )
                         except Exception:  # noqa: BLE001
-                            logger.debug("WS writer: close after timeout failed", exc_info=True)
+                            logger.debug(
+                                "WS writer: close after timeout failed",
+                                exc_info=True,
+                                extra={
+                                    "event": "ws.writer.close_after_timeout_failed",
+                                    "user_id": state.user_id,
+                                },
+                            )
                         return
                     except Exception:  # noqa: BLE001
                         # ``send_text`` raises on a dead socket. The
@@ -370,7 +425,17 @@ class ConnectionManager:
             try:
                 await ws.close(code=WS_INVALIDATE_CLOSE_CODE, reason="Session revoked")
             except Exception:  # noqa: BLE001
-                logger.debug("WS close on invalidate failed", exc_info=True)
+                # V11-L-15 — structured-logging fields so the JSON-
+                # logger downstream (Loki/Sentry) can pivot on event/
+                # user_id without regexing the message body.
+                logger.debug(
+                    "WS close on invalidate failed",
+                    exc_info=True,
+                    extra={
+                        "event": "ws.close.on_invalidate_failed",
+                        "user_id": user_id,
+                    },
+                )
             finally:
                 self.disconnect(user_id, ws)
 
@@ -397,7 +462,13 @@ class ConnectionManager:
             ps = r.pubsub()
             await ps.subscribe(WS_CHANNEL, WS_INVALIDATE_CHANNEL)
         except Exception:  # noqa: BLE001
-            logger.exception("WS subscriber: subscribe failed; staying local-only")
+            # V11-L-15 — structured-logging fields so the JSON-logger
+            # downstream (Loki/Sentry) can pivot on event without
+            # regexing the message body.
+            logger.exception(
+                "WS subscriber: subscribe failed; staying local-only",
+                extra={"event": "ws.subscriber.subscribe_failed"},
+            )
             return
         self._pubsub = ps
         self._pubsub_task = asyncio.create_task(self._listen(ps))
@@ -418,7 +489,13 @@ class ConnectionManager:
                 await ps.unsubscribe(WS_CHANNEL, WS_INVALIDATE_CHANNEL)
                 await ps.aclose()
             except Exception:  # noqa: BLE001
-                logger.exception("WS subscriber: error during shutdown")
+                # V11-L-15 — structured-logging fields so the JSON-
+                # logger downstream (Loki/Sentry) can pivot on event
+                # without regexing the message body.
+                logger.exception(
+                    "WS subscriber: error during shutdown",
+                    extra={"event": "ws.subscriber.shutdown_failed"},
+                )
 
         age_task = self._age_task
         self._age_task = None
@@ -445,18 +522,34 @@ class ConnectionManager:
             if s.auth_date_epoch is not None and s.auth_date_epoch < cutoff and not s.closed
         ]
         for state in expired:
+            # V11-L-15 — structured-logging fields so the JSON-logger
+            # downstream (Loki/Sentry) can pivot on event/user_id/
+            # auth_date_epoch without regexing the message body.
             logger.info(
                 "WS age cap: closing user_id=%d auth_date=%d (cap=%ds)",
                 state.user_id,
                 state.auth_date_epoch or 0,
                 WS_MAX_AGE_SECONDS,
+                extra={
+                    "event": "ws.age_cap.evict",
+                    "user_id": state.user_id,
+                    "auth_date_epoch": state.auth_date_epoch or 0,
+                    "cap_seconds": WS_MAX_AGE_SECONDS,
+                },
             )
             state.closed = True
             state.wake.set()
             try:
                 await state.websocket.close(code=WS_AGE_CLOSE_CODE, reason="Auth expired")
             except Exception:  # noqa: BLE001
-                logger.debug("WS age cap: close failed", exc_info=True)
+                logger.debug(
+                    "WS age cap: close failed",
+                    exc_info=True,
+                    extra={
+                        "event": "ws.age_cap.close_failed",
+                        "user_id": state.user_id,
+                    },
+                )
         return len(expired)
 
     async def _age_check_loop(self) -> None:
@@ -476,7 +569,13 @@ class ConnectionManager:
                 try:
                     await self._evict_expired_once()
                 except Exception:  # noqa: BLE001
-                    logger.exception("WS age-check iteration failed")
+                    # V11-L-15 — structured-logging fields so the
+                    # JSON-logger downstream (Loki/Sentry) can pivot
+                    # on event without regexing the message body.
+                    logger.exception(
+                        "WS age-check iteration failed",
+                        extra={"event": "ws.age_cap.iteration_failed"},
+                    )
         except asyncio.CancelledError:
             raise
 
@@ -499,9 +598,18 @@ class ConnectionManager:
                 # blast radius.
                 raw = message.get("data")
                 if isinstance(raw, (str, bytes)) and len(raw) > _WS_MAX_ENVELOPE_BYTES:
+                    # V11-L-15 — structured-logging fields so the
+                    # JSON-logger downstream (Loki/Sentry) can pivot
+                    # on event/size without regexing the message
+                    # body.
                     logger.warning(
                         "WS subscriber: oversized envelope (%d bytes) dropped",
                         len(raw),
+                        extra={
+                            "event": "ws.subscriber.oversized_envelope",
+                            "envelope_bytes": len(raw),
+                            "cap_bytes": _WS_MAX_ENVELOPE_BYTES,
+                        },
                     )
                     continue
                 channel = message.get("channel")
@@ -510,31 +618,61 @@ class ConnectionManager:
                         envelope = json.loads(raw)
                         user_id = int(envelope["user_id"])
                     except (KeyError, ValueError, TypeError):
+                        # V11-L-15 — structured-logging fields so the
+                        # JSON-logger downstream (Loki/Sentry) can
+                        # pivot on event without regexing the
+                        # message body. ``raw`` is deliberately NOT
+                        # in ``extra`` — it would explode log cardi‐
+                        # nality on a hostile publisher.
                         logger.warning(
                             "WS subscriber: malformed invalidate envelope %r",
                             raw,
+                            extra={
+                                "event": "ws.subscriber.malformed_invalidate",
+                            },
                         )
                         continue
                     try:
                         await self._close_local(user_id)
                     except Exception:  # noqa: BLE001
-                        logger.exception("WS subscriber: local invalidate failed")
+                        logger.exception(
+                            "WS subscriber: local invalidate failed",
+                            extra={
+                                "event": "ws.subscriber.local_invalidate_failed",
+                                "user_id": user_id,
+                            },
+                        )
                     continue
                 try:
                     envelope = json.loads(raw)
                     user_id = int(envelope["user_id"])
                     data = envelope["data"]
                 except (KeyError, ValueError, TypeError):
-                    logger.warning("WS subscriber: malformed envelope %r", raw)
+                    # V11-L-15 — same rationale as the invalidate
+                    # branch above: ``raw`` stays out of ``extra``.
+                    logger.warning(
+                        "WS subscriber: malformed envelope %r",
+                        raw,
+                        extra={"event": "ws.subscriber.malformed_envelope"},
+                    )
                     continue
                 try:
                     await self._send_local(user_id, data)
                 except Exception:  # noqa: BLE001
-                    logger.exception("WS subscriber: local dispatch failed")
+                    logger.exception(
+                        "WS subscriber: local dispatch failed",
+                        extra={
+                            "event": "ws.subscriber.local_dispatch_failed",
+                            "user_id": user_id,
+                        },
+                    )
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
-            logger.exception("WS subscriber: listen loop crashed")
+            logger.exception(
+                "WS subscriber: listen loop crashed",
+                extra={"event": "ws.subscriber.listen_loop_crashed"},
+            )
 
     def check_recv_rate(self, websocket: WebSocket) -> bool:
         """Return True if the inbound rate is within limits."""

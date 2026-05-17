@@ -85,16 +85,45 @@ def _make_sweep_loop(
             try:
                 affected = await work()
                 if affected:
-                    logger.info(success_message, affected)
+                    # V11-L-15 — structured-logging fields so the
+                    # JSON-logger downstream (Loki/Sentry) can pivot
+                    # on event/sweep_name/affected_count without
+                    # regexing the message body. ``success_message``
+                    # is a per-sweep format string that already
+                    # includes ``%d`` for the count.
+                    logger.info(
+                        success_message,
+                        affected,
+                        extra={
+                            "event": "sweep.iteration.ok",
+                            "sweep_name": name,
+                            "affected": affected,
+                        },
+                    )
                 backoff_multiplier = 1
                 await asyncio.sleep(interval_seconds)
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001
-                logger.exception("%s sweep failed", name)
+                # V11-L-15 — structured-logging fields so the JSON-
+                # logger downstream (Loki/Sentry) can pivot on event/
+                # sweep_name without regexing the message body. The
+                # next-sleep duration is captured so operators can
+                # see how aggressively the backoff is ramping during
+                # a sustained outage.
                 sleep_for = min(
                     interval_seconds * backoff_multiplier,
                     _SWEEP_BACKOFF_MAX_SECONDS,
+                )
+                logger.exception(
+                    "%s sweep failed",
+                    name,
+                    extra={
+                        "event": "sweep.iteration.failed",
+                        "sweep_name": name,
+                        "next_sleep_seconds": sleep_for,
+                        "backoff_multiplier": backoff_multiplier,
+                    },
                 )
                 backoff_multiplier = min(backoff_multiplier * 2, 64)
                 await asyncio.sleep(sleep_for)
@@ -178,9 +207,18 @@ async def lifespan(app: FastAPI):
                 f"'{settings.environment}'; in-memory rate-limit "
                 "counters are per-process and unsafe with multiple workers."
             )
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event/environment
+        # without regexing the message body. Distinct event from
+        # the production-refusal branch above so dashboards can
+        # tell "silently degraded" from "crashed by design".
         logger.warning(
             "REDIS_URL is empty — rate-limit counters are per-process; "
             "this is OK for development only.",
+            extra={
+                "event": "lifespan.redis.empty_dev_only",
+                "environment": settings.environment,
+            },
         )
 
     # ``ALLOW_UNSIGNED_INIT_DATA`` skips Telegram HMAC verification so the
@@ -493,7 +531,15 @@ async def health():
         async with async_session() as session:
             await session.execute(text("SELECT 1"))
     except Exception:  # noqa: BLE001
-        logger.exception("health check: DB ping failed")
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event without
+        # regexing the message body. The health endpoint is hit by
+        # container orchestrators on a tight cadence — the matching
+        # ``event`` lets dashboards count failures per probe.
+        logger.exception(
+            "health check: DB ping failed",
+            extra={"event": "health.db_ping.failed"},
+        )
         return JSONResponse(
             status_code=503,
             content={"status": "degraded", "db": "down"},

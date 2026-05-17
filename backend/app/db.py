@@ -189,9 +189,21 @@ async def run_migrations() -> None:
     ``env.py``, so we cannot call it directly from a running event loop.
     Off-loading to a thread keeps lifespan startup non-blocking.
     """
-    logger.info("running alembic upgrade head against %s", _redact_dsn(settings.database_url))
+    # V11-L-15 — structured-logging fields so the JSON-logger
+    # downstream (Loki/Sentry) can pivot on event without regexing
+    # the message body. The DSN is redacted before being attached
+    # so the password is never written to ``extra``.
+    redacted_dsn = _redact_dsn(settings.database_url)
+    logger.info(
+        "running alembic upgrade head against %s",
+        redacted_dsn,
+        extra={"event": "alembic.upgrade.start", "database_dsn": redacted_dsn},
+    )
     await asyncio.to_thread(_upgrade_to_head_sync)
-    logger.info("alembic upgrade head complete")
+    logger.info(
+        "alembic upgrade head complete",
+        extra={"event": "alembic.upgrade.ok", "database_dsn": redacted_dsn},
+    )
 
 
 def _expected_alembic_head() -> str:
@@ -222,7 +234,13 @@ async def verify_migrations_at_head() -> None:
     expected = _expected_alembic_head()
     if not expected:
         # Empty ``alembic/versions`` — nothing to verify against.
-        logger.warning("alembic script directory has no head revision; skipping DB version check")
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event without
+        # regexing the message body.
+        logger.warning(
+            "alembic script directory has no head revision; skipping DB version check",
+            extra={"event": "alembic.verify.no_head_revision"},
+        )
         return
 
     # Pre-fix the bare ``SELECT`` propagated SQLAlchemy's
@@ -261,7 +279,20 @@ async def verify_migrations_at_head() -> None:
             "Run 'alembic upgrade head' (or restart the compose 'migrate' service) "
             "to bring the DB to head before starting the API."
         )
-    logger.info("alembic version check OK: DB at %s", current)
+    # V11-L-15 — structured-logging fields so the JSON-logger
+    # downstream (Loki/Sentry) can pivot on event/revision without
+    # regexing the message body. ``current`` is short (alembic rev id)
+    # so attaching it to ``extra`` is safe — cardinality is bounded
+    # by the number of revisions in the script directory.
+    logger.info(
+        "alembic version check OK: DB at %s",
+        current,
+        extra={
+            "event": "alembic.verify.ok",
+            "current_revision": current,
+            "expected_revision": expected,
+        },
+    )
 
 
 def _redact_dsn(url: str) -> str:

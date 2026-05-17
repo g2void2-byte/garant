@@ -67,7 +67,19 @@ async def transfer_start(user: PinUser, session: SessionDep) -> TransferStartOut
     )
     delivered = await send_dm(user.tg_user_id, text)
     if not delivered:
-        logger.warning("account transfer code delivery failed for user %s", user.id)
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event/user_id without
+        # regexing the message body. ``code`` / ``text`` are NOT in
+        # ``extra`` — the plaintext transfer code is a one-shot
+        # secret and must never appear in logs.
+        logger.warning(
+            "account transfer code delivery failed for user %s",
+            user.id,
+            extra={
+                "event": "account_transfer.delivery_failed",
+                "user_id": user.id,
+            },
+        )
     return TransferStartOut(delivered=delivered, expires_at=expires)
 
 
