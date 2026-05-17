@@ -136,7 +136,13 @@ async def update_settings(
         request=request,
     )
     await session.commit()
-    await session.refresh(row)
+    # V11-L-19 — no ``session.refresh()`` here. ``expire_on_commit=False``
+    # keeps the in-memory ``row`` attributes loaded after commit, and
+    # ``_to_out`` reads only the explicit settings columns set above
+    # via ``setattr``. ``AppSettings.updated_at`` has ``onupdate=func.now()``
+    # but ``_to_out`` does NOT include it in the response shape, so
+    # the post-commit refresh used to be a free network round-trip
+    # that nothing read.
     # Drop the in-process maintenance cache so the toggle takes effect
     # on this worker immediately. Other workers / processes catch up
     # within the cache TTL on their own.

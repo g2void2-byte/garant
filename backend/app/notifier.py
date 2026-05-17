@@ -54,11 +54,23 @@ def _payload_within_cap(payload: dict[str, Any] | None) -> dict[str, Any] | None
     if not payload:
         return None
     encoded = json.dumps(payload)
-    if len(encoded.encode("utf-8")) > NOTIFICATION_PAYLOAD_MAX_BYTES:
+    encoded_bytes = len(encoded.encode("utf-8"))
+    if encoded_bytes > NOTIFICATION_PAYLOAD_MAX_BYTES:
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event/size without
+        # regexing the message body. Drop the payload (do NOT
+        # truncate) — half-JSON would be worse than no JSON for
+        # downstream consumers.
         logger.warning(
             "notification payload exceeds %d bytes, dropping (keys=%s)",
             NOTIFICATION_PAYLOAD_MAX_BYTES,
             sorted(payload.keys()),
+            extra={
+                "event": "notifier.payload.over_cap",
+                "encoded_bytes": encoded_bytes,
+                "cap_bytes": NOTIFICATION_PAYLOAD_MAX_BYTES,
+                "payload_keys": sorted(payload.keys()),
+            },
         )
         return None
     return payload
@@ -91,8 +103,21 @@ async def _safe_send_dm(tg_user_id: int, text: str) -> None:
         from .bot.notify import send_dm
 
         await send_dm(tg_user_id, text)
-    except Exception:  # noqa: BLE001
-        logger.exception("DM dispatch failed for tg_user_id=%s", tg_user_id)
+    except Exception as exc:  # noqa: BLE001
+        # V11-L-15 — structured-logging fields so the JSON-logger
+        # downstream (Loki/Sentry) can pivot on event/recipient
+        # without regexing the message body. ``text`` is deliberately
+        # NOT in ``extra`` because it can carry user-visible secrets
+        # (PIN reset codes, OTP, etc.) — see ``bot.notify.send_dm``.
+        logger.exception(
+            "DM dispatch failed for tg_user_id=%s",
+            tg_user_id,
+            extra={
+                "event": "notifier.dm.unexpected_exception",
+                "tg_user_id": tg_user_id,
+                "error_class": type(exc).__name__,
+            },
+        )
 
 
 async def insert(

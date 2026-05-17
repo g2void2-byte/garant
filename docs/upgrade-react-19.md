@@ -1,11 +1,13 @@
 # React 19 migration plan
 
-_Last updated: ${current_date}_
+_Last reviewed: 2026-05-17 (V12-M12)._
+_Last code-touch: still on React 18.3.1 — no migration PR opened yet._
 
-The frontend currently targets **React 18.3.1**. React 19 is GA on npm
-and brings a handful of changes that, while mostly additive, do
-include enough breaking-API tweaks to merit an explicit migration
-plan before we lift the pin in `frontend/package.json`.
+The frontend currently targets **React 18.3.1**. React 19 has been GA
+on npm since 2024-12 (`react@19.0.0`) and brings a handful of
+changes that, while mostly additive, do include enough breaking-API
+tweaks to merit an explicit migration plan before we lift the pin in
+`frontend/package.json`.
 
 This document does **not** contain a code patch — that work needs a
 green CI run in a separate PR. The goal here is to enumerate
@@ -16,18 +18,26 @@ checkable acceptance criterion, and rough out an execution order.
 
 ## Current pinned versions
 
+From `frontend/package.json` (pinned without `^` per V12-M3):
+
 ```
-"react":          "^18.3.1"
-"react-dom":      "^18.3.1"
-"@types/react":   "^18.3.10"
-"framer-motion":  "^11.5.4"
-"typescript":     "^5.5.4"
+"react":          "18.3.1"
+"react-dom":      "18.3.1"
+"@types/react":   "18.3.28"
+"@types/react-dom": "18.3.7"
+"@tanstack/react-query": "5.100.10"
+"framer-motion":  (not in deps — removed since this doc was first written)
+"typescript":     "~5.7"
 ```
 
 React 19 requires `@types/react ≥ 19`, `typescript ≥ 5.0`, and a
-`react-dom` version matching the major. Framer Motion ≥ 11.11
+`react-dom` version matching the major. **TanStack Query**: 5.55+ is
+the minimum that supports React 19's hooks API; we are already on
+5.100.x, so this is no longer a blocker (it _was_ at the time this
+doc was first drafted on TanStack 5.51). Framer Motion ≥ 11.11
 declares React 19 in `peerDependencies`; older 11.x versions warn
-but still work with the React 19 runtime in practice.
+but still work with the React 19 runtime in practice — moot for us
+right now since Framer Motion was removed from the dependency list.
 
 ---
 
@@ -35,9 +45,14 @@ but still work with the React 19 runtime in practice.
 
 ### 1. `forwardRef` is no longer needed for `ref` forwarding
 
-React 19 lets function components accept `ref` as a regular prop,
-and the team recommends migrating off `forwardRef` because it will
-be deprecated in a future major. We have four call sites:
+React 19 lets function components accept `ref` as a regular prop.
+`forwardRef` is **deprecated** in 19 (still works, prints a warning
+in dev) and the React team has flagged it for removal in a **future
+major** (currently slated for React 20, no firm date). Migrating off
+it now means the runtime warning stops showing up and the codebase
+doesn't accumulate technical debt to clean up at the next bump.
+
+We have four call sites:
 
 - `frontend/src/components/ui/Button.tsx`
 - `frontend/src/components/ui/Input.tsx`
@@ -157,20 +172,29 @@ upgrade should make that disappear without a code change.
 
 1. **Audit** — re-run the `git grep` checks listed under each section
    on the migration branch. Anything new that landed since this doc
-   was written needs a fix before the bump.
-2. **Bump types and TS first** — `@types/react@^19`, `@types/react-dom@^19`
-   on the existing React 18 runtime. The compiler errors guide the
-   `forwardRef` and other API migrations.
+   was last reviewed needs a fix before the bump. Pay attention to
+   `forwardRef` (new call sites tend to accumulate quickly), `JSX.`
+   bare references, and any new `useReducer` initialisers.
+2. **Bump types and TS first** — `@types/react@19`, `@types/react-dom@19`
+   (pinned without `^` per V12-M3) on the existing React 18 runtime.
+   The compiler errors guide the `forwardRef` and other API
+   migrations. CI's `npm run typecheck` gate (V12-M4) is the
+   primary green-bar here.
 3. **Migrate `forwardRef`** — the four `frontend/src/components/ui/*.tsx`
-   files. Run `npx tsc -b` to confirm types still pass.
-4. **Bump React + ReactDOM** — `react@^19` and `react-dom@^19`.
-   Run the full test suite (`npx vitest run` once we have it,
-   manual smoke testing of the TMA otherwise) and Cypress / E2E
-   coverage if available.
-5. **Bump Framer Motion** to `^11.11` (the first version that
-   advertises React 19 as a peer dep). Verify animations on the
-   deal-flow page and the home screen.
-6. **Smoke-test in production-like build** — `npm run build` and a
+   files. `npm run typecheck` must stay green; `git grep forwardRef
+   frontend/src` returns nothing.
+4. **Bump React + ReactDOM** — `react@19` and `react-dom@19` (pinned
+   without `^`). Run the full test suite (`npm run test:run`
+   covers vitest, `npm run test:e2e` covers Playwright) and verify
+   `npm run build` succeeds. Dependabot (V12-M3) will continue to
+   open weekly bump PRs on top of the new major.
+5. **Skip Framer Motion** — no longer a dependency in this codebase
+   (was removed since this doc was first written). If it gets
+   re-added, pin to ≥ 11.11 so the React 19 peer-dep is satisfied.
+6. **Re-generate the OpenAPI typings** — `npm run generate:api-types`
+   then confirm `git diff --exit-code` on `src/api/openapi.generated.ts`
+   is empty. The drift gate (V12-H5/L7) will fail CI otherwise.
+7. **Smoke-test in production-like build** — `npm run build` and a
    manual click-through of the staging environment.
 
 ---
@@ -182,3 +206,17 @@ upgrade should make that disappear without a code change.
 - Compiler (the React Forget / React Compiler) — opt-in, separate
   consideration.
 - Concurrent feature adoption beyond what we already use.
+
+---
+
+## Review log
+
+- **2026-05-17 (V12-M12 — refresh)** — Confirmed the audit's blocking
+  notes are no longer accurate: TanStack Query is on 5.100.x (the
+  5.51 → 5.55+ hop happened in #105/V12-M3), Framer Motion is no
+  longer a dependency. Tightened the `forwardRef` deprecation
+  statement (deprecated-not-removed in 19, removal slated for 20),
+  pulled the inline `${current_date}` placeholder, swapped the
+  caret-version examples to the exact pins now in `package.json`,
+  added the OpenAPI re-gen step to the execution order so the
+  drift gate (V12-H5/L7) doesn't ambush the migration PR.
