@@ -18,6 +18,29 @@ from .time_utils import utcnow
 
 _trusted_networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] | None = None
 
+# A-6 — width of ``users.language_code`` in the schema. Kept slightly
+# wider than the IETF "primary tag - region" shape (``pt-BR`` etc.) so
+# Telegram's occasional ``zh-hans``-style payloads still fit, but
+# bounded so a hostile client can't push 1 MiB of garbage into the
+# broadcast filter.
+_LANGUAGE_CODE_MAX_LEN = 16
+
+
+def _normalise_language_code(raw: str | None) -> str | None:
+    """Normalise the Telegram ``language_code`` field for storage.
+
+    Returns ``None`` for missing / empty / non-string inputs so the
+    column stays NULL — broadcast filters then treat the user as
+    "language unknown" (the filter requires an exact match and skips
+    NULL rows).
+    """
+    if not isinstance(raw, str):
+        return None
+    code = raw.strip().lower()
+    if not code:
+        return None
+    return code[:_LANGUAGE_CODE_MAX_LEN]
+
 
 def _get_trusted_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
     global _trusted_networks
@@ -114,6 +137,13 @@ async def get_current_user(
         # idempotent and safe to retry — and required, because every
         # downstream endpoint depends on ``current_user`` being
         # populated.
+        # A-6 — Telegram populates ``user.language_code`` (a two-letter
+        # IETF tag like ``ru`` or ``en``, occasionally a region-tagged
+        # variant like ``pt-br``) in the initData blob. Normalise to
+        # lowercase + clip to the column width so a misbehaving client
+        # can't OOM the admin broadcast filter, and tolerate clients
+        # that omit the field entirely (legacy Telegram desktop builds).
+        language_code = _normalise_language_code(tg_user.get("language_code"))
         ins = (
             pg_insert(User)
             .values(
@@ -121,6 +151,7 @@ async def get_current_user(
                 username=tg_user.get("username"),
                 display_name=tg_user.get("first_name", ""),
                 photo_url=tg_user.get("photo_url"),
+                language_code=language_code,
                 last_ip=ip,
                 last_login_at=now,
                 login_count=1,
@@ -154,6 +185,15 @@ async def get_current_user(
         dirty = False
         if tg_user.get("username") and user.username != tg_user["username"]:
             user.username = tg_user["username"]
+            dirty = True
+        # A-6 — refresh ``language_code`` on the same dirty-track as
+        # ``username`` so an admin broadcast targeting the ``ru`` cohort
+        # picks up users who switched their Telegram client locale
+        # since their last visit. Comparing to ``user.language_code``
+        # avoids touching the row when nothing changed.
+        observed_lang = _normalise_language_code(tg_user.get("language_code"))
+        if observed_lang is not None and user.language_code != observed_lang:
+            user.language_code = observed_lang
             dirty = True
         # "Session ping": stamp ``last_login_at`` / bump ``login_count``
         # for the admin panel's "last seen" column. Debounced to at

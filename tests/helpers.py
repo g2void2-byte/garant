@@ -14,19 +14,33 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-def signed_init_data(tg_user_id: int, username: str = "user") -> str:
+def signed_init_data(
+    tg_user_id: int,
+    username: str = "user",
+    *,
+    language_code: str | None = None,
+) -> str:
     """Build a Telegram WebApp initData string signed with the test bot token.
 
     Mirrors the algorithm in ``backend.app.security.verify_init_data``:
     sort fields, HMAC-SHA256 over the key derived from ``"WebAppData"`` +
     bot_token.
+
+    ``language_code`` is the IETF tag Telegram nests inside the ``user``
+    payload (e.g. ``"ru"``, ``"en"``). Tests targeting the A-6 cohort
+    filters pass it through here so the resulting initData round-trips
+    into ``users.language_code``.
     """
     from backend.app.config import settings
 
-    user = json.dumps(
-        {"id": tg_user_id, "first_name": username, "username": username},
-        separators=(",", ":"),
-    )
+    user_payload: dict[str, object] = {
+        "id": tg_user_id,
+        "first_name": username,
+        "username": username,
+    }
+    if language_code is not None:
+        user_payload["language_code"] = language_code
+    user = json.dumps(user_payload, separators=(",", ":"))
     auth_date = str(int(time.time()))
     items = sorted([("auth_date", auth_date), ("user", user)])
     data_check_string = "\n".join(f"{k}={v}" for k, v in items)

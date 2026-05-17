@@ -67,6 +67,23 @@ def _audience_filter(body: AdminBroadcastCreateIn):
         clauses.append(User.last_login_at >= since)
     if body.audience_min_deals is not None:
         clauses.append(User.deals_total >= body.audience_min_deals)
+    # A-6 — temporal cohort. ``created_after`` is inclusive on the
+    # boundary so an admin picking "users from 2026-01-01" includes
+    # the row stamped at midnight. The audience builder treats the
+    # window as half-open at the upper bound (``< created_before``)
+    # to match the conventional "users before this date" reading.
+    if body.audience_created_after is not None:
+        clauses.append(User.created_at >= body.audience_created_after)
+    if body.audience_created_before is not None:
+        clauses.append(User.created_at < body.audience_created_before)
+    # A-6 — language cohort. ``audience_language`` was lowercased by
+    # the schema validator and ``users.language_code`` is stored
+    # lowercased by ``deps._normalise_language_code``, so an
+    # exact-match comparator is enough — no ``func.lower(...)``
+    # wrapper needed, which keeps the existing ``ix_users_language_code``
+    # btree usable.
+    if body.audience_language is not None:
+        clauses.append(User.language_code == body.audience_language)
     return and_(*clauses) if clauses else None
 
 
@@ -81,6 +98,9 @@ def _to_out(b: Broadcast, actor: User | None) -> AdminBroadcastOut:
         audience_role=b.audience_role,
         audience_active_days=b.audience_active_days,
         audience_min_deals=b.audience_min_deals,
+        audience_created_after=b.audience_created_after,
+        audience_created_before=b.audience_created_before,
+        audience_language=b.audience_language,
         dispatch_inapp=bool(b.dispatch_inapp),
         dispatch_dm=bool(b.dispatch_dm),
         status=b.status,
@@ -173,6 +193,9 @@ async def create_broadcast(
         audience_role=body.audience_role,
         audience_active_days=body.audience_active_days,
         audience_min_deals=body.audience_min_deals,
+        audience_created_after=body.audience_created_after,
+        audience_created_before=body.audience_created_before,
+        audience_language=body.audience_language,
         dispatch_inapp=body.dispatch_inapp,
         dispatch_dm=body.dispatch_dm,
         status="sent",
@@ -194,6 +217,21 @@ async def create_broadcast(
             "audience_role": body.audience_role,
             "audience_active_days": body.audience_active_days,
             "audience_min_deals": body.audience_min_deals,
+            # A-6 — capture the new cohort filters in the audit payload
+            # so the forensic viewer can reconstruct *exactly* who was
+            # targeted. Datetimes are serialised as ISO-8601 strings
+            # because the JSONB column can't store ``datetime`` directly.
+            "audience_created_after": (
+                body.audience_created_after.isoformat()
+                if body.audience_created_after is not None
+                else None
+            ),
+            "audience_created_before": (
+                body.audience_created_before.isoformat()
+                if body.audience_created_before is not None
+                else None
+            ),
+            "audience_language": body.audience_language,
             "total_recipients": len(recipients),
             "delivered": delivered,
             "failed": failed,

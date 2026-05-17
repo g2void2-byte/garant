@@ -529,6 +529,41 @@
             ],
             "title": "Audience Active Days"
           },
+          "audience_created_after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audience Created After"
+          },
+          "audience_created_before": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audience Created Before"
+          },
+          "audience_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audience Language"
+          },
           "audience_min_deals": {
             "anyOf": [
               {
@@ -665,6 +700,41 @@
             ],
             "title": "Audience Active Days"
           },
+          "audience_created_after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audience Created After"
+          },
+          "audience_created_before": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audience Created Before"
+          },
+          "audience_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audience Language"
+          },
           "audience_min_deals": {
             "anyOf": [
               {
@@ -774,6 +844,9 @@
           "audience_role",
           "audience_active_days",
           "audience_min_deals",
+          "audience_created_after",
+          "audience_created_before",
+          "audience_language",
           "dispatch_inapp",
           "dispatch_dm",
           "status",

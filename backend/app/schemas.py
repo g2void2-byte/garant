@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from .models import PayCommission
 
@@ -1556,6 +1556,13 @@ class AdminBroadcastOut(BaseModel):
     audience_role: str | None
     audience_active_days: int | None
     audience_min_deals: int | None
+    # A-6 — temporal + language cohort filters. ``None`` means "unset"
+    # (i.e. the row passes that filter unconditionally); the admin
+    # composer round-trips these so historical broadcasts remain
+    # inspectable.
+    audience_created_after: datetime | None
+    audience_created_before: datetime | None
+    audience_language: str | None
     dispatch_inapp: bool
     dispatch_dm: bool
     status: str
@@ -1587,6 +1594,13 @@ class AdminBroadcastCreateIn(BaseModel):
     audience_role: Literal["admin", "arbiter", "vip", "regular"] | None = None
     audience_active_days: int | None = None
     audience_min_deals: int | None = None
+    # A-6 — temporal + language cohort filters. See ``Broadcast`` model
+    # docstring for semantics; validators below enforce ordering /
+    # length so the admin composer can't smuggle a 1 MiB language tag
+    # past the audience builder.
+    audience_created_after: datetime | None = None
+    audience_created_before: datetime | None = None
+    audience_language: str | None = None
     dispatch_inapp: bool = True
     dispatch_dm: bool = False
     scheduled_at: datetime | None = None
@@ -1628,6 +1642,42 @@ class AdminBroadcastCreateIn(BaseModel):
         if v < 0:
             raise ValueError("Значение не может быть отрицательным")
         return v
+
+    @field_validator("audience_language")
+    @classmethod
+    def _language_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        # Normalise to the same lowercase / trimmed shape we persist on
+        # ``users.language_code`` so an admin entering ``"RU"`` matches
+        # users whose Telegram client reported ``"ru"``.
+        v = v.strip().lower()
+        if not v:
+            return None
+        if len(v) > 16:
+            raise ValueError("Языковой код слишком длинный (≤16)")
+        # Telegram tags are alphanumerics + ``-`` only; reject anything
+        # else so an admin can't drop a SQL fragment into the filter.
+        for ch in v:
+            if not (ch.isalnum() or ch == "-"):
+                raise ValueError("Языковой код содержит недопустимые символы")
+        return v
+
+    @model_validator(mode="after")
+    def _validate_audience_window(self) -> "AdminBroadcastCreateIn":
+        # A-6 — guard the obvious caller mistake (``created_after`` past
+        # ``created_before``) at the edge. The audience-builder would
+        # otherwise quietly emit ``0`` recipients and the admin would
+        # wonder why their broadcast went nowhere.
+        if (
+            self.audience_created_after is not None
+            and self.audience_created_before is not None
+            and self.audience_created_after > self.audience_created_before
+        ):
+            raise ValueError(
+                "Окно регистрации задано наоборот: audience_created_after > audience_created_before"
+            )
+        return self
 
 
 class AdminBroadcastPreviewOut(BaseModel):

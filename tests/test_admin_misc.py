@@ -9,6 +9,8 @@ and at least one edge-case assertion.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from sqlalchemy import select
 
 from backend.app.auth_2fa import generate_secret, totp_now
@@ -20,6 +22,7 @@ from backend.app.models import (
     Category,
     User,
 )
+from backend.app.time_utils import utcnow
 from tests.helpers import auth_headers, signed_init_data, with_totp
 
 
@@ -242,6 +245,271 @@ async def test_broadcasts_audience_filter_role(client):
     )
     assert preview.status_code == 200
     assert preview.json()["total_recipients"] == 1
+
+
+async def test_broadcasts_captures_user_language_code(client):
+    """A-6 — Telegram ``user.language_code`` round-trips into ``users.language_code``.
+
+    ``deps.get_current_user`` reads the field out of the signed
+    initData blob and ``_normalise_language_code`` lowercases / clips
+    it. A user who never sends a ``language_code`` keeps the column
+    NULL.
+    """
+    await _make_admin(client, tg=1)
+    init_ru = signed_init_data(2, "ru_user", language_code="RU")
+    init_no_lang = signed_init_data(3, "no_lang_user")
+    resp = await client.get("/api/me", headers=auth_headers(init_ru))
+    assert resp.status_code == 200, resp.text
+    resp = await client.get("/api/me", headers=auth_headers(init_no_lang))
+    assert resp.status_code == 200, resp.text
+
+    async with async_session() as session:
+        ru = (await session.execute(select(User).where(User.tg_user_id == 2))).scalar_one()
+        no_lang = (await session.execute(select(User).where(User.tg_user_id == 3))).scalar_one()
+    # ``RU`` was normalised to lowercase.
+    assert ru.language_code == "ru"
+    assert no_lang.language_code is None
+
+
+async def test_broadcasts_audience_filter_language(client):
+    """A-6 — broadcast preview narrows to a single language cohort."""
+    admin_init, _ = await _make_admin(client, tg=1)
+    # The admin row itself was created without language_code (default
+    # init helper), so it's excluded from the ``ru`` cohort below — we
+    # only want the two explicit ``ru`` users to count.
+    await _bootstrap(client, tg_user_id=2, username="ru1")
+    await _bootstrap(client, tg_user_id=3, username="ru2")
+    await _bootstrap(client, tg_user_id=4, username="en1")
+    async with async_session() as session:
+        for tg_id, lang in [(2, "ru"), (3, "ru"), (4, "en")]:
+            u = (await session.execute(select(User).where(User.tg_user_id == tg_id))).scalar_one()
+            u.language_code = lang
+        await session.commit()
+
+    preview = await client.post(
+        "/api/admin/broadcasts/preview",
+        json={
+            "body": "Привет",
+            "audience_language": "ru",
+            "dispatch_inapp": True,
+            "dispatch_dm": False,
+        },
+        headers=auth_headers(admin_init),
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["total_recipients"] == 2
+
+    # Uppercase input is normalised by the schema validator to match.
+    preview_upper = await client.post(
+        "/api/admin/broadcasts/preview",
+        json={
+            "body": "Привет",
+            "audience_language": "RU",
+            "dispatch_inapp": True,
+            "dispatch_dm": False,
+        },
+        headers=auth_headers(admin_init),
+    )
+    assert preview_upper.status_code == 200
+    assert preview_upper.json()["total_recipients"] == 2
+
+
+async def test_broadcasts_audience_filter_created_window(client):
+    """A-6 — temporal cohort ``created_after`` / ``created_before``.
+
+    Builds three users at synthetic ages (1 / 30 / 90 days old) by
+    backdating ``users.created_at`` directly and asserts that each
+    side of the window is enforced.
+    """
+    admin_init, _ = await _make_admin(client, tg=1)
+    await _bootstrap(client, tg_user_id=2, username="fresh")
+    await _bootstrap(client, tg_user_id=3, username="month_old")
+    await _bootstrap(client, tg_user_id=4, username="quarter_old")
+    now = utcnow()
+    async with async_session() as session:
+        for tg_id, age_days in [(2, 1), (3, 30), (4, 90)]:
+            u = (await session.execute(select(User).where(User.tg_user_id == tg_id))).scalar_one()
+            u.created_at = now - timedelta(days=age_days)
+        await session.commit()
+
+    # ``created_after`` = 60 days ago → only fresh + month_old (admin
+    # ``tg=1`` row is also younger than 60 days, so it joins them).
+    preview = await client.post(
+        "/api/admin/broadcasts/preview",
+        json={
+            "body": "x",
+            "audience_created_after": (now - timedelta(days=60)).isoformat(),
+            "dispatch_inapp": True,
+            "dispatch_dm": False,
+        },
+        headers=auth_headers(admin_init),
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["total_recipients"] == 3
+
+    # ``created_before`` = 15 days ago → only month_old + quarter_old.
+    preview = await client.post(
+        "/api/admin/broadcasts/preview",
+        json={
+            "body": "x",
+            "audience_created_before": (now - timedelta(days=15)).isoformat(),
+            "dispatch_inapp": True,
+            "dispatch_dm": False,
+        },
+        headers=auth_headers(admin_init),
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["total_recipients"] == 2
+
+    # Both sides → only month_old (between 15 and 60 days).
+    preview = await client.post(
+        "/api/admin/broadcasts/preview",
+        json={
+            "body": "x",
+            "audience_created_after": (now - timedelta(days=60)).isoformat(),
+            "audience_created_before": (now - timedelta(days=15)).isoformat(),
+            "dispatch_inapp": True,
+            "dispatch_dm": False,
+        },
+        headers=auth_headers(admin_init),
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["total_recipients"] == 1
+
+
+async def test_broadcasts_audience_filters_compose(client):
+    """A-6 — role + language + window AND together, not OR."""
+    admin_init, _ = await _make_admin(client, tg=1)
+    arbiter_id = await _bootstrap(client, tg_user_id=2, username="arb_ru")
+    await _bootstrap(client, tg_user_id=3, username="reg_ru")
+    await _bootstrap(client, tg_user_id=4, username="arb_en")
+    now = utcnow()
+    async with async_session() as session:
+        for tg_id, lang in [(2, "ru"), (3, "ru"), (4, "en")]:
+            u = (await session.execute(select(User).where(User.tg_user_id == tg_id))).scalar_one()
+            u.language_code = lang
+            # Fresh registrations land *after* the window's lower bound.
+            u.created_at = now - timedelta(days=5)
+        arb = await session.get(User, arbiter_id)
+        arb.is_arbiter = True
+        en = (await session.execute(select(User).where(User.tg_user_id == 4))).scalar_one()
+        en.is_arbiter = True
+        await session.commit()
+
+    preview = await client.post(
+        "/api/admin/broadcasts/preview",
+        json={
+            "body": "x",
+            "audience_role": "arbiter",
+            "audience_language": "ru",
+            "audience_created_after": (now - timedelta(days=30)).isoformat(),
+            "dispatch_inapp": True,
+            "dispatch_dm": False,
+        },
+        headers=auth_headers(admin_init),
+    )
+    assert preview.status_code == 200, preview.text
+    # Only the ru-speaking arbiter matches all three filters.
+    assert preview.json()["total_recipients"] == 1
+
+
+async def test_broadcasts_round_trip_serialises_new_fields(client):
+    """A-6 — POST → GET round-trip preserves the new audience fields.
+
+    Sends a broadcast with every new filter set, then re-reads the
+    history list and confirms the response carries those fields with
+    the same values. Also confirms the audit-log payload captured the
+    new keys (datetimes ISO-encoded).
+    """
+    admin_init, admin_id = await _make_admin(client, tg=1)
+    await _bootstrap(client, tg_user_id=2, username="other")
+    now = utcnow()
+    after = now - timedelta(days=30)
+    before = now + timedelta(days=1)
+
+    send = await client.post(
+        "/api/admin/broadcasts",
+        json={
+            "title": "Hi",
+            "body": "Hello",
+            "audience_created_after": after.isoformat(),
+            "audience_created_before": before.isoformat(),
+            "audience_language": "ru",
+            "dispatch_inapp": True,
+            "dispatch_dm": False,
+        },
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert send.status_code == 200, send.text
+    out = send.json()
+    assert out["audience_created_after"].startswith(after.strftime("%Y-%m-%d"))
+    assert out["audience_created_before"].startswith(before.strftime("%Y-%m-%d"))
+    assert out["audience_language"] == "ru"
+
+    history = await client.get("/api/admin/broadcasts", headers=auth_headers(admin_init))
+    assert history.status_code == 200, history.text
+    items = history.json()["items"]
+    assert len(items) == 1
+    item = items[0]
+    assert item["audience_language"] == "ru"
+    assert item["audience_created_after"].startswith(after.strftime("%Y-%m-%d"))
+    assert item["audience_created_before"].startswith(before.strftime("%Y-%m-%d"))
+
+    async with async_session() as session:
+        audit = (
+            (
+                await session.execute(
+                    select(AdminAuditLog).where(AdminAuditLog.action == "broadcast.send")
+                )
+            )
+            .scalars()
+            .one()
+        )
+        assert audit.actor_id == admin_id
+        payload = audit.payload
+        assert payload is not None
+        assert payload["audience_language"] == "ru"
+        assert payload["audience_created_after"] is not None
+        assert payload["audience_created_before"] is not None
+
+
+async def test_broadcasts_reject_inverted_window(client):
+    """A-6 — ``after > before`` is a 422 from the schema validator."""
+    admin_init, _ = await _make_admin(client, tg=1)
+    now = utcnow()
+    resp = await client.post(
+        "/api/admin/broadcasts/preview",
+        json={
+            "body": "x",
+            "audience_created_after": (now + timedelta(days=1)).isoformat(),
+            "audience_created_before": (now - timedelta(days=1)).isoformat(),
+            "dispatch_inapp": True,
+            "dispatch_dm": False,
+        },
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 422, resp.text
+
+
+async def test_broadcasts_reject_invalid_language(client):
+    """A-6 — language codes with non-alphanumeric chars are rejected.
+
+    Guards against an admin smuggling a ``;`` or whitespace through
+    the audience filter — the validator confines it to the same shape
+    Telegram itself emits.
+    """
+    admin_init, _ = await _make_admin(client, tg=1)
+    resp = await client.post(
+        "/api/admin/broadcasts/preview",
+        json={
+            "body": "x",
+            "audience_language": "ru; DROP TABLE users;--",
+            "dispatch_inapp": True,
+            "dispatch_dm": False,
+        },
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 422, resp.text
 
 
 async def test_broadcasts_rbac(client):

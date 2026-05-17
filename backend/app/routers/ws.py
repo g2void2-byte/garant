@@ -31,6 +31,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from ..db import async_session
+from ..deps import _normalise_language_code
 from ..models import User
 from ..security import InitDataError, verify_init_data
 from ..ws import manager
@@ -124,11 +125,16 @@ async def websocket_endpoint(websocket: WebSocket):
         result = await session.execute(select(User).where(User.tg_user_id == tg_user_id))
         user = result.scalar_one_or_none()
         if user is None:
+            # A-6 — capture the Telegram client locale on the WS first-touch
+            # path too, so a brand-new user whose very first hit is the
+            # notifications socket still lands in the right broadcast
+            # cohort (see ``deps._normalise_language_code``).
             user = User(
                 tg_user_id=tg_user_id,
                 username=tg_user.get("username"),
                 display_name=tg_user.get("first_name", ""),
                 photo_url=tg_user.get("photo_url"),
+                language_code=_normalise_language_code(tg_user.get("language_code")),
             )
             session.add(user)
             await session.commit()
