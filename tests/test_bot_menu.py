@@ -66,25 +66,22 @@ async def _seed_deal(
     """Insert a Deal, optionally pinned to a specific currency.
 
     Post-M-5, ``Deal.amount`` + ``Deal.currency_id`` are what the bot
-    stats query reads; ``Deal.sum`` is only kept for legacy rows.
-    Tests that want to exercise the per-currency branch pass
-    ``amount`` + ``currency_code``; legacy-coverage tests omit
-    ``currency_code`` (set to ``None``) to leave ``currency_id`` NULL.
+    stats query reads. Tests that want to exercise the per-currency
+    branch pass ``amount`` + ``currency_code``; ``currency_code`` is
+    required because ``currency_id`` is NOT NULL after L-2.
     """
     async with async_session() as session:
-        currency_id: int | None = None
-        if currency_code:
-            cur = (
-                await session.execute(select(Currency).where(Currency.code == currency_code))
-            ).scalar_one()
-            currency_id = cur.id
+        assert currency_code, "currency_code is required after L-2 — Deal.currency_id is NOT NULL"
+        cur = (
+            await session.execute(select(Currency).where(Currency.code == currency_code))
+        ).scalar_one()
+        currency_id = cur.id
         d = Deal(
             buyer_id=buyer_id,
             seller_id=seller_id,
-            sum=sum_,
             status=status,
             currency_id=currency_id,
-            amount=amount if amount is not None else (sum_ if currency_id else None),
+            amount=amount if amount is not None else sum_,
         )
         session.add(d)
         await session.commit()

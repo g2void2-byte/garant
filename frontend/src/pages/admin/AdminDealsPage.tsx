@@ -40,13 +40,13 @@ export default function AdminDealsPage() {
   const [params, setParams] = useSearchParams();
   const [filterOpen, setFilterOpen] = useState(false);
   const [draftCurrency, setDraftCurrency] = useState(params.get("currency") ?? "");
-  const [draftMin, setDraftMin] = useState(params.get("min_sum") ?? "");
-  const [draftMax, setDraftMax] = useState(params.get("max_sum") ?? "");
+  const [draftMin, setDraftMin] = useState(params.get("min_amount") ?? "");
+  const [draftMax, setDraftMax] = useState(params.get("max_amount") ?? "");
 
   const status = (params.get("status") ?? "any") as NonNullable<AdminListDealsQuery["status"]>;
   const currency = params.get("currency") ?? undefined;
-  const min_sum = params.get("min_sum") ? Number(params.get("min_sum")) : undefined;
-  const max_sum = params.get("max_sum") ? Number(params.get("max_sum")) : undefined;
+  const min_amount = params.get("min_amount") ? Number(params.get("min_amount")) : undefined;
+  const max_amount = params.get("max_amount") ? Number(params.get("max_amount")) : undefined;
   const has_arbitration = params.get("has_arbitration") === "true" || undefined;
   const has_cancel_request = params.get("has_cancel_request") === "true" || undefined;
   const page = Number(params.get("page") ?? "1") || 1;
@@ -54,8 +54,8 @@ export default function AdminDealsPage() {
   const query: AdminListDealsQuery = {
     status,
     currency,
-    min_sum,
-    max_sum,
+    min_amount,
+    max_amount,
     has_arbitration,
     has_cancel_request,
     page,
@@ -119,21 +119,21 @@ export default function AdminDealsPage() {
       </div>
 
       {/* Active filter chips */}
-      {(currency || min_sum !== undefined || max_sum !== undefined || has_arbitration || has_cancel_request) && (
+      {(currency || min_amount !== undefined || max_amount !== undefined || has_arbitration || has_cancel_request) && (
         <div className="px-4 -mx-1 overflow-x-auto no-scrollbar flex gap-2 mb-3 pb-1">
           {currency && (
             <FilterChip onRemove={() => update({ currency: undefined })}>
               Валюта: {currency}
             </FilterChip>
           )}
-          {min_sum !== undefined && (
-            <FilterChip onRemove={() => update({ min_sum: undefined })}>
-              Мин: {min_sum}
+          {min_amount !== undefined && (
+            <FilterChip onRemove={() => update({ min_amount: undefined })}>
+              Мин: {min_amount}
             </FilterChip>
           )}
-          {max_sum !== undefined && (
-            <FilterChip onRemove={() => update({ max_sum: undefined })}>
-              Макс: {max_sum}
+          {max_amount !== undefined && (
+            <FilterChip onRemove={() => update({ max_amount: undefined })}>
+              Макс: {max_amount}
             </FilterChip>
           )}
           {has_arbitration && (
@@ -257,8 +257,8 @@ export default function AdminDealsPage() {
                 setDraftMax("");
                 update({
                   currency: undefined,
-                  min_sum: undefined,
-                  max_sum: undefined,
+                  min_amount: undefined,
+                  max_amount: undefined,
                   has_arbitration: undefined,
                   has_cancel_request: undefined,
                 });
@@ -272,8 +272,8 @@ export default function AdminDealsPage() {
               onClick={() => {
                 update({
                   currency: draftCurrency || undefined,
-                  min_sum: draftMin ? Number(draftMin) : undefined,
-                  max_sum: draftMax ? Number(draftMax) : undefined,
+                  min_amount: draftMin ? Number(draftMin) : undefined,
+                  max_amount: draftMax ? Number(draftMax) : undefined,
                 });
                 setFilterOpen(false);
               }}
@@ -347,11 +347,9 @@ function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen: () => v
         </div>
         <div className="mt-0.5 text-xs text-text-muted flex items-center gap-2 flex-wrap">
           <span className="font-medium text-text">
-            {deal.amount !== null && deal.amount !== undefined
-              ? parseDecimal(deal.amount).toFixed(
-                  deal.currency_code === "USDT" || deal.currency_code === "USDC" ? 2 : 6,
-                )
-              : parseDecimal(deal.sum).toFixed(2)}{" "}
+            {parseDecimal(deal.amount).toFixed(
+              deal.currency_code === "USDT" || deal.currency_code === "USDC" ? 2 : 6,
+            )}{" "}
             {deal.currency_code ?? "USD"}
           </span>
           <span>·</span>

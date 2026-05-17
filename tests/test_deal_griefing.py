@@ -56,7 +56,7 @@ async def _create_deal(client, *, buyer_tg: int, seller_tg: int) -> tuple[int, s
         json={
             "counterparty": f"grief_seller_{seller_tg}",
             "role": "buyer",
-            "sum": 10,
+            "amount": 10,
             "description": "anti-grief regression",
             "pay_comission": "buyer",
             "currency_code": "USDT",

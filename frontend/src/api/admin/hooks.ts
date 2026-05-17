@@ -170,8 +170,8 @@ function buildDealsSearchParams(query: AdminListDealsQuery): URLSearchParams {
   const params = new URLSearchParams();
   if (query.status && query.status !== "any") params.set("status", query.status);
   if (query.currency) params.set("currency", query.currency);
-  if (query.min_sum !== undefined) params.set("min_sum", String(query.min_sum));
-  if (query.max_sum !== undefined) params.set("max_sum", String(query.max_sum));
+  if (query.min_amount !== undefined) params.set("min_amount", String(query.min_amount));
+  if (query.max_amount !== undefined) params.set("max_amount", String(query.max_amount));
   if (query.has_arbitration) params.set("has_arbitration", "true");
   if (query.has_cancel_request) params.set("has_cancel_request", "true");
   if (query.buyer_id !== undefined) params.set("buyer_id", String(query.buyer_id));

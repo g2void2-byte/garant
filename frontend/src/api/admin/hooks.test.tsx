@@ -62,7 +62,6 @@ function makeDealDetail(overrides: Partial<AdminDealDetailDto> = {}): AdminDealD
     id: 7,
     status: "completed",
     description: "test",
-    sum: "100",
     currency_code: "USDT",
     amount: "100",
     commission_amount: "0",

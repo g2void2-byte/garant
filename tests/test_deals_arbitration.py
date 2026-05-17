@@ -39,7 +39,7 @@ async def test_arbitration_resolved_for_buyer_refunds(client):
             json={
                 "counterparty": "seller2",
                 "role": "buyer",
-                "sum": 20,
+                "amount": 20,
                 "currency_code": "USDT",
                 "pay_comission": "buyer",
             },
@@ -106,7 +106,7 @@ async def test_resolve_requires_admin_or_arbiter(client):
             json={
                 "counterparty": "seller21",
                 "role": "buyer",
-                "sum": 10,
+                "amount": 10,
                 "currency_code": "USDT",
                 "pay_comission": "buyer",
             },

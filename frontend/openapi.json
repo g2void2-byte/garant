@@ -1289,16 +1289,9 @@
         "description": "Full admin view of a deal.",
         "properties": {
           "amount": {
-            "anyOf": [
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Amount"
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount",
+            "type": "string"
           },
           "arbitration_initiator": {
             "anyOf": [
@@ -1496,18 +1489,12 @@
           "status": {
             "title": "Status",
             "type": "string"
-          },
-          "sum": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Sum",
-            "type": "string"
           }
         },
         "required": [
           "id",
           "status",
           "description",
-          "sum",
           "currency_code",
           "amount",
           "commission_amount",
@@ -1593,16 +1580,9 @@
         "description": "Single row in ``GET /api/admin/deals`` listing.\n\nContains identity, money, status, timestamps and a small set of\nderived flags (``has_arbitration``, ``has_cancel_request``) so the\nlist view can filter and badge without a separate per-row fetch.",
         "properties": {
           "amount": {
-            "anyOf": [
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Amount"
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount",
+            "type": "string"
           },
           "buyer_id": {
             "title": "Buyer Id",
@@ -1705,17 +1685,11 @@
           "status": {
             "title": "Status",
             "type": "string"
-          },
-          "sum": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Sum",
-            "type": "string"
           }
         },
         "required": [
           "id",
           "status",
-          "sum",
           "currency_code",
           "amount",
           "commission_amount",
@@ -3694,6 +3668,10 @@
       },
       "DealCreate": {
         "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
           "counterparty": {
             "title": "Counterparty",
             "type": "string"
@@ -3715,16 +3693,12 @@
           "role": {
             "title": "Role",
             "type": "string"
-          },
-          "sum": {
-            "title": "Sum",
-            "type": "number"
           }
         },
         "required": [
           "counterparty",
           "role",
-          "sum"
+          "amount"
         ],
         "title": "DealCreate",
         "type": "object"
@@ -3805,15 +3779,8 @@
       "DealOut": {
         "properties": {
           "amount": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Amount"
+            "title": "Amount",
+            "type": "number"
           },
           "arbitration_initiator": {
             "anyOf": [
@@ -4012,24 +3979,20 @@
           "status": {
             "title": "Status",
             "type": "string"
-          },
-          "sum": {
-            "title": "Sum",
-            "type": "number"
           }
         },
         "required": [
           "id",
           "buyer",
           "seller",
-          "sum",
           "description",
           "pay_comission",
           "status",
           "confirm_buyer",
           "confirm_seller",
           "role",
-          "created_at"
+          "created_at",
+          "amount"
         ],
         "title": "DealOut",
         "type": "object"
@@ -7562,7 +7525,7 @@
           },
           {
             "in": "query",
-            "name": "min_sum",
+            "name": "min_amount",
             "required": false,
             "schema": {
               "anyOf": [
@@ -7573,12 +7536,12 @@
                   "type": "null"
                 }
               ],
-              "title": "Min Sum"
+              "title": "Min Amount"
             }
           },
           {
             "in": "query",
-            "name": "max_sum",
+            "name": "max_amount",
             "required": false,
             "schema": {
               "anyOf": [
@@ -7589,7 +7552,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Max Sum"
+              "title": "Max Amount"
             }
           },
           {

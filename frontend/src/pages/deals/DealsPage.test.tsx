@@ -36,7 +36,6 @@ function makeDeal(overrides: Partial<DealDto> = {}): DealDto {
     id: 1,
     buyer: "alice",
     seller: "bob",
-    sum: 100,
     description: "Test deal",
     pay_comission: "buyer",
     status: "in_progress",

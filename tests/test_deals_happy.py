@@ -34,7 +34,7 @@ async def test_happy_path_deal(client):
         json={
             "counterparty": "seller1",
             "role": "buyer",
-            "sum": 10,
+            "amount": 10,
             "description": "test happy path",
             "pay_comission": "buyer",
             "currency_code": "USDT",
@@ -105,7 +105,7 @@ async def test_decline_refunds_buyer(client):
         json={
             "counterparty": "seller11",
             "role": "buyer",
-            "sum": 20,
+            "amount": 20,
             "currency_code": "USDT",
             "pay_comission": "buyer",
         },
@@ -149,7 +149,7 @@ async def test_insufficient_balance_rejected(client):
         json={
             "counterparty": "seller12",
             "role": "buyer",
-            "sum": 1,
+            "amount": 1,
             "currency_code": "USDT",
             "pay_comission": "buyer",
         },

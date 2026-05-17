@@ -304,7 +304,7 @@ export function useCreateDeal() {
     mutationFn: (body: {
       counterparty: string;
       role: "buyer" | "seller";
-      sum: number;
+      amount: number;
       description: string;
       pay_comission: "buyer" | "seller";
       currency_code: string;

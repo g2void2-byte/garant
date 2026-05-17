@@ -2503,7 +2503,7 @@ export interface components {
          */
         AdminDealDetailOut: {
             /** Amount */
-            amount: string | null;
+            amount: string;
             /** Arbitration Initiator */
             arbitration_initiator: string | null;
             /** Arbitration Reason */
@@ -2553,8 +2553,6 @@ export interface components {
             seller: components["schemas"]["AdminBalanceSnapshot"];
             /** Status */
             status: string;
-            /** Sum */
-            sum: string;
         };
         /**
          * AdminDealEventItem
@@ -2597,7 +2595,7 @@ export interface components {
          */
         AdminDealListItem: {
             /** Amount */
-            amount: string | null;
+            amount: string;
             /** Buyer Id */
             buyer_id: number;
             /** Buyer Username */
@@ -2629,8 +2627,6 @@ export interface components {
             seller_username: string | null;
             /** Status */
             status: string;
-            /** Sum */
-            sum: string;
         };
         /** AdminDealListOut */
         AdminDealListOut: {
@@ -3367,6 +3363,8 @@ export interface components {
         };
         /** DealCreate */
         DealCreate: {
+            /** Amount */
+            amount: number;
             /** Counterparty */
             counterparty: string;
             /**
@@ -3383,8 +3381,6 @@ export interface components {
             pay_comission: components["schemas"]["PayCommission"];
             /** Role */
             role: string;
-            /** Sum */
-            sum: number;
         };
         /** DealMessageCreate */
         DealMessageCreate: {
@@ -3422,7 +3418,7 @@ export interface components {
         /** DealOut */
         DealOut: {
             /** Amount */
-            amount?: number | null;
+            amount: number;
             /** Arbitration Initiator */
             arbitration_initiator?: string | null;
             /** Arbitration Reason */
@@ -3467,8 +3463,6 @@ export interface components {
             seller: string | null;
             /** Status */
             status: string;
-            /** Sum */
-            sum: number;
         };
         /** DealResolveRequest */
         DealResolveRequest: {
@@ -5005,8 +4999,8 @@ export interface operations {
             query?: {
                 status?: string;
                 currency?: string | null;
-                min_sum?: number | null;
-                max_sum?: number | null;
+                min_amount?: number | null;
+                max_amount?: number | null;
                 has_arbitration?: boolean | null;
                 has_cancel_request?: boolean | null;
                 buyer_id?: number | null;

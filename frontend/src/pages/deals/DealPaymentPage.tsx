@@ -58,7 +58,7 @@ export default function DealPaymentPage() {
   }
 
   const code = deal.currency_code || "USDT";
-  const amount = deal.amount ?? deal.sum;
+  const amount = deal.amount;
   const balance = balances.data?.find((b) => b.currency.code === code);
   const available = balance?.amount ?? 0;
   const decimals = balance?.currency.decimals ?? 2;

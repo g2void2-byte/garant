@@ -55,7 +55,7 @@ async def _make_arbitration_deal(client) -> int:
         json={
             "counterparty": "seller2",
             "role": "buyer",
-            "sum": 100,
+            "amount": 100,
             "description": "",
             "pay_comission": "buyer",
             "currency_code": "USDT",

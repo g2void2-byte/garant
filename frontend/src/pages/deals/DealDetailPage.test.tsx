@@ -42,7 +42,6 @@ function makeDeal(overrides: Partial<DealDto> = {}): DealDto {
     id: 42,
     buyer: "alice",
     seller: "bob",
-    sum: 100,
     description: "Лендинг под ключ",
     pay_comission: "buyer",
     status: "in_progress",

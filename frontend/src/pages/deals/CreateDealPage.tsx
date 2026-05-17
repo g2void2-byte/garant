@@ -43,7 +43,7 @@ export default function CreateDealPage() {
       const deal = await create.mutateAsync({
         counterparty,
         role,
-        sum: amount,
+        amount,
         description,
         pay_comission: comissionFrom,
         currency_code: currencyCode,

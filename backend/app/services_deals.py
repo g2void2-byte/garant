@@ -206,7 +206,6 @@ async def create_deal(
     deal = Deal(
         buyer_id=buyer.id,
         seller_id=seller.id,
-        sum=float(amt),  # legacy column for backward-compat
         amount=float(amt),
         commission_amount=float(commission),
         currency_id=currency.id,

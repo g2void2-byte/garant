@@ -8,7 +8,6 @@ const baseDeal: DealDto = {
   id: 17,
   buyer: "alice",
   seller: "bob",
-  sum: 100,
   description: "Logo design package",
   pay_comission: "buyer",
   status: "in_progress",

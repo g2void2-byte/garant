@@ -89,7 +89,7 @@ export default function DealDetailPage() {
 
   const statusInfo =
     STATUS_LABEL[deal.status] ?? { text: deal.status, cls: "text-text-muted" };
-  const amount = deal.amount ?? deal.sum;
+  const amount = deal.amount;
   const currency = deal.currency_code ?? "USD";
   const isParticipant = deal.role === "buyer" || deal.role === "seller";
   const isAdmin = !!me && (me.prefix === "admin" || me.prefix === "arbiter");

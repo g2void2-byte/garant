@@ -52,7 +52,6 @@ function makeDeal(over: Partial<DealDto> = {}): DealDto {
     id: 11,
     buyer: "alice",
     seller: "bob",
-    sum: 100,
     description: "Test",
     pay_comission: "buyer",
     status: "pending_payment",

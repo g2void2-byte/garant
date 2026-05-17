@@ -102,10 +102,11 @@ async def _deals_stats(session: AsyncSession, user_id: int) -> dict[str, Any]:
     used by the bot text renderer; counts stay aggregate because
     "how many deals did the user finish" is currency-neutral.
 
-    Legacy rows have ``currency_id IS NULL`` (pre-multi-currency
-    deals stored on the old USD ``Deal.sum`` column). Those rows are
-    folded into a synthetic ``USD`` bucket so the legacy volume
-    still surfaces in the UI.
+    L-2 — the legacy USD-only ``Deal.sum`` column is gone and
+    ``currency_id`` is NOT NULL on every row, so the previously
+    needed "legacy bucket" fallback (``currency_id IS NULL`` rows
+    aggregated under a synthetic ``USD`` code) is no longer
+    reachable.
     """
     total_count = (
         await session.execute(
@@ -153,7 +154,6 @@ async def _deals_stats(session: AsyncSession, user_id: int) -> dict[str, Any]:
             .where(
                 Deal.buyer_id == user_id,
                 Deal.status == DealStatus.completed,
-                Deal.currency_id.is_not(None),
             )
             .group_by(Deal.currency_id)
         )
@@ -164,33 +164,10 @@ async def _deals_stats(session: AsyncSession, user_id: int) -> dict[str, Any]:
             .where(
                 Deal.seller_id == user_id,
                 Deal.status == DealStatus.completed,
-                Deal.currency_id.is_not(None),
             )
             .group_by(Deal.currency_id)
         )
     ).all()
-
-    # Legacy rows (``currency_id IS NULL``) used the old USD ``Deal.sum``
-    # column. Bucket them under "USD" so the historical volume isn't
-    # silently dropped from the report.
-    legacy_buys = (
-        await session.execute(
-            select(func.coalesce(func.sum(Deal.sum), 0)).where(
-                Deal.buyer_id == user_id,
-                Deal.status == DealStatus.completed,
-                Deal.currency_id.is_(None),
-            )
-        )
-    ).scalar_one()
-    legacy_sales = (
-        await session.execute(
-            select(func.coalesce(func.sum(Deal.sum), 0)).where(
-                Deal.seller_id == user_id,
-                Deal.status == DealStatus.completed,
-                Deal.currency_id.is_(None),
-            )
-        )
-    ).scalar_one()
 
     def _bucket(code: str, decimals: int) -> dict[str, float | int]:
         return by_currency.setdefault(
@@ -210,13 +187,6 @@ async def _deals_stats(session: AsyncSession, user_id: int) -> dict[str, Any]:
             continue
         b = _bucket(cur.code, cur.decimals)
         b["sales_sum"] = float(b["sales_sum"]) + float(amount or 0)
-
-    if float(legacy_buys or 0) > 0:
-        b = _bucket("USD", 2)
-        b["buys_sum"] = float(b["buys_sum"]) + float(legacy_buys or 0)
-    if float(legacy_sales or 0) > 0:
-        b = _bucket("USD", 2)
-        b["sales_sum"] = float(b["sales_sum"]) + float(legacy_sales or 0)
 
     # Stable sort: largest combined-volume first, then code asc, so the
     # most relevant currency shows at the top regardless of insertion order.

@@ -97,7 +97,6 @@ export interface DealDto {
   id: number;
   buyer: string;
   seller: string;
-  sum: number;
   description: string;
   pay_comission: string;
   status: DealStatus | string;
@@ -106,7 +105,7 @@ export interface DealDto {
   role: "buyer" | "seller";
   created_at: string | null;
   currency_code: string | null;
-  amount: number | null;
+  amount: number;
   commission_amount: number | null;
   in_progress_at: string | null;
   completed_at: string | null;
@@ -334,9 +333,8 @@ export interface AdminListUsersQuery {
 export interface AdminDealListItemDto {
   id: number;
   status: DealStatus | string;
-  sum: string;
   currency_code: string | null;
-  amount: string | null;
+  amount: string;
   commission_amount: string | null;
   buyer_id: number;
   buyer_username: string | null;
@@ -378,9 +376,8 @@ export interface AdminDealDetailDto {
   id: number;
   status: DealStatus | string;
   description: string;
-  sum: string;
   currency_code: string | null;
-  amount: string | null;
+  amount: string;
   commission_amount: string | null;
   pay_commission: string;
   buyer: AdminBalanceSnapshotDto;
@@ -417,8 +414,8 @@ export interface AdminDealMessageDto {
 export interface AdminListDealsQuery {
   status?: "any" | DealStatus | string;
   currency?: string;
-  min_sum?: number;
-  max_sum?: number;
+  min_amount?: number;
+  max_amount?: number;
   has_arbitration?: boolean;
   has_cancel_request?: boolean;
   buyer_id?: number;

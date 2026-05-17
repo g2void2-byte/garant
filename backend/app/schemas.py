@@ -302,7 +302,7 @@ class ServiceCommentOut(BaseModel):
 class DealCreate(BaseModel):
     counterparty: str
     role: str
-    sum: float
+    amount: float
     description: str = ""
     pay_comission: PayCommission = PayCommission.buyer
     currency_code: str = "USDT"
@@ -332,7 +332,6 @@ class DealOut(BaseModel):
     id: int
     buyer: str | None
     seller: str | None
-    sum: float
     description: str
     pay_comission: str
     status: str
@@ -342,7 +341,7 @@ class DealOut(BaseModel):
     created_at: datetime | None
     # PR-3 — multi-currency + state-machine extras.
     currency_code: str | None = None
-    amount: float | None = None
+    amount: float
     commission_amount: float | None = None
     in_progress_at: datetime | None = None
     completed_at: datetime | None = None
@@ -784,9 +783,8 @@ class AdminDealListItem(BaseModel):
 
     id: int
     status: str
-    sum: Decimal
     currency_code: str | None
-    amount: Decimal | None
+    amount: Decimal
     commission_amount: Decimal | None
     buyer_id: int
     buyer_username: str | None
@@ -849,9 +847,8 @@ class AdminDealDetailOut(BaseModel):
     id: int
     status: str
     description: str
-    sum: Decimal
     currency_code: str | None
-    amount: Decimal | None
+    amount: Decimal
     commission_amount: Decimal | None
     pay_commission: str
     buyer: AdminBalanceSnapshot

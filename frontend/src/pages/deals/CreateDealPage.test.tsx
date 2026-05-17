@@ -68,7 +68,6 @@ function makeDeal(over: Partial<DealDto> = {}): DealDto {
     id: 42,
     buyer: "alice",
     seller: "me",
-    sum: 100,
     description: "Test",
     pay_comission: "buyer",
     status: "wait_confirm",
@@ -161,7 +160,7 @@ describe("<CreateDealPage />", () => {
         expect.objectContaining({
           counterparty: "alice",
           role: "buyer",
-          sum: 100.25,
+          amount: 100.25,
           description: "deal description",
           pay_comission: "buyer",
           currency_code: "USDT",
