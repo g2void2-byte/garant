@@ -28,11 +28,18 @@ backlog has regressed:
 * **V5-E-2 / V5-E-3** — meta-check that the migrations targeted by
   the audit use ``postgresql_concurrently=True`` inside an
   ``autocommit_block`` so ``CREATE INDEX CONCURRENTLY`` is what
-  Postgres actually runs.
+  Postgres actually runs.  Mig-2 from the v11 audit asked for the
+  same guarantee on the *downgrade* path — the AST walker below
+  enforces it per-call so a future migration that creates an index
+  concurrently on upgrade but drops it under a plain ``DROP INDEX``
+  on downgrade fails the contract, instead of slipping through
+  because the file happened to contain a CONCURRENTLY token somewhere
+  else.
 """
 
 from __future__ import annotations
 
+import ast
 import logging
 import pathlib
 
@@ -394,37 +401,109 @@ def test_destructive_migrations_document_irreversible_data_loss():
         assert marker in text, f"{filename}: missing V5-E-1 irreversible-data-loss header"
 
 
-def test_concurrent_index_migrations_use_autocommit_and_concurrently():
-    """V5-E-2 / V5-E-3 — the two migrations the audit flagged as
-    table-blocking must run their ``create_index`` calls inside
-    ``op.get_context().autocommit_block()`` with
-    ``postgresql_concurrently=True``.  Without the autocommit
-    block Postgres refuses ``CREATE INDEX CONCURRENTLY``, and
-    without the flag we're still on plain ``CREATE INDEX``.
+def _find_function(module: ast.Module, name: str) -> ast.FunctionDef:
+    """Return the top-level ``def {name}(): ...`` node of a migration."""
+    for node in module.body:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return node
+    raise AssertionError(f"migration is missing a top-level def {name}()")
 
-    The check is a substring match because every line in the
-    migration that creates an index uses the same idiom, so a
-    regression on any one of them shows up as a missing token.
+
+def _is_op_call(node: ast.AST, attr: str) -> bool:
+    """``True`` when ``node`` is an ``op.<attr>(...)`` invocation.
+
+    We deliberately accept *any* ``X.<attr>(...)`` rather than pinning
+    on the literal ``op`` symbol so a future ``from alembic import op
+    as alembic_op`` rename doesn't silently take the contract off-line.
+    """
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == attr
+    )
+
+
+def _kwarg_is_true(call: ast.Call, name: str) -> bool:
+    """``True`` iff ``call`` passes ``name=True`` as a keyword."""
+    for kw in call.keywords:
+        if kw.arg == name and isinstance(kw.value, ast.Constant) and kw.value.value is True:
+            return True
+    return False
+
+
+def _index_calls(func: ast.FunctionDef, attr: str) -> list[ast.Call]:
+    """Collect every ``op.<attr>(...)`` call inside ``func`` (any depth)."""
+    return [node for node in ast.walk(func) if _is_op_call(node, attr)]
+
+
+def test_concurrent_index_migrations_use_autocommit_and_concurrently():
+    """V5-E-2 / V5-E-3 / v11 Mig-2 — the migrations the audit flagged
+    as table-blocking must run their ``create_index`` *and matching
+    ``drop_index``* calls with ``postgresql_concurrently=True``
+    inside ``op.get_context().autocommit_block()``.  Without the
+    autocommit block Postgres refuses ``CREATE INDEX CONCURRENTLY``
+    / ``DROP INDEX CONCURRENTLY``, and without the flag we're still
+    on the table-blocking plain form.
+
+    The check is per-call AST inspection rather than a whole-file
+    substring match: the audit's Mig-2 callout is specifically that
+    a downgrade can quietly regress to a plain ``op.drop_index(...)``
+    while the upgrade keeps using CONCURRENTLY, and the file would
+    still contain the token from the upgrade path.  Walking the
+    ``upgrade()`` / ``downgrade()`` bodies independently forces both
+    sides of every index to stay non-blocking.
     """
     for filename in _CONCURRENT_INDEX_MIGRATIONS:
         path = _ALEMBIC_VERSIONS / filename
         text = path.read_text()
+        # The autocommit-block guard is module-level — every CONCURRENTLY
+        # call must sit inside one, but we don't need to map each call
+        # back to a specific ``with`` because the migration apply-time
+        # error (``CREATE INDEX CONCURRENTLY cannot run inside a
+        # transaction block``) would catch a missing wrapper on the
+        # first run.  Substring check is sufficient for the meta-guard.
         assert "autocommit_block" in text, (
-            f"{filename}: index creation must be wrapped in "
-            f"op.get_context().autocommit_block() so "
-            f"CREATE INDEX CONCURRENTLY is valid"
+            f"{filename}: index ops must be wrapped in "
+            f"op.get_context().autocommit_block() so CREATE/DROP INDEX "
+            f"CONCURRENTLY is valid"
         )
-        assert "postgresql_concurrently=True" in text, (
-            f"{filename}: op.create_index must pass postgresql_concurrently=True"
+
+        module = ast.parse(text, filename=str(path))
+
+        upgrade = _find_function(module, "upgrade")
+        create_calls = _index_calls(upgrade, "create_index")
+        assert create_calls, (
+            f"{filename}: upgrade() declares no op.create_index(...) calls "
+            f"but is allow-listed as a CONCURRENTLY index migration"
         )
-        # The matching downgrade path must drop the same indexes
-        # concurrently / with IF EXISTS so a re-run after a partial
-        # failure is idempotent.
-        assert "if_not_exists=True" in text, (
-            f"{filename}: op.create_index must pass if_not_exists=True "
-            f"so a retry-driven re-run is idempotent"
+        for call in create_calls:
+            assert _kwarg_is_true(call, "postgresql_concurrently"), (
+                f"{filename}:{call.lineno} op.create_index must pass postgresql_concurrently=True"
+            )
+            assert _kwarg_is_true(call, "if_not_exists"), (
+                f"{filename}:{call.lineno} op.create_index must pass "
+                f"if_not_exists=True so a retry-driven re-run is idempotent"
+            )
+
+        downgrade = _find_function(module, "downgrade")
+        drop_calls = _index_calls(downgrade, "drop_index")
+        assert drop_calls, (
+            f"{filename}: downgrade() declares no op.drop_index(...) calls "
+            f"but upgrade() created indexes — the matching DROPs must be "
+            f"present so the migration is reversible"
         )
-        assert "if_exists=True" in text, (
-            f"{filename}: op.drop_index must pass if_exists=True so a "
-            f"retry-driven re-run is idempotent"
+        assert len(drop_calls) >= len(create_calls), (
+            f"{filename}: upgrade() creates {len(create_calls)} index/es "
+            f"but downgrade() only drops {len(drop_calls)} — the indexes "
+            f"would survive a downgrade and conflict with a re-upgrade"
         )
+        for call in drop_calls:
+            assert _kwarg_is_true(call, "postgresql_concurrently"), (
+                f"{filename}:{call.lineno} op.drop_index must pass "
+                f"postgresql_concurrently=True (audit Mig-2: downgrade "
+                f"must mirror the non-blocking CREATE INDEX CONCURRENTLY)"
+            )
+            assert _kwarg_is_true(call, "if_exists"), (
+                f"{filename}:{call.lineno} op.drop_index must pass "
+                f"if_exists=True so a retry-driven re-run is idempotent"
+            )
