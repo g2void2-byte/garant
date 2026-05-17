@@ -173,7 +173,22 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception:
-        pass
+        # V11-L-15 — log unexpected message-loop exits (broken pipe,
+        # protocol error, sudden TCP reset, …) with structured fields
+        # so the JSON logger downstream (Loki / Sentry) can pivot on
+        # the disconnect reason without scraping the message body.
+        # Pre-fix this was a bare ``except Exception: pass``, so any
+        # exception other than ``WebSocketDisconnect`` was silently
+        # swallowed and the only signal an operator had was the
+        # connection count quietly drifting.
+        logger.warning(
+            "ws message loop exited with unexpected exception",
+            extra={
+                "event": "ws.message_loop.unexpected_exception",
+                "user_id": user_id,
+            },
+            exc_info=True,
+        )
     finally:
         hb_task.cancel()
         manager.disconnect(user_id, websocket)

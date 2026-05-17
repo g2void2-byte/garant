@@ -90,8 +90,31 @@ jobs:
             || (echo "::error::frontend/openapi.json is out of date — run 'python scripts/dump_openapi.py' and commit." \
                 && exit 1)
 
-      - name: Tests (pytest)
-        run: pytest -v
+      # V12-CI-2 — coverage gate. ``pytest-cov`` is in the ``[dev]``
+      # extras installed above. The threshold (65 %) is a deliberate
+      # 3-pt buffer below the current 68 % baseline so deletion of
+      # a single test doesn't fail the build, but a broader
+      # regression does. ``--cov-report=term`` keeps the per-module
+      # summary in the job log for triage; ``--cov-report=xml``
+      # writes ``coverage.xml`` next to the test run for the upload
+      # step below to ship as a build artifact (no external coverage
+      # service is wired up yet — the XML is purely for offline
+      # inspection from the Actions UI).
+      - name: Tests (pytest, with coverage)
+        run: |
+          pytest -v \
+            --cov=backend/app \
+            --cov-report=term \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=65
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage.xml
+          retention-days: 14
 
   frontend:
     runs-on: ubuntu-latest
