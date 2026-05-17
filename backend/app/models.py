@@ -162,6 +162,15 @@ class User(Base):
     # ``get_current_user`` on every authenticated request.
     last_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    # A-6 — IETF language tag the Telegram client sent on first / last
+    # auth (``user.language_code`` in the initData blob, e.g. ``"ru"``,
+    # ``"en"``, ``"pt-br"``). Refreshed by ``get_current_user`` on the
+    # same debounce schedule as ``last_login_at`` so a user switching
+    # phone locale propagates to admin broadcasts within ~5 min. The
+    # column is indexed because the admin broadcast composer filters on
+    # exact-match values (Telegram normalises to lowercase ISO codes,
+    # so cardinality stays bounded; no need for FTS / trigram).
+    language_code: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     # "Sessions seen by the API" — bumped on the first authenticated
     # request after a quiet window of ``deps._LAST_LOGIN_DEBOUNCE``
     # (5 min). NOT a literal Telegram login event nor a per-request
@@ -681,6 +690,15 @@ class Broadcast(Base):
     audience_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
     audience_active_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     audience_min_deals: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # A-6 — cohort filters that compose with the existing role / activity
+    # filters. ``created_after`` / ``created_before`` match the user's
+    # ``User.created_at`` (the broadcast sends to users registered inside
+    # the inclusive window). ``language`` is matched case-insensitively
+    # against ``User.language_code`` so an admin can ship a message in
+    # Russian to ``ru`` users without picking up the ``en`` cohort.
+    audience_created_after: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    audience_created_before: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    audience_language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Dispatch flags.
     dispatch_inapp: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     dispatch_dm: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

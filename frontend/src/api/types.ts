@@ -722,6 +722,9 @@ export interface AdminBroadcastDto {
   audience_role: string | null;
   audience_active_days: number | null;
   audience_min_deals: number | null;
+  audience_created_after: string | null;
+  audience_created_before: string | null;
+  audience_language: string | null;
   dispatch_inapp: boolean;
   dispatch_dm: boolean;
   status: string;
@@ -747,6 +750,9 @@ export interface AdminBroadcastCreateBody {
   audience_role?: "admin" | "arbiter" | "vip" | "regular";
   audience_active_days?: number;
   audience_min_deals?: number;
+  audience_created_after?: string;
+  audience_created_before?: string;
+  audience_language?: string;
   dispatch_inapp?: boolean;
   dispatch_dm?: boolean;
   scheduled_at?: string;

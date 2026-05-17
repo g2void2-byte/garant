@@ -2294,6 +2294,12 @@ export interface components {
         AdminBroadcastCreateIn: {
             /** Audience Active Days */
             audience_active_days?: number | null;
+            /** Audience Created After */
+            audience_created_after?: string | null;
+            /** Audience Created Before */
+            audience_created_before?: string | null;
+            /** Audience Language */
+            audience_language?: string | null;
             /** Audience Min Deals */
             audience_min_deals?: number | null;
             /** Audience Role */
@@ -2339,6 +2345,12 @@ export interface components {
             actor_username: string | null;
             /** Audience Active Days */
             audience_active_days: number | null;
+            /** Audience Created After */
+            audience_created_after: string | null;
+            /** Audience Created Before */
+            audience_created_before: string | null;
+            /** Audience Language */
+            audience_language: string | null;
             /** Audience Min Deals */
             audience_min_deals: number | null;
             /** Audience Role */
