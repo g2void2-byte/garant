@@ -31,6 +31,23 @@ class Settings(BaseSettings):
     run_bot: bool = True
     allow_unsigned_init_data: bool = False
 
+    # V12-H3 — gate the in-lifespan ``alembic upgrade head`` call. The
+    # legacy default is ``true`` so single-process deploys (the manual
+    # ``uvicorn`` setup documented in README) keep working: the FastAPI
+    # lifespan migrates on startup just like before.
+    #
+    # ``docker compose`` and any horizontally-scaled deploy set this
+    # to ``false`` and run alembic in a dedicated one-shot
+    # ``migrate`` service instead. Each replica's lifespan then only
+    # calls :func:`backend.app.db.verify_migrations_at_head` to assert
+    # the DB schema matches the script-directory head before serving
+    # traffic. This removes the dual-migration round-trip
+    # (Dockerfile.dev CMD + lifespan both calling ``alembic upgrade
+    # head`` on every container boot, contending on the alembic
+    # advisory lock for no benefit) and the multi-replica race on
+    # long-running migrations.
+    run_migrations_on_startup: bool = True
+
     pin_jwt_secret: str = ""
     pin_session_ttl_seconds: int = 60 * 60 * 12
     pin_max_attempts: int = 3

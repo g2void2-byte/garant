@@ -28,6 +28,11 @@ dev = [
     "ruff>=0.6",
     "pre-commit>=3.7",
     "fakeredis[lua]>=2.26",
+    # CI-3 — backend type-checking gate. Pinned at >=1.1 so the
+    # ``pyrightconfig.json`` schema fields we rely on
+    # (``typeCheckingMode``, ``reportInvalidTypeForm``, etc.) are
+    # recognised; node ships transitively with the pip package.
+    "pyright>=1.1.380",
 ]
 
 [tool.setuptools.packages.find]
