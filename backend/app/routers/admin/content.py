@@ -16,6 +16,7 @@ remains a forensic source of truth.
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -42,6 +43,8 @@ from ...schemas import (
     AdminServiceItemOut,
     AdminServiceUpdateIn,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/admin",
@@ -182,6 +185,23 @@ async def update_service(
         try:
             new_status = ServiceStatus(body.status)
         except ValueError:
+            # V11-L-15 — surface invalid ServiceStatus tokens as a
+            # structured event so an admin-UI regression that ships
+            # an unknown status string is visible in JSON-logger
+            # pipelines, not just a 400 in the browser console.
+            # ``body.status`` is client-supplied, but ``ServiceStatus``
+            # is a closed enum so its complement (unknown values) is
+            # naturally bounded.
+            logger.warning(
+                "admin service.edit: invalid status %r",
+                body.status,
+                extra={
+                    "event": "admin.service.update.invalid_status",
+                    "actor_id": admin.id,
+                    "service_id": service.id,
+                    "requested_status": body.status,
+                },
+            )
             raise HTTPException(400, "Неверный статус услуги")  # noqa: B904
         if service.status != new_status:
             before["status"] = service.status.value
@@ -207,6 +227,21 @@ async def update_service(
     )
     await session.commit()
     await session.refresh(service)
+    # V11-L-15 — paired with the audit-log row written above, this
+    # gives ops a real-time signal on admin mutations without
+    # querying the ``admin_audit_log`` table. ``changed_fields`` is
+    # the closed set of column names from the schema; the actual
+    # before/after values stay in the audit row only.
+    logger.info(
+        "admin service.edit ok",
+        extra={
+            "event": "admin.service.update.ok",
+            "actor_id": admin.id,
+            "service_id": service.id,
+            "owner_id": service.owner_id,
+            "changed_fields": sorted(after.keys()),
+        },
+    )
     return await _service_to_out(session, service)
 
 
@@ -247,6 +282,15 @@ async def delete_service(
     )
     await session.delete(service)
     await session.commit()
+    logger.info(
+        "admin service.delete ok",
+        extra={
+            "event": "admin.service.delete.ok",
+            "actor_id": admin.id,
+            "service_id": service_id,
+            "owner_id": snapshot["owner_id"],
+        },
+    )
     return {"deleted": True, "service_id": service_id}
 
 
@@ -321,6 +365,17 @@ async def create_review(
     )
     await session.commit()
     await session.refresh(review)
+    logger.info(
+        "admin review.create ok",
+        extra={
+            "event": "admin.review.create.ok",
+            "actor_id": admin.id,
+            "review_id": review.id,
+            "author_id": review.author_id,
+            "target_id": review.target_id,
+            "deal_id": review.deal_id,
+        },
+    )
     return await _review_to_out(session, review)
 
 
@@ -360,6 +415,15 @@ async def update_review(
     )
     await session.commit()
     await session.refresh(review)
+    logger.info(
+        "admin review.edit ok",
+        extra={
+            "event": "admin.review.update.ok",
+            "actor_id": admin.id,
+            "review_id": review.id,
+            "changed_fields": sorted(after.keys()),
+        },
+    )
     return await _review_to_out(session, review)
 
 
@@ -394,6 +458,16 @@ async def delete_review(
     )
     await session.delete(review)
     await session.commit()
+    logger.info(
+        "admin review.delete ok",
+        extra={
+            "event": "admin.review.delete.ok",
+            "actor_id": admin.id,
+            "review_id": review_id,
+            "author_id": snapshot["author_id"],
+            "target_id": snapshot["target_id"],
+        },
+    )
     return {"deleted": True, "review_id": review_id}
 
 
@@ -487,6 +561,16 @@ async def update_comment(
     )
     await session.commit()
     await session.refresh(comment)
+    logger.info(
+        "admin comment.edit ok",
+        extra={
+            "event": "admin.comment.update.ok",
+            "actor_id": admin.id,
+            "comment_id": comment.id,
+            "service_id": comment.service_id,
+            "changed_fields": sorted(after.keys()),
+        },
+    )
     return await _comment_to_out(session, comment)
 
 
@@ -519,4 +603,14 @@ async def delete_comment(
     )
     await session.delete(comment)
     await session.commit()
+    logger.info(
+        "admin comment.delete ok",
+        extra={
+            "event": "admin.comment.delete.ok",
+            "actor_id": admin.id,
+            "comment_id": comment_id,
+            "service_id": snapshot["service_id"],
+            "author_id": snapshot["author_id"],
+        },
+    )
     return {"deleted": True, "comment_id": comment_id}

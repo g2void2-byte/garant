@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, or_, select, update
 
@@ -7,6 +9,8 @@ from ..deps import CurrentUser, SessionDep
 from ..models import Notification, NotificationType
 from ..rate_limit import RLMarkAllRead
 from ..schemas import NotificationCountersOut, NotificationOut
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
@@ -43,14 +47,44 @@ async def list_notifications(
             type_enum = NotificationType(type)
             stmt = stmt.where(Notification.type == type_enum)
         except ValueError:
-            pass
+            # V11-L-15 — an unknown ``type`` filter used to be silently
+            # swallowed; surface it as a structured ``debug`` event so
+            # JSON-logger pipelines can spot a frontend typo / stale
+            # client without raising the user-visible status (the API
+            # contract is "unknown filter = no filter"). ``type`` is
+            # client-supplied but ``NotificationType`` is a closed enum,
+            # so cardinality is fine to index.
+            logger.debug(
+                "notifications list: unknown type filter %r — falling back to no filter",
+                type,
+                extra={
+                    "event": "notifications.list.unknown_type_filter",
+                    "user_id": user.id,
+                    "filter_type": type,
+                },
+            )
     if before_created_at is not None and before_id is not None:
         try:
             from datetime import datetime
 
             cursor_ts = datetime.fromisoformat(before_created_at.replace("Z", "+00:00"))
         except ValueError:
-            raise HTTPException(400, "Invalid before_created_at")
+            # V11-L-15 — cursor parse failures point at either a
+            # frontend regression on keyset-pagination encoding or a
+            # scraper passing garbage. Either way it's worth alerting
+            # on. ``before_created_at`` itself isn't indexed in
+            # ``extra`` (client-supplied strings → unbounded
+            # cardinality); the boolean presence of a paired
+            # ``before_id`` is.
+            logger.warning(
+                "notifications list: invalid before_created_at cursor",
+                extra={
+                    "event": "notifications.list.bad_cursor",
+                    "user_id": user.id,
+                    "before_id_present": before_id is not None,
+                },
+            )
+            raise HTTPException(400, "Invalid before_created_at")  # noqa: B904
         # Standard keyset pagination: ``(created_at, id) < (cursor_ts,
         # cursor_id)`` in descending order. The OR-form avoids the
         # need for ``tuple_`` row-value support across all dialects
