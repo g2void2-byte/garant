@@ -10,7 +10,7 @@ Connection failure is non-fatal: the helper logs a warning and returns
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Awaitable, cast
 
 from .config import settings
 
@@ -45,7 +45,12 @@ async def get_redis() -> Redis | None:
         import redis.asyncio as aioredis
 
         c = aioredis.from_url(settings.redis_url, decode_responses=True)
-        await c.ping()
+        # redis-py types ``ping()`` as ``Union[Awaitable[bool], bool]``
+        # (one method body serves both sync and async clients); pyright
+        # picks the ``bool`` branch arbitrarily and warns on ``await``.
+        # The async client always returns the awaitable branch at
+        # runtime, so cast to narrow it for the type-checker.
+        await cast("Awaitable[bool]", c.ping())
         _client = c
         _resolved = True
         # V11-L-15 — structured-logging fields so the JSON-logger
