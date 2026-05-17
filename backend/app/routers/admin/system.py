@@ -14,7 +14,8 @@ treat it as a privileged action on par with treasury withdrawals.
 from __future__ import annotations
 
 import time
-from typing import Awaitable, cast
+from collections.abc import Awaitable
+from typing import cast
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text

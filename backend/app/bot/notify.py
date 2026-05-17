@@ -9,7 +9,6 @@ not configured (development / tests).
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
@@ -20,10 +19,10 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
-_bot: Optional[Bot] = None
+_bot: Bot | None = None
 
 
-def get_bot() -> Optional[Bot]:
+def get_bot() -> Bot | None:
     global _bot
     if _bot is not None:
         return _bot
