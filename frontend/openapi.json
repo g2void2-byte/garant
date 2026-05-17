@@ -455,7 +455,7 @@
         "type": "object"
       },
       "AdminBalanceSnapshot": {
-        "description": "``user.balance`` + per-currency lock state at request time.",
+        "description": "Per-currency wallet balance + lock state at request time.\n\nH-1: previously this DTO included the legacy USD ``user.balance``\ncolumn. After the legacy ledger was retired the snapshot is\npurely the per-currency ``UserBalance`` row pair (``amount`` +\n``locked``); ``currency_code`` is non-null on every live deal.",
         "properties": {
           "amount": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -12655,7 +12655,7 @@
     },
     "/api/payments/webhook/cryptobot": {
       "post": {
-        "description": "Receive a Crypto Pay update.\n\nThe Crypto Pay app posts JSON with ``update_type`` and ``payload``.\nWe verify ``crypto-pay-api-signature`` against the bot token, then\ndispatch by ``update_type``. Response is always 200 (with an ``ok``\nbool) so Crypto Pay doesn't keep retrying on benign duplicates.",
+        "description": "Receive a Crypto Pay update.\n\nThe Crypto Pay app posts JSON with ``update_type`` and ``payload``.\nWe verify ``crypto-pay-api-signature`` against the bot token, then\ndispatch by ``update_type``. Response is always 200 (with an ``ok``\nbool) so Crypto Pay doesn't keep retrying on benign duplicates.\n\nH-1: the legacy USD ``Invoice`` ledger and its\n``GET /api/payments/deposit`` / ``POST /api/payments/deposit`` /\n``GET /api/payments/deposit/invoice/{id}`` /\n``POST /api/payments/deposit/invoice`` endpoints were retired.\nThe webhook URL stays at ``POST /api/payments/webhook/cryptobot``\nso existing CryptoBot configurations keep working.",
         "operationId": "cryptobot_webhook_api_payments_webhook_cryptobot_post",
         "responses": {
           "200": {

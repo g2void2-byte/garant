@@ -1637,6 +1637,13 @@ export interface paths {
          *     We verify ``crypto-pay-api-signature`` against the bot token, then
          *     dispatch by ``update_type``. Response is always 200 (with an ``ok``
          *     bool) so Crypto Pay doesn't keep retrying on benign duplicates.
+         *
+         *     H-1: the legacy USD ``Invoice`` ledger and its
+         *     ``GET /api/payments/deposit`` / ``POST /api/payments/deposit`` /
+         *     ``GET /api/payments/deposit/invoice/{id}`` /
+         *     ``POST /api/payments/deposit/invoice`` endpoints were retired.
+         *     The webhook URL stays at ``POST /api/payments/webhook/cryptobot``
+         *     so existing CryptoBot configurations keep working.
          */
         post: operations["cryptobot_webhook_api_payments_webhook_cryptobot_post"];
         delete?: never;
@@ -2207,7 +2214,12 @@ export interface components {
         };
         /**
          * AdminBalanceSnapshot
-         * @description ``user.balance`` + per-currency lock state at request time.
+         * @description Per-currency wallet balance + lock state at request time.
+         *
+         *     H-1: previously this DTO included the legacy USD ``user.balance``
+         *     column. After the legacy ledger was retired the snapshot is
+         *     purely the per-currency ``UserBalance`` row pair (``amount`` +
+         *     ``locked``); ``currency_code`` is non-null on every live deal.
          */
         AdminBalanceSnapshot: {
             /** Amount */
