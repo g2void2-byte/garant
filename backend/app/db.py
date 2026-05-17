@@ -4,12 +4,18 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase
 
 from alembic import command
@@ -18,22 +24,118 @@ from .config import settings
 
 logger = logging.getLogger(__name__)
 
-engine = create_async_engine(settings.database_url, echo=False)
-# V11-M-19 — ``expire_on_commit=False`` keeps attribute access cheap
-# after ``await session.commit()``: SQLAlchemy doesn't invalidate
-# loaded columns, so a follow-up ``obj.some_field`` doesn't have to
-# issue a SELECT. The tradeoff is that the in-memory ``obj`` is now
-# free to drift from the DB row (another transaction can update it
-# mid-flight, or the commit itself can change a value via
-# ``DEFAULT`` / triggers / ``RETURNING``). Whenever the next code
-# path needs the canonical row state — usually right after the
-# commit that triggered a row-level change we then want to read —
-# call ``await session.refresh(obj)`` (or re-fetch via
-# ``session.get``). The notifier / serialiser layer assumes the
-# attribute access is non-blocking; refresh() is the explicit
-# escape hatch when we want a fresh read. New writers MUST audit
-# their post-commit reads against this rule.
-async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# V11-M-18 — the engine + sessionmaker are constructed *lazily* on
+# first access rather than at module import. Pre-fix the line read
+# ``engine = create_async_engine(settings.database_url, ...)`` at
+# module top-level, so any ``import backend.app.db`` (including the
+# transitive ones triggered by importing a router) materialised an
+# asyncpg engine bound to whatever ``DATABASE_URL`` was set at *that*
+# moment. The test harness has to set the env var before any router
+# import to pin the URL to the dedicated ``garant_test`` database;
+# anything that re-orders imports (a new global helper, a tool that
+# eagerly walks the package) would silently bind to the production
+# URL. Deferring the constructor to a singleton accessor closes that
+# hole — ``get_engine()`` reads ``settings.database_url`` on first
+# call, which (a) happens inside the lifespan / fixture setup, and
+# (b) can be reset by tests via ``reset_engine_for_tests`` without
+# leaking a half-initialised engine into the next event loop.
+#
+# Backwards-compat: existing call sites ``from .db import engine`` /
+# ``from .db import async_session`` still work thanks to the module
+# ``__getattr__`` below — the first access materialises the singletons
+# transparently.
+_engine: AsyncEngine | None = None
+_async_session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+def get_engine() -> AsyncEngine:
+    """Return the process-wide async engine, constructing on first call.
+
+    See the V11-M-18 note above for why this is lazy.
+    """
+    global _engine
+    if _engine is None:
+        _engine = create_async_engine(settings.database_url, echo=False)
+    return _engine
+
+
+def get_async_session() -> async_sessionmaker[AsyncSession]:
+    """Return the process-wide sessionmaker, constructing on first call.
+
+    V11-M-19 — ``expire_on_commit=False`` keeps attribute access cheap
+    after ``await session.commit()``: SQLAlchemy doesn't invalidate
+    loaded columns, so a follow-up ``obj.some_field`` doesn't have to
+    issue a SELECT. The tradeoff is that the in-memory ``obj`` is now
+    free to drift from the DB row (another transaction can update it
+    mid-flight, or the commit itself can change a value via
+    ``DEFAULT`` / triggers / ``RETURNING``). Whenever the next code
+    path needs the canonical row state — usually right after the
+    commit that triggered a row-level change we then want to read —
+    call ``await session.refresh(obj)`` (or re-fetch via
+    ``session.get``). The notifier / serialiser layer assumes the
+    attribute access is non-blocking; refresh() is the explicit
+    escape hatch when we want a fresh read. New writers MUST audit
+    their post-commit reads against this rule.
+    """
+    global _async_session_factory
+    if _async_session_factory is None:
+        _async_session_factory = async_sessionmaker(
+            get_engine(),
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+    return _async_session_factory
+
+
+async def reset_engine_for_tests() -> None:
+    """Dispose the engine's connection pool without rebuilding the engine.
+
+    Test-only hook. pytest-asyncio creates a fresh event loop per
+    test function; pooled asyncpg connections opened on the previous
+    test's (now-closed) loop raise "Future attached to a different
+    loop" when reused. The dispose-and-reuse pattern below clears the
+    pool while keeping the engine *object* stable, so any module that
+    captured ``async_session`` at import time continues to use the
+    same factory — the next ``engine.begin()`` (or ``async_session()``
+    call) opens a fresh connection bound to the current loop.
+
+    We deliberately do NOT reset the singletons to ``None`` here:
+    ``from backend.app.db import async_session`` caches the factory
+    reference inside the importing module, so swapping the underlying
+    factory object would leave those callers pointing at a discarded
+    instance. Disposing the pool is the safe, minimally-invasive
+    pattern that worked for the pre-M-18 module-level engine and
+    keeps working for the lazily-initialised one.
+    """
+    if _engine is not None:
+        # ``close=False`` skips the per-connection close (which would
+        # try to await each pooled connection's ``.close()`` on the
+        # *current* loop, raising "got Future attached to a different
+        # loop" when those connections were opened on the previous
+        # test's loop). With ``close=False`` we just drop the pool's
+        # references; asyncpg's protocol objects are GC'd later. The
+        # tradeoff is one log line per orphaned connection during the
+        # interpreter's eventual cleanup, which is acceptable for a
+        # test-only helper.
+        try:
+            await _engine.dispose(close=False)
+        except (RuntimeError, OSError):
+            pass
+
+
+def __getattr__(name: str) -> Any:
+    """Module-level attribute access — expose ``engine`` / ``async_session``.
+
+    PEP-562 hook so legacy call sites that do
+    ``from backend.app.db import engine`` (or ``async_session``)
+    transparently materialise the singleton on first reference. The
+    accessors above are the canonical entry points for new code.
+    """
+    if name == "engine":
+        return get_engine()
+    if name == "async_session":
+        return get_async_session()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class Base(DeclarativeBase):
@@ -134,7 +236,7 @@ async def verify_migrations_at_head() -> None:
     # connectivity / auth failures bubbling up as-is so they're not
     # misattributed to a missing migration.
     try:
-        async with engine.begin() as conn:
+        async with get_engine().begin() as conn:
             result = await conn.execute(text("SELECT version_num FROM alembic_version"))
             rows = result.scalars().all()
     except ProgrammingError as exc:

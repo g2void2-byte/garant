@@ -251,11 +251,20 @@ async def reset_db():
     """
     from sqlalchemy import text
 
-    from backend.app.db import async_session, engine
+    from backend.app.db import get_async_session, get_engine, reset_engine_for_tests
     from backend.app.rate_limit import reset_state_for_tests
     from backend.app.seed import run_seed
 
-    await engine.dispose()
+    # V11-M-18 — dispose-and-rebuild rather than dispose-in-place so
+    # the asyncpg pool is freshly attached to *this* test's event loop.
+    # pytest-asyncio creates a per-function loop and the previous run's
+    # pool, even after ``dispose``, can still leak a half-closed
+    # connection into the new loop and raise "Future attached to a
+    # different loop". Re-creating the engine from scratch is the
+    # cheapest reliable fix.
+    await reset_engine_for_tests()
+    engine = get_engine()
+    async_session = get_async_session()
 
     table_list = ", ".join(f'"{name}"' for name in _tables_to_truncate())
     async with engine.begin() as conn:

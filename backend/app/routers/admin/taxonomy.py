@@ -13,7 +13,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 
-from ...admin_audit import log_admin_action
+from ...admin_audit import log_admin_action, state_change_payload
 from ...admin_guard import TotpUser
 from ...deps import AdminUser, SessionDep
 from ...models import Category, Currency, Service
@@ -73,11 +73,11 @@ async def upsert_category(
         action=action,
         target_type="category",
         target_id=existing.id,
-        payload={
-            "slug": existing.slug,
-            "before": before,
-            "after": {"name": existing.name, "icon": existing.icon},
-        },
+        payload=state_change_payload(
+            before=before,
+            after={"name": existing.name, "icon": existing.icon},
+            extra={"slug": existing.slug},
+        ),
         request=request,
     )
     await session.commit()
@@ -205,11 +205,11 @@ async def upsert_currency(
         action=action,
         target_type="currency",
         target_id=existing.id,
-        payload={
-            "code": existing.code,
-            "before": before,
-            "after": _cur_to_out(existing).model_dump(),
-        },
+        payload=state_change_payload(
+            before=before,
+            after=_cur_to_out(existing).model_dump(),
+            extra={"code": existing.code},
+        ),
         request=request,
     )
     await session.commit()
