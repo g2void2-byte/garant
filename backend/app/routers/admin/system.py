@@ -14,6 +14,7 @@ treat it as a privileged action on par with treasury withdrawals.
 from __future__ import annotations
 
 import time
+from typing import Awaitable, cast
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
@@ -55,7 +56,14 @@ async def status(_admin: AdminUser, session: SessionDep):
         r = await get_redis()
         if r is not None:
             t0 = time.perf_counter()
-            await r.ping()
+            # redis-py types ``Redis.ping()`` as
+            # ``Union[Awaitable[bool], bool]`` (one method body serves
+            # both sync and async clients); pyright picks the ``bool``
+            # branch arbitrarily and warns on ``await``. The async
+            # client always returns the awaitable at runtime, so cast
+            # to narrow it for the type-checker. Mirrors the wrapper
+            # in ``redis_client.get_redis``.
+            await cast("Awaitable[bool]", r.ping())
             redis_latency = (time.perf_counter() - t0) * 1000.0
             redis_ok = True
     except Exception:
