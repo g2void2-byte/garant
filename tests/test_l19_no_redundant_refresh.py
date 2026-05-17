@@ -50,16 +50,8 @@ ALLOWED_SITES: frozenset[tuple[str, str, str, tuple[str, ...]]] = frozenset(
             "deposit",
             ("paid_at", "status"),
         ),
-        # ``credit_invoice`` mirrors the same idempotency pattern for
-        # the legacy USD ``Invoice`` row: re-read ``status``/``paid_at``
-        # under the User-row lock so the loser of a race observes
-        # ``paid`` and returns without double-crediting.
-        (
-            "backend/app/services.py",
-            "credit_invoice",
-            "invoice",
-            ("paid_at", "status"),
-        ),
+        # H-1 retired ``credit_invoice`` and the legacy USD
+        # ``Invoice`` ledger; the matching allowlist entry is gone.
         # ``UserBalance.updated_at`` carries ``onupdate=func.now()``,
         # which is the one column eager-defaults RETURNING does NOT
         # populate after an UPDATE. The admin balance-adjust response

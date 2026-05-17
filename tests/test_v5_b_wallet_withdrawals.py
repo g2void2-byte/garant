@@ -4,7 +4,8 @@ One pricked test per fix in the V5-B audit bucket (``audit-status-v8.md
 §2.C``):
 
 * V5-B-3 — ``create_deposit_invoice`` rejects an upstream invoice with no
-  pay_url (both the wallet path and the legacy USD path).
+  pay_url for the wallet deposit path. (The legacy USD path was retired
+  by H-1.)
 * V5-B-4 — ``create_withdrawal`` rejects an address that doesn't match
   the per-currency regex stored on ``Currency.address_regex``.
 * V5-B-6 — admin ``reject`` clears ``WalletWithdrawal.locked_until`` so
@@ -104,27 +105,6 @@ async def test_create_deposit_invoice_rejects_blank_pay_url(client, monkeypatch)
     resp = await client.post(
         "/api/wallet/deposits",
         json={"currency_code": "USDT", "amount": 10.0},
-        headers=auth_headers(init),
-    )
-    assert resp.status_code == 502, resp.text
-
-
-@pytest.mark.asyncio
-async def test_legacy_usd_create_invoice_rejects_blank_pay_url(client, monkeypatch):
-    """Legacy ``/api/payments/deposit/invoice`` must reject blank pay_url too."""
-    from backend.app.config import settings
-
-    init = signed_init_data(8002, "blank_url_legacy")
-    await setup_pin(client, init)
-
-    monkeypatch.setattr(settings, "cryptobot_token", "test-token-blank-url-legacy")
-    import backend.app.routers.payments as payments_mod
-
-    monkeypatch.setattr(payments_mod, "CryptoPay", _BlankUrlCryptoPay)
-
-    resp = await client.post(
-        "/api/payments/deposit/invoice",
-        json={"amount": 10.0},
         headers=auth_headers(init),
     )
     assert resp.status_code == 502, resp.text

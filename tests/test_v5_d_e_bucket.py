@@ -376,6 +376,11 @@ _DESTRUCTIVE_DOWNGRADES = (
     # Numeric(18,8); any value > 10¹⁰ written after the upgrade will
     # fail with ``numeric field overflow`` on downgrade.
     "9c3a4d2e1f08_h2_widen_money_columns_to_28_8.py",
+    # H-1 — drops ``users.balance``, the ``invoices`` table and the
+    # ``invoicestatus`` enum after backfilling balances into
+    # ``user_balances(USDT)``. ``downgrade`` raises immediately;
+    # restoring the pre-H-1 state requires a database snapshot.
+    "h1a2b3c4d5e6_h1_retire_user_balance_invoice.py",
 )
 
 _CONCURRENT_INDEX_MIGRATIONS = (

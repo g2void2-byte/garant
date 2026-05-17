@@ -122,7 +122,6 @@ function IdentityCard({ user }: { user: AdminUserDetailDto }) {
         <Detail label="Последний вход" value={user.last_login_at ? shortDate(user.last_login_at) : "—"} />
         <Detail label="IP" value={user.last_ip ?? "—"} mono />
         <Detail label="Входов всего" value={String(user.login_count)} />
-        <Detail label="Баланс" value={`$${user.balance.toFixed(2)}`} />
         <Detail label="Депозит" value={`$${user.deposit_total.toFixed(2)}`} />
         <Detail label="Рейтинг" value={user.rating_effective.toFixed(1)} />
         <Detail label="PIN" value={user.has_pin ? "Установлен" : "Нет"} />

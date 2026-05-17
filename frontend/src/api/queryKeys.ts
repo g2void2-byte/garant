@@ -101,8 +101,9 @@ export const qk = {
   me: () => ["me"] as const,
   categories: () => ["categories"] as const,
   maintenance: () => ["maintenance"] as const,
-  invoiceStatus: (invoiceId: number | undefined | null) =>
-    ["invoice-status", invoiceId] as const,
+  // H-1 — ``invoiceStatus`` retired alongside the legacy
+  // ``GET /api/payments/deposit/invoice/{id}`` polling fallback.
+  // Wallet deposits are tracked under ``qk.wallet.deposit(id)``.
 
   services: {
     all: () => ["services"] as const,
@@ -151,10 +152,9 @@ export const qk = {
     admins: () => ["support", "admins"] as const,
     arbiters: () => ["support", "arbiters"] as const,
   },
-  payments: {
-    all: () => ["payments"] as const,
-    deposits: () => ["payments", "deposits"] as const,
-  },
+  // H-1 — ``qk.payments`` retired alongside the legacy ``Invoice``
+  // ledger and its ``/api/payments/deposit*`` endpoints. The
+  // multi-currency wallet equivalent is ``qk.wallet`` below.
   pin: {
     all: () => ["pin"] as const,
     status: () => ["pin", "status"] as const,

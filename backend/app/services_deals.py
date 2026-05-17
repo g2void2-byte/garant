@@ -2,8 +2,8 @@
 
 The state machine has 10 statuses (see ``DealStatus`` in ``models.py``).
 Money flow uses the per-currency ``UserBalance`` rows introduced in
-PR-2 — the legacy ``User.balance`` USD column is no longer touched
-when a deal is created via this module.
+PR-2 — the legacy ``User.balance`` USD column was retired by H-1 and
+no longer exists.
 
 High-level transitions:
 

@@ -138,7 +138,7 @@ describe("useLiveNotifications", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deal"] });
   });
 
-  it("uses 'success' kind for deposit notifications and invalidates me/payments", () => {
+  it("uses 'success' kind for deposit notifications and invalidates me/wallet", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const invalidate = vi.spyOn(qc, "invalidateQueries");
 
@@ -152,7 +152,9 @@ describe("useLiveNotifications", () => {
       expect.objectContaining({ kind: "success", title: "Зачислено" }),
     );
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["me"] });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["payments"] });
+    // H-1 — legacy ``qk.payments`` was retired; wallet deposits are
+    // surfaced through ``qk.wallet.*`` now.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["wallet"] });
   });
 
   it("ignores events without ``data`` or with unknown event names", () => {

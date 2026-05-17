@@ -123,7 +123,6 @@ function makeUser(
     photo_url: null,
     banner_url: null,
     description: "",
-    balance: 100,
     deposit_total: 50,
     rating_auto: 4.8,
     rating_manual: null,
@@ -187,7 +186,7 @@ describe("<AdminUserDetailPage />", () => {
     expect(container.querySelectorAll(".shimmer").length).toBeGreaterThan(0);
   });
 
-  it("renders identity card with tg_id, IP, login count, balance, deposit", () => {
+  it("renders identity card with tg_id, IP, login count, deposit", () => {
     mockState.user = makeUser();
     renderPage();
     expect(screen.getByText("Alice")).toBeInTheDocument();
@@ -195,7 +194,6 @@ describe("<AdminUserDetailPage />", () => {
     expect(screen.getByText("tg_id: 1234")).toBeInTheDocument();
     expect(screen.getByText("1.2.3.4")).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument(); // login_count
-    expect(screen.getByText("$100.00")).toBeInTheDocument();
     expect(screen.getByText("$50.00")).toBeInTheDocument();
     expect(screen.getByText("Установлен")).toBeInTheDocument();
   });

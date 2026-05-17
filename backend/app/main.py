@@ -37,7 +37,6 @@ if not logging.getLogger().handlers:
 _bot_task: asyncio.Task | None = None
 _inactivity_task: asyncio.Task | None = None
 _deposit_expiry_task: asyncio.Task | None = None
-_invoice_expiry_task: asyncio.Task | None = None
 _last_ip_purge_task: asyncio.Task | None = None
 
 # V11-L-17 — exponential backoff ceiling for sweep loop error retries.
@@ -146,13 +145,6 @@ async def _deposit_expiry_work() -> int | None:
         return await sweep_expired_deposits(session)
 
 
-async def _invoice_expiry_work() -> int | None:
-    from .services import sweep_expired_invoices
-
-    async with async_session() as session:
-        return await sweep_expired_invoices(session)
-
-
 async def _last_ip_purge_work() -> int | None:
     from .services import sweep_user_last_ip
 
@@ -173,11 +165,6 @@ _deposit_expiry_loop = _make_sweep_loop(
     _deposit_expiry_work,
     "deposit-expiry sweep: marked %d deposit(s) expired",
 )
-_invoice_expiry_loop = _make_sweep_loop(
-    "invoice-expiry",
-    _invoice_expiry_work,
-    "invoice-expiry sweep: marked %d invoice(s) expired",
-)
 _last_ip_purge_loop = _make_sweep_loop(
     "last-ip-purge",
     _last_ip_purge_work,
@@ -187,12 +174,7 @@ _last_ip_purge_loop = _make_sweep_loop(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global \
-        _bot_task, \
-        _inactivity_task, \
-        _deposit_expiry_task, \
-        _invoice_expiry_task, \
-        _last_ip_purge_task
+    global _bot_task, _inactivity_task, _deposit_expiry_task, _last_ip_purge_task
 
     # M-8 — Redis-backed rate limit is the only way to share counters
     # across uvicorn workers / replicas. With ``REDIS_URL`` empty the
@@ -267,11 +249,6 @@ async def lifespan(app: FastAPI):
             _deposit_expiry_loop(settings.wallet_deposit_sweep_seconds)
         )
 
-    if settings.invoice_sweep_seconds > 0:
-        _invoice_expiry_task = asyncio.create_task(
-            _invoice_expiry_loop(settings.invoice_sweep_seconds)
-        )
-
     if settings.last_ip_purge_sweep_seconds > 0:
         _last_ip_purge_task = asyncio.create_task(
             _last_ip_purge_loop(settings.last_ip_purge_sweep_seconds)
@@ -283,7 +260,6 @@ async def lifespan(app: FastAPI):
         _bot_task,
         _inactivity_task,
         _deposit_expiry_task,
-        _invoice_expiry_task,
         _last_ip_purge_task,
     ):
         if task and not task.done():

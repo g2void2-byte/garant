@@ -38,7 +38,6 @@ from sqlalchemy import select
 from backend.app.db import async_session
 from backend.app.models import (
     Currency,
-    InvoiceProvider,
     TreasuryWithdrawal,
     User,
     UserBalance,
@@ -105,7 +104,6 @@ async def test_wallet_deposit_amount_round_trips_above_1e10():
             user_id=user.id,
             currency_id=usdt.id,
             amount=_BIG,
-            provider=InvoiceProvider.cryptobot,
             provider_invoice_id="h2-test-deposit",
             pay_url="",
             status=WalletDepositStatus.pending,

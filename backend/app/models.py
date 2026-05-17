@@ -65,13 +65,14 @@ class NotificationType(str, enum.Enum):
     system = "system"
 
 
-class InvoiceStatus(str, enum.Enum):
-    pending = "pending"
-    paid = "paid"
-    expired = "expired"
-
-
-class InvoiceProvider(str, enum.Enum):
+# H-1 — ``InvoiceStatus`` and ``InvoiceProvider`` were the legacy USD
+# ``invoices``-table enums. The ``Invoice`` model + status enum were
+# deleted alongside ``User.balance``; the DB enum type
+# ``invoiceprovider`` was renamed to ``walletdepositprovider`` by the
+# H-1 migration so the surviving ``WalletDeposit.provider`` column
+# keeps a stable Python enum type without a destructive re-create.
+# New code should reference :class:`WalletDepositProvider` only.
+class WalletDepositProvider(str, enum.Enum):
     cryptobot = "cryptobot"
 
 
@@ -117,7 +118,6 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(128), default="")
     photo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     banner_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    balance: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
     description: Mapped[str] = mapped_column(Text, default="")
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     is_arbiter: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -312,9 +312,12 @@ class Deal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
-    # Multi-currency fields (PR-3). ``currency_id`` is nullable for legacy
-    # rows that lived on the old ``User.balance`` USD column. New deals
-    # always set it.
+    # Multi-currency fields (PR-3). ``currency_id`` is non-null on every
+    # deal created since the multi-currency rewrite; legacy USD-only
+    # rows that predated the rewrite were backfilled to ``USDT`` by the
+    # H-1 migration. The column stays nullable in the schema for
+    # safety (a future stalled migration window) but new deals always
+    # set it.
     currency_id: Mapped[int | None] = mapped_column(
         ForeignKey("currencies.id"), nullable=True, index=True
     )
@@ -403,25 +406,6 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
     recipient: Mapped[User] = relationship(foreign_keys=[recipient_id], lazy="selectin")
-
-
-class Invoice(Base):
-    __tablename__ = "invoices"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    provider: Mapped[InvoiceProvider] = mapped_column(
-        Enum(InvoiceProvider), default=InvoiceProvider.cryptobot
-    )
-    provider_invoice_id: Mapped[str] = mapped_column(String(256), unique=True)
-    amount: Mapped[float] = mapped_column(Numeric(14, 2))
-    status: Mapped[InvoiceStatus] = mapped_column(
-        Enum(InvoiceStatus), default=InvoiceStatus.pending
-    )
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
-    owner: Mapped[User] = relationship(foreign_keys=[owner_id], lazy="selectin")
 
 
 class AppSettings(Base):
@@ -581,8 +565,9 @@ class WalletDeposit(Base):
     # bigger than 10¹⁰ without truncation; matches ``UserBalance.amount``
     # and ``Deal.amount``.
     amount: Mapped[float] = mapped_column(Numeric(28, 8))
-    provider: Mapped[InvoiceProvider] = mapped_column(
-        Enum(InvoiceProvider), default=InvoiceProvider.cryptobot
+    provider: Mapped[WalletDepositProvider] = mapped_column(
+        Enum(WalletDepositProvider, name="walletdepositprovider"),
+        default=WalletDepositProvider.cryptobot,
     )
     provider_invoice_id: Mapped[str] = mapped_column(String(256), index=True)
     pay_url: Mapped[str] = mapped_column(Text, default="")

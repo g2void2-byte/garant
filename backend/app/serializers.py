@@ -56,7 +56,6 @@ def _common_user_fields(
         display_name=user.display_name,
         photo_url=user.photo_url,
         banner_url=user.banner_url,
-        balance=float(user.balance),
         deposit=float(deposit if deposit is not None else user.deposit_total),
         description=user.description,
         prefix=prefix,

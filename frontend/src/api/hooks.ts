@@ -8,8 +8,6 @@ import type {
   CategoryDto,
   CurrencyDto,
   DealDto,
-  DepositDto,
-  InvoiceDto,
   NotificationCountersDto,
   NotificationDto,
   PinResetRequestDto,
@@ -397,31 +395,11 @@ export function useArbiters() {
   });
 }
 
-export function useDeposits() {
-  return useQuery<DepositDto[]>({
-    queryKey: qk.payments.deposits(),
-    queryFn: () => api.get("api/payments/deposit").json(),
-    staleTime: 30_000,
-  });
-}
-
-export function useCreateDepositInvoice() {
-  return useMutation({
-    mutationFn: (amount: number) =>
-      api.post("api/payments/deposit/invoice", { json: { amount } }).json<InvoiceDto>(),
-  });
-}
-
-export function useCreateDeposit() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (amount: number) => api.post("api/payments/deposit", { json: { amount } }).json<DepositDto>(),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.payments.all() });
-      qc.invalidateQueries({ queryKey: qk.me() });
-    },
-  });
-}
+// H-1 — legacy USD ``Invoice`` endpoints retired
+// (``GET /api/payments/deposit``, ``POST /api/payments/deposit``,
+// ``POST /api/payments/deposit/invoice``,
+// ``GET /api/payments/deposit/invoice/{id}``). Use ``useWalletDeposits``
+// / ``useCreateWalletDeposit`` for the multi-currency flow.
 
 // ── PIN ─────────────────────────────────────────────────
 

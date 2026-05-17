@@ -351,35 +351,11 @@ async def test_webhook_bypasses_maintenance_mode(client):
             await session.commit()
 
 
-# ── 8. /api/payments/deposit is rate-limited ──────────────────────────────
-
-
-async def test_manual_deposit_rate_limited(client):
-    """The legacy USD invoice endpoint capped at 10 calls per minute per
-    user. The 11th call must 429."""
-    from backend.app.rate_limit import reset_state_for_tests
-
-    init = signed_init_data(9601, "depositor")
-    await client.get("/api/me", headers=auth_headers(init))
-
-    reset_state_for_tests()
-
-    # Vary the amount so the ``provider_invoice_id = manual-{uid}-{amt}``
-    # unique constraint doesn't collide between attempts.
-    for i in range(10):
-        resp = await client.post(
-            "/api/payments/deposit",
-            json={"amount": float(i + 1)},
-            headers=auth_headers(init),
-        )
-        assert resp.status_code == 200, f"hit {i}: {resp.text}"
-
-    resp = await client.post(
-        "/api/payments/deposit",
-        json={"amount": 999.0},
-        headers=auth_headers(init),
-    )
-    assert resp.status_code == 429, resp.text
+# ── 8. (was: /api/payments/deposit rate-limit) ────────────────────────────
+# H-1 retired the legacy USD ``POST /api/payments/deposit`` endpoint
+# along with its 10-per-minute rate limit; the matching test was
+# removed. Wallet-deposit creation lives at ``POST /api/wallet/deposits``
+# and has its own coverage in ``tests/test_v5_b_wallet_withdrawals.py``.
 
 
 # ── 9. Security response headers on every HTTP reply ──────────────────────

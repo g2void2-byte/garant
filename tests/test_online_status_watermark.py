@@ -39,7 +39,6 @@ def _fresh_user(**overrides) -> User:
         "bad": 0,
         "deals_total": 0,
         "deposit_total": 0,
-        "balance": 0,
         "description": "",
         "is_admin": False,
         "is_arbiter": False,
