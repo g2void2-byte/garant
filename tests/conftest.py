@@ -1,8 +1,22 @@
 """Test fixtures and environment setup.
 
-Env vars MUST be set before importing ``backend.app.config`` because
-pydantic-settings reads them at import time. So this file's top-level
-statements set everything up before any test or helper imports.
+Static env vars are owned by ``pytest-env`` (configured in
+``pyproject.toml``'s ``[tool.pytest.ini_options].env`` block); they
+are set BEFORE pytest imports this module, so the legacy module-top
+``os.environ[...]`` chain is gone. This file only owns the
+*dynamic* env vars that can't be expressed as a static literal:
+
+* a random per-pytest-invocation ``ADMIN_TOTP_BYPASS`` sentinel
+  (V12-H1 — the previous repo-checked-in constant made every reader
+  of the repo a holder of the bypass secret; the random value never
+  escapes the test process and the helpers in ``tests/helpers.py``
+  read the live env var so call sites stay unchanged),
+* ``DATABASE_URL`` composed from the ``POSTGRES_*`` discrete env
+  vars (so CI can override host/user/password via standard
+  Postgres env without rewriting the URL),
+* ``MEDIA_ROOT`` pointing at an ephemeral per-session tempdir
+  (V12-M9 — auto-cleanup via ``atexit`` so long-lived runners don't
+  accumulate stray ``/tmp/garant-pytest-*`` trees).
 
 Tests run against a real PostgreSQL instance — the same one production
 uses. ``CREATE DATABASE garant_test`` is provisioned at session start
@@ -18,12 +32,33 @@ import pathlib
 import secrets
 import shutil
 import socket
+import sys
 import tempfile
 
 import pytest
 import pytest_asyncio
 
 # ── 1. Configure the test environment ──────────────────────────────────────
+
+# V12-L5 — assert that ``pytest-env`` has run and that ``backend``
+# config has *not* been imported yet. The order matters: pydantic
+# settings read env vars at ``Settings()`` instantiation, which
+# happens at the top of ``backend.app.config``. If something on the
+# import chain pulls in the config module before this conftest
+# finishes the dynamic-env setup below, the random
+# ``ADMIN_TOTP_BYPASS`` / composed ``DATABASE_URL`` would be missed
+# and the test process would silently bind to whatever ``DATABASE_URL``
+# the shell had set (== the dev DB on a laptop). Failing fast here
+# turns that silent footgun into an actionable RuntimeError.
+if "backend.app.config" in sys.modules:
+    raise RuntimeError(
+        "conftest.py: backend.app.config was imported before test env "
+        "setup ran. pytest-env should populate static env vars from "
+        "pyproject.toml before any test module is imported, and "
+        "conftest.py must finish writing the dynamic ones before "
+        "anything touches backend.app. Look for an ``import backend`` "
+        "near the top of conftest.py, a test helper, or a plugin."
+    )
 
 # V12-M9 — use ``TemporaryDirectory`` semantics (auto-cleanup via
 # ``atexit``) rather than a bare ``mkdtemp`` that the OS never removes.
@@ -49,24 +84,18 @@ _PG_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "garant")
 _PG_ADMIN_DB = os.environ.get("POSTGRES_ADMIN_DB", "postgres")
 _TEST_DB_NAME = os.environ.get("POSTGRES_TEST_DB", "garant_test")
 
-os.environ["BOT_TOKEN"] = "1234567:test-bot-token-for-pytest-do-not-use-in-prod"
-os.environ["CRYPTOBOT_TOKEN"] = "test-cryptobot-token-for-pytest"
+# V12-L5 — dynamic env vars only (see module docstring). Static
+# defaults live in ``pyproject.toml`` under
+# ``[tool.pytest.ini_options].env``. ``DATABASE_URL`` is composed
+# from the discrete ``POSTGRES_*`` vars (so CI can swap host/user
+# without rewriting the URL); ``MEDIA_ROOT`` points at the
+# ephemeral per-session tempdir; ``ADMIN_TOTP_BYPASS`` is a fresh
+# random sentinel per invocation.
 os.environ["DATABASE_URL"] = (
     f"postgresql+asyncpg://{_PG_USER}:{_PG_PASSWORD}@{_PG_HOST}:{_PG_PORT}/{_TEST_DB_NAME}"
 )
-os.environ["RUN_BOT"] = "false"
-os.environ["INACTIVITY_SWEEP_SECONDS"] = "0"
-# M-6 — disable the deposit-expiry background loop in tests; the
-# explicit sweep test calls ``sweep_expired_deposits`` directly so the
-# loop just adds nondeterminism otherwise.
-os.environ["WALLET_DEPOSIT_SWEEP_SECONDS"] = "0"
-# V5-B-7 — disable the legacy-invoice expiry background loop in tests
-# for the same reason; ``test_invoice_sweep`` calls the helper
-# directly.
-os.environ["INVOICE_SWEEP_SECONDS"] = "0"
-os.environ["PIN_JWT_SECRET"] = "test-pin-secret-fixed-value-do-not-use-in-prod"
 os.environ["MEDIA_ROOT"] = str(_media_root)
-os.environ["ALLOW_UNSIGNED_INIT_DATA"] = "false"
+
 # V12-H1 — strict environment gate for the TOTP-bypass escape hatch.
 # Pre-fix the guard was an *opt-out* deny-list (``in {"production",
 # "staging"}``) which silently passed any other value — a typo
@@ -75,7 +104,8 @@ os.environ["ALLOW_UNSIGNED_INIT_DATA"] = "false"
 # real deploy. We now default-deny: only the two values we explicitly
 # expect (``test``, ``development``) are accepted. Anything else
 # (``""``, ``"prod"``, ``"Staging"``, …) refuses to install the
-# bypass.
+# bypass. ``ENVIRONMENT`` itself is set via pytest-env to ``test`` by
+# default; this check guards against a shell override.
 _env_value = os.environ.get("ENVIRONMENT", "test").strip().lower()
 if _env_value not in ("test", "development"):
     raise RuntimeError(

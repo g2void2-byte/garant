@@ -25,6 +25,24 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    # V12-L5 — ``pytest-env`` runs BEFORE ``conftest.py`` is imported,
+    # so test-only env vars (``BOT_TOKEN``, ``RUN_BOT=false``, sweep
+    # interval = 0, …) can move out of conftest's module-level
+    # ``os.environ[...]`` block. The conftest now only owns the
+    # *dynamic* env vars (random ``ADMIN_TOTP_BYPASS`` per session,
+    # composed ``DATABASE_URL``, the ephemeral ``MEDIA_ROOT``
+    # tempdir) and asserts at the top that ``backend.app.config``
+    # hasn't been imported yet (so a future ``import`` slipping into
+    # the top of conftest can't silently regress the order).
+    "pytest-env>=1.1",
+    # V12-CI-2 — line/branch coverage measurement and threshold gate.
+    # Added in the same PR as ``pytest-env``; CI runs ``pytest`` with
+    # ``--cov-fail-under=65`` (rounded-down baseline from the current
+    # 68 % full-suite coverage so a single deleted test doesn't fail
+    # the build, but a broad regression does). Local runs default to
+    # *no* coverage collection — ``addopts`` deliberately leaves
+    # ``--cov`` out so ``pytest`` stays fast for the test-driven loop.
+    "pytest-cov>=6.0",
     "ruff>=0.6",
     "pre-commit>=3.7",
     "fakeredis[lua]>=2.26",
@@ -63,6 +81,35 @@ select = ["E", "F", "W", "I"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# V12-L5 — env vars consumed by ``backend.app.config`` at import
+# time. ``pytest-env`` evaluates this block BEFORE pytest imports
+# ``conftest.py`` or any test module, so we can keep ``conftest.py``
+# free of the module-top ``os.environ[...]`` block that used to
+# precede every import — the fragility there was that an
+# ``import backend.app.config`` accidentally added near the top of
+# conftest (say, as part of a future refactor) would have been
+# evaluated *before* the env was written, silently picking up
+# whatever ``DATABASE_URL`` happened to be set in the shell. The
+# ``D:`` prefix means "default only" — a caller that exports the
+# variable explicitly (e.g. CI workflows that set
+# ``POSTGRES_HOST=localhost``) keeps the override. Dynamic values
+# (the random per-session ``ADMIN_TOTP_BYPASS``, the composed
+# ``DATABASE_URL``, the ephemeral ``MEDIA_ROOT`` tempdir) cannot be
+# expressed here and stay in conftest.
+env = [
+    "D:BOT_TOKEN=1234567:test-bot-token-for-pytest-do-not-use-in-prod",
+    "D:CRYPTOBOT_TOKEN=test-cryptobot-token-for-pytest",
+    "D:RUN_BOT=false",
+    "D:INACTIVITY_SWEEP_SECONDS=0",
+    # M-6 / V5-B-7 — disable the deposit / legacy-invoice expiry
+    # background loops in tests; the explicit sweep tests call the
+    # helpers directly so the loops only add nondeterminism.
+    "D:WALLET_DEPOSIT_SWEEP_SECONDS=0",
+    "D:INVOICE_SWEEP_SECONDS=0",
+    "D:PIN_JWT_SECRET=test-pin-secret-fixed-value-do-not-use-in-prod",
+    "D:ALLOW_UNSIGNED_INIT_DATA=false",
+    "D:ENVIRONMENT=test",
+]
 # V12-M2 — narrow the deprecation noise filter. The previous
 # wholesale ``ignore::DeprecationWarning`` /
 # ``ignore::PendingDeprecationWarning`` made every SQLAlchemy 2.x,
