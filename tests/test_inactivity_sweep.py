@@ -46,7 +46,9 @@ async def test_sweep_cancels_stale_pending_confirmation(client):
     # Backdate ``created_at`` past the default inactivity_pending_confirmation_days=7.
     async with async_session() as session:
         deal = await session.get(Deal, deal_id)
-        deal.created_at = dt.datetime.utcnow() - dt.timedelta(days=30)
+        from backend.app.time_utils import utcnow
+
+        deal.created_at = utcnow() - dt.timedelta(days=30)
         await session.commit()
 
         affected = await sweep_inactivity(session)

@@ -329,11 +329,43 @@ async def ws_server():
 # ── 7. Quiet noisy 3rd-party loggers ───────────────────────────────────────
 
 
+# V12-L11 — narrow the mute to specific noisy children rather than
+# blanket-CRITICAL on the whole logger tree. Pre-fix every
+# ``logger.error`` (and even ``logger.warning``) emitted from
+# ``aiogram`` / ``backend.app.notifier`` / ``uvicorn.error`` was
+# silently swallowed by tests — including the production-relevant ones
+# (notifier DB-failure paths, uvicorn lifespan crashes) that ought to
+# surface as test failures whenever a regression introduces a noisy
+# log. The ``aiogram.dispatcher`` and ``uvicorn.access`` children are
+# the actually-noisy paths: dispatcher logs polling reconnects /
+# delivery retries; access logs every fixture HTTP call at INFO. Both
+# are unrelated to anything we want to fail on. Everything else (a
+# fresh ``logger.error`` in ``backend.app.notifier``, an unexpected
+# ``uvicorn.error`` crash log) stays at WARNING and is captured by
+# ``caplog`` so individual tests can still assert on the records.
+_QUIETED_LOGGERS = (
+    # Polling chatter, retry / reconnect cycles. Test fixtures stub
+    # ``notifier._safe_send_dm`` so no real telegram calls happen, but
+    # aiogram's dispatcher still emits "got update / no handler"
+    # records that have nothing to teach us.
+    ("aiogram.dispatcher", "CRITICAL"),
+    ("aiogram.event", "CRITICAL"),
+    # Per-request access log; CI captures stderr at the runner level
+    # so duplicating it under WARNING is pure noise.
+    ("uvicorn.access", "CRITICAL"),
+)
+
+
 @pytest.fixture(autouse=True)
 def _quiet_logs(caplog):
     import logging
 
-    logging.getLogger("aiogram").setLevel(logging.CRITICAL)
-    logging.getLogger("backend.app.notifier").setLevel(logging.CRITICAL)
-    logging.getLogger("uvicorn.error").setLevel(logging.CRITICAL)
+    for name, level in _QUIETED_LOGGERS:
+        logging.getLogger(name).setLevel(getattr(logging, level))
+    # Keep the parents at WARNING so any *new* ``logger.error`` /
+    # ``logger.warning`` in code we own surfaces immediately. ``caplog``
+    # is wired by the fixture so individual tests can still assert on
+    # specific log records under these names.
+    for name in ("aiogram", "backend.app.notifier", "uvicorn.error"):
+        logging.getLogger(name).setLevel(logging.WARNING)
     yield
