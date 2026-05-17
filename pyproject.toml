@@ -151,6 +151,16 @@ filterwarnings = [
     # uvicorn-driven WS test server bring-up; the parameter is
     # threaded through by websockets itself, not by us.
     "ignore::DeprecationWarning:websockets",
+    # websockets 15+ deprecated the legacy ``websockets.server``
+    # namespace. uvicorn 0.47 still imports ``WebSocketServerProtocol``
+    # from there for its built-in WS adapter (``websockets_impl``), so
+    # the warning surfaces with the uvicorn import line as the origin
+    # module. The ``stacklevel=2`` in websockets attributes the warning
+    # to uvicorn, which is why the ``:websockets`` module filter above
+    # doesn't catch it. Fixed upstream in uvicorn's ``websockets-impl``
+    # follow-up; until that lands and we bump uvicorn, suppress by
+    # message so the test ``ws_server`` fixture doesn't fail at import.
+    "ignore:websockets.server.WebSocketServerProtocol is deprecated:DeprecationWarning",
     # Pydantic v2 occasionally emits ``PydanticDeprecatedSince20``
     # for compatibility shims that we already migrated; the warning
     # comes from FastAPI's response-model machinery and is fixed
