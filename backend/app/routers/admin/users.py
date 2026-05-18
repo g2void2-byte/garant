@@ -41,7 +41,7 @@ from ... import notifier
 from ...admin_audit import log_admin_action, state_change_payload
 from ...admin_guard import TotpUser
 from ...deps import AdminUser, SessionDep
-from ...models import NotificationType, User
+from ...models import Notification, NotificationType, User
 from ...rate_limit import rate_limit
 from ...schemas import (
     AdminReasonIn,
@@ -175,25 +175,6 @@ async def _ensure_not_last_admin(session: AsyncSession, target: User) -> None:
         raise HTTPException(400, "Нельзя оставить систему без администраторов")
 
 
-async def _dm(target: User, title: str, body: str) -> None:
-    """Best-effort Telegram DM to the affected user.
-
-    We do *not* go through ``notifier.push`` here because we want the DM
-    only — the admin action is what gets logged, not a duplicate
-    notification row on the user's inbox. ``send_dm`` swallows errors
-    internally, so this is safe to await.
-    """
-    try:
-        from ...bot.notify import send_dm
-
-        text = f"<b>{title}</b>\n\n{body}" if body else f"<b>{title}</b>"
-        await send_dm(target.tg_user_id, text)
-    except Exception:  # noqa: BLE001
-        # Logged inside _safe_send_dm; we explicitly don't fail the
-        # admin action because Telegram is flaky.
-        pass
-
-
 async def _audit_and_notify(
     *,
     session: AsyncSession,
@@ -208,9 +189,15 @@ async def _audit_and_notify(
 ) -> None:
     """Shared tail of every state-change action.
 
-    Writes the audit row, commits, and DMs the user. The audit row is
+    Writes the audit row, inserts the in-app notification, commits, then
+    dispatches WS + DM. The audit row and notification row are both
     inserted *before* commit so a Postgres-side constraint violation
-    aborts the whole transaction.
+    aborts the whole transaction (M-17). WS publish + DM dispatch are
+    deferred until *after* commit so a rolled-back transaction never
+    leaks an event the user can see (A9-M-1). Going through
+    ``notifier`` is the single DM path — the previous ``_dm`` helper
+    was removed because it sent a second, HTML-unescaped DM in parallel
+    (A9-H-1, A9-M-3).
     """
     await log_admin_action(
         session,
@@ -222,22 +209,25 @@ async def _audit_and_notify(
         payload=payload,
         request=request,
     )
+    pending: tuple[Notification, dict | None] | None = None
     if dm_title is not None:
-        # M-17 — single commit covers the audit row AND the in-app
-        # notification, so neither shows up without the other.
-        try:
-            await notifier.push(
-                session,
-                target.id,
-                NotificationType.system,
-                dm_title,
-                dm_body or "",
-            )
-        except Exception:  # noqa: BLE001
-            pass
+        pending = await notifier.insert(
+            session,
+            target.id,
+            NotificationType.system,
+            dm_title,
+            dm_body or "",
+        )
     await session.commit()
-    if dm_title is not None:
-        await _dm(target, dm_title, dm_body or "")
+    if pending is not None:
+        notif, ws_payload = pending
+        try:
+            await notifier.dispatch_after_commit(session, notif, ws_payload)
+        except Exception:  # noqa: BLE001
+            # Best-effort: commit already landed; a delivery-side
+            # failure must not bubble up and surface as 500 on an
+            # otherwise successful admin action.
+            pass
 
 
 # --------------------------------------------------------------------- listing

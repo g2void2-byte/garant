@@ -16,6 +16,7 @@ the balance change.
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -39,6 +40,8 @@ from ...schemas import AdminDepositListOut, AdminDepositOut, AdminReasonIn
 from ...services_wallet import get_or_create_balance
 from ...sql_filters import escape_like_wildcards
 from ...time_utils import utcnow
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/admin/deposits",
@@ -147,7 +150,11 @@ async def mark_paid(
     d.status = WalletDepositStatus.paid
     d.paid_at = utcnow()
 
-    await notifier.push(
+    # A9-M-2 — split-API: persist notification atomically with the
+    # balance credit + status flip; dispatch WS/DM after commit so a
+    # rolled-back manual credit never leaks a "пополнение зачислено"
+    # event to the user.
+    notif, ws_payload = await notifier.insert(
         session,
         d.user_id,
         NotificationType.deposits,
@@ -171,6 +178,15 @@ async def mark_paid(
         request=request,
     )
     await session.commit()
+
+    try:
+        await notifier.dispatch_after_commit(session, notif, ws_payload)
+    except Exception:
+        logger.exception(
+            "deposit.mark_paid: post-commit dispatch failed for notif id=%s",
+            notif.id,
+            extra={"event": "deposit.mark_paid.dispatch.failed", "notif_id": notif.id},
+        )
 
     u = await session.get(User, d.user_id)
     return _to_out(d, currency, u)
@@ -221,7 +237,9 @@ async def refund_deposit(
     d.status = WalletDepositStatus.refunded
     d.paid_at = None
 
-    await notifier.push(
+    # A9-M-2 — split-API: persist notification atomically with the
+    # debit + status flip, dispatch after commit.
+    notif, ws_payload = await notifier.insert(
         session,
         d.user_id,
         NotificationType.deposits,
@@ -245,6 +263,15 @@ async def refund_deposit(
         request=request,
     )
     await session.commit()
+
+    try:
+        await notifier.dispatch_after_commit(session, notif, ws_payload)
+    except Exception:
+        logger.exception(
+            "deposit.refund: post-commit dispatch failed for notif id=%s",
+            notif.id,
+            extra={"event": "deposit.refund.dispatch.failed", "notif_id": notif.id},
+        )
 
     u = await session.get(User, d.user_id)
     return _to_out(d, currency, u)

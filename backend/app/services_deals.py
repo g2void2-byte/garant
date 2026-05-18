@@ -50,6 +50,34 @@ from .time_utils import utcnow
 logger = logging.getLogger(__name__)
 
 
+async def _safe_dispatch(
+    session: AsyncSession,
+    pending: list[tuple[Notification, dict[str, Any] | None]],
+    *,
+    event: str = "deal.dispatch.failed",
+) -> None:
+    """Fire WS + DM for committed notifications, swallowing delivery errors.
+
+    A9-M-2 — every state-changing deal op now inserts the notification
+    row *before* commit (atomic with the deal-row + balance write) and
+    dispatches via this helper *after* commit. A rolled-back transaction
+    therefore never leaks an event to the user; a failed WS/DM dispatch
+    never bubbles up to surface a 500 on an otherwise successful op.
+    """
+    for notif, ws_payload in pending:
+        try:
+            await notifier.dispatch_after_commit(session, notif, ws_payload)
+        except Exception:
+            # Structured-logging fields so JSON-logger downstream
+            # (Loki/Sentry) can pivot on event/notif_id without
+            # regexing the message body.
+            logger.exception(
+                "post-commit dispatch failed for notif id=%s",
+                notif.id,
+                extra={"event": event, "notif_id": notif.id},
+            )
+
+
 # ── Settings helper ────────────────────────────────────
 
 
@@ -219,7 +247,10 @@ async def create_deal(
     # ``finish_deal`` means a pending-confirmation row no longer
     # counts towards the public profile metric.
     await session.flush()
-    await notifier.push(
+    # A9-M-2 — insert the notification row before commit (atomic with the
+    # deal-row + balance debit) but defer WS/DM dispatch until after commit
+    # so a rolled-back transaction never leaks an event to the user.
+    notif, ws_payload = await notifier.insert(
         session,
         seller.id,
         NotificationType.deals,
@@ -228,6 +259,7 @@ async def create_deal(
         {"deal_id": deal.id},
     )
     await session.commit()
+    await _safe_dispatch(session, [(notif, ws_payload)])
     # L-19 — eager-load the ``buyer`` / ``seller`` / ``currency``
     # relationships so the caller's response serialiser
     # (``_deal_out`` / ``_to_detail``) can render
@@ -270,7 +302,8 @@ async def accept_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         .where(User.id.in_([deal.buyer_id, deal.seller_id]))
         .values(deals_total=User.deals_total + 1)
     )
-    await notifier.push(
+    # A9-M-2 — split-API: persist notification atomically, dispatch after commit.
+    notif, ws_payload = await notifier.insert(
         session,
         deal.buyer_id,
         NotificationType.deals,
@@ -279,6 +312,7 @@ async def accept_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         {"deal_id": deal.id},
     )
     await session.commit()
+    await _safe_dispatch(session, [(notif, ws_payload)])
     return deal
 
 
@@ -312,7 +346,8 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
 
     deal.status = DealStatus.cancelled
     deal.completed_at = utcnow()
-    await notifier.push(
+    # A9-M-2 — split-API: persist notification atomically, dispatch after commit.
+    notif, ws_payload = await notifier.insert(
         session,
         deal.buyer_id,
         NotificationType.deals,
@@ -321,6 +356,7 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         {"deal_id": deal.id},
     )
     await session.commit()
+    await _safe_dispatch(session, [(notif, ws_payload)])
     return deal
 
 
@@ -357,7 +393,8 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         .where(User.id.in_([deal.buyer_id, deal.seller_id]))
         .values(deals_success=User.deals_success + 1)
     )
-    await notifier.push(
+    # A9-M-2 — split-API: persist notification atomically, dispatch after commit.
+    notif, ws_payload = await notifier.insert(
         session,
         deal.seller_id,
         NotificationType.deals,
@@ -366,6 +403,7 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         {"deal_id": deal.id},
     )
     await session.commit()
+    await _safe_dispatch(session, [(notif, ws_payload)])
     return deal
 
 
@@ -383,7 +421,8 @@ async def request_cancel(session: AsyncSession, deal: Deal, user: User, reason: 
     deal.cancellation_reason = reason
     deal.cancellation_requested_at = utcnow()
     other_id = deal.seller_id if user.id == deal.buyer_id else deal.buyer_id
-    await notifier.push(
+    # A9-M-2 — split-API: persist notification atomically, dispatch after commit.
+    notif, ws_payload = await notifier.insert(
         session,
         other_id,
         NotificationType.deals,
@@ -392,6 +431,7 @@ async def request_cancel(session: AsyncSession, deal: Deal, user: User, reason: 
         {"deal_id": deal.id},
     )
     await session.commit()
+    await _safe_dispatch(session, [(notif, ws_payload)])
     return deal
 
 
@@ -406,7 +446,8 @@ async def revoke_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
     deal.cancellation_reason = None
     deal.cancellation_requested_at = None
     other_id = deal.seller_id if user.id == deal.buyer_id else deal.buyer_id
-    await notifier.push(
+    # A9-M-2 — split-API: persist notification atomically, dispatch after commit.
+    notif, ws_payload = await notifier.insert(
         session,
         other_id,
         NotificationType.deals,
@@ -415,6 +456,7 @@ async def revoke_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
         {"deal_id": deal.id},
     )
     await session.commit()
+    await _safe_dispatch(session, [(notif, ws_payload)])
     return deal
 
 
@@ -446,7 +488,8 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
 
     deal.status = DealStatus.cancelled
     deal.completed_at = utcnow()
-    await notifier.push(
+    # A9-M-2 — split-API: persist notification atomically, dispatch after commit.
+    notif, ws_payload = await notifier.insert(
         session,
         deal.cancellation_initiator_id or deal.buyer_id,
         NotificationType.deals,
@@ -455,6 +498,7 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
         {"deal_id": deal.id},
     )
     await session.commit()
+    await _safe_dispatch(session, [(notif, ws_payload)])
     return deal
 
 
@@ -478,7 +522,13 @@ async def start_arbitration(session: AsyncSession, deal: Deal, user: User, reaso
     deal.status = DealStatus.arbitration
     deal.arbitration_initiator_id = user.id
     deal.arbitration_reason = reason
-    # Legacy mirror for any old readers.
+    # A9-I-2 — legacy mirror. ``Deal.arbitrage_reason`` predates the
+    # ``arbitration_reason`` column; ``grep arbitrage_reason`` shows
+    # *no* readers in backend / frontend / admin-UI, so this write
+    # exists only to keep the row consistent for any out-of-process
+    # consumer that might still read the legacy name. Removal is
+    # gated on a drop-column migration (V5-E-1 destructive) — kept
+    # until that lands so we never serve a half-populated row.
     deal.arbitrage_reason = reason
 
     # V11-H-3 — atomic counter bump; see comment in ``accept_deal``.
@@ -493,11 +543,15 @@ async def start_arbitration(session: AsyncSession, deal: Deal, user: User, reaso
     )
     admins = (await session.execute(select(User).where(User.is_admin.is_(True)))).scalars().all()
     seen: set[int] = set()
+    # A9-M-2 — split-API: insert all notifications atomically with the
+    # state transition, dispatch WS/DM after commit so a rollback can
+    # never leak events.
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
     for recipient in [*arbiters, *admins]:
         if recipient.id in seen:
             continue
         seen.add(recipient.id)
-        await notifier.push(
+        notif, ws_payload = await notifier.insert(
             session,
             recipient.id,
             NotificationType.deals,
@@ -505,7 +559,9 @@ async def start_arbitration(session: AsyncSession, deal: Deal, user: User, reaso
             f"Сделка #{deal.id} передана в арбитраж: {reason}",
             {"deal_id": deal.id},
         )
+        pending.append((notif, ws_payload))
     await session.commit()
+    await _safe_dispatch(session, pending)
     return deal
 
 
@@ -564,7 +620,9 @@ async def resolve_arbitration(
 
     winner_id = deal.buyer_id if winner == "buyer" else deal.seller_id
     loser_id = deal.seller_id if winner == "buyer" else deal.buyer_id
-    await notifier.push(
+    # A9-M-2 — split-API: persist both notifications atomically, dispatch after commit.
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
+    winner_notif, winner_ws = await notifier.insert(
         session,
         winner_id,
         NotificationType.deals,
@@ -572,7 +630,8 @@ async def resolve_arbitration(
         f"Арбитр вынес решение по сделке #{deal.id}",
         {"deal_id": deal.id},
     )
-    await notifier.push(
+    pending.append((winner_notif, winner_ws))
+    loser_notif, loser_ws = await notifier.insert(
         session,
         loser_id,
         NotificationType.deals,
@@ -580,7 +639,9 @@ async def resolve_arbitration(
         f"Арбитр вынес решение по сделке #{deal.id}",
         {"deal_id": deal.id},
     )
+    pending.append((loser_notif, loser_ws))
     await session.commit()
+    await _safe_dispatch(session, pending)
     return deal
 
 
@@ -666,21 +727,5 @@ async def sweep_inactivity(session: AsyncSession) -> int:
 
     await session.commit()
 
-    for notif, ws_payload in pending_dispatch:
-        try:
-            await notifier.dispatch_after_commit(session, notif, ws_payload)
-        except Exception:
-            # V11-L-15 — structured-logging fields so the JSON-logger
-            # downstream (Loki/Sentry) can pivot on event/notif_id
-            # without regexing the message body. The sweep is best-
-            # effort — the commit already landed, this is a
-            # delivery-side failure.
-            logger.exception(
-                "sweep_inactivity: post-commit dispatch failed for notif id=%s",
-                notif.id,
-                extra={
-                    "event": "sweep_inactivity.dispatch.failed",
-                    "notif_id": notif.id,
-                },
-            )
+    await _safe_dispatch(session, pending_dispatch, event="sweep_inactivity.dispatch.failed")
     return affected

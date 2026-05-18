@@ -17,6 +17,7 @@ from __future__ import annotations
 import html
 import logging
 from datetime import timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, func, select
@@ -26,7 +27,7 @@ from ...admin_audit import log_admin_action
 from ...admin_guard import TotpUser
 from ...bot.notify import send_dm as bot_send_dm
 from ...deps import AdminUser, SessionDep
-from ...models import Broadcast, NotificationType, User
+from ...models import Broadcast, Notification, NotificationType, User
 from ...rate_limit import rate_limit
 from ...schemas import (
     AdminBroadcastCreateIn,
@@ -138,10 +139,16 @@ async def create_broadcast(
 
     delivered = 0
     failed = 0
+    # A9-M-2 — stage every in-app notification row before commit
+    # (atomic with the Broadcast audit row), defer WS dispatch until
+    # after commit so a rolled-back broadcast can never leak "new
+    # message" toasts. DMs are direct Telegram calls (no DB row), so
+    # they remain inline within the per-recipient loop.
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
     for u in recipients:
         try:
             if body.dispatch_inapp:
-                await notifier.push(
+                notif, ws_payload = await notifier.insert(
                     session,
                     u.id,
                     NotificationType.system,
@@ -149,6 +156,7 @@ async def create_broadcast(
                     body.body,
                     {"deeplink": body.deeplink} if body.deeplink else None,
                 )
+                pending.append((notif, ws_payload))
             if body.dispatch_dm and u.tg_user_id:
                 # Comment 34 (audit v9): the Telegram bot is configured with
                 # ``parse_mode=HTML`` (see ``bot.notify._bot``). Unescaped
@@ -239,6 +247,18 @@ async def create_broadcast(
         request=request,
     )
     await session.commit()
+    for notif, ws_payload in pending:
+        try:
+            await notifier.dispatch_after_commit(session, notif, ws_payload)
+        except Exception:
+            logger.exception(
+                "broadcast: post-commit dispatch failed for notif id=%s",
+                notif.id,
+                extra={
+                    "event": "broadcast.dispatch.failed",
+                    "notif_id": notif.id,
+                },
+            )
     return _to_out(bcast, admin)
 
 
