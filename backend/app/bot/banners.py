@@ -67,6 +67,18 @@ def _autofit(
 
 
 def render_deals(*, total_volume: float, deal_count: int, sale_count: int) -> bytes:
+    # A9-L-2 — the parameter is still named ``total_volume`` because
+    # the function signature is observed by ``sections.send_deals``
+    # and the template (``deals.jpg``) already has the yellow ``$``
+    # glyph pre-rendered at this position. The caller in
+    # ``sections.send_deals`` currently passes ``completed_count``
+    # (i.e. the number of finished deals, not a money amount) because
+    # after #139 / #140 the legacy USD-only ``Deal.sum`` column is
+    # gone and there is no longer a single-currency volume to sum
+    # across all deals. If a future refactor decides to render a
+    # real per-currency volume here, both the caller AND the template
+    # (drop the ``$`` glyph or pick a currency) need to change in
+    # lockstep — see audit A9-L-2 for the trade-off.
     img = Image.open(_ASSETS / "deals.jpg").convert("RGB")
     draw = ImageDraw.Draw(img)
     sum_text = _fmt_money(total_volume)

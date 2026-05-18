@@ -661,6 +661,17 @@ class WalletWithdrawal(Base):
     status: Mapped[WalletWithdrawStatus] = mapped_column(
         Enum(WalletWithdrawStatus), default=WalletWithdrawStatus.pending
     )
+    # A9-L-1 — stub column. Historically intended as a "dispute
+    # window" cool-down (~24h) before admins could act on a
+    # user-submitted withdrawal, but enforcement was never wired:
+    # neither ``decide_withdrawal`` nor auto-mode ``create_withdrawal``
+    # gate on this timestamp, and there is no user-facing cancel
+    # endpoint that would consume the window. We still write the
+    # value on create + expose it via ``WalletWithdrawalOut`` so the
+    # external API surface (incl. frontend types + e2e fixtures)
+    # stays stable; do **not** add new readers without first wiring
+    # the enforcement described in V11-L-1 / A9-L-1. See
+    # ``services_wallet.WITHDRAW_LOCK_HOURS`` for the matching note.
     locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     admin_note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

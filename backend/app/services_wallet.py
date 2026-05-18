@@ -11,6 +11,7 @@ import logging
 import re
 from datetime import timedelta
 from decimal import Decimal
+from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -23,6 +24,7 @@ from .cryptopay import CryptoPay, CryptoPayError
 from .models import (
     AppSettings,
     Currency,
+    Notification,
     NotificationType,
     User,
     UserBalance,
@@ -36,15 +38,25 @@ from .time_utils import utcnow
 logger = logging.getLogger(__name__)
 
 
-# V11-L-1 — withdrawal cool-down before the admin queue can act on a
-# user-submitted ``WalletWithdrawal``. Pre-fix this was a hard-coded
-# module-level constant. Lifted to ``settings.withdraw_lock_hours``
-# so a deploy can shorten or extend the dispute window via env var
-# without a code change. Kept as a module-level alias so existing
-# imports keep working; both the alias and the underlying setting
-# are import-time snapshots (pydantic-settings reads env at
-# ``Settings()`` instantiation), so this is a deploy-time knob, not
-# a runtime one.
+# V11-L-1 / A9-L-1 — historically intended as a "dispute window"
+# cool-down before the admin queue could act on a user-submitted
+# ``WalletWithdrawal`` (see ``WalletWithdrawal.locked_until``
+# below). **Enforcement was never wired:**
+#
+# * ``decide_withdrawal`` (approve / reject / mark_sent) does not
+#   check ``locked_until``; admins can act immediately.
+# * ``create_withdrawal`` (auto-mode) fires the CryptoBot transfer
+#   inline; the cool-down never gates the actual money movement.
+# * There is no user-facing ``cancel`` endpoint that consumes the
+#   window.
+#
+# The column is still written on create + read by serializers (so
+# external API/typing stays stable), and the constant remains a
+# deploy-time knob via ``settings.withdraw_lock_hours``. **A9-I-1**:
+# pydantic-settings reads env at ``Settings()`` instantiation, so
+# changing the env var requires a restart — this is intentional
+# until / unless A9-L-1 enforcement is reintroduced, at which point
+# call ``settings.withdraw_lock_hours`` at the use-site instead.
 WITHDRAW_LOCK_HOURS = settings.withdraw_lock_hours
 
 
@@ -279,9 +291,14 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
     deposit.status = WalletDepositStatus.paid
     deposit.paid_at = utcnow()
 
+    # A9-M-2 — split-API: insert the notification row atomically with
+    # the balance credit + deposit-status flip, dispatch WS/DM after
+    # commit so a rolled-back transaction never leaks a "deposit
+    # credited" toast to the user.
     currency = await session.get(Currency, deposit.currency_id)
+    pending: tuple[Notification, dict[str, Any] | None] | None = None
     if currency:
-        await notifier.push(
+        pending = await notifier.insert(
             session,
             deposit.user_id,
             NotificationType.deposits,
@@ -291,6 +308,17 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
         )
 
     await session.commit()
+
+    if pending is not None:
+        notif, ws_payload = pending
+        try:
+            await notifier.dispatch_after_commit(session, notif, ws_payload)
+        except Exception:
+            logger.exception(
+                "credit_deposit: post-commit dispatch failed for notif id=%s",
+                notif.id,
+                extra={"event": "credit_deposit.dispatch.failed", "notif_id": notif.id},
+            )
 
     return deposit
 
@@ -537,7 +565,9 @@ async def create_withdrawal(
             withdrawal.processed_at = utcnow()
             withdrawal.admin_note = f"cryptobot_transfer_id={tr.transfer_id}"
             bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - amount_d)
-            await notifier.push(
+            # A9-M-2 — split-API: persist notification atomically with the
+            # "sent" state transition, dispatch WS/DM after commit.
+            notif, ws_payload = await notifier.insert(
                 session,
                 user.id,
                 NotificationType.deposits,
@@ -546,12 +576,28 @@ async def create_withdrawal(
                 {"withdrawal_id": withdrawal.id},
             )
             await session.commit()
+            try:
+                await notifier.dispatch_after_commit(session, notif, ws_payload)
+            except Exception:
+                logger.exception(
+                    "create_withdrawal: post-commit dispatch failed for notif id=%s",
+                    notif.id,
+                    extra={
+                        "event": "create_withdrawal.auto.dispatch.failed",
+                        "notif_id": notif.id,
+                    },
+                )
             return withdrawal
 
     # Manual mode (or auto failed): queue for admin review.
+    # A9-M-2 — same split-API rationale: persist all admin notifications
+    # atomically (with the pending withdrawal row), dispatch WS/DM after
+    # commit so a transaction rollback can't broadcast "заявка" toasts
+    # for a withdrawal that no longer exists.
     admins = (await session.execute(select(User).where(User.is_admin.is_(True)))).scalars().all()
+    pending_admin: list[tuple[Notification, dict[str, Any] | None]] = []
     for admin in admins:
-        await notifier.push(
+        notif, ws_payload = await notifier.insert(
             session,
             admin.id,
             NotificationType.system,
@@ -559,8 +605,21 @@ async def create_withdrawal(
             f"@{user.username or user.tg_user_id}: {amount} {currency.code} → {address[:12]}…",
             {"withdrawal_id": withdrawal.id},
         )
+        pending_admin.append((notif, ws_payload))
     if admins:
         await session.commit()
+        for notif, ws_payload in pending_admin:
+            try:
+                await notifier.dispatch_after_commit(session, notif, ws_payload)
+            except Exception:
+                logger.exception(
+                    "create_withdrawal: post-commit dispatch failed for notif id=%s",
+                    notif.id,
+                    extra={
+                        "event": "create_withdrawal.manual.dispatch.failed",
+                        "notif_id": notif.id,
+                    },
+                )
 
     return withdrawal
 

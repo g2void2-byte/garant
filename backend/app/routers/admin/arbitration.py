@@ -18,7 +18,8 @@ identical regardless of who triggers it.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+import logging
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, func, or_, select, update
@@ -26,7 +27,7 @@ from sqlalchemy import and_, func, or_, select, update
 from ... import notifier
 from ...admin_audit import log_admin_action
 from ...deps import AdminOrArbiterUser, SessionDep
-from ...models import Deal, DealStatus, NotificationType
+from ...models import Deal, DealStatus, Notification, NotificationType
 from ...rate_limit import rate_limit
 from ...schemas import (
     AdminArbitrationCounters,
@@ -34,6 +35,8 @@ from ...schemas import (
 )
 from ...time_utils import utcnow
 from .deals import _to_list_item
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/admin/arbitration",
@@ -158,19 +161,34 @@ async def claim_arbitration(
         payload={"arbiter_id": user.id},
         request=request,
     )
+    # A9-M-2 — split-API: persist both party notifications atomically
+    # with the claim-row update + audit row, dispatch WS/DM after
+    # commit so a rolled-back claim never leaks "арбитр назначен"
+    # toasts for a deal that's still unclaimed.
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
     for recipient_id in (deal.buyer_id, deal.seller_id):
-        try:
-            await notifier.push(
-                session,
-                recipient_id,
-                NotificationType.deals,
-                "Назначен арбитр",
-                f"По сделке #{deal.id} назначен арбитр.",
-                {"deal_id": deal.id},
-            )
-        except Exception:  # noqa: BLE001
-            pass
+        notif, ws_payload = await notifier.insert(
+            session,
+            recipient_id,
+            NotificationType.deals,
+            "Назначен арбитр",
+            f"По сделке #{deal.id} назначен арбитр.",
+            {"deal_id": deal.id},
+        )
+        pending.append((notif, ws_payload))
     await session.commit()
+    for notif, ws_payload in pending:
+        try:
+            await notifier.dispatch_after_commit(session, notif, ws_payload)
+        except Exception:
+            logger.exception(
+                "claim_arbitration: post-commit dispatch failed for notif id=%s",
+                notif.id,
+                extra={
+                    "event": "claim_arbitration.dispatch.failed",
+                    "notif_id": notif.id,
+                },
+            )
 
     return {
         "claimed": True,

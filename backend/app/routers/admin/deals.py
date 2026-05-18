@@ -25,9 +25,10 @@ effects (DMs, in-app notifications) run after commit.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, func, select
@@ -42,6 +43,7 @@ from ...models import (
     Deal,
     DealMessage,
     DealStatus,
+    Notification,
     NotificationType,
     PayCommission,
     User,
@@ -62,6 +64,8 @@ from ...schemas import (
 )
 from ...services_wallet import get_or_create_balance
 from ...time_utils import utcnow
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/admin/deals",
@@ -331,19 +335,50 @@ async def _audit(
 
 
 async def _notify_party(
-    session: AsyncSession, user_id: int, title: str, body: str, deal_id: int
+    session: AsyncSession,
+    user_id: int,
+    title: str,
+    body: str,
+    deal_id: int,
+    pending: list[tuple[Notification, dict[str, Any] | None]],
 ) -> None:
-    try:
-        await notifier.push(
-            session,
-            user_id,
-            NotificationType.deals,
-            title,
-            body,
-            {"deal_id": deal_id},
-        )
-    except Exception:  # noqa: BLE001
-        pass
+    """Stage a deal-state notification for post-commit dispatch.
+
+    A9-M-2 — insert the notification row inside the caller's
+    transaction (so it commits atomically with the deal-state flip +
+    balance writes) and append the (notif, ws_payload) tuple to the
+    caller's ``pending`` list. The caller fires
+    ``notifier.dispatch_after_commit`` for each entry only *after*
+    ``await session.commit()`` so a rolled-back force-action never
+    leaks a "сделка завершена" toast to either party.
+    """
+    notif, ws_payload = await notifier.insert(
+        session,
+        user_id,
+        NotificationType.deals,
+        title,
+        body,
+        {"deal_id": deal_id},
+    )
+    pending.append((notif, ws_payload))
+
+
+async def _dispatch_pending(
+    session: AsyncSession,
+    pending: list[tuple[Notification, dict[str, Any] | None]],
+    *,
+    event: str,
+) -> None:
+    """Post-commit half of the deal-action notification fan-out."""
+    for notif, ws_payload in pending:
+        try:
+            await notifier.dispatch_after_commit(session, notif, ws_payload)
+        except Exception:
+            logger.exception(
+                "admin deal action: post-commit dispatch failed for notif id=%s",
+                notif.id,
+                extra={"event": event, "notif_id": notif.id},
+            )
 
 
 # --------------------------------------------------------------------- listing
@@ -581,6 +616,8 @@ async def force_release(
             "payout": str(payout),
         },
     )
+    # A9-M-2 — stage both party notifications before commit, dispatch after.
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
     await _notify_party(
         session,
         deal.seller_id,
@@ -590,6 +627,7 @@ async def force_release(
             f"Сумма {payout} {currency.code} зачислена на баланс."
         ),
         deal.id,
+        pending,
     )
     await _notify_party(
         session,
@@ -597,8 +635,10 @@ async def force_release(
         "Сделка завершена администратором",
         f"Сделка #{deal.id} завершена в пользу продавца.",
         deal.id,
+        pending,
     )
     await session.commit()
+    await _dispatch_pending(session, pending, event="deal.force_release.dispatch.failed")
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -643,6 +683,7 @@ async def force_refund(
             "refunded": str(refunded),
         },
     )
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
     await _notify_party(
         session,
         deal.buyer_id,
@@ -652,6 +693,7 @@ async def force_refund(
             f"возвращено {refunded} {currency.code} (комиссия удержана)."
         ),
         deal.id,
+        pending,
     )
     await _notify_party(
         session,
@@ -659,8 +701,10 @@ async def force_refund(
         "Сделка возвращена администратором",
         f"Сделка #{deal.id} закрыта в пользу покупателя.",
         deal.id,
+        pending,
     )
     await session.commit()
+    await _dispatch_pending(session, pending, event="deal.force_refund.dispatch.failed")
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -713,12 +757,14 @@ async def split_deal(
             "locked": str(locked),
         },
     )
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
     await _notify_party(
         session,
         deal.buyer_id,
         "Сделка разделена администратором",
         f"По сделке #{deal.id} вам возвращено {buyer_share} {currency.code}.",
         deal.id,
+        pending,
     )
     await _notify_party(
         session,
@@ -726,8 +772,10 @@ async def split_deal(
         "Сделка разделена администратором",
         f"По сделке #{deal.id} вам начислено {seller_share} {currency.code}.",
         deal.id,
+        pending,
     )
     await session.commit()
+    await _dispatch_pending(session, pending, event="deal.split.dispatch.failed")
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -760,6 +808,7 @@ async def force_arbitration(
         reason=body.reason,
         payload={"before_status": before, "after_status": deal.status.value},
     )
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
     for recipient_id in (deal.buyer_id, deal.seller_id):
         await _notify_party(
             session,
@@ -767,8 +816,10 @@ async def force_arbitration(
             "Открыт арбитраж",
             f"По сделке #{deal.id} открыт арбитраж администратором.",
             deal.id,
+            pending,
         )
     await session.commit()
+    await _dispatch_pending(session, pending, event="deal.force_arbitration.dispatch.failed")
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -806,6 +857,7 @@ async def assign_arbiter(
         reason=None,
         payload={"before": before, "after": body.arbiter_id},
     )
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
     if body.arbiter_id is not None:
         await _notify_party(
             session,
@@ -813,8 +865,10 @@ async def assign_arbiter(
             "Назначен арбитр",
             f"Вам назначена сделка #{deal.id} для арбитража.",
             deal.id,
+            pending,
         )
     await session.commit()
+    await _dispatch_pending(session, pending, event="deal.assign_arbiter.dispatch.failed")
     return AdminDealActionResult(deal=await _to_detail(session, deal))
 
 
@@ -900,14 +954,23 @@ async def delete_deal(
     await session.delete(deal)
     await session.flush()
 
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
     for recipient_id, role in ((buyer_id, "buyer"), (seller_id, "seller")):
         body_text = f"Сделка #{deal_id_local} удалена администратором." + (
             f" Вам возвращено {refunded} {currency.code}."
             if (refunded is not None and currency is not None and role == "buyer")
             else ""
         )
-        await _notify_party(session, recipient_id, "Сделка удалена", body_text, deal_id_local)
+        await _notify_party(
+            session,
+            recipient_id,
+            "Сделка удалена",
+            body_text,
+            deal_id_local,
+            pending,
+        )
     await session.commit()
+    await _dispatch_pending(session, pending, event="deal.delete.dispatch.failed")
 
     return {
         "deleted": True,

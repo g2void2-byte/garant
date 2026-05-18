@@ -14,6 +14,7 @@ has its own ``credit_deposit`` / ``sweep_expired_deposits`` in
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 from sqlalchemy import case, func, select
@@ -29,6 +30,8 @@ from .models import (
     User,
 )
 from .time_utils import utcnow
+
+logger = logging.getLogger(__name__)
 
 # Deal states in which a counter-party review is allowed.
 REVIEWABLE_DEAL_STATUSES = frozenset(
@@ -110,7 +113,10 @@ async def post_review(
 
     await _recompute_user_rating(session, target)
 
-    await notifier.push(
+    # A9-M-2 — split-API: persist the notification row atomically with
+    # the review insert + rating recompute, dispatch WS/DM after commit
+    # so a rolled-back transaction never leaks a "new review" toast.
+    notif, ws_payload = await notifier.insert(
         session,
         target.id,
         NotificationType.system,
@@ -119,6 +125,14 @@ async def post_review(
         {"review_id": review.id},
     )
     await session.commit()
+    try:
+        await notifier.dispatch_after_commit(session, notif, ws_payload)
+    except Exception:
+        logger.exception(
+            "post_review: post-commit dispatch failed for notif id=%s",
+            notif.id,
+            extra={"event": "post_review.dispatch.failed", "notif_id": notif.id},
+        )
 
     return review
 

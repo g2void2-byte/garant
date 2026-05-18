@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
@@ -32,6 +33,7 @@ from ...deps import AdminUser, SessionDep
 from ...models import (
     AppSettings,
     Currency,
+    Notification,
     NotificationType,
     User,
     UserBalance,
@@ -166,6 +168,13 @@ async def decide_withdrawal(
     if not user:
         raise HTTPException(404, "Пользователь не найден")
 
+    # A9-M-2 — every branch below stages its user-facing notification
+    # row before commit (atomic with the status flip + balance write)
+    # and dispatches WS/DM after commit so a rolled-back decision
+    # never leaks a "вывод выполнен" / "заявка отклонена" event for a
+    # withdrawal whose state didn't actually change.
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
+
     if body.action == "approve":
         if w.status != WalletWithdrawStatus.pending:
             raise HTTPException(409, "Заявка уже обработана")
@@ -251,7 +260,7 @@ async def decide_withdrawal(
         w.admin_note = body.note or ""
 
         if currency and user and w.status == WalletWithdrawStatus.sent:
-            await notifier.push(
+            notif, ws_payload = await notifier.insert(
                 session,
                 user.id,
                 NotificationType.deposits,
@@ -259,6 +268,7 @@ async def decide_withdrawal(
                 f"-{w.amount} {currency.code} отправлены на {w.address}",
                 {"withdrawal_id": w.id},
             )
+            pending.append((notif, ws_payload))
 
         await log_admin_action(
             session,
@@ -311,7 +321,7 @@ async def decide_withdrawal(
         # worst makes the user think they were partially refunded.
         w.locked_until = None
         if currency and user:
-            await notifier.push(
+            notif, ws_payload = await notifier.insert(
                 session,
                 user.id,
                 NotificationType.deposits,
@@ -319,6 +329,7 @@ async def decide_withdrawal(
                 f"{w.amount} {currency.code} возвращены на баланс. {body.note or ''}".strip(),
                 {"withdrawal_id": w.id},
             )
+            pending.append((notif, ws_payload))
         await log_admin_action(
             session,
             actor=admin,
@@ -353,7 +364,7 @@ async def decide_withdrawal(
         w.admin_note = body.note or w.admin_note
         w.processed_at = utcnow()
         if currency and user:
-            await notifier.push(
+            notif, ws_payload = await notifier.insert(
                 session,
                 user.id,
                 NotificationType.deposits,
@@ -361,6 +372,7 @@ async def decide_withdrawal(
                 f"-{w.amount} {currency.code} отправлены на {w.address}",
                 {"withdrawal_id": w.id},
             )
+            pending.append((notif, ws_payload))
         await log_admin_action(
             session,
             actor=admin,
@@ -377,4 +389,16 @@ async def decide_withdrawal(
         )
 
     await session.commit()
+    for notif, ws_payload in pending:
+        try:
+            await notifier.dispatch_after_commit(session, notif, ws_payload)
+        except Exception:
+            logger.exception(
+                "decide_withdrawal: post-commit dispatch failed for notif id=%s",
+                notif.id,
+                extra={
+                    "event": "decide_withdrawal.dispatch.failed",
+                    "notif_id": notif.id,
+                },
+            )
     return _to_out(w, currency, user)
