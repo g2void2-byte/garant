@@ -29,6 +29,7 @@ from ...config import settings as app_settings_env
 from ...cryptopay import CryptoPay, CryptoPayError
 from ...deps import AdminUser, SessionDep
 from ...models import Currency, Deal, DealStatus, TreasuryWithdrawal
+from ...money import quantize_money
 from ...rate_limit import rate_limit
 from ...schemas import (
     AdminTreasuryBalanceOut,
@@ -129,8 +130,13 @@ async def treasury_overview(_admin: AdminUser, session: SessionDep):
 
     balances = []
     for c in currencies:
-        a = accrued.get(c.id, Decimal(0))
-        w = withdrawn.get(c.id, Decimal(0))
+        # H-2: quantise on output so the wire format never carries
+        # more fractional digits than the currency itself supports.
+        # ``ROUND_HALF_EVEN`` via ``quantize_money`` keeps the
+        # ``available`` projection consistent with the underlying
+        # ``accrued - withdrawn`` arithmetic.
+        a = quantize_money(accrued.get(c.id, Decimal(0)), c.decimals)
+        w = quantize_money(withdrawn.get(c.id, Decimal(0)), c.decimals)
         balances.append(
             AdminTreasuryBalanceOut(
                 currency_id=c.id,
@@ -139,18 +145,25 @@ async def treasury_overview(_admin: AdminUser, session: SessionDep):
                 decimals=c.decimals,
                 accrued=a,
                 withdrawn=w,
-                available=a - w,
+                available=quantize_money(a - w, c.decimals),
             )
         )
     return AdminTreasuryOverviewOut(balances=balances, total_withdrawals=int(total_count))
 
 
 def _withdrawal_to_out(w: TreasuryWithdrawal, c: Currency | None) -> AdminTreasuryWithdrawOut:
+    # H-2: ``w.amount`` comes from a ``Numeric(28, 8)`` column;
+    # quantise to the currency's ``decimals`` on the way out so the
+    # admin UI never sees more fractional digits than the asset
+    # itself uses. Falls back to the canonical scale (8) if the
+    # currency row was purged out from under us — the wider shape
+    # cannot drop information.
+    decimals = c.decimals if c is not None else 8
     return AdminTreasuryWithdrawOut(
         id=w.id,
         actor_id=w.actor_id,
         currency_code=c.code if c else "",
-        amount=w.amount,
+        amount=quantize_money(w.amount, decimals),
         address=w.address,
         status=w.status,
         note=w.note,

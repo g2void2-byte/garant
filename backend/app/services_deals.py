@@ -43,6 +43,7 @@ from .models import (
     User,
     UserBalance,
 )
+from .money import quantize_money
 from .services_wallet import get_currency_by_code, get_or_create_balance, lock_user_balance
 from .time_utils import utcnow
 
@@ -81,14 +82,8 @@ async def _settings(session: AsyncSession) -> AppSettings:
     return s
 
 
-def _q(value: Decimal | float | int, decimals: int) -> Decimal:
-    """Quantise to the currency's precision."""
-    quant = Decimal(10) ** -decimals
-    return Decimal(str(value)).quantize(quant)
-
-
 def _commission(amount: Decimal, percent: Decimal | float, decimals: int) -> Decimal:
-    return _q(amount * Decimal(str(percent)) / Decimal(100), decimals)
+    return quantize_money(amount * Decimal(str(percent)) / Decimal(100), decimals)
 
 
 # ── Balance helpers ────────────────────────────────────
@@ -187,7 +182,7 @@ async def create_deal(
 
     currency = await get_currency_by_code(session, currency_code)
     settings = await _settings(session)
-    amt = _q(Decimal(str(amount)), currency.decimals)
+    amt = quantize_money(Decimal(str(amount)), currency.decimals)
     if amt <= 0:
         raise ValueError("Сумма должна быть больше нуля")
 
@@ -304,10 +299,10 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     # row got deleted out from under us.
     if currency is None:
         raise ValueError("currency vanished")
-    amt = _q(Decimal(str(deal.amount)), currency.decimals)
-    commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals) or _commission(
-        amt, settings.deal_commission_percent, currency.decimals
-    )
+    amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
+    commission = quantize_money(
+        Decimal(str(deal.commission_amount or 0)), currency.decimals
+    ) or _commission(amt, settings.deal_commission_percent, currency.decimals)
     if deal.pay_commission == PayCommission.buyer:
         await _refund_principal_keep_commission(
             session, deal.buyer_id, currency.id, amt + commission, amt
@@ -342,8 +337,8 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     # stripped under ``python -O``).
     if currency is None:
         raise ValueError("currency vanished")
-    amt = _q(Decimal(str(deal.amount)), currency.decimals)
-    commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals)
+    amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
+    commission = quantize_money(Decimal(str(deal.commission_amount or 0)), currency.decimals)
 
     if deal.pay_commission == PayCommission.buyer:
         locked = amt + commission
@@ -438,10 +433,10 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
     # V11-L-18 — explicit raise instead of ``assert``.
     if currency is None:
         raise ValueError("currency vanished")
-    amt = _q(Decimal(str(deal.amount)), currency.decimals)
-    commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals) or _commission(
-        amt, settings.deal_commission_percent, currency.decimals
-    )
+    amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
+    commission = quantize_money(
+        Decimal(str(deal.commission_amount or 0)), currency.decimals
+    ) or _commission(amt, settings.deal_commission_percent, currency.decimals)
     if deal.pay_commission == PayCommission.buyer:
         await _refund_principal_keep_commission(
             session, deal.buyer_id, currency.id, amt + commission, amt
@@ -534,8 +529,8 @@ async def resolve_arbitration(
     # V11-L-18 — explicit raise instead of ``assert``.
     if currency is None:
         raise ValueError("currency vanished")
-    amt = _q(Decimal(str(deal.amount)), currency.decimals)
-    commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals)
+    amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
+    commission = quantize_money(Decimal(str(deal.commission_amount or 0)), currency.decimals)
 
     if winner == "buyer":
         # Refund the buyer's principal but retain commission on the
@@ -642,8 +637,8 @@ async def sweep_inactivity(session: AsyncSession) -> int:
         currency = await session.get(Currency, deal.currency_id)
         if currency is None:
             continue
-        amt = _q(Decimal(str(deal.amount)), currency.decimals)
-        commission = _q(Decimal(str(deal.commission_amount or 0)), currency.decimals)
+        amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
+        commission = quantize_money(Decimal(str(deal.commission_amount or 0)), currency.decimals)
         if deal.pay_commission == PayCommission.buyer:
             await _refund_principal_keep_commission(
                 session, deal.buyer_id, currency.id, amt + commission, amt
