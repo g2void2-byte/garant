@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
-# V5-D-1 — page size matches the previous unbounded ``limit(200)``
+# page size matches the previous unbounded ``limit(200)``
 # behaviour so existing clients see no functional change.
 _PAGE_SIZE = 200
 
@@ -24,7 +24,7 @@ async def list_notifications(
     user: CurrentUser,
     session: SessionDep,
     type: str | None = Query(None),
-    # V5-D-1 (M) — cursor pagination by ``(created_at, id)``. Two
+    # cursor pagination by ``(created_at, id)``. Two
     # rows can share a ``created_at`` (we INSERT in bulk on broadcast
     # fan-out), so the tuple is required to make the order strict —
     # otherwise pages would silently drop or duplicate rows. The

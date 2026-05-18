@@ -24,7 +24,7 @@ RESET_CODE_LEN = 6
 JWT_ALGORITHM = "HS256"
 JWT_ISSUER = "garant-pin"
 
-# V5-A-4 (M) — reject 4-digit PINs that show up in every published
+# reject 4-digit PINs that show up in every published
 # leaked-PIN dataset (DataGenetics 2012, Dan Amitay 2011, multiple
 # breach corpora since). 4-digit space is only 10⁴ = 10 000, so a
 # stolen handset where the user picked any of these falls in a few

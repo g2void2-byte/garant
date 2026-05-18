@@ -18,7 +18,7 @@ must be 2FA-gated (treasury withdrawal, user delete) add it to their
 dependency list — it returns the resolved ``User`` so handlers don't
 have to depend on both ``AdminUser`` and the TOTP check.
 
-V5-A-10 (M) — **NTP / PTP requirement.** TOTP is fundamentally a
+**NTP / PTP requirement.** TOTP is fundamentally a
 clock-comparison protocol: the server and the user's authenticator
 app must agree on ``floor(unix_time / 30)`` (modulo the
 ±``_DRIFT_WINDOWS`` tolerance). With ``_DRIFT_WINDOWS = 1`` we admit
@@ -167,7 +167,7 @@ def otpauth_url(secret: str, *, account: str, issuer: str = "Garant") -> str:
     )
 
 
-# V5-A-9 (L) — ``ADMIN_TOTP_BYPASS`` short-circuits the entire TOTP
+# ``ADMIN_TOTP_BYPASS`` short-circuits the entire TOTP
 # check when a matching ``X-Totp-Code`` header arrives. Used by the
 # integration test suite so e2e tests don't have to provision a real
 # TOTP secret; in production this must be unset.
@@ -189,7 +189,7 @@ def otpauth_url(secret: str, *, account: str, issuer: str = "Garant") -> str:
 def _totp_bypass() -> str:
     """Return the current ``ADMIN_TOTP_BYPASS`` value, or ``""`` if unset.
 
-    V5-A-9 (L) — read per-request rather than caching at import
+    read per-request rather than caching at import
     time. See module docstring for the rationale.
     """
     return os.environ.get("ADMIN_TOTP_BYPASS") or ""
@@ -234,7 +234,7 @@ async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> 
     if matched <= (user.totp_last_counter or -1):
         # Replay: code already accepted in this (or an earlier) window.
         raise HTTPException(401, "Код 2FA уже использован — дождитесь следующего")
-    # V5-C-6 (M) — claim the counter in Redis BEFORE we trust the DB
+    # claim the counter in Redis BEFORE we trust the DB
     # commit. Pre-fix, replay protection lived only in
     # ``users.totp_last_counter`` which the caller would persist
     # later via ``session.commit()``. If two parallel withdrawal

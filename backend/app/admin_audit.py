@@ -42,7 +42,7 @@ from .models import AdminAuditLog, User
 
 logger = logging.getLogger(__name__)
 
-# V5-C-4 — cap the serialised ``payload`` JSON at 4 KB.  Audit rows
+# cap the serialised ``payload`` JSON at 4 KB.  Audit rows
 # fan out to the admin viewer and to any future Sentry / log
 # aggregator, so an unbounded blob there is both a DoS knob (any
 # admin endpoint could enqueue megabytes per call) and a footgun for

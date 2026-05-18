@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     # exist breaks every existing PIN session.
     pin_pepper: str = ""
 
-    # V5-A-1 — replay window for Telegram WebApp init data; Telegram
+    # replay window for Telegram WebApp init data; Telegram
     # regenerates init-data on every TMA open so 15min is safe;
     # legacy default was 86400 (24h).
     init_data_max_age_seconds: int = 900

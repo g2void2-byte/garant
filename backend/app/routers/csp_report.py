@@ -11,7 +11,7 @@ Why this exists now that ``'unsafe-inline'`` has been removed from
 re-introduces inline ``style=`` attributes in markup, the CSP report
 will surface it here before users notice breakage.
 
-V5-D-7 — categorical log dampening
+categorical log dampening
 ----------------------------------
 The browser CSP layer is famously noisy: every browser-extension that
 injects a stylesheet / inline script, every Telegram-WebView shim that
@@ -70,7 +70,7 @@ _MAX_BODY = 16 * 1024
 RLCSPReport = Annotated[None, Depends(rate_limit_anon("csp-report", limit=30, window=60))]
 
 
-# V5-D-7 — URL prefixes that indicate the violation came from a
+# URL prefixes that indicate the violation came from a
 # browser-extension / WebView shim / in-app overlay rather than from
 # our markup.  Matched case-insensitively against ``blocked-uri`` /
 # ``source-file``.  Order doesn't matter; first match wins.

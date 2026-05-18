@@ -67,7 +67,7 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
     except ValueError:
         raise HTTPException(400, "Body must be JSON")
 
-    # V5-B-8 — Crypto Pay's webhook envelope has ALWAYS used
+    # Crypto Pay's webhook envelope has ALWAYS used
     # ``update_type`` (per their public docs, `https://help.crypt.bot/
     # crypto-pay-api#webhooks`). The previous ``or body.get("type")``
     # fallback predated that and survived in the codebase as cargo;

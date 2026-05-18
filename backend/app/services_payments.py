@@ -51,7 +51,7 @@ async def _find_wallet_deposit(
 ) -> WalletDeposit | None:
     """Look up a ``WalletDeposit`` row by its CryptoBot id.
 
-    V5-B-1 — when ``lock`` is true, the row is fetched with
+    when ``lock`` is true, the row is fetched with
     ``SELECT ... FOR UPDATE`` so two concurrent webhook deliveries
     serialise on the row instead of both reading ``pending`` and both
     crediting. The caller is expected to re-check ``status`` after the
@@ -90,7 +90,7 @@ async def handle_invoice_paid(session: AsyncSession, payload: dict[str, Any]) ->
 
     wallet = await _find_wallet_deposit(session, provider_id, lock=True)
     if wallet is not None:
-        # V5-B-1 — re-check status after acquiring the FOR UPDATE
+        # re-check status after acquiring the FOR UPDATE
         # lock: a sibling webhook delivery (CryptoBot retry / proxy
         # duplication) may have credited the deposit while we were
         # blocked on the row lock. If so, return idempotently

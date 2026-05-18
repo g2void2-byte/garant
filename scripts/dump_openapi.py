@@ -1,10 +1,15 @@
 """Dump the FastAPI OpenAPI schema to ``frontend/openapi.json``.
 
-This is a build-time helper used by the frontend's
-``npm run generate:api-types`` script. The schema is the canonical
-backend contract — the frontend's generated DTO types and e2e
-fixtures are validated against it so any shape drift surfaces at
-``tsc`` time instead of at runtime.
+This is the **backend half** of the typegen pipeline. The frontend's
+``npm run generate:api-types`` script consumes the already-committed
+``frontend/openapi.json`` and runs ``openapi-typescript`` against it
+(pure-node, V12-L12); this script is the upstream step that produces
+the JSON in the first place. CI invokes it in the backend job to
+drift-gate the snapshot, and developers run it locally after touching
+any Pydantic schema. The schema is the canonical backend contract —
+the frontend's generated DTO types and e2e fixtures are validated
+against it so any shape drift surfaces at ``tsc`` time instead of at
+runtime.
 
 The script avoids pulling in side-effectful imports from
 ``backend.app.main`` (database, redis, telegram bot setup) by
@@ -12,6 +17,7 @@ populating the minimal env vars FastAPI needs to construct the route
 table. No database connections are opened — only the OpenAPI graph
 is serialised.
 """
+
 from __future__ import annotations
 
 import json

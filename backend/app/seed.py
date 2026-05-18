@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import AppSettings, Category, Currency
 
-# V5-B-4 — keep ``CURRENCY_ADDRESS_REGEX`` in lockstep with the back-fill
+# keep ``CURRENCY_ADDRESS_REGEX`` in lockstep with the back-fill
 # in ``alembic/versions/d9f1c3a8e205_currencies_address_regex.py``. The
 # migration is responsible for existing installs; this dict is the
 # source of truth for fresh seeds and for the model default.

@@ -89,7 +89,7 @@ def _attempts_left(user) -> int:
 def _ensure_format(pin: str) -> None:
     """Reject obviously-malformed PINs (non-digit, wrong length).
 
-    V5-A-5 (L) — must be called BEFORE :func:`_is_locked`. The
+    must be called BEFORE :func:`_is_locked`. The
     invariant is that a malformed payload returns 400 (a client
     bug) regardless of lock state; otherwise a locked user would
     see 423 even when their request body was never going to be
@@ -103,7 +103,7 @@ def _ensure_format(pin: str) -> None:
 def _ensure_strong(pin: str) -> None:
     """Reject 4-digit PINs from the leaked-PIN blacklist.
 
-    V5-A-4 (M) — only invoked on the *new* PIN being committed
+    only invoked on the *new* PIN being committed
     (``/setup``, ``/change`` after old-PIN verification, and
     ``/reset/confirm`` after reset-code verification). On
     ``/check`` we deliberately do NOT block weak PINs — a
@@ -246,7 +246,7 @@ async def pin_change(
                 401,
                 f"Старый PIN неверен. Осталось попыток: {attempts_left}",
             )
-        # V5-A-4 (M) — blacklist check happens AFTER verify_pin succeeds
+        # blacklist check happens AFTER verify_pin succeeds
         # so a wrong old-PIN still returns 401 (with the attempts
         # counter bump) and never leaks whether the *new* PIN is
         # acceptable to an attacker who doesn't know the old one.
@@ -298,7 +298,7 @@ async def pin_reset_request(
     user.pin_reset_expires = now + timedelta(seconds=settings.pin_reset_code_ttl_seconds)
     await session.commit()
 
-    # V5-A-7 — ``code`` is the plaintext PIN-reset secret. It must
+    # ``code`` is the plaintext PIN-reset secret. It must
     # never appear in logs, breadcrumbs, or Sentry events. Only
     # ``send_dm`` and the recipient see it; the ``logger.warning``
     # below intentionally logs only ``user.id`` (no ``text``, no
@@ -366,7 +366,7 @@ async def pin_reset_confirm(
             f"Неверный код. Осталось попыток: {attempts_left}",
         )
 
-    # V5-A-4 (M) — blacklist check happens AFTER verify_reset_code
+    # blacklist check happens AFTER verify_reset_code
     # succeeds so attackers who don't know the reset code can't probe
     # which PINs are acceptable (and so a user who got the right
     # reset code never sees their attempts-left counter bump just

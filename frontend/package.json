@@ -3,7 +3,8 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "//": "V12-M3 — every range is pinned to an exact version (no carets) so a fresh ``npm install`` cannot float minors out from under the committed ``package-lock.json``. Dependabot (.github/dependabot.yml) opens grouped bump PRs each week; reviewers see one diff per bump rather than a silent transitive jump.",
+  "//": "V12-M3 — every range is pinned to an exact version (no carets) so a fresh ``npm install`` cannot float minors out from under the committed ``package-lock.json``. Manual bumps go via grouped PRs (no Dependabot in this repo per #164).",
+  "//generate:api-types": "V12-L12 — pure-node script: it only re-runs ``openapi-typescript`` against the committed ``openapi.json``. Re-dumping ``openapi.json`` from the live FastAPI app requires the backend Python environment and is exposed at the repo root via ``scripts/dump_openapi.py`` (CI runs it in the backend job to drift-gate the snapshot). When working locally and you changed a Pydantic schema, run both: ``(cd .. && python scripts/dump_openapi.py) && npm run generate:api-types``.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -15,7 +16,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
-    "generate:api-types": "python ../scripts/dump_openapi.py && openapi-typescript openapi.json -o src/api/openapi.generated.ts"
+    "generate:api-types": "openapi-typescript openapi.json -o src/api/openapi.generated.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "5.100.10",

@@ -33,7 +33,7 @@ async def list_arbitration_deals(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    # V5-D-5 — eagerly load ``buyer`` / ``seller`` / ``currency``.  The
+    # eagerly load ``buyer`` / ``seller`` / ``currency``.  The
     # ``_deal_out`` projection reads ``deal.buyer.username``,
     # ``deal.seller.username`` and ``deal.currency.code`` for every
     # row; without ``selectinload`` the ORM emits an N+1 of three

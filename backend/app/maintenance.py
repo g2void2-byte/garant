@@ -48,7 +48,7 @@ _READONLY_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 # update entirely, which would silently lose deposit credits across
 # the maintenance window.
 #
-# V5-C-3 — ``/api/auth/`` is intentionally *not* in this list.  No
+# ``/api/auth/`` is intentionally *not* in this list.  No
 # routes mount under that prefix today, and read-only auth probes
 # (``GET /api/auth/...``) would be admitted by the ``_READONLY_METHODS``
 # short-circuit anyway.  Carrying the wildcard would silently allow
@@ -76,7 +76,7 @@ _ALWAYS_ALLOWED_PREFIXES = (
 # committing, so a toggle is reflected on the same process immediately;
 # peers refresh within ``_TTL_SECONDS``.
 #
-# V5-C-2 — 5 s is short enough that a peer worker on a multi-instance
+# 5 s is short enough that a peer worker on a multi-instance
 # deploy reflects an admin toggle within the same screen refresh,
 # without measurably increasing DB load (the row is one indexed SELECT
 # off a 1-row table, ~0.2 ms even on a cold cache).  Pre-fix this was
@@ -85,7 +85,7 @@ _ALWAYS_ALLOWED_PREFIXES = (
 
 _TTL_SECONDS = 5.0
 
-# V5-C-1 — throttle the "DB lookup failed" log line.  Pre-fix every
+# throttle the "DB lookup failed" log line.  Pre-fix every
 # request during a DB outage emitted a fresh ``logger.exception`` (the
 # error-path cache TTL was 1 s, so we re-tried — and re-logged — every
 # second on every middleware path).  At even modest traffic this
