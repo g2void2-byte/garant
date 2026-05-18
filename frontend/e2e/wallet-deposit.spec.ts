@@ -1,5 +1,5 @@
 import { test } from "@playwright/test";
-import { expect, mockApi, seedSession } from "./fixtures";
+import { expect, mockApi, seedSession, USDT_CURRENCY } from "./fixtures";
 
 /**
  * V12-M5 — withdraw/deposit e2e (deposit half).
@@ -18,29 +18,6 @@ import { expect, mockApi, seedSession } from "./fixtures";
  * closes the V12-M5 ``withdraw/deposit`` bullet at the e2e layer.
  */
 
-const USDT_CURRENCY = {
-  id: 1,
-  code: "USDT",
-  name: "Tether",
-  network: "TRC20",
-  icon_url: "",
-  decimals: 2,
-  min_deposit: 5,
-  min_withdraw: 1,
-};
-
-async function mockCurrencies(page: Parameters<typeof seedSession>[0]) {
-  await page.route(
-    /^https?:\/\/[^/]+\/api\/wallet\/currencies(?:\?.*)?$/,
-    (r) =>
-      r.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([USDT_CURRENCY]),
-      }),
-  );
-}
-
 test.describe("Wallet deposit", () => {
   test.beforeEach(async ({ page }) => {
     await seedSession(page);
@@ -50,7 +27,6 @@ test.describe("Wallet deposit", () => {
     page,
   }) => {
     await mockApi(page);
-    await mockCurrencies(page);
 
     // Method-aware override so the POST returns a proper
     // ``WalletDepositDto`` while GET keeps the default empty list.
@@ -112,7 +88,6 @@ test.describe("Wallet deposit", () => {
     page,
   }) => {
     await mockApi(page);
-    await mockCurrencies(page);
     let postCalled = false;
     await page.route(
       /^https?:\/\/[^/]+\/api\/wallet\/deposits(?:\?.*)?$/,
