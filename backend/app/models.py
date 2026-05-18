@@ -73,6 +73,46 @@ class NotificationType(str, enum.Enum):
 # keeps a stable Python enum type without a destructive re-create.
 # New code should reference :class:`WalletDepositProvider` only.
 class WalletDepositProvider(str, enum.Enum):
+    """Payment provider that backed a ``WalletDeposit`` row.
+
+    L-6 trade-off — *kept as a Postgres ``ENUM`` rather than a free-form
+    string column*.
+
+    The single-valued enum (only ``cryptobot`` is supported today) reads
+    like over-engineering at first glance: a ``String(32)`` plus a
+    ``CheckConstraint`` would store the same data and avoid the
+    ``ALTER TYPE ... ADD VALUE`` dance every new provider triggers.
+    We keep the ENUM anyway because:
+
+    * **Type safety at the ORM boundary.** SA materialises rows into
+      :class:`WalletDepositProvider` members, so a typo (``"cryptobot
+      "`` with a trailing space, mis-cased ``"CryptoBot"``) is rejected
+      at write time instead of silently flowing into the wallet ledger
+      and the admin "deposits by provider" analytics.
+    * **PR-G enum-renaming precedent.** H-1 already proved we can rename
+      a Postgres enum (``invoiceprovider`` → ``walletdepositprovider``)
+      in-place without a destructive re-create. Adding a new provider
+      is a one-line :func:`op.execute("ALTER TYPE walletdepositprovider
+      ADD VALUE 'foo'")` migration — fast, in-transaction, and a single
+      transactional commit. The cost we are deferring is *removing*
+      a provider, which would need a downgrade-style V5-E-1 dance —
+      see :data:`tests.test_v5_d_e_bucket._DESTRUCTIVE_DOWNGRADES`.
+
+    The alternative — ``String(32)`` + ``CheckConstraint("provider IN
+    ('cryptobot', …)")`` — looks lighter but loses the typed ORM
+    surface, leaks the validation list across migration files (the
+    CHECK has to be ALTER'd on every change, same lock cost as ADD
+    VALUE), and gives nothing in return for an enum that has had
+    exactly one value through three audit cycles.
+
+    Mig-3 hardening: a future provider addition should land as its
+    own migration with the ``ADD VALUE`` call inside a regular
+    transactional block (``ADD VALUE`` is one of the few ``ALTER
+    TYPE`` operations Postgres allows inside a transaction); the
+    matching downgrade is a no-op and gets a V5-E-1 marker because
+    ``ALTER TYPE ... DROP VALUE`` doesn't exist in Postgres.
+    """
+
     cryptobot = "cryptobot"
 
 
