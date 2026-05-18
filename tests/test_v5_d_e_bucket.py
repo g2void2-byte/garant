@@ -366,6 +366,15 @@ async def test_recompute_user_rating_sums_full_ladder(client):
 
 _ALEMBIC_VERSIONS = pathlib.Path(__file__).resolve().parents[1] / "alembic" / "versions"
 
+# Mig-1 — manual allow-list of destructive downgrades. Audited by a
+# human; the rows here are migrations whose downgrade either (a) drops
+# data via raw ``op.execute('ALTER TYPE ... DROP VALUE / DROP COLUMN')``
+# the AST scan below cannot see through, or (b) drops a column / table
+# that lived in production long enough to accumulate user-written rows
+# the "just rebuild from upgrade" reversibility argument doesn't cover.
+# Numeric-narrowing downgrades (the H-2 family) are detected
+# automatically by :func:`_migrations_with_numeric_narrowing_downgrade`
+# below — adding them here is belt-and-suspenders, not required.
 _DESTRUCTIVE_DOWNGRADES = (
     "411cbe508b97_drop_legacy_dealstatus_values.py",
     "9f3c1a0b8e21_drop_users_frozen_balance.py",
@@ -373,8 +382,15 @@ _DESTRUCTIVE_DOWNGRADES = (
     "c8f4a2e91d35_pr_h_audit_refunded_indexes_softdelete.py",
     # H-2 — downgrade narrows Numeric(28,8) money columns back to
     # Numeric(18,8); any value > 10¹⁰ written after the upgrade will
-    # fail with ``numeric field overflow`` on downgrade.
+    # fail with ``numeric field overflow`` on downgrade. Also detected
+    # automatically by the AST narrowing scan.
     "9c3a4d2e1f08_h2_widen_money_columns_to_28_8.py",
+    # H-2 (companion) — downgrade narrows Numeric(28,8) catalog /
+    # singleton money columns back to Numeric(14,2); the precision
+    # gap is wider here so the overflow threshold is 10¹², plus any
+    # row with 3+ fractional digits aborts the downgrade. Also
+    # detected automatically by the AST narrowing scan.
+    "m1d8e3f7a2b4_h2_widen_remaining_money_columns_to_28_8.py",
     # H-1 — drops ``users.balance``, the ``invoices`` table and the
     # ``invoicestatus`` enum after backfilling balances into
     # ``user_balances(USDT)``. ``downgrade`` raises immediately;
@@ -393,6 +409,111 @@ _CONCURRENT_INDEX_MIGRATIONS = (
 )
 
 
+_V5_E_1_MARKER = "V5-E-1 — irreversible data loss on downgrade"
+
+
+def _numeric_precision_scale(node: ast.AST | None) -> tuple[int, int] | None:
+    """Decode an ``sa.Numeric(...)`` (or bare ``Numeric(...)``) AST call
+    into a ``(precision, scale)`` tuple of ints.
+
+    Returns ``None`` if ``node`` is not a Numeric call we can fully
+    resolve at parse time (e.g. one of the arguments is a Name lookup
+    or an expression). The AST scan that uses this helper opts to skip
+    such cases rather than guess — a migration that hides its narrowing
+    behind a variable indirection should be added to the manual
+    ``_DESTRUCTIVE_DOWNGRADES`` allow-list explicitly.
+
+    Accepts both call shapes Alembic / SA migrations use in practice:
+
+    * ``sa.Numeric(precision=28, scale=8)`` — kwargs
+    * ``sa.Numeric(28, 8)`` — positional
+    * ``sa.Numeric(28)`` — precision only (scale defaults to 0)
+    """
+    if not isinstance(node, ast.Call):
+        return None
+    func = node.func
+    if isinstance(func, ast.Attribute) and func.attr == "Numeric":
+        pass
+    elif isinstance(func, ast.Name) and func.id == "Numeric":
+        pass
+    else:
+        return None
+
+    precision: int | None = None
+    scale: int | None = None
+
+    if len(node.args) >= 1:
+        first = node.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, int):
+            precision = first.value
+        else:
+            return None
+    if len(node.args) >= 2:
+        second = node.args[1]
+        if isinstance(second, ast.Constant) and isinstance(second.value, int):
+            scale = second.value
+        else:
+            return None
+
+    for kw in node.keywords:
+        if kw.arg == "precision":
+            if isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, int):
+                precision = kw.value.value
+            else:
+                return None
+        elif kw.arg == "scale":
+            if isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, int):
+                scale = kw.value.value
+            else:
+                return None
+
+    if precision is None:
+        return None
+    return (precision, scale if scale is not None else 0)
+
+
+def _migrations_with_numeric_narrowing_downgrade() -> list[str]:
+    """Mig-1 — AST-scan every migration; return the basenames whose
+    ``downgrade()`` contains at least one
+    ``op.alter_column(..., existing_type=sa.Numeric(W, …), type_=sa.Numeric(N, …), …)``
+    call where ``N < W`` (Numeric precision is being narrowed).
+
+    Returns a sorted list so the produced set is deterministic and the
+    diagnostic the test emits is stable across runs.
+
+    Note: a narrowing of ``scale`` alone (e.g. 28,8 → 28,2) is also
+    captured because Postgres rounds the fractional part on
+    ``ALTER COLUMN TYPE``, which is itself destructive for satoshi-
+    scale values — we treat any decrease in either precision or scale
+    as narrowing.
+    """
+    found: list[str] = []
+    for path in sorted(_ALEMBIC_VERSIONS.glob("*.py")):
+        if path.name.startswith("__"):
+            continue
+        text = path.read_text(encoding="utf-8")
+        module = ast.parse(text, filename=str(path))
+        try:
+            downgrade = _find_function(module, "downgrade")
+        except AssertionError:
+            continue
+        for node in ast.walk(downgrade):
+            if not _is_op_call(node, "alter_column"):
+                continue
+            existing_type = next(
+                (kw.value for kw in node.keywords if kw.arg == "existing_type"), None
+            )
+            new_type = next((kw.value for kw in node.keywords if kw.arg == "type_"), None)
+            existing = _numeric_precision_scale(existing_type)
+            new = _numeric_precision_scale(new_type)
+            if existing is None or new is None:
+                continue
+            if new[0] < existing[0] or new[1] < existing[1]:
+                found.append(path.name)
+                break
+    return found
+
+
 def test_destructive_migrations_document_irreversible_data_loss():
     """V5-E-1 — every migration whose downgrade either drops a
     column or coerces a value bucket back into the catch-all
@@ -402,16 +523,59 @@ def test_destructive_migrations_document_irreversible_data_loss():
 
     The header text is deliberately a fixed marker (``V5-E-1 —
     irreversible data loss on downgrade``) so this meta-check is a
-    simple substring search.  A future migration with a similar
-    shape (column drop, enum collapse) should grow the same header
-    when it's added; the easiest way to discover that is to keep
-    this allow-list-driven test green.
+    simple substring search.
+
+    Mig-1 hardening: the test now combines two sources of truth.
+
+    1. ``_DESTRUCTIVE_DOWNGRADES`` — manually audited migrations where
+       the destruction lives behind raw SQL (``op.execute('ALTER TYPE
+       ... DROP VALUE')`` for enum collapses, ``op.drop_column`` after
+       a column had lived in production for months, …). These are
+       judgement calls the AST scan can't make and must be curated by
+       hand.
+    2. :func:`_migrations_with_numeric_narrowing_downgrade` — an AST
+       scan that flags any migration whose ``downgrade()`` narrows an
+       ``alter_column``'s Numeric ``type_`` against its
+       ``existing_type``. That catches the H-2 family
+       (``9c3a4d2e1f08``, ``m1d8e3f7a2b4``) automatically so a future
+       H-2-style widening migration grows the V5-E-1 contract by
+       construction — no allow-list edit needed.
     """
-    marker = "V5-E-1 — irreversible data loss on downgrade"
-    for filename in _DESTRUCTIVE_DOWNGRADES:
+    detected_narrowing = set(_migrations_with_numeric_narrowing_downgrade())
+    must_carry_marker = set(_DESTRUCTIVE_DOWNGRADES) | detected_narrowing
+
+    missing: list[str] = []
+    for filename in sorted(must_carry_marker):
         path = _ALEMBIC_VERSIONS / filename
-        text = path.read_text()
-        assert marker in text, f"{filename}: missing V5-E-1 irreversible-data-loss header"
+        if not path.exists():
+            missing.append(f"{filename}: file referenced in allow-list does not exist")
+            continue
+        text = path.read_text(encoding="utf-8")
+        if _V5_E_1_MARKER not in text:
+            via = "AST scan" if filename in detected_narrowing else "manual allow-list"
+            missing.append(
+                f"{filename}: missing V5-E-1 irreversible-data-loss header (flagged via {via})"
+            )
+    assert not missing, "V5-E-1 contract violations:\n  - " + "\n  - ".join(missing)
+
+
+def test_v5_e_1_ast_scan_finds_h2_family():
+    """Mig-1 self-check — the AST narrowing scan must produce the
+    expected H-2 family. Guards the helper against silent regressions
+    (e.g. ``_numeric_precision_scale`` rejecting all calls so the scan
+    returns an empty set and the contract above becomes a no-op).
+    """
+    detected = set(_migrations_with_numeric_narrowing_downgrade())
+    expected = {
+        "9c3a4d2e1f08_h2_widen_money_columns_to_28_8.py",
+        "m1d8e3f7a2b4_h2_widen_remaining_money_columns_to_28_8.py",
+    }
+    missing = expected - detected
+    assert not missing, (
+        "AST narrowing scan failed to flag known H-2 migrations: "
+        f"{sorted(missing)}. Inspect _numeric_precision_scale and "
+        "_migrations_with_numeric_narrowing_downgrade."
+    )
 
 
 def _find_function(module: ast.Module, name: str) -> ast.FunctionDef:
