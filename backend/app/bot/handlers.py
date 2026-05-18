@@ -13,11 +13,15 @@ only does routing + filter wiring.
 
 from __future__ import annotations
 
+import logging
+
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from . import keyboards, sections
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -47,22 +51,22 @@ def _user_kwargs(message: Message) -> dict[str, object]:
     }
 
 
-@router.message(F.text == keyboards.SEARCH_BUTTON)
+@router.message(F.text.in_(keyboards.SEARCH_BUTTON_TEXTS))
 async def on_search(message: Message) -> None:
     await sections.send_search(message)
 
 
-@router.message(F.text == keyboards.DEALS_BUTTON)
+@router.message(F.text.in_(keyboards.DEALS_BUTTON_TEXTS))
 async def on_deals(message: Message) -> None:
     await sections.send_deals(message, **_user_kwargs(message))
 
 
-@router.message(F.text == keyboards.PROFILE_BUTTON)
+@router.message(F.text.in_(keyboards.PROFILE_BUTTON_TEXTS))
 async def on_profile(message: Message) -> None:
     await sections.send_profile(message, **_user_kwargs(message))
 
 
-@router.message(F.text == keyboards.HELP_BUTTON)
+@router.message(F.text.in_(keyboards.HELP_BUTTON_TEXTS))
 async def on_help(message: Message) -> None:
     await sections.send_help(message)
 
@@ -124,3 +128,27 @@ async def cb_toggle_hidden(callback: CallbackQuery) -> None:
     await _replace_body(callback, body, kb)
     status = "включён" if user.is_hidden_profile else "выключен"
     await callback.answer(f"Скрытый профиль {status}")
+
+
+# ── Forensic fallback ────────────────────────────────────────────────────
+
+
+# Any text message that did NOT match a section button lands here. We log
+# the raw text + hex so a stuck reply-keyboard tap (e.g. emoji-variant
+# mismatch, client-side normalisation) leaves a paper trail instead of
+# silently being dropped on the floor. The bot intentionally stays
+# silent — answering every random user message would be noisy.
+@router.message(F.text)
+async def _on_unmatched_text(message: Message) -> None:
+    text = message.text or ""
+    logger.warning(
+        "bot: dropping unmatched text message",
+        extra={
+            "event": "bot.unmatched_text",
+            "text": text,
+            "text_hex": text.encode("utf-8").hex(),
+            "text_len": len(text),
+            "from_username": message.from_user.username if message.from_user else None,
+            "from_id": message.from_user.id if message.from_user else None,
+        },
+    )
