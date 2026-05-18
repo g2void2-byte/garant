@@ -149,26 +149,61 @@ def test_search_keyboard_has_two_webapp_buttons(monkeypatch: pytest.MonkeyPatch)
     assert all(b.url is None for b in flat)
 
 
-def test_search_keyboard_falls_back_to_url_when_webapp_not_https(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    "webapp_url",
+    [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://10.0.0.1:5173",
+        "http://example.com",
+        "",
+    ],
+)
+def test_search_keyboard_falls_back_to_callback_when_webapp_not_https(
+    monkeypatch: pytest.MonkeyPatch, webapp_url: str
 ):
-    """Reproduces the dropped-button bug.
+    """Reproduces the dropped-button bug — final form.
 
     Telegram rejects ``sendMessage`` / ``sendPhoto`` calls whose inline
-    keyboard contains a ``web_app=`` button with a non-HTTPS URL
-    (``Bad Request: BUTTON_TYPE_INVALID``). Pre-fix every section
-    handler hit this with the default ``WEBAPP_URL=http://localhost:5173``
-    and the user saw the bot silently ignore their tap. We now fall
-    back to a plain ``url=`` button so the section message still goes
-    through — the link opens in the user's external browser instead
-    of inline, but the bot stops looking dead.
+    keyboard contains *either*:
+
+    * a ``web_app=`` button with a non-HTTPS URL
+      (``Bad Request: BUTTON_TYPE_INVALID``); **or**
+    * a plain ``url=`` button that points at ``localhost`` /
+      private-IP / ``http://`` (``Bad Request: ... is invalid: Wrong
+      HTTP URL``).
+
+    Pre-fix every section handler hit one of these with the default
+    ``WEBAPP_URL=http://localhost:5173`` and the user saw the bot
+    silently ignore their tap. PR #168 swapped ``web_app=`` for
+    ``url=`` which moved the same silent failure under a different
+    Telegram error class — confirmed in a live test against
+    ``@EWGarant_bot``. We now fall back all the way to
+    ``callback_data=``: it has no Telegram-side URL validation, so the
+    keyboard always renders and tapping the button surfaces a single,
+    actionable diagnostic alert via ``cb_tma_unavailable`` in
+    ``handlers.py`` instead of nothing.
     """
-    monkeypatch.setattr(settings, "webapp_url", "http://localhost:5173")
+    monkeypatch.setattr(settings, "webapp_url", webapp_url)
     kb = keyboards.search_keyboard()
     flat = [b for row in kb.inline_keyboard for b in row]
     assert len(flat) == 2
     assert all(b.web_app is None for b in flat)
-    assert all(b.url is not None and b.url.startswith("http://") for b in flat)
+    assert all(b.url is None for b in flat)
+    assert all(
+        b.callback_data is not None
+        and b.callback_data.startswith(keyboards.CB_TMA_UNAVAILABLE_PREFIX)
+        for b in flat
+    )
+    # Each Mini App button must carry its original path in the callback
+    # data so the diagnostic handler can tell the operator *which*
+    # section the user wanted to open.
+    suffixes = sorted(
+        b.callback_data.removeprefix(keyboards.CB_TMA_UNAVAILABLE_PREFIX) for b in flat
+    )
+    assert suffixes == ["/search", "/search/categories"]
+    # And nothing must exceed Telegram's 64-byte callback_data cap.
+    assert all(len(b.callback_data.encode("utf-8")) <= 64 for b in flat)
 
 
 def test_help_keyboard_falls_back_to_open_app_when_unconfigured(
@@ -490,3 +525,28 @@ async def test_callbacks_use_edit_caption_when_message_has_photo():
 
     cb.message.edit_caption.assert_awaited_once()
     cb.message.edit_text.assert_not_awaited()
+
+
+# ── HTTP-WEBAPP fallback diagnostic callback ─────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cb_tma_unavailable_pops_up_alert_when_tapped():
+    """When WEBAPP_URL is not HTTPS, ``_webapp_button`` emits a
+    ``callback_data=bot:tma_unavail:<path>`` button instead of a
+    ``web_app=`` / ``url=`` one. Tapping that button must call
+    ``callback.answer(..., show_alert=True)`` with an actionable text,
+    so the section message no longer looks dead and the operator gets
+    a single, copy-pasteable diagnostic explaining what to fix.
+    """
+    cb = _fake_callback(5100)
+    cb.data = keyboards.CB_TMA_UNAVAILABLE_PREFIX + "/search"
+
+    await handlers.cb_tma_unavailable(cb)
+
+    cb.answer.assert_awaited_once()
+    call = cb.answer.call_args
+    assert call.kwargs.get("show_alert") is True
+    text = (call.args[0] if call.args else "") or call.kwargs.get("text", "")
+    assert "WEBAPP_URL" in text
+    assert "HTTPS" in text

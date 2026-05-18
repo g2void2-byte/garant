@@ -130,6 +130,23 @@ async def cb_toggle_hidden(callback: CallbackQuery) -> None:
     await callback.answer(f"Скрытый профиль {status}")
 
 
+# Tapped when the bot is running with a non-HTTPS ``WEBAPP_URL`` and the
+# Mini App button has been replaced with a ``callback_data=`` button by
+# :func:`backend.app.bot.keyboards._webapp_button`. The contract is:
+# the section message always reaches the user (no silent
+# ``BUTTON_TYPE_INVALID`` / ``Wrong HTTP URL`` drop), and tapping any of
+# the Mini App buttons gets a single explicit diagnostic — including
+# which TMA path the user wanted — instead of opening nothing.
+@router.callback_query(F.data.startswith(keyboards.CB_TMA_UNAVAILABLE_PREFIX))
+async def cb_tma_unavailable(callback: CallbackQuery) -> None:
+    await callback.answer(
+        "Мини-приложение пока недоступно: WEBAPP_URL должен быть публичным "
+        "HTTPS-адресом. Сообщите администратору, чтобы он подключил HTTPS-туннель "
+        "или боевой домен.",
+        show_alert=True,
+    )
+
+
 # ── Forensic fallback ────────────────────────────────────────────────────
 
 

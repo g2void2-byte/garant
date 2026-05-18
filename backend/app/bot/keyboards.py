@@ -54,6 +54,12 @@ CB_PROFILE = "bot:profile"
 CB_SETTINGS = "bot:settings"
 CB_TOGGLE_ANON = "bot:tog:anon"
 CB_TOGGLE_HIDDEN = "bot:tog:hidden"
+# Tapped when the bot is running with a non-HTTPS ``WEBAPP_URL`` and the
+# inline Mini App button has been replaced with this callback so the
+# section message still goes through. The handler surfaces a single,
+# actionable alert with the suffix telling the operator which path was
+# requested. See :func:`_webapp_button` for why this exists.
+CB_TMA_UNAVAILABLE_PREFIX = "bot:tma_unavail:"
 
 
 def main_reply_keyboard() -> ReplyKeyboardMarkup:
@@ -75,18 +81,24 @@ def _webapp_url(url_path: str) -> str:
 
 
 def webapp_url_is_https() -> bool:
-    """Whether the configured ``WEBAPP_URL`` is usable for inline ``web_app`` buttons.
+    """Whether the configured ``WEBAPP_URL`` is usable for inline buttons.
 
-    Telegram requires an HTTPS URL with a valid SSL certificate for the
-    ``web_app`` field on inline buttons; an HTTP base (including the
-    ``http://localhost:5173`` default baked into ``.env.compose.example``)
-    causes the Bot API to reject the whole ``sendMessage`` /
-    ``sendPhoto`` call with ``Bad Request: BUTTON_TYPE_INVALID`` and
-    every section button silently looks dead from the user's side. We
-    use this helper to decide whether to attach ``web_app=...`` (proper
-    Mini App launch inside Telegram) or fall back to plain ``url=...``
-    (opens the link in the user's external browser) when building each
-    section keyboard.
+    The Telegram Bot API rejects the whole ``sendMessage`` / ``sendPhoto``
+    call when the keyboard contains an inline button whose URL is not a
+    public HTTPS endpoint. Two failure modes have been observed in this
+    repo against the default ``WEBAPP_URL=http://localhost:5173``:
+
+    * ``web_app=WebAppInfo(url="http://...")``
+      -> ``Bad Request: BUTTON_TYPE_INVALID``.
+    * ``InlineKeyboardButton(url="http://localhost:5173/...")``
+      -> ``Bad Request: ... is invalid: Wrong HTTP URL``.
+
+    Either way every section button silently looks dead from the user's
+    side because aiogram only logs the error at its own level. We use
+    this helper as the single switch between attaching a proper
+    ``web_app=...`` (Mini App launch inside Telegram) and falling back to
+    a guaranteed-deliverable ``callback_data=...`` button that surfaces
+    a diagnostic alert when tapped. See :func:`_webapp_button`.
     """
     return settings.webapp_url.lower().startswith("https://")
 
@@ -108,19 +120,32 @@ def _webapp_button(text: str, url_path: str) -> InlineKeyboardButton:
 
     When ``WEBAPP_URL`` is HTTPS we attach a proper ``web_app=...`` so
     Telegram opens the Mini App inline. When it is not (e.g. the
-    ``http://localhost:5173`` default in dev compose), Telegram would
-    reject the whole keyboard with ``BUTTON_TYPE_INVALID`` and the bot
-    would look dead to the user. Falling back to a plain ``url=...``
-    button keeps the section message answering — the link may not be
-    reachable from the user's device (``localhost`` is the bot host,
-    not the user's phone), but the bot still responds visibly instead
-    of silently dropping the tap. ``runner.start_polling`` logs a
-    startup warning in this mode so operators know to point
-    ``WEBAPP_URL`` at an HTTPS tunnel before going live.
+    ``http://localhost:5173`` default in dev compose), **both** options
+    Telegram offers for opening a URL get rejected — ``web_app=`` with
+    ``BUTTON_TYPE_INVALID`` and plain ``url=`` with ``Wrong HTTP URL``
+    — so the previous ``url=`` fallback (#168) still silently dropped
+    the whole section message. We now emit a ``callback_data=`` button
+    instead: it has no URL-validation pass on Telegram's side, so the
+    ``sendMessage`` / ``sendPhoto`` always succeeds, the user actually
+    sees the bot reply, and tapping the button triggers a single,
+    actionable diagnostic alert (see ``cb_tma_unavailable`` in
+    ``handlers.py``). ``runner.start_polling`` logs a startup warning
+    in this mode so operators know to point ``WEBAPP_URL`` at an
+    HTTPS endpoint to make the Mini App actually open inline.
     """
     if webapp_url_is_https():
         return InlineKeyboardButton(text=text, web_app=_webapp(url_path))
-    return InlineKeyboardButton(text=text, url=_webapp_url(url_path))
+    # Telegram caps ``callback_data`` at 64 bytes; the webapp paths used
+    # in this repo are short (longest known is ``/search/categories``,
+    # 18 bytes) but truncate defensively so a future longer path can
+    # never push us over the limit and trigger aiogram's keyboard
+    # validation error at construction time.
+    suffix = url_path if url_path.startswith("/") else "/" + url_path
+    cb_data = CB_TMA_UNAVAILABLE_PREFIX + suffix
+    encoded = cb_data.encode("utf-8")
+    if len(encoded) > 64:
+        cb_data = encoded[:64].decode("utf-8", errors="ignore")
+    return InlineKeyboardButton(text=text, callback_data=cb_data)
 
 
 # ── Section keyboards ─────────────────────────────────────────────────────
