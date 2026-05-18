@@ -37,7 +37,10 @@ from sqlalchemy import select
 
 from backend.app.db import async_session
 from backend.app.models import (
+    AppSettings,
+    Category,
     Currency,
+    Service,
     TreasuryWithdrawal,
     User,
     UserBalance,
@@ -201,3 +204,99 @@ async def test_currency_min_deposit_and_min_withdraw_round_trip_above_1e10():
 
     assert Decimal(str(fresh.min_deposit)) == _BIG
     assert Decimal(str(fresh.min_withdraw)) == _HUGE
+
+
+# ── H-2 second wave: the five remaining lagging columns ─────────────────────
+#
+# The first H-2 migration (``9c3a4d2e1f08``) widened every per-currency
+# ledger column. The follow-up migration
+# (``m1d8e3f7a2b4_h2_widen_remaining_money_columns_to_28_8.py``) takes
+# care of the five columns that still lagged at ``Numeric(14, 2)``:
+# ``User.deposit_total``, ``Service.price``, ``Service.deposit`` and
+# ``AppSettings.min_deposit`` / ``min_withdraw``. The tests below pin
+# that each of them round-trips a value at the upper edge of the
+# wider shape (12-digit integer part, 8 fractional digits) — pre-fix
+# Postgres would have raised ``numeric field overflow`` because the
+# integer part exceeded ``Numeric(14, 2)``'s ``precision - scale = 12``
+# digit headroom.
+
+
+@pytest.mark.asyncio
+async def test_user_deposit_total_round_trips_above_1e10():
+    """``User.deposit_total`` keeps the full ``Numeric(28, 8)`` shape."""
+    async with async_session() as session:
+        user = User(
+            tg_user_id=49005,
+            username="h2_deposit_total",
+            display_name="h2dt",
+            deposit_total=_BIG,
+        )
+        session.add(user)
+        await session.commit()
+
+        fresh = (await session.execute(select(User).where(User.tg_user_id == 49005))).scalar_one()
+
+    assert Decimal(str(fresh.deposit_total)) == _BIG
+
+
+@pytest.mark.asyncio
+async def test_service_price_and_deposit_round_trip_above_1e10():
+    """``Service.price`` / ``Service.deposit`` round-trip a value at
+    the upper edge of ``Numeric(28, 8)``.
+
+    Pre-fix the satoshi-scale fractional digits would have been
+    truncated to two on write because the columns lagged at
+    ``Numeric(14, 2)``.
+    """
+    async with async_session() as session:
+        owner = User(tg_user_id=49006, username="h2_service_owner", display_name="h2so")
+        cat = Category(slug="h2-svc-precision", name="H-2 svc", icon="")
+        session.add_all([owner, cat])
+        await session.flush()
+
+        svc = Service(
+            owner_id=owner.id,
+            category_id=cat.id,
+            title="H-2 precision service",
+            description="",
+            price=_BIG,
+            deposit=_BIG,
+        )
+        session.add(svc)
+        await session.commit()
+
+        fresh = (
+            await session.execute(select(Service).where(Service.owner_id == owner.id))
+        ).scalar_one()
+
+    assert Decimal(str(fresh.price)) == _BIG
+    assert Decimal(str(fresh.deposit)) == _BIG
+
+
+@pytest.mark.asyncio
+async def test_app_settings_min_deposit_and_min_withdraw_round_trip_above_1e10():
+    """``AppSettings.min_deposit`` / ``min_withdraw`` (singleton row)
+    keep the full ``Numeric(28, 8)`` shape.
+
+    ``AppSettings`` is the legacy global default; the per-currency
+    overrides on ``Currency`` are what the wallet routers actually
+    enforce, but the singleton row is still surfaced to the admin
+    panel. Pre-H-2 the column was ``Numeric(14, 2)`` so a value the
+    per-currency record could hold would overflow the singleton.
+    """
+    async with async_session() as session:
+        row = (
+            await session.execute(select(AppSettings).where(AppSettings.id == 1))
+        ).scalar_one_or_none()
+        if row is None:
+            row = AppSettings(id=1, min_deposit=_BIG, min_withdraw=_BIG)
+            session.add(row)
+        else:
+            row.min_deposit = _BIG
+            row.min_withdraw = _BIG
+        await session.commit()
+
+        fresh = (await session.execute(select(AppSettings).where(AppSettings.id == 1))).scalar_one()
+
+    assert Decimal(str(fresh.min_deposit)) == _BIG
+    assert Decimal(str(fresh.min_withdraw)) == _BIG

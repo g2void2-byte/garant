@@ -38,6 +38,7 @@ from ...models import (
     WalletWithdrawal,
     WalletWithdrawStatus,
 )
+from ...money import quantize_money
 from ...rate_limit import rate_limit
 from ...schemas import (
     AdminWithdrawalDecisionIn,
@@ -57,13 +58,18 @@ router = APIRouter(
 
 
 def _to_out(w: WalletWithdrawal, c: Currency | None, u: User | None) -> AdminWithdrawalOut:
+    # H-2: quantise on output — same contract as the deposit / treasury
+    # admin DTOs. ``ROUND_HALF_EVEN`` via ``quantize_money`` keeps the
+    # withdrawal queue's wire format aligned with the currency's own
+    # ``decimals``.
+    decimals = c.decimals if c is not None else 8
     return AdminWithdrawalOut(
         id=w.id,
         user_id=w.user_id,
         username=u.username if u else None,
         display_name=u.display_name if u else "",
         currency_code=c.code if c else "",
-        amount=w.amount,
+        amount=quantize_money(w.amount, decimals),
         address=w.address,
         status=w.status.value,
         admin_note=w.admin_note,

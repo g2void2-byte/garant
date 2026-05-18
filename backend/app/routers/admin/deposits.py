@@ -33,6 +33,7 @@ from ...models import (
     WalletDeposit,
     WalletDepositStatus,
 )
+from ...money import quantize_money
 from ...rate_limit import rate_limit
 from ...schemas import AdminDepositListOut, AdminDepositOut, AdminReasonIn
 from ...services_wallet import get_or_create_balance
@@ -47,13 +48,19 @@ router = APIRouter(
 
 
 def _to_out(d: WalletDeposit, c: Currency | None, u: User | None) -> AdminDepositOut:
+    # H-2: quantise on output so the admin deposit queue never renders
+    # more fractional digits than the currency itself supports.
+    # ``ROUND_HALF_EVEN`` via ``quantize_money`` — see
+    # ``backend/app/money.py``. Fall back to the canonical scale (8)
+    # if the currency row was purged out from under us.
+    decimals = c.decimals if c is not None else 8
     return AdminDepositOut(
         id=d.id,
         user_id=d.user_id,
         username=u.username if u else None,
         display_name=u.display_name if u else "",
         currency_code=c.code if c else "",
-        amount=d.amount,
+        amount=quantize_money(d.amount, decimals),
         status=d.status.value,
         provider_invoice_id=d.provider_invoice_id,
         pay_url=d.pay_url,

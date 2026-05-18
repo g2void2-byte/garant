@@ -46,6 +46,7 @@ from ...models import (
     PayCommission,
     User,
 )
+from ...money import quantize_money
 from ...rate_limit import rate_limit
 from ...schemas import (
     AdminBalanceSnapshot,
@@ -70,11 +71,6 @@ router = APIRouter(
 
 
 # --------------------------------------------------------------------- helpers
-
-
-def _q(value: Decimal | float | int, decimals: int) -> Decimal:
-    quant = Decimal(10) ** -decimals
-    return Decimal(str(value)).quantize(quant)
 
 
 async def _get_deal_or_404(session: AsyncSession, deal_id: int, *, lock: bool = False) -> Deal:
@@ -116,8 +112,12 @@ async def _balance_snapshot(
             total=zero,
         )
     balance = await get_or_create_balance(session, user.id, currency.id)
-    amount = Decimal(str(balance.amount))
-    locked = Decimal(str(balance.locked))
+    # H-2: quantise to ``currency.decimals`` with ``ROUND_HALF_EVEN``
+    # (see ``backend/app/money.py``) so the admin deal detail panel
+    # never renders trailing satoshi noise the row itself doesn't
+    # carry.
+    amount = quantize_money(balance.amount, currency.decimals)
+    locked = quantize_money(balance.locked, currency.decimals)
     return AdminBalanceSnapshot(
         user_id=user.id,
         username=user.username,
@@ -125,7 +125,7 @@ async def _balance_snapshot(
         currency_code=currency.code,
         amount=amount,
         locked=locked,
-        total=amount + locked,
+        total=quantize_money(amount + locked, currency.decimals),
     )
 
 
@@ -239,13 +239,25 @@ async def _to_detail(session: AsyncSession, deal: Deal) -> AdminDealDetailOut:
     if deal.arbitration_resolved_by is not None:
         arbiter = await session.get(User, deal.arbitration_resolved_by)
         arbiter_username = arbiter.username if arbiter else None
+    # H-2: quantise the deal money projection on output so the admin
+    # detail screen never shows more fractional digits than the deal's
+    # own currency uses. ``commission_amount`` can legitimately be
+    # null on a brand-new row, so preserve the ``None`` instead of
+    # quantising a sentinel.
+    decimals = currency.decimals if currency is not None else 8
+    amount_q = quantize_money(deal.amount, decimals)
+    commission_q = (
+        quantize_money(deal.commission_amount, decimals)
+        if deal.commission_amount is not None
+        else None
+    )
     return AdminDealDetailOut(
         id=deal.id,
         status=deal.status.value,
         description=deal.description,
         currency_code=currency.code if currency else None,
-        amount=deal.amount,
-        commission_amount=deal.commission_amount,
+        amount=amount_q,
+        commission_amount=commission_q,
         pay_commission=deal.pay_commission.value,
         buyer=buyer_snap,
         seller=seller_snap,
@@ -269,12 +281,20 @@ async def _to_detail(session: AsyncSession, deal: Deal) -> AdminDealDetailOut:
 
 
 def _to_list_item(deal: Deal) -> AdminDealListItem:
+    # H-2: quantise on output — see the matching note in ``_to_detail``.
+    decimals = deal.currency.decimals if deal.currency is not None else 8
+    amount_q = quantize_money(deal.amount, decimals)
+    commission_q = (
+        quantize_money(deal.commission_amount, decimals)
+        if deal.commission_amount is not None
+        else None
+    )
     return AdminDealListItem(
         id=deal.id,
         status=deal.status.value,
         currency_code=deal.currency.code if deal.currency else None,
-        amount=deal.amount,
-        commission_amount=deal.commission_amount,
+        amount=amount_q,
+        commission_amount=commission_q,
         buyer_id=deal.buyer_id,
         buyer_username=deal.buyer.username if deal.buyer else None,
         seller_id=deal.seller_id,
@@ -441,8 +461,8 @@ async def _release_locked_to_seller(
     Returns ``(locked_pot, payout)`` for the audit record.
     """
     decimals = currency.decimals
-    amt = _q(Decimal(str(deal.amount or 0)), decimals)
-    commission = _q(Decimal(str(deal.commission_amount or 0)), decimals)
+    amt = quantize_money(Decimal(str(deal.amount or 0)), decimals)
+    commission = quantize_money(Decimal(str(deal.commission_amount or 0)), decimals)
     if deal.pay_commission == PayCommission.buyer:
         locked = amt + commission
         payout = amt
@@ -467,8 +487,8 @@ async def _refund_locked_to_buyer(
     Returns ``(locked_pot, refunded_principal)``.
     """
     decimals = currency.decimals
-    amt = _q(Decimal(str(deal.amount or 0)), decimals)
-    commission = _q(Decimal(str(deal.commission_amount or 0)), decimals)
+    amt = quantize_money(Decimal(str(deal.amount or 0)), decimals)
+    commission = quantize_money(Decimal(str(deal.commission_amount or 0)), decimals)
     if deal.pay_commission == PayCommission.buyer:
         locked = amt + commission
         refunded = amt
@@ -493,12 +513,12 @@ async def _split_locked(
     Returns ``(locked_pot, buyer_share, seller_share)``.
     """
     decimals = currency.decimals
-    amt = _q(Decimal(str(deal.amount or 0)), decimals)
-    commission = _q(Decimal(str(deal.commission_amount or 0)), decimals)
+    amt = quantize_money(Decimal(str(deal.amount or 0)), decimals)
+    commission = quantize_money(Decimal(str(deal.commission_amount or 0)), decimals)
     locked = amt + commission if deal.pay_commission == PayCommission.buyer else amt
     # ``amt`` already excludes commission; split principal between
     # parties. The buyer-paid commission portion stays on the platform.
-    buyer_share = _q(amt * Decimal(str(buyer_percent)) / Decimal(100), decimals)
+    buyer_share = quantize_money(amt * Decimal(str(buyer_percent)) / Decimal(100), decimals)
     seller_share = amt - buyer_share
 
     buyer_balance = await get_or_create_balance(session, deal.buyer_id, currency.id)
@@ -841,8 +861,8 @@ async def delete_deal(
         # disappears from the treasury accrual query too. This is the
         # one path that does NOT retain commission.
         decimals = currency.decimals
-        amt = _q(Decimal(str(deal.amount or 0)), decimals)
-        commission = _q(Decimal(str(deal.commission_amount or 0)), decimals)
+        amt = quantize_money(Decimal(str(deal.amount or 0)), decimals)
+        commission = quantize_money(Decimal(str(deal.commission_amount or 0)), decimals)
         if deal.pay_commission == PayCommission.buyer:
             locked_pot = amt + commission
         else:

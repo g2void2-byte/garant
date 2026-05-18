@@ -181,8 +181,13 @@ class User(Base):
     # ever changes, update both the column comment and the admin
     # copy.
     login_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    # Admin PR-A — aggregate stats editable by an admin via /admin/users/:id/stats
-    deposit_total: Mapped[float] = mapped_column(Numeric(14, 2), default=0, server_default="0")
+    # Admin PR-A — aggregate stats editable by an admin via /admin/users/:id/stats.
+    # H-2 widened from ``Numeric(14, 2)`` to ``Numeric(28, 8)`` so the
+    # lifetime deposit aggregate matches the per-currency ledger
+    # precision and a satoshi-scale top-up no longer truncates on
+    # write. The migration backfills nothing because every existing
+    # value already fits inside the wider shape.
+    deposit_total: Mapped[float] = mapped_column(Numeric(28, 8), default=0, server_default="0")
     # Admin PR-A — optional override of the *computed* rating (see
     # services.py:_recompute_user_rating). When non-null this value
     # takes precedence in profile responses; setting to null restores
@@ -239,7 +244,13 @@ class Service(Base):
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"))
     title: Mapped[str] = mapped_column(String(256))
     description: Mapped[str] = mapped_column(Text, default="")
-    price: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    # H-2 — widened from ``Numeric(14, 2)`` to ``Numeric(28, 8)`` so a
+    # service priced in a satoshi-scale crypto (USDT @ 8 decimals,
+    # BTC @ 8 decimals) round-trips without truncation. ``Service.price``
+    # is a per-currency catalogue figure; the deal that materialises
+    # from the service copies it into ``Deal.amount`` which already
+    # uses ``Numeric(28, 8)``.
+    price: Mapped[float] = mapped_column(Numeric(28, 8), default=0)
     status: Mapped[ServiceStatus] = mapped_column(
         Enum(ServiceStatus), default=ServiceStatus.active, index=True
     )
@@ -249,7 +260,11 @@ class Service(Base):
     # service detail page; they do not influence the deal state machine.
     views: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     deals_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    deposit: Mapped[float] = mapped_column(Numeric(14, 2), default=0, server_default="0")
+    # H-2 — widened from ``Numeric(14, 2)`` to ``Numeric(28, 8)`` for
+    # the same reason as ``Service.price``: the deposit threshold is a
+    # per-currency money figure that must survive 8-decimal asset
+    # round-trips intact.
+    deposit: Mapped[float] = mapped_column(Numeric(28, 8), default=0, server_default="0")
     rating_manual: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -412,8 +427,15 @@ class AppSettings(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     deal_commission_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=5.0)
     invoice_commission_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0.0)
-    min_deposit: Mapped[float] = mapped_column(Numeric(14, 2), default=1.0)
-    min_withdraw: Mapped[float] = mapped_column(Numeric(14, 2), default=1.0)
+    # H-2 — widened from ``Numeric(14, 2)`` to ``Numeric(28, 8)``. The
+    # per-currency overrides on ``Currency.min_deposit`` /
+    # ``Currency.min_withdraw`` (also ``Numeric(28, 8)``) are what the
+    # wallet routers actually enforce; these singleton rows are a
+    # global default kept around for admin display. Aligning the
+    # precision keeps the admin panel from rendering a value the
+    # underlying currency record can hold but the singleton can't.
+    min_deposit: Mapped[float] = mapped_column(Numeric(28, 8), default=1.0)
+    min_withdraw: Mapped[float] = mapped_column(Numeric(28, 8), default=1.0)
     # PR-3 — auto-cancel timeouts.
     inactivity_pending_confirmation_days: Mapped[int] = mapped_column(Integer, default=7)
     inactivity_pending_cancellation_days: Mapped[int] = mapped_column(Integer, default=3)

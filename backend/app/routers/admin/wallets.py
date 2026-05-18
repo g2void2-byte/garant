@@ -28,6 +28,7 @@ from ...admin_audit import log_admin_action
 from ...admin_guard import TotpUser
 from ...deps import AdminUser, SessionDep
 from ...models import Currency, User, UserBalance
+from ...money import quantize_money
 from ...rate_limit import rate_limit
 from ...schemas import (
     AdminUserBalanceOut,
@@ -47,8 +48,13 @@ router = APIRouter(
 
 
 def _balance_row(user: User, currency: Currency, bal: UserBalance | None) -> AdminUserBalanceOut:
-    amount = Decimal(str(bal.amount)) if bal else Decimal(0)
-    locked = Decimal(str(bal.locked)) if bal else Decimal(0)
+    # H-2: every ``Decimal`` field on ``AdminUserBalanceOut`` is
+    # quantised to the currency's own ``decimals`` so the wire format
+    # never shows trailing satoshi noise the underlying row doesn't
+    # actually carry. ``quantize_money`` uses ``ROUND_HALF_EVEN`` —
+    # see ``backend/app/money.py``.
+    amount = quantize_money(bal.amount if bal else 0, currency.decimals)
+    locked = quantize_money(bal.locked if bal else 0, currency.decimals)
     return AdminUserBalanceOut(
         user_id=user.id,
         username=user.username,
@@ -59,7 +65,7 @@ def _balance_row(user: User, currency: Currency, bal: UserBalance | None) -> Adm
         decimals=currency.decimals,
         amount=amount,
         locked=locked,
-        total=amount + locked,
+        total=quantize_money(amount + locked, currency.decimals),
         updated_at=bal.updated_at if bal else None,
     )
 
