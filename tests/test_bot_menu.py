@@ -104,6 +104,38 @@ def test_main_reply_keyboard_has_four_buttons():
     assert kb.resize_keyboard is True
 
 
+def test_button_text_variants_cover_vs16_and_bare_keyword():
+    """Reply-keyboard taps must route regardless of how the client renders
+    the leading emoji — with U+FE0F, without it, or with the emoji
+    omitted entirely. ``SEARCH_BUTTON_TEXTS`` and friends are what the
+    handler filters use, so a missed variant here is a silent dead
+    button on real Telegram clients."""
+    assert keyboards.SEARCH_BUTTON in keyboards.SEARCH_BUTTON_TEXTS
+    assert "Поиск" in keyboards.SEARCH_BUTTON_TEXTS
+    # Gear is a U+2699 BMP codepoint — both with and without VS16
+    # (U+FE0F) presentation must route to the help handler.
+    assert "⚙ Помощь" in keyboards.HELP_BUTTON_TEXTS
+    assert "⚙\ufe0f Помощь" in keyboards.HELP_BUTTON_TEXTS
+    assert "Помощь" in keyboards.HELP_BUTTON_TEXTS
+    # SMP emojis (📁, 👤, 🔎) are usually presentation-stable but we
+    # still tolerate stripped VS16 to be safe.
+    assert "📁 Сделки" in keyboards.DEALS_BUTTON_TEXTS
+    assert "Сделки" in keyboards.DEALS_BUTTON_TEXTS
+    assert "👤 Профиль" in keyboards.PROFILE_BUTTON_TEXTS
+    assert "Профиль" in keyboards.PROFILE_BUTTON_TEXTS
+    # Every variant set must be disjoint — a "Поиск" tap should never
+    # route to the deals handler and vice versa.
+    sets = [
+        keyboards.SEARCH_BUTTON_TEXTS,
+        keyboards.DEALS_BUTTON_TEXTS,
+        keyboards.PROFILE_BUTTON_TEXTS,
+        keyboards.HELP_BUTTON_TEXTS,
+    ]
+    for i, a in enumerate(sets):
+        for b in sets[i + 1 :]:
+            assert a.isdisjoint(b), f"button variants overlap: {a & b}"
+
+
 def test_search_keyboard_has_two_webapp_buttons():
     kb = keyboards.search_keyboard()
     flat = [b for row in kb.inline_keyboard for b in row]

@@ -20,6 +20,35 @@ DEALS_BUTTON = "📁 Сделки"
 PROFILE_BUTTON = "👤 Профиль"
 HELP_BUTTON = "⚙ Помощь"
 
+
+def _button_variants(button: str) -> frozenset[str]:
+    """Return every spelling a Telegram client may echo back for a reply tap.
+
+    The reply-keyboard contract says the client sends back the button's
+    ``text`` verbatim, but in practice some clients normalise the emoji
+    presentation: U+FE0F (the "emoji variation selector") is silently
+    added or stripped, and a few will drop the leading emoji entirely
+    when the user paraphrases via the keyboard's voice-input pipeline.
+    Accepting all three spellings keeps routing stable without widening
+    the filter to arbitrary substrings.
+    """
+    parts = button.split(" ", 1)
+    if len(parts) != 2:
+        return frozenset({button})
+    emoji, keyword = parts
+    variants = {button, keyword}
+    stripped = emoji.replace("\ufe0f", "")
+    if stripped:
+        variants.add(f"{stripped} {keyword}")
+        variants.add(f"{stripped}\ufe0f {keyword}")
+    return frozenset(variants)
+
+
+SEARCH_BUTTON_TEXTS = _button_variants(SEARCH_BUTTON)
+DEALS_BUTTON_TEXTS = _button_variants(DEALS_BUTTON)
+PROFILE_BUTTON_TEXTS = _button_variants(PROFILE_BUTTON)
+HELP_BUTTON_TEXTS = _button_variants(HELP_BUTTON)
+
 # Callback data prefixes — kept short to fit Telegram's 64-byte cap.
 CB_PROFILE = "bot:profile"
 CB_SETTINGS = "bot:settings"
