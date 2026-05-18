@@ -8,6 +8,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from ..config import settings
+from . import keyboards
 from .handlers import router
 from .maintenance import MaintenanceMiddleware
 
@@ -26,6 +27,25 @@ async def start_polling() -> None:
             extra={"event": "bot.polling.unconfigured"},
         )
         return
+
+    # Loud warning when WEBAPP_URL is not HTTPS: Telegram rejects
+    # inline ``web_app=`` buttons with non-HTTPS URLs, which would
+    # otherwise make every section button (Поиск / Сделки / Профиль /
+    # Помощь) silently look dead. The keyboards module falls back to
+    # plain ``url=`` buttons in that case so the bot still answers,
+    # but the Mini App won't open inside Telegram until an HTTPS
+    # tunnel is set up — flag it so operators see this in logs.
+    if not keyboards.webapp_url_is_https():
+        logger.warning(
+            "WEBAPP_URL is not HTTPS (%s); inline Mini App buttons will fall back to "
+            "external url= links. Point WEBAPP_URL at an HTTPS endpoint to launch the "
+            "TMA inside Telegram.",
+            settings.webapp_url,
+            extra={
+                "event": "bot.polling.webapp_url_not_https",
+                "webapp_url": settings.webapp_url,
+            },
+        )
 
     bot = Bot(
         token=settings.bot_token,
