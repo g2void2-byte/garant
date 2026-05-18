@@ -38,6 +38,7 @@ from sqlalchemy import select
 from backend.app.db import async_session
 from backend.app.models import (
     AppSettings,
+    Category,
     Currency,
     Service,
     TreasuryWithdrawal,
@@ -249,11 +250,13 @@ async def test_service_price_and_deposit_round_trip_above_1e10():
     """
     async with async_session() as session:
         owner = User(tg_user_id=49006, username="h2_service_owner", display_name="h2so")
-        session.add(owner)
+        cat = Category(slug="h2-svc-precision", name="H-2 svc", icon="")
+        session.add_all([owner, cat])
         await session.flush()
 
         svc = Service(
-            user_id=owner.id,
+            owner_id=owner.id,
+            category_id=cat.id,
             title="H-2 precision service",
             description="",
             price=_BIG,
@@ -263,7 +266,7 @@ async def test_service_price_and_deposit_round_trip_above_1e10():
         await session.commit()
 
         fresh = (
-            await session.execute(select(Service).where(Service.user_id == owner.id))
+            await session.execute(select(Service).where(Service.owner_id == owner.id))
         ).scalar_one()
 
     assert Decimal(str(fresh.price)) == _BIG
