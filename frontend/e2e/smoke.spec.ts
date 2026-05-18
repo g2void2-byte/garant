@@ -23,7 +23,7 @@ test.describe("App smoke", () => {
 
   test("loads the wallet page", async ({ page }) => {
     await page.goto("/wallet");
-    await expect(page.getByRole("heading", { name: "Депозит" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Депозит", exact: true })).toBeVisible();
     await expect(page.getByText("Tether")).toBeVisible();
     await expect(page.getByText(/123\.45 USDT/)).toBeVisible();
   });
