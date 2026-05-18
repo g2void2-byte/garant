@@ -12,17 +12,6 @@ import { expect, mockApi, seedSession } from "./fixtures";
  * isolation; this spec exercises the full Vite-mounted flow.
  */
 
-const USDT_CURRENCY = {
-  id: 1,
-  code: "USDT",
-  name: "Tether",
-  network: "TRC20",
-  icon_url: "",
-  decimals: 2,
-  min_deposit: 1,
-  min_withdraw: 1,
-};
-
 const NEW_DEAL = {
   id: 4242,
   buyer: "testbuyer",
@@ -50,18 +39,6 @@ const NEW_DEAL = {
   arbitration_resolved_at: null,
 };
 
-async function mockCurrencies(page: Parameters<typeof seedSession>[0]) {
-  await page.route(
-    /^https?:\/\/[^/]+\/api\/wallet\/currencies(?:\?.*)?$/,
-    (r) =>
-      r.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([USDT_CURRENCY]),
-      }),
-  );
-}
-
 test.describe("Create-deal page", () => {
   test.beforeEach(async ({ page }) => {
     await seedSession(page);
@@ -71,7 +48,6 @@ test.describe("Create-deal page", () => {
     page,
   }) => {
     await mockApi(page);
-    await mockCurrencies(page);
 
     let postedBody: Record<string, unknown> | null = null;
     await page.route(
@@ -168,7 +144,6 @@ test.describe("Create-deal page", () => {
 
   test("does not POST when required fields are missing", async ({ page }) => {
     await mockApi(page);
-    await mockCurrencies(page);
 
     let postCalled = false;
     await page.route(

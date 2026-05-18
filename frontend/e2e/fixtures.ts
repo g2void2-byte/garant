@@ -32,11 +32,29 @@ export async function seedSession(page: Page) {
   );
 }
 
+/**
+ * Default USDT currency used by ``mockApi``'s ``wallet/currencies``
+ * and ``wallet/balances`` responses. Exported so specs that need the
+ * exact shape (e.g. ``WalletDepositDto.currency`` in a POST response
+ * stub) can reuse it instead of inlining a parallel copy that drifts.
+ */
+export const USDT_CURRENCY = {
+  id: 1,
+  code: "USDT",
+  name: "Tether",
+  network: "TRC20",
+  icon_url: "",
+  decimals: 2,
+  min_deposit: 5,
+  min_withdraw: 1,
+};
+
 interface MockOverrides {
   services?: unknown[];
   deals?: unknown[];
   users?: unknown[];
   walletBalances?: unknown[];
+  currencies?: unknown[];
   me?: Record<string, unknown>;
 }
 
@@ -160,22 +178,15 @@ export async function mockApi(page: Page, overrides: MockOverrides = {}) {
 
   const walletBalances = overrides.walletBalances ?? [
     {
-      currency: {
-        id: 1,
-        code: "USDT",
-        name: "Tether",
-        network: "TRC20",
-        icon_url: "",
-        decimals: 2,
-        min_deposit: 1,
-        min_withdraw: 1,
-      },
+      currency: USDT_CURRENCY,
       amount: 123.45,
       locked: 0,
       total: 123.45,
       updated_at: null,
     },
   ];
+
+  const currencies = overrides.currencies ?? [USDT_CURRENCY];
 
   const json = (route: Route, body: unknown, status = 200) =>
     route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -223,6 +234,7 @@ export async function mockApi(page: Page, overrides: MockOverrides = {}) {
     json(r, [{ id: 1, slug: "design", name: "Design", icon_key: "design", services_count: 1 }]),
   );
   await routeApi("wallet/balances", (r) => json(r, walletBalances));
+  await routeApi("wallet/currencies", (r) => json(r, currencies));
   await routeApi("wallet/deposits", (r) => json(r, []));
   await routeApi("wallet/withdrawals", (r) => json(r, []));
 }
