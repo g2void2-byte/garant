@@ -228,6 +228,23 @@ class User(Base):
     # write. The migration backfills nothing because every existing
     # value already fits inside the wider shape.
     deposit_total: Mapped[float] = mapped_column(Numeric(28, 8), default=0, server_default="0")
+    # Trust deposit — money the user voluntarily locks into the bot as a
+    # trust signal. ``services_wallet.credit_deposit`` routes deposits
+    # created with ``purpose="trust"`` here instead of ``UserBalance``;
+    # there is *no* withdraw / spend path for this balance (lock-in by
+    # design). Surfaced publicly as the ``deposit`` field on ``UserOut``
+    # / ``UserPublicOut`` so other users can see how much trust capital
+    # a counterparty has put up. Distinct from ``deposit_total`` which
+    # is the admin-editable lifetime aggregate.
+    trust_deposit_balance: Mapped[float] = mapped_column(
+        Numeric(28, 8), default=0, server_default="0"
+    )
+    # ISO-3166-1 alpha-2 country code chosen by the user in profile
+    # settings. ``None`` means "not set". Surfaced on every public
+    # profile (``UserCard`` / ``ProfileHeader``); the flag emoji + name
+    # are computed client-side from a static list in
+    # ``frontend/src/lib/countries.ts``.
+    country: Mapped[str | None] = mapped_column(String(2), nullable=True)
     # Admin PR-A — optional override of the *computed* rating (see
     # services.py:_recompute_user_rating). When non-null this value
     # takes precedence in profile responses; setting to null restores
@@ -661,6 +678,18 @@ class WalletDeposit(Base):
     pay_url: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[WalletDepositStatus] = mapped_column(
         Enum(WalletDepositStatus), default=WalletDepositStatus.pending
+    )
+    # Routing tag for ``services_wallet.credit_deposit``. ``"wallet"``
+    # (the default) credits the standard per-currency ``UserBalance``
+    # used to fund deals / fund withdrawals. ``"trust"`` credits the
+    # caller's ``User.trust_deposit_balance`` instead — that balance
+    # has no spend / withdraw path (lock-in by design) and surfaces
+    # publicly as ``deposit`` on the user card. Plain ``String`` (no
+    # Postgres enum) to avoid ``ALTER TYPE ADD VALUE`` if we ever add
+    # a third purpose; the application layer enforces the closed set
+    # via the ``WalletDepositCreateReq.purpose`` ``Literal``.
+    purpose: Mapped[str] = mapped_column(
+        String(16), default="wallet", server_default="wallet"
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

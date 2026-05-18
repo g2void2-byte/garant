@@ -79,6 +79,12 @@ export interface UserCardDto {
   dm_system?: boolean;
   is_anonymous_deals?: boolean;
   is_hidden_profile?: boolean;
+  // ISO-3166-1 alpha-2 country code chosen by the profile owner. The
+  // canonical list (code → russian name → flag emoji) lives in
+  // ``frontend/src/lib/countries.ts`` (static, no backend lookup).
+  // ``null`` means "user hasn't picked a country yet" — UI hides the
+  // flag chip in that case rather than rendering a placeholder.
+  country?: string | null;
 }
 
 export type DealStatus =
@@ -220,8 +226,22 @@ export interface WalletDepositDto {
   status: "pending" | "paid" | "expired" | string;
   pay_url: string;
   invoice_id: string;
+  // Routing tag chosen by the user at deposit-create time. ``"wallet"``
+  // (default, legacy semantics) credits ``UserBalance`` for the chosen
+  // currency. ``"trust"`` credits ``User.trust_deposit_balance``
+  // instead — non-spendable, non-withdrawable, surfaced only on the
+  // public ``deposit`` field of ``UserCardDto``.
+  purpose: "wallet" | "trust" | string;
   created_at: string;
   paid_at: string | null;
+}
+
+export interface WalletDepositCreateBody {
+  currency_code: string;
+  amount: number;
+  // See ``WalletDepositDto.purpose``. Optional on the wire; the
+  // backend defaults to ``"wallet"`` when omitted.
+  purpose?: "wallet" | "trust";
 }
 
 export interface WalletWithdrawalDto {

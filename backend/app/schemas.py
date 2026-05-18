@@ -81,6 +81,7 @@ class UserOut(BaseModel):
     dm_system: bool = True
     is_anonymous_deals: bool = False
     is_hidden_profile: bool = False
+    country: str | None = None
 
 
 class UserPublicOut(BaseModel):
@@ -119,6 +120,7 @@ class UserPublicOut(BaseModel):
     forums: list[ForumOut]
     is_anonymous_deals: bool = False
     is_hidden_profile: bool = False
+    country: str | None = None
 
 
 class UserUpdate(BaseModel):
@@ -132,6 +134,12 @@ class UserUpdate(BaseModel):
     dm_system: bool | None = None
     is_anonymous_deals: bool | None = None
     is_hidden_profile: bool | None = None
+    # ISO-3166-1 alpha-2 (``"RU"``, ``"US"``, ...). Empty string clears
+    # the stored country (``None`` in the DB). Validated against the
+    # ``^[A-Z]{2}$`` shape only; the human-readable name + flag emoji
+    # live in ``frontend/src/lib/countries.ts`` so the backend never
+    # ships an ISO list (no ``pycountry`` dep, no seed data).
+    country: str | None = None
 
     @field_validator("photo_url")
     @classmethod
@@ -193,6 +201,24 @@ class UserUpdate(BaseModel):
         if len(v) > 10:
             raise ValueError("Слишком много форумов (≤10)")
         return v
+
+    @field_validator("country")
+    @classmethod
+    def _country_ok(cls, v: str | None) -> str | None:
+        # ``None`` = leave as-is on PATCH (field omitted from body).
+        # Empty string = explicit clear (DB stores ``NULL``); we
+        # normalise to ``None`` here so the router's
+        # ``user.country = body.country`` branch works uniformly.
+        # Otherwise: must be exactly two ASCII letters; we upper-case
+        # so ``"ru"`` and ``"RU"`` both round-trip to ``"RU"`` in the
+        # DB. No external ISO-list dependency — the canonical list of
+        # codes lives client-side in ``frontend/src/lib/countries.ts``.
+        if v is None or v == "":
+            return None
+        v = v.strip()
+        if len(v) != 2 or not v.isalpha() or not v.isascii():
+            raise ValueError("Код страны должен быть ISO-3166-1 alpha-2 (2 буквы)")
+        return v.upper()
 
 
 # ── Categories ─────────────────────────────────────────
@@ -497,6 +523,13 @@ class WalletBalanceOut(BaseModel):
 class WalletDepositCreateReq(BaseModel):
     currency_code: str
     amount: float
+    # Routing tag for ``services_wallet.create_deposit_invoice``.
+    # ``"wallet"`` (default) credits the per-currency ``UserBalance``
+    # ledger that funds deals + withdrawals. ``"trust"`` credits the
+    # ``User.trust_deposit_balance`` instead — that balance has no
+    # spend / withdraw path on purpose (lock-in by design) and only
+    # surfaces publicly as ``deposit`` on the user card.
+    purpose: Literal["wallet", "trust"] = "wallet"
 
     @field_validator("amount")
     @classmethod
@@ -513,6 +546,11 @@ class WalletDepositOut(BaseModel):
     status: str
     pay_url: str
     invoice_id: str
+    # Mirrors the new ``WalletDeposit.purpose`` column so the frontend
+    # can render a different deposit-card title for trust deposits
+    # (and so the wallet ``/deposits`` listing can distinguish the two
+    # purposes without an extra round-trip).
+    purpose: str
     created_at: datetime
     paid_at: datetime | None
 

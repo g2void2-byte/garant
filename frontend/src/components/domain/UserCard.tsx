@@ -6,9 +6,11 @@ import { BadgePrefix } from "@/components/ui/BadgePrefix";
 import { OnlineDot } from "@/components/ui/OnlineDot";
 import { formatMoney, dealsLabel } from "@/lib/format";
 import { staggerDelay } from "@/lib/animate";
+import { countryFromCode } from "@/lib/countries";
 
 export function UserCard({ user, index = 0 }: { user: UserCardDto; index?: number }) {
   const name = user.display_name?.trim() || user.username || "—";
+  const country = countryFromCode(user.country);
   return (
     <div
       className="animate-fadein"
@@ -28,6 +30,15 @@ export function UserCard({ user, index = 0 }: { user: UserCardDto; index?: numbe
           <div className="flex items-center gap-2 flex-wrap">
             <BadgePrefix prefix={user.prefix} />
             <span className="font-semibold truncate">{name}</span>
+            {country && (
+              <span
+                aria-label={country.name}
+                title={country.name}
+                className="shrink-0 text-base leading-none"
+              >
+                {country.flag}
+              </span>
+            )}
           </div>
           <div className="mt-0.5 text-xs text-text-muted truncate">@{user.username}</div>
         </div>

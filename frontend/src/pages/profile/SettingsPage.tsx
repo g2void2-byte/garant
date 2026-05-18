@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { useMe, useUpdateMe, useUploadMedia } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
+import { COUNTRIES, countryFromCode } from "@/lib/countries";
 
 /**
  * Continental "Настройки профиля" page.
@@ -41,6 +42,12 @@ export default function SettingsPage() {
   const [displayName, setDisplayName] = useState<string>("");
   const [description, setDescription] = useState<string>("");
   const [bannerUrl, setBannerUrl] = useState<string>("");
+  // ISO-3166-1 alpha-2 code or ``""`` for "not picked / clear it".
+  // Empty string is the canonical "no country" representation in the
+  // <select> tree; ``saveProfile`` maps it to ``null`` on the wire so
+  // the backend column is set NULL (UserUpdate._country_ok also
+  // accepts ``""`` and normalises it to None).
+  const [country, setCountry] = useState<string>("");
   const [profileError, setProfileError] = useState<string | null>(null);
   const [seeded, setSeeded] = useState(false);
 
@@ -48,6 +55,7 @@ export default function SettingsPage() {
     setDisplayName(me.display_name || "");
     setDescription(me.description || "");
     setBannerUrl(me.banner_url || "");
+    setCountry(me.country || "");
     setSeeded(true);
   }
 
@@ -75,6 +83,9 @@ export default function SettingsPage() {
         display_name: displayName,
         description,
         banner_url: bannerUrl ? bannerUrl : null,
+        // ``""`` ⇒ ``null`` on the wire: the user explicitly chose
+        // "Не выбрана" in the dropdown, which clears the column.
+        country: country ? country : null,
       });
       haptic("success");
       toast.show({ kind: "success", title: "Профиль обновлён" });
@@ -206,6 +217,31 @@ export default function SettingsPage() {
             inputMode="url"
             onChange={(e) => setBannerUrl(e.target.value)}
           />
+          <label className="block">
+            <span className="block text-sm text-text-muted mb-1 px-1">Страна</span>
+            <div className="relative">
+              <select
+                value={country}
+                onChange={(e) => setCountry(e.target.value)}
+                className="w-full appearance-none rounded-button bg-panel border border-border px-3 py-2 pr-9 text-base focus:outline-none focus:border-accent"
+              >
+                <option value="">Не выбрана</option>
+                {COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.flag} {c.name}
+                  </option>
+                ))}
+              </select>
+              {country && (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-lg"
+                >
+                  {countryFromCode(country)?.flag}
+                </span>
+              )}
+            </div>
+          </label>
           {profileError && (
             <div className="text-sm text-danger whitespace-pre-line">{profileError}</div>
           )}

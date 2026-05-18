@@ -75,6 +75,9 @@ function makeDeposit(over: Partial<WalletDepositDto> = {}): WalletDepositDto {
     pay_url: "https://t.me/CryptoBot?start=invoice_abc",
     invoice_id: "INV-1",
     status: "pending",
+    // Default to legacy ``"wallet"`` routing; trust-deposit tests
+    // can override via ``over``.
+    purpose: "wallet",
     created_at: "2026-01-01T00:00:00Z",
     paid_at: null,
     currency: makeCurrency(),

@@ -5025,6 +5025,17 @@
             ],
             "title": "Banner Url"
           },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
           "deals_count": {
             "title": "Deals Count",
             "type": "integer"
@@ -5205,6 +5216,17 @@
             ],
             "title": "Banner Url"
           },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
           "deals_count": {
             "title": "Deals Count",
             "type": "integer"
@@ -5345,6 +5367,17 @@
               }
             ],
             "title": "Banner Url"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
           },
           "description": {
             "anyOf": [
@@ -5541,6 +5574,15 @@
           "currency_code": {
             "title": "Currency Code",
             "type": "string"
+          },
+          "purpose": {
+            "default": "wallet",
+            "enum": [
+              "wallet",
+              "trust"
+            ],
+            "title": "Purpose",
+            "type": "string"
           }
         },
         "required": [
@@ -5588,6 +5630,10 @@
             "title": "Pay Url",
             "type": "string"
           },
+          "purpose": {
+            "title": "Purpose",
+            "type": "string"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -5600,6 +5646,7 @@
           "status",
           "pay_url",
           "invoice_id",
+          "purpose",
           "created_at",
           "paid_at"
         ],

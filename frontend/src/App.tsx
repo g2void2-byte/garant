@@ -29,6 +29,9 @@ const SettingsPage = lazy(() => import("@/pages/profile/SettingsPage"));
 const AccountTransferPage = lazy(() => import("@/pages/profile/AccountTransferPage"));
 const WalletPage = lazy(() => import("@/pages/wallet/WalletPage"));
 const WalletDepositPage = lazy(() => import("@/pages/wallet/WalletDepositPage"));
+const WalletTrustDepositPage = lazy(
+  () => import("@/pages/wallet/WalletTrustDepositPage"),
+);
 const WalletWithdrawPage = lazy(() => import("@/pages/wallet/WalletWithdrawPage"));
 const WalletCurrencyPage = lazy(() => import("@/pages/wallet/WalletCurrencyPage"));
 const ServiceDetailPage = lazy(() => import("@/pages/search/ServiceDetailPage"));
@@ -154,6 +157,10 @@ export function App() {
                     <Route path="/arbitration" element={<ArbitrationPage />} />
                     <Route path="/wallet" element={<WalletPage />} />
                     <Route path="/wallet/deposit" element={<WalletDepositPage />} />
+                    <Route
+                      path="/wallet/trust-deposit"
+                      element={<WalletTrustDepositPage />}
+                    />
                     <Route path="/wallet/withdraw" element={<WalletWithdrawPage />} />
                     <Route path="/wallet/:code" element={<WalletCurrencyPage />} />
                     <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />

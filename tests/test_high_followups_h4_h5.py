@@ -108,9 +108,17 @@ async def test_deposit_min_filter_uses_deposit_total(client):
 
 
 @pytest.mark.asyncio
-async def test_user_out_deposit_defaults_to_deposit_total(client):
+async def test_user_out_deposit_defaults_to_trust_deposit_balance(client):
     """The public ``UserOut.deposit`` field falls back to
-    ``deposit_total`` when no per-currency override is passed.
+    ``trust_deposit_balance`` when no per-currency override is passed.
+
+    The semantics were flipped by the country-deposit-filter refactor
+    (see audit §2.2): ``deposit_total`` remains the *admin-editable
+    lifetime aggregate* and stays the source of truth for the
+    deposit-min filter and the admin panel, while the **public**
+    ``UserCardDto.deposit`` now exposes the trust-deposit balance —
+    the lock-in-by-design column users top up via the new
+    ``purpose="trust"`` deposit flow.
     """
     async with async_session() as session:
         session.add(
@@ -118,19 +126,24 @@ async def test_user_out_deposit_defaults_to_deposit_total(client):
                 tg_user_id=9601,
                 username="bigfish9601",
                 display_name="Big",
+                # ``deposit_total`` is set to a *different* value than
+                # the trust balance below to prove the public DTO
+                # ignores it.
                 deposit_total=777,
+                trust_deposit_balance=123,
             )
         )
         await session.commit()
 
-    # We hit the public listing endpoint; ``user_to_out`` is invoked
-    # without an explicit ``deposit`` override.
+    # We hit the public listing endpoint; ``user_to_public_out`` is
+    # invoked without an explicit ``deposit`` override, so the
+    # serializer must surface ``user.trust_deposit_balance``.
     resp = await client.get("/api/users", params={"q": "bigfish9601"})
     assert resp.status_code == 200
     body = resp.json()
     assert body, body
     out = next(u for u in body if u["username"] == "bigfish9601")
-    assert out["deposit"] == 777.0
+    assert out["deposit"] == 123.0
 
 
 def test_bot_profile_summary_uses_deposit_total():

@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import type { UserCardDto } from "@/api/types";
 import { Logo } from "@/components/layout/Logo";
+import { countryFromCode } from "@/lib/countries";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Админ",
@@ -27,6 +28,7 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
 
   const displayName = user.display_name?.trim() || user.username || "—";
   const roleLabel = user.prefix ? ROLE_LABEL[user.prefix] : "Пользователь";
+  const country = countryFromCode(user.country);
 
   return (
     <div ref={ref}>
@@ -51,6 +53,11 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
             <div className="min-w-0 flex-1">
               <h1 className="text-2xl font-bold truncate">{displayName}</h1>
               <div className="mt-0.5 text-sm text-text-muted truncate">@{user.username}</div>
+              {country && (
+                <div className="mt-0.5 text-sm text-text-muted truncate">
+                  <span aria-hidden>{country.flag}</span> {country.name}
+                </div>
+              )}
               <div className="mt-1 text-xs text-text-muted">ID: {user.user_id}</div>
             </div>
             <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-accent text-accent-fg text-[11px] font-semibold leading-none shrink-0">

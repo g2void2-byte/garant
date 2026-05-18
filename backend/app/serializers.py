@@ -50,13 +50,26 @@ def _common_user_fields(
         admin_level = 2
     else:
         admin_level = 0
+    # ``deposit`` on the public DTO surfaces the *trust* deposit balance
+    # (the new lock-in-by-design column) rather than the admin-editable
+    # lifetime ``deposit_total``. The admin panel keeps reading
+    # ``deposit_total`` directly via ``AdminUserListItem`` /
+    # ``AdminUserDetailDto``; callers that explicitly pass a per-currency
+    # ``deposit`` aggregate still win over the default.
+    #
+    # ``trust_deposit_balance`` has a Python-side ``default=0`` plus a
+    # ``server_default="0"`` on the column, but unit tests that build
+    # ``User(...)`` rows in-memory (without flush) see the attribute as
+    # ``None`` until SQLAlchemy applies the default — coerce defensively
+    # so ``float(None)`` never propagates into the DTO.
+    trust_balance = user.trust_deposit_balance if user.trust_deposit_balance is not None else 0
     return dict(
         id=user.id,
         username=user.username or "",
         display_name=user.display_name,
         photo_url=user.photo_url,
         banner_url=user.banner_url,
-        deposit=float(deposit if deposit is not None else user.deposit_total),
+        deposit=float(deposit if deposit is not None else trust_balance),
         description=user.description,
         prefix=prefix,
         is_admin=user.is_admin,
@@ -77,6 +90,7 @@ def _common_user_fields(
         forums=[ForumOut(name=f.name, url=f.url) for f in user.forums],
         is_anonymous_deals=bool(user.is_anonymous_deals),
         is_hidden_profile=bool(user.is_hidden_profile),
+        country=user.country,
     )
 
 
