@@ -9,6 +9,7 @@ import type { PinStatusDto, PinTokenDto } from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { PinPad } from "@/components/ui/PinPad";
 import { useToast } from "@/components/ui/Toast";
+import { Logo } from "@/components/layout/Logo";
 import { setPinToken } from "@/lib/pin";
 import { haptic } from "@/lib/tg";
 
@@ -157,24 +158,30 @@ export default function PinPage({ status, onUnlocked }: PinPageProps) {
 
   const locked = !!lockMessage;
   const titles: Record<Mode, { title: string; subtitle: string }> = {
-    check: { title: "Введите PIN", subtitle: locked ? `Заблокировано. Попробуйте через ${lockMessage}.` : "Чтобы продолжить, введите ваш 4-значный PIN" },
-    setup_first: { title: "Создайте PIN", subtitle: "Придумайте 4 цифры для входа" },
-    setup_confirm: { title: "Подтвердите PIN", subtitle: "Введите PIN ещё раз" },
-    reset_code: { title: "Сброс PIN", subtitle: "Введите 6-значный код из Telegram" },
-    reset_new: { title: "Новый PIN", subtitle: "Придумайте новые 4 цифры" },
-    reset_new_confirm: { title: "Подтвердите новый PIN", subtitle: "Введите его ещё раз" },
+    check: { title: "Введите PIN-код", subtitle: locked ? `Заблокировано. Попробуйте через ${lockMessage}.` : "Введите 4 цифры для входа" },
+    setup_first: { title: "Введите PIN-код", subtitle: "Придумайте 4 цифры для входа" },
+    setup_confirm: { title: "Подтвердите PIN-код", subtitle: "Введите PIN ещё раз" },
+    reset_code: { title: "Сброс PIN-кода", subtitle: "Введите 6-значный код из Telegram" },
+    reset_new: { title: "Новый PIN-код", subtitle: "Придумайте новые 4 цифры" },
+    reset_new_confirm: { title: "Подтвердите новый PIN-код", subtitle: "Введите его ещё раз" },
   };
   const heading = titles[mode];
   const showPad = mode !== "reset_code";
 
   return (
     <div className="min-h-full flex flex-col items-center justify-center px-6 py-10 bg-bg text-text">
+      <Logo size={88} />
       <div
         key={mode}
-        className="text-center mb-10 animate-fadein"
+        className="text-center mt-6 mb-10 animate-fadein"
       >
-        <h1 className="text-2xl font-semibold">{heading.title}</h1>
-        <p className="text-text-muted mt-2 text-sm max-w-xs">{heading.subtitle}</p>
+        <h1 className="text-[26px] font-semibold tracking-tight">{heading.title}</h1>
+        <p className="text-text-muted mt-2 text-[15px] max-w-xs">{heading.subtitle}</p>
+        {(mode === "check" || mode === "setup_first") && !locked && (
+          <p className="text-danger mt-3 text-[13px] max-w-xs leading-snug">
+            После трёх неверных попыток ввод будет заблокирован на 1 час.
+          </p>
+        )}
       </div>
 
       {showPad ? (
@@ -218,7 +225,7 @@ export default function PinPage({ status, onUnlocked }: PinPageProps) {
       )}
 
       {mode === "check" && (
-        <div className="mt-10 flex flex-col items-center gap-2 text-sm">
+        <div className="mt-12 flex flex-col items-center gap-2 text-[13px]">
           {locked ? (
             <span className="text-danger">Слишком много попыток. Ждите {lockMessage}.</span>
           ) : (

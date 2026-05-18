@@ -17,6 +17,9 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy import (
+    text as sa_text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -323,6 +326,20 @@ class Service(Base):
     # round-trips intact.
     deposit: Mapped[float] = mapped_column(Numeric(28, 8), default=0, server_default="0")
     rating_manual: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
+    # V12-UI — gallery of attachments uploaded for the service. Stored as
+    # a JSON list of strings (each is either an ``https://...`` external
+    # URL or a ``/media/...`` path produced by ``POST /api/media/upload``
+    # with ``kind=service``). Capped at ``MAX_SERVICE_PHOTOS`` (6) by the
+    # ``ServiceCreate``/``ServiceUpdate`` validators so the catalogue
+    # endpoint stays cheap to render. ``server_default`` is a JSON
+    # empty-list literal so existing rows hydrate as ``[]`` and the
+    # column never returns ``None`` to the application layer.
+    photo_urls: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=sa_text("'[]'::jsonb"),
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # P3.4 — full-text search vector. Title is weighted higher than description.

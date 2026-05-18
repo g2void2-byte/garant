@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .models import PayCommission
 
@@ -235,6 +235,32 @@ class CategoryOut(BaseModel):
 # ── Services ───────────────────────────────────────────
 
 
+MAX_SERVICE_PHOTOS = 6
+
+
+def _validate_service_photos(v: list[str] | None) -> list[str] | None:
+    # V12-UI — gatekeep the photo list (length + each entry's scheme)
+    # in one place so both ``ServiceCreate`` and ``ServiceUpdate``
+    # behave identically. ``None`` means "don't touch" (only on
+    # update); the create path explicitly defaults to ``[]``.
+    if v is None:
+        return v
+    if len(v) > MAX_SERVICE_PHOTOS:
+        raise ValueError(f"Слишком много фотографий (≤{MAX_SERVICE_PHOTOS})")
+    cleaned: list[str] = []
+    for entry in v:
+        s = (entry or "").strip()
+        if not s:
+            continue
+        if len(s) > 1024:
+            raise ValueError("Слишком длинная ссылка на фото")
+        low = s.lower()
+        if not (low.startswith("https://") or low.startswith("/media/")):
+            raise ValueError("Фото должно быть https:// или /media/... ссылкой")
+        cleaned.append(s)
+    return cleaned
+
+
 class ServiceOut(BaseModel):
     id: int
     owner_username: str | None
@@ -245,6 +271,7 @@ class ServiceOut(BaseModel):
     status: str
     category: CategoryOut
     created_at: datetime | None
+    photo_urls: list[str] = Field(default_factory=list)
 
 
 class ServiceCreate(BaseModel):
@@ -252,6 +279,12 @@ class ServiceCreate(BaseModel):
     title: str
     description: str = ""
     price: float = 0
+    photo_urls: list[str] = Field(default_factory=list)
+
+    @field_validator("photo_urls")
+    @classmethod
+    def _photo_urls_ok(cls, v: list[str]) -> list[str]:
+        return _validate_service_photos(v) or []
 
 
 class ServiceUpdate(BaseModel):
@@ -259,6 +292,12 @@ class ServiceUpdate(BaseModel):
     description: str | None = None
     price: float | None = None
     status: str | None = None  # draft / active / paused (banned only via admin)
+    photo_urls: list[str] | None = None
+
+    @field_validator("photo_urls")
+    @classmethod
+    def _photo_urls_ok(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_service_photos(v)
 
 
 class ServiceModerationDecision(BaseModel):

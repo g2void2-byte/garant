@@ -15,7 +15,15 @@ const MOBILE_PLATFORMS = new Set(["android", "android_x", "ios"]);
 
 interface TelegramWebApp {
   initData: string;
-  initDataUnsafe: { user?: { id: number; username?: string; first_name?: string } };
+  initDataUnsafe: {
+    user?: {
+      id: number;
+      username?: string;
+      first_name?: string;
+      last_name?: string;
+      photo_url?: string;
+    };
+  };
   themeParams: Record<string, string>;
   platform?: string;
   version?: string;
@@ -210,6 +218,18 @@ export function getInitData(): string {
 
 export function getTelegramUser() {
   return tg?.initDataUnsafe?.user;
+}
+
+export function openExternalLink(url: string) {
+  // V12-UI — wraps ``Telegram.WebApp.openLink`` so forum links (clearnet
+  // /tor URLs entered by the user on the AddForumPage) open in the
+  // Telegram in-app browser. Falls back to ``window.open`` when the TMA
+  // is being inspected outside of Telegram (e.g. desktop preview).
+  if (tg && tg.openLink) {
+    tg.openLink(url);
+    return;
+  }
+  if (typeof window !== "undefined") window.open(url, "_blank", "noopener,noreferrer");
 }
 
 export function openTelegramLink(url: string) {

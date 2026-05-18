@@ -6,7 +6,6 @@ import {
   Image as ImageIcon,
   Bell,
   KeyRound,
-  Upload,
   UserCog,
 } from "lucide-react";
 import { Page } from "@/components/layout/Page";
@@ -36,7 +35,10 @@ export default function SettingsPage() {
   const updateMe = useUpdateMe();
   const uploadMedia = useUploadMedia();
   const toast = useToast();
-  const avatarFileRef = useRef<HTMLInputElement | null>(null);
+  // V12-UI — avatar is sourced exclusively from Telegram
+  // (``initDataUnsafe.user.photo_url``); the manual avatar uploader was
+  // removed per UX request. Banner is still a manual upload because
+  // Telegram doesn't expose a per-user banner.
   const bannerFileRef = useRef<HTMLInputElement | null>(null);
 
   const [displayName, setDisplayName] = useState<string>("");
@@ -95,22 +97,20 @@ export default function SettingsPage() {
     }
   };
 
-  const onPickImage = (kind: "avatar" | "banner") => async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const onPickBanner = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     try {
-      const uploaded = await uploadMedia.mutateAsync({ kind, file });
-      if (kind === "avatar") {
-        await updateMe.mutateAsync({ photo_url: uploaded.url });
-      } else {
-        setBannerUrl(uploaded.url);
-        await updateMe.mutateAsync({ banner_url: uploaded.url });
-      }
+      const uploaded = await uploadMedia.mutateAsync({ kind: "banner", file });
+      // V12-UI — patch the banner URL onto the user row first, *then*
+      // sync the local input. Doing the network call first means the
+      // toast / cache update only fires on success; if the PATCH fails
+      // the user sees the error and the visible input stays unchanged.
+      await updateMe.mutateAsync({ banner_url: uploaded.url });
+      setBannerUrl(uploaded.url);
       haptic("success");
-      toast.show({ kind: "success", title: kind === "avatar" ? "Аватар обновлён" : "Баннер обновлён" });
+      toast.show({ kind: "success", title: "Баннер обновлён" });
     } catch (err) {
       haptic("error");
       toast.show({ kind: "error", title: await extractApiError(err) });
@@ -162,39 +162,27 @@ export default function SettingsPage() {
       <Header title="Настройки профиля" />
       <div className="px-4 space-y-5">
         <input
-          ref={avatarFileRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          className="hidden"
-          onChange={onPickImage("avatar")}
-        />
-        <input
           ref={bannerFileRef}
           type="file"
           accept="image/png,image/jpeg,image/webp,image/gif"
           className="hidden"
-          onChange={onPickImage("banner")}
+          onChange={onPickBanner}
         />
 
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-text-muted px-1 flex items-center gap-2">
             <UserCog className="size-4" /> Профиль
           </h2>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => avatarFileRef.current?.click()}
-              disabled={uploadMedia.isPending}
-            >
-              <Upload className="size-4" /> Аватар
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => bannerFileRef.current?.click()}
-              disabled={uploadMedia.isPending}
-            >
-              <ImageIcon className="size-4" /> Баннер
-            </Button>
+          <Button
+            variant="secondary"
+            fullWidth
+            onClick={() => bannerFileRef.current?.click()}
+            disabled={uploadMedia.isPending}
+          >
+            <ImageIcon className="size-4" /> Загрузить баннер
+          </Button>
+          <div className="text-[12px] text-text-muted px-1 -mt-1">
+            Аватарка берётся автоматически из вашего Telegram-профиля.
           </div>
           <Input
             label="Никнейм"

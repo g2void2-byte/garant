@@ -75,6 +75,15 @@ export function useUpdateMe() {
     ) => api.patch("api/me", { json: body }).json<UserCardDto>(),
     onSuccess: (data) => {
       qc.setQueryData(qk.me(), data);
+      // V12-UI — when the *current* user updates their banner / avatar
+      // / description / forums the public ``/api/users/{username}``
+      // representation drifts too. Invalidate it so the next render
+      // of ``UserProfilePage`` (for the same username) refetches and
+      // doesn't show a stale banner.
+      if (data.username) {
+        qc.invalidateQueries({ queryKey: qk.user.detail(data.username) });
+      }
+      qc.invalidateQueries({ queryKey: qk.users.all() });
     },
   });
 }
@@ -105,8 +114,19 @@ export function useServices(
 export function useUpdateService() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, body }: { id: number; body: Partial<{ title: string; description: string; price: number; status: string }> }) =>
-      api.patch(`api/services/${id}`, { json: body }).json<ServiceDto>(),
+    mutationFn: ({
+      id,
+      body,
+    }: {
+      id: number;
+      body: Partial<{
+        title: string;
+        description: string;
+        price: number;
+        status: string;
+        photo_urls: string[];
+      }>;
+    }) => api.patch(`api/services/${id}`, { json: body }).json<ServiceDto>(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.services.all() });
     },
@@ -116,8 +136,13 @@ export function useUpdateService() {
 export function useCreateService() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { category_slug: string; title: string; description: string; price: number }) =>
-      api.post("api/services", { json: body }).json<ServiceDto>(),
+    mutationFn: (body: {
+      category_slug: string;
+      title: string;
+      description: string;
+      price: number;
+      photo_urls?: string[];
+    }) => api.post("api/services", { json: body }).json<ServiceDto>(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.services.all() });
       qc.invalidateQueries({ queryKey: qk.categories() });

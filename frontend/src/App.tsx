@@ -5,6 +5,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { MaintenanceBanner } from "@/components/MaintenanceBanner";
 import { MinimizeButton } from "@/components/MinimizeButton";
 import { PinGate } from "@/components/PinGate";
+import { TelegramAvatarSync } from "@/components/TelegramAvatarSync";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -118,6 +119,7 @@ export function App() {
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
           <PinGate>
+            <TelegramAvatarSync />
             <MaintenanceBanner />
             <BrowserRouter>
               {/* LiveNotifications must live *inside* BrowserRouter so

@@ -60,6 +60,7 @@ def _service_out(s: Service) -> ServiceOut:
             services_count=0,
         ),
         created_at=s.created_at,
+        photo_urls=list(s.photo_urls or []),
     )
 
 
@@ -237,6 +238,7 @@ async def create_service(
         description=body.description or "",
         price=body.price,
         status=ServiceStatus.active,
+        photo_urls=list(body.photo_urls or []),
     )
     session.add(service)
     await session.commit()
@@ -417,6 +419,12 @@ async def update_service(
         service.status = wanted
         if wanted != ServiceStatus.banned:
             service.ban_reason = None
+
+    if body.photo_urls is not None:
+        # V12-UI — owner-side gallery edit. Pydantic already enforced
+        # the per-entry scheme + length cap, so just persist the cleaned
+        # list. Empty list clears the gallery.
+        service.photo_urls = list(body.photo_urls)
 
     await session.commit()
     return _service_out(service)

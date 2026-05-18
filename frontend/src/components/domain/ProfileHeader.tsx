@@ -1,7 +1,9 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import type { UserCardDto } from "@/api/types";
 import { Logo } from "@/components/layout/Logo";
+import { Avatar } from "@/components/ui/Avatar";
 import { countryFromCode } from "@/lib/countries";
+import { getTelegramUser } from "@/lib/tg";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Админ",
@@ -29,6 +31,14 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
   const displayName = user.display_name?.trim() || user.username || "—";
   const roleLabel = user.prefix ? ROLE_LABEL[user.prefix] : "Пользователь";
   const country = countryFromCode(user.country);
+  // V12-UI — the avatar circle is sourced from the Telegram user's
+  // ``photo_url`` (exposed via ``initDataUnsafe`` for the *current*
+  // viewer). When viewing your own profile we always have it; for
+  // someone else's profile we fall back to ``user.photo_url`` from
+  // the backend (which may be null). ``Avatar`` renders the first
+  // letter of the display name when no URL is available.
+  const tgUser = getTelegramUser();
+  const avatarSrc = user.photo_url || (tgUser?.username === user.username ? tgUser?.photo_url : null);
 
   return (
     <div ref={ref}>
@@ -47,14 +57,22 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
         )}
       </div>
 
-      <div className="px-4 mt-3">
-        <div className="bg-panel border border-border rounded-card p-4">
+      <div className="px-4 -mt-10 relative">
+        <div className="bg-panel border border-border rounded-card p-4 pt-10">
+          <div className="absolute -top-2 left-7">
+            <Avatar
+              name={displayName}
+              src={avatarSrc}
+              size={64}
+              className="ring-4 ring-bg shadow-pop"
+            />
+          </div>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <h1 className="text-2xl font-bold truncate">{displayName}</h1>
-              <div className="mt-0.5 text-sm text-text-muted truncate">@{user.username}</div>
+              <div className="mt-0.5 text-[13px] text-text-muted truncate">@{user.username}</div>
               {country && (
-                <div className="mt-0.5 text-sm text-text-muted truncate">
+                <div className="mt-0.5 text-[13px] text-text-muted truncate">
                   <span aria-hidden>{country.flag}</span> {country.name}
                 </div>
               )}

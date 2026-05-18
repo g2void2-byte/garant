@@ -16,6 +16,9 @@ export interface ServiceDto {
   status: string;
   category: CategoryDto;
   created_at?: string | null;
+  // V12-UI — gallery URLs (``/media/service/...`` or ``https://...``)
+  // attached to the service by its owner. Capped at 6 server-side.
+  photo_urls?: string[];
 }
 
 export interface ServiceOwnerDto {

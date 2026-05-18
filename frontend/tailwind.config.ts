@@ -21,7 +21,8 @@ export default {
       },
       fontFamily: {
         sans: [
-          "'TT Hoves'",
+          "'Inter Variable'",
+          "'Inter'",
           "var(--tg-theme-font-family, -apple-system)",
           "system-ui",
           "Segoe UI",

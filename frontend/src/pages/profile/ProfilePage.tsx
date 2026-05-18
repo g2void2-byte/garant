@@ -18,6 +18,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ProfileHeader } from "@/components/domain/ProfileHeader";
 import { ProfileStatsGrid } from "@/components/domain/ProfileStatsGrid";
+import { ProfileForumsCard } from "@/components/domain/ProfileForumsCard";
 import { ServiceCard } from "@/components/domain/ServiceCard";
 import {
   useDeleteService,
@@ -94,6 +95,8 @@ export default function ProfilePage() {
         </div>
 
         <ProfileStatsGrid user={me} onDepositClick={() => navigate("/wallet")} />
+
+        <ProfileForumsCard user={me} />
 
         <ToggleTabs
           value={tab}
