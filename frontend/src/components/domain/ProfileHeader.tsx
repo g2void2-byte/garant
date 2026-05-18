@@ -58,19 +58,17 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
       </div>
 
       <div className="px-4 -mt-10 relative">
-        <div className="bg-panel border border-border rounded-card p-4 pt-10">
-          <div className="absolute -top-2 left-7">
+        <div className="bg-panel border border-border rounded-card p-4">
+          <div className="flex items-start gap-3.5">
             <Avatar
               name={displayName}
               src={avatarSrc}
-              size={64}
-              className="ring-4 ring-bg shadow-pop"
+              size={72}
+              className="-mt-12 ring-4 ring-bg shadow-pop"
             />
-          </div>
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-bold truncate">{displayName}</h1>
-              <div className="mt-0.5 text-[13px] text-text-muted truncate">@{user.username}</div>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <h1 className="text-xl font-bold leading-tight truncate">{displayName}</h1>
+              <div className="mt-1 text-[13px] text-text-muted truncate">@{user.username}</div>
               {country && (
                 <div className="mt-0.5 text-[13px] text-text-muted truncate">
                   <span aria-hidden>{country.flag}</span> {country.name}
@@ -83,7 +81,7 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
             </span>
           </div>
 
-          <div className="mt-3 border-t border-border pt-3">
+          <div className="mt-4 border-t border-border pt-3">
             <div className="text-xs text-text-muted">Описание</div>
             <div className="mt-1 text-sm whitespace-pre-line break-words">
               {user.description?.trim() || (
