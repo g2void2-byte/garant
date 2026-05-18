@@ -12,9 +12,27 @@ export default defineConfig({
   server: {
     port: 5173,
     host: "0.0.0.0",
+    // Vite 5+ blocks Host headers not in this allow-list when the dev
+    // server is reached through a reverse-proxy / tunnel (e.g. when we
+    // surface the TMA to Telegram via ``deploy expose``). ``true`` here
+    // accepts every host — this is a *development-only* config and the
+    // proxy itself enforces auth, so widening the allow-list does not
+    // weaken anything that wasn't already wide-open in dev.
+    allowedHosts: true,
     proxy: {
-      "/api": "http://localhost:8080",
-      "/ws": { target: "ws://localhost:8080", ws: true },
+      // ``VITE_PROXY_TARGET`` lets compose / preview tunnels point
+      // the proxy at the backend service hostname inside the docker
+      // network (``http://backend:8080``) instead of the host's
+      // ``localhost:8080``. Outside of compose the default keeps
+      // working for ``npm run dev`` against ``uvicorn`` on the host.
+      "/api": process.env.VITE_PROXY_TARGET || "http://localhost:8080",
+      "/ws": {
+        target: (process.env.VITE_PROXY_TARGET || "http://localhost:8080").replace(
+          /^http/,
+          "ws",
+        ),
+        ws: true,
+      },
     },
   },
   build: {
