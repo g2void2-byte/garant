@@ -59,14 +59,14 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
 
       <div className="px-4 -mt-10 relative">
         <div className="bg-panel border border-border rounded-card p-4">
-          <div className="flex items-start gap-3.5">
+          <div className="flex items-center gap-3.5">
             <Avatar
               name={displayName}
               src={avatarSrc}
               size={72}
-              className="-mt-12 ring-4 ring-bg shadow-pop"
+              className="ring-4 ring-bg shadow-pop"
             />
-            <div className="min-w-0 flex-1 pt-0.5">
+            <div className="min-w-0 flex-1">
               <h1 className="text-xl font-bold leading-tight truncate">{displayName}</h1>
               <div className="mt-1 text-[13px] text-text-muted truncate">@{user.username}</div>
               {country && (
@@ -76,7 +76,7 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
               )}
               <div className="mt-1 text-xs text-text-muted">ID: {user.user_id}</div>
             </div>
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-accent text-accent-fg text-[11px] font-semibold leading-none shrink-0">
+            <span className="self-start inline-flex items-center px-2.5 py-1 rounded-full bg-accent text-accent-fg text-[11px] font-semibold leading-none shrink-0">
               {roleLabel}
             </span>
           </div>
