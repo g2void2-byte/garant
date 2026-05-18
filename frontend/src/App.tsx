@@ -74,6 +74,24 @@ function RedirectUser() {
   return <Navigate to={`/users/${username ?? ""}`} replace />;
 }
 
+/**
+ * Dev-only crash trigger — drives the ``ErrorBoundary`` overlay end-to-end.
+ *
+ * Mounted at ``/__dev/crash`` inside the ``import.meta.env.DEV`` branch
+ * below so the route is only registered when Vite is running ``dev``;
+ * production builds replace ``import.meta.env.DEV`` with the literal
+ * ``false``, dead-code-eliminate the entire ``<Route>`` JSX, and tree-
+ * shake this function out of the shipped bundle.
+ *
+ * The Playwright suite (``frontend/e2e/error-boundary.spec.ts``) needs
+ * a deterministic way to force a render-time throw without relying on
+ * brittle malformed-API tricks or Vite chunk-load internals; this
+ * route does exactly that and nothing else.
+ */
+function DevCrashRoute(): null {
+  throw new Error("Dev-only forced render crash for ErrorBoundary e2e tests");
+}
+
 export function App() {
   useEffect(() => {
     initTelegram();
@@ -156,6 +174,12 @@ export function App() {
                     <Route path="/admin/system" element={<AdminSystemPage />} />
                     <Route path="/admin/audit" element={<AdminAuditPage />} />
                     <Route path="/admin/2fa" element={<AdminTwoFactorPage />} />
+                    {/* Dev-only render-throw target for the ErrorBoundary e2e
+                        spec. Wrapped in ``import.meta.env.DEV`` so Vite tree-
+                        shakes the entire route off production bundles. */}
+                    {import.meta.env.DEV && (
+                      <Route path="/__dev/crash" element={<DevCrashRoute />} />
+                    )}
                     {/* Backwards-compatible redirects from the pre-Continental routes. */}
                     <Route path="/help" element={<Navigate to="/support" replace />} />
                     <Route path="/u/:username" element={<RedirectUser />} />
