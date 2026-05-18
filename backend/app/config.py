@@ -130,7 +130,12 @@ class Settings(BaseSettings):
     media_root: str = "./media-uploads"
     media_base_url: str = "/media"  # served at this path on the backend host
     media_max_bytes: int = 5 * 1024 * 1024  # 5 MiB
-    media_allowed_kinds: str = "avatar,banner,deal"
+    # V12-UI — added ``service`` so the "Новая услуга" gallery uploads
+    # (``POST /api/media/upload`` with ``kind=service``) land in a
+    # dedicated ``media-uploads/service/`` subtree and the resulting
+    # ``/media/service/...`` URLs pass the ``ServiceCreate``/``ServiceUpdate``
+    # whitelist validator.
+    media_allowed_kinds: str = "avatar,banner,deal,service"
 
     # Comma-separated list of trusted proxy IPs/CIDRs. When set, X-Forwarded-For
     # is only honoured if the direct peer is in this list. Empty = trust all

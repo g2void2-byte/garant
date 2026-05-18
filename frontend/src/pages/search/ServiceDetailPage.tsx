@@ -46,6 +46,7 @@ export default function ServiceDetailPage() {
       <Header title="Услуга" />
       <div className="px-4 space-y-3">
         <ServiceHeroCard service={service} />
+        <ServicePhotoGallery photos={service.photo_urls ?? []} />
         <OwnerActions service={service} myUsername={me?.username} />
         <ServiceStatsRow service={service} />
         {service.description && <ServiceDescription text={service.description} />}
@@ -58,6 +59,22 @@ export default function ServiceDetailPage() {
         />
       </div>
     </Page>
+  );
+}
+
+function ServicePhotoGallery({ photos }: { photos: string[] }) {
+  if (!photos.length) return null;
+  return (
+    <div className="-mx-4 px-4 flex gap-2 overflow-x-auto snap-x snap-mandatory pb-1">
+      {photos.map((url, i) => (
+        <div
+          key={`${url}-${i}`}
+          className="shrink-0 w-[78%] aspect-[4/3] rounded-card overflow-hidden bg-panel-2 snap-center border border-border"
+        >
+          <img src={url} alt="" className="size-full object-cover" />
+        </div>
+      ))}
+    </div>
   );
 }
 

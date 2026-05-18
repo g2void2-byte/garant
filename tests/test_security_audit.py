@@ -377,7 +377,12 @@ async def test_security_response_headers_present(client):
     assert resp.status_code == 200
     assert resp.headers["x-content-type-options"] == "nosniff"
     assert resp.headers["referrer-policy"] == "no-referrer"
-    assert resp.headers["x-frame-options"] == "DENY"
+    # V12-UI — the legacy ``X-Frame-Options: DENY`` header was dropped for
+    # the SPA mount because Telegram Web/Desktop iframes the TMA from
+    # ``web.telegram.org`` and ``DENY`` blocks the embed before CSP3
+    # ``frame-ancestors`` can be consulted. The CSP3 directive below
+    # is the modern equivalent and only whitelists Telegram origins.
+    assert "x-frame-options" not in resp.headers
 
     csp = resp.headers["content-security-policy"]
     # Default fallback locks every fetch directive to same-origin
@@ -391,12 +396,20 @@ async def test_security_response_headers_present(client):
     assert "'unsafe-inline'" not in csp.split("style-src")[1].split(";")[0]
     # Avatars/screenshots come from ``/media/`` (same origin); ``data:``
     # covers tiny placeholder SVGs Vite may inline, ``blob:`` covers
-    # client-side previews of uploads before submit.
-    assert "img-src 'self' data: blob:" in csp
+    # client-side previews of uploads before submit; ``https:`` is the
+    # V12-UI relaxation for Telegram CDN user avatars
+    # (``https://t.me/i/userpic/...``) plus any other HTTPS image
+    # URL the ``photo_url`` schema validator already accepts.
+    assert "img-src 'self' data: blob: https:" in csp
     # REST + WebSocket are same-origin only.
     assert "connect-src 'self'" in csp
-    # Modern equivalent of ``X-Frame-Options: DENY`` (kept for legacy).
-    assert "frame-ancestors 'none'" in csp
+    # V12-UI — Telegram Web/Desktop iframes the TMA from
+    # ``web.telegram.org`` (and any ``*.telegram.org`` subdomain), so
+    # ``frame-ancestors`` opens just enough for those origins while
+    # rejecting every other embed. Drift here regresses to either
+    # "anyone can iframe Garant" or "Telegram Web can't load the
+    # TMA" — both are policy failures.
+    assert "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org" in csp
     # Lock down plugins and form posts to defence-in-depth defaults.
     assert "object-src 'none'" in csp
     assert "form-action 'self'" in csp

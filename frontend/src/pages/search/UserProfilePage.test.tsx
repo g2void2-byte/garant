@@ -21,8 +21,10 @@ vi.mock("@/api/hooks", () => ({
 
 vi.mock("@/lib/tg", () => ({
   openTelegramLink: vi.fn(),
+  openExternalLink: vi.fn(),
   showBackButton: () => () => {},
   haptic: vi.fn(),
+  getTelegramUser: () => undefined,
 }));
 
 import UserProfilePage from "./UserProfilePage";

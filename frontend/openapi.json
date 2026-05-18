@@ -4544,6 +4544,13 @@
             "title": "Description",
             "type": "string"
           },
+          "photo_urls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Photo Urls",
+            "type": "array"
+          },
           "price": {
             "default": 0,
             "title": "Price",
@@ -4614,6 +4621,13 @@
               }
             ],
             "title": "Owner Username"
+          },
+          "photo_urls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Photo Urls",
+            "type": "array"
           },
           "price": {
             "title": "Price",
@@ -4718,6 +4732,13 @@
               }
             ],
             "title": "Owner Username"
+          },
+          "photo_urls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Photo Urls",
+            "type": "array"
           },
           "price": {
             "title": "Price",
@@ -4831,6 +4852,20 @@
               }
             ],
             "title": "Description"
+          },
+          "photo_urls": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Photo Urls"
           },
           "price": {
             "anyOf": [

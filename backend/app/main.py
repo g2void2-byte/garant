@@ -386,11 +386,11 @@ _CSP_DIRECTIVES = (
     "style-src 'self'; "
     "style-src-elem 'self'; "
     "style-src-attr 'none'; "
-    "img-src 'self' data: blob:; "
+    "img-src 'self' data: blob: https:; "
     "font-src 'self' data:; "
     "connect-src 'self'; "
     "worker-src 'self' blob:; "
-    "frame-ancestors 'none'; "
+    "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org; "
     "base-uri 'self'; "
     "form-action 'self'; "
     "object-src 'none'; "
@@ -416,9 +416,14 @@ async def _security_headers(request, call_next):
     # Don't leak Garant URLs (which encode user IDs in paths) to
     # third-party origins users navigate to from inside the TMA.
     response.headers["Referrer-Policy"] = "no-referrer"
-    # Stop other origins from framing the app. Telegram embeds via its
-    # native WebView, not an iframe, so ``DENY`` is safe.
-    response.headers["X-Frame-Options"] = "DENY"
+    # Modern clients consult CSP ``frame-ancestors`` (see ``_CSP_DIRECTIVES``).
+    # Pre-fix we also set ``X-Frame-Options: DENY`` on the theory that
+    # Telegram only embeds via native WebView, but Telegram Web /
+    # Desktop actually iframes the TMA from ``web.telegram.org`` and
+    # ``DENY`` blocks it before CSP can be consulted. Drop the legacy
+    # header for the SPA mount and let CSP do the work so the TMA
+    # loads in Telegram Web while everything else still refuses to be
+    # framed (``frame-ancestors`` whitelist is Telegram-only).
     # Full CSP — closes the gap flagged as Info in the security audit.
     response.headers["Content-Security-Policy"] = _CSP_DIRECTIVES
     return response

@@ -11,6 +11,7 @@ import { countryFromCode } from "@/lib/countries";
 export function UserCard({ user, index = 0 }: { user: UserCardDto; index?: number }) {
   const name = user.display_name?.trim() || user.username || "—";
   const country = countryFromCode(user.country);
+  const ratingLabel = user.reviews_count ? user.rating.toFixed(1) : "0.0";
   return (
     <div
       className="animate-fadein"
@@ -18,10 +19,10 @@ export function UserCard({ user, index = 0 }: { user: UserCardDto; index?: numbe
     >
       <Link
         to={`/users/${user.username}`}
-        className="flex items-center gap-3 bg-panel border border-border rounded-card p-3 active:scale-[.99] transition-transform"
+        className="flex items-center gap-3 bg-panel border border-border rounded-card p-3.5 active:scale-[.99] transition-transform"
       >
         <div className="relative">
-          <Avatar name={user.username} src={user.photo_url} size={48} />
+          <Avatar name={user.username} src={user.photo_url} size={52} />
           <span className="absolute -bottom-0.5 -right-0.5 ring-2 ring-panel rounded-full">
             <OnlineDot online={user.online} />
           </span>
@@ -29,7 +30,7 @@ export function UserCard({ user, index = 0 }: { user: UserCardDto; index?: numbe
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <BadgePrefix prefix={user.prefix} />
-            <span className="font-semibold truncate">{name}</span>
+            <span className="font-semibold text-[15px] leading-tight truncate">{name}</span>
             {country && (
               <span
                 aria-label={country.name}
@@ -40,17 +41,21 @@ export function UserCard({ user, index = 0 }: { user: UserCardDto; index?: numbe
               </span>
             )}
           </div>
-          <div className="mt-0.5 text-xs text-text-muted truncate">@{user.username}</div>
+          <div className="mt-1 text-[13px] text-text-muted truncate">@{user.username}</div>
         </div>
-        <div className="text-right shrink-0">
-          <div className="inline-flex items-center gap-2 text-xs">
-            <span className="text-accent font-semibold">{formatMoney(user.deposit)}</span>
-            <span className="inline-flex items-center gap-1 text-accent">
-              <Star className="size-3" />
-              {user.reviews_count ? user.rating.toFixed(1) : "0.0"}
+        <div className="flex flex-col items-end shrink-0 gap-1">
+          <div className="flex items-center gap-2.5 leading-none">
+            <span className="inline-flex items-center gap-1 text-accent text-[13px] font-semibold">
+              <Star className="size-3.5" strokeWidth={2.5} />
+              {ratingLabel}
+            </span>
+            <span className="text-accent text-[13px] font-semibold tabular-nums">
+              {formatMoney(user.deposit)}
             </span>
           </div>
-          <div className="mt-1 text-[11px] text-text-muted">{dealsLabel(user.deals_count)}</div>
+          <div className="text-[12px] text-text-muted tabular-nums">
+            {dealsLabel(user.deals_count)}
+          </div>
         </div>
       </Link>
     </div>

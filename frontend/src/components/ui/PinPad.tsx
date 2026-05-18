@@ -27,19 +27,21 @@ export function PinPad({ value, length = 4, disabled, onChange, onComplete }: Pi
   }
 
   return (
-    <div className="flex flex-col items-center gap-10 select-none">
+    <div className="flex flex-col items-center gap-12 select-none w-full">
       <div className="flex items-center gap-5">
         {Array.from({ length }).map((_, i) => (
           <span
             key={i}
             className={cn(
-              "block h-3 w-3 rounded-full transition-colors duration-150",
-              i < value.length ? "bg-text animate-pop-dot" : "bg-panel-2",
+              "block h-3.5 w-3.5 rounded-full transition-all duration-150",
+              i < value.length
+                ? "bg-accent scale-100 animate-pop-dot"
+                : "bg-white/15 scale-90",
             )}
           />
         ))}
       </div>
-      <div className="grid grid-cols-3 gap-1 w-full max-w-xs">
+      <div className="grid grid-cols-3 gap-y-6 gap-x-10 w-full max-w-[280px]">
         {KEYS.map((k, i) => {
           if (k === "") return <span key={i} aria-hidden />;
           if (k === "back") {
@@ -50,7 +52,7 @@ export function PinPad({ value, length = 4, disabled, onChange, onComplete }: Pi
                 onClick={() => press("back")}
                 disabled={disabled}
                 aria-label="Удалить"
-                className="h-[60px] w-full rounded-lg bg-transparent text-text text-2xl active:bg-panel-2 disabled:opacity-40"
+                className="h-14 w-full grid place-items-center text-text/80 text-2xl font-light active:text-accent active:scale-90 transition-transform disabled:opacity-40"
               >
                 ⌫
               </button>
@@ -62,7 +64,7 @@ export function PinPad({ value, length = 4, disabled, onChange, onComplete }: Pi
               type="button"
               onClick={() => press(k)}
               disabled={disabled}
-              className="h-[60px] w-full rounded-lg bg-panel text-text text-2xl font-medium active:bg-panel-2 disabled:opacity-40"
+              className="h-14 w-full grid place-items-center text-text text-[32px] font-light leading-none active:text-accent active:scale-90 transition-transform disabled:opacity-40"
             >
               {k}
             </button>

@@ -3677,6 +3677,8 @@ export interface components {
              * @default
              */
             description: string;
+            /** Photo Urls */
+            photo_urls?: string[];
             /**
              * Price
              * @default 0
@@ -3701,6 +3703,8 @@ export interface components {
             owner: components["schemas"]["ServiceOwnerOut"] | null;
             /** Owner Username */
             owner_username: string | null;
+            /** Photo Urls */
+            photo_urls?: string[];
             /** Price */
             price: number;
             /** Rating Avg */
@@ -3735,6 +3739,8 @@ export interface components {
             id: number;
             /** Owner Username */
             owner_username: string | null;
+            /** Photo Urls */
+            photo_urls?: string[];
             /** Price */
             price: number;
             /** Status */
@@ -3772,6 +3778,8 @@ export interface components {
         ServiceUpdate: {
             /** Description */
             description?: string | null;
+            /** Photo Urls */
+            photo_urls?: string[] | null;
             /** Price */
             price?: number | null;
             /** Status */

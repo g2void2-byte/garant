@@ -17,18 +17,32 @@ function Stat({ icon, label, value, onClick, accent }: StatProps) {
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center justify-between p-3 rounded-2xl bg-panel border border-border text-left",
+        "flex w-full flex-col items-start gap-2 p-4 rounded-2xl bg-panel border border-border text-left",
         onClick && "active:scale-[.99] transition-transform",
       )}
     >
-      <div className="flex items-center gap-3 min-w-0">
-        <div className={cn("size-10 rounded-full grid place-items-center", accent ? "bg-accent/15 text-accent" : "bg-panel-2 text-text-muted")}>{icon}</div>
-        <div className="min-w-0">
-          <div className="text-xs text-text-muted">{label}</div>
-          <div className={cn("font-bold", accent && "text-accent")}>{value}</div>
-        </div>
+      <div className="flex w-full items-center justify-between">
+        <span
+          className={cn(
+            "size-9 rounded-full grid place-items-center",
+            accent ? "bg-accent/15 text-accent" : "bg-panel-2 text-text-muted",
+          )}
+        >
+          {icon}
+        </span>
+        {onClick && <ChevronRight className="size-4 text-text-muted" />}
       </div>
-      {onClick && <ChevronRight className="size-4 text-text-muted" />}
+      <div className="mt-1 min-w-0 w-full">
+        <div
+          className={cn(
+            "text-[22px] font-bold tracking-tight leading-none truncate",
+            accent ? "text-accent" : "text-text",
+          )}
+        >
+          {value}
+        </div>
+        <div className="mt-1.5 text-[13px] text-text-muted">{label}</div>
+      </div>
     </button>
   );
 }
@@ -39,10 +53,16 @@ export function ProfileStatsGrid({ user, onDepositClick }: { user: UserCardDto; 
       <Stat
         icon={<Star className="size-5" />}
         label="Рейтинг"
-        value={user.reviews_count ? `★ ${user.rating.toFixed(1)} (${user.reviews_count})` : "Нет оценок"}
+        value={user.reviews_count ? `${user.rating.toFixed(1)} (${user.reviews_count})` : "—"}
         accent
       />
-      <Stat icon={<Wallet className="size-5" />} label="Депозит" value={formatMoney(user.deposit)} accent onClick={onDepositClick} />
+      <Stat
+        icon={<Wallet className="size-5" />}
+        label="Депозит"
+        value={formatMoney(user.deposit)}
+        accent
+        onClick={onDepositClick}
+      />
       <Stat icon={<Briefcase className="size-5" />} label="Сделок" value={String(user.deals_count)} />
       <Stat icon={<BarChart3 className="size-5" />} label="Сумма сделок" value={formatMoney(user.deals_sum)} />
     </div>

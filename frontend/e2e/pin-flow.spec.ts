@@ -89,9 +89,9 @@ test.describe("PIN flow", () => {
     await page.goto("/search");
 
     // PIN screen renders because no token is in localStorage.
-    await expect(page.getByText("Введите PIN")).toBeVisible();
+    await expect(page.getByText("Введите PIN-код")).toBeVisible();
     await expect(
-      page.getByText("Чтобы продолжить, введите ваш 4-значный PIN"),
+      page.getByText(/Введите 4 цифры для входа/),
     ).toBeVisible();
 
     await typePin(page, "1234");
@@ -100,7 +100,7 @@ test.describe("PIN flow", () => {
     // and the underlying /search page mounts. The bottom-nav
     // contains a deterministic landmark we can assert on.
     await expect(page.getByRole("link", { name: /Оповещения/ })).toBeVisible();
-    await expect(page.getByText("Введите PIN")).toHaveCount(0);
+    await expect(page.getByText("Введите PIN-код")).toHaveCount(0);
   });
 
   test("check failure: wrong PIN surfaces an error toast and keeps the gate closed", async ({
@@ -131,7 +131,7 @@ test.describe("PIN flow", () => {
     );
 
     await page.goto("/search");
-    await expect(page.getByText("Введите PIN")).toBeVisible();
+    await expect(page.getByText("Введите PIN-код")).toBeVisible();
 
     await typePin(page, "9999");
 
@@ -142,6 +142,6 @@ test.describe("PIN flow", () => {
     // page falls back to is "Неверный PIN", which is what we
     // assert on.
     await expect(page.getByText("Неверный PIN")).toBeVisible();
-    await expect(page.getByText("Введите PIN")).toBeVisible();
+    await expect(page.getByText("Введите PIN-код")).toBeVisible();
   });
 });

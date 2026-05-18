@@ -1,3 +1,5 @@
+@import "@fontsource-variable/inter/index.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -62,17 +64,25 @@ body {
   margin: 0;
   -webkit-tap-highlight-color: transparent;
   /*
-   * 'TT Hoves' is the Continental reference font (commercial license).
-   * We do not bundle it; if the user has it locally it will be used,
-   * otherwise the browser falls back to the platform sans-serif which
-   * keeps the visual style close enough for parity.
+   * Inter Variable is bundled via ``@fontsource-variable/inter`` (self-hosted,
+   * MIT-licensed, served from the same origin so the strict CSP
+   * ``font-src 'self' data:`` is happy). Falls back to the Telegram
+   * theme font / system sans-serif if the variable font fails to load.
    */
-  font-family: "TT Hoves", var(--tg-theme-font-family, -apple-system),
+  font-family: "Inter Variable", "Inter", var(--tg-theme-font-family, -apple-system),
     system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-size: 14px;
-  line-height: 1.25;
-  letter-spacing: -0.035em;
+  font-size: 15px;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  font-feature-settings: "cv11", "ss01", "ss03", "tnum";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   overflow-x: hidden;
+}
+
+h1, h2, h3, h4 {
+  letter-spacing: -0.02em;
 }
 
 * {

@@ -97,15 +97,16 @@ beforeEach(() => {
 });
 
 describe("<PinPage />", () => {
-  it("renders 'Введите PIN' heading when has_pin=true", () => {
+  it("renders 'Введите PIN-код' heading when has_pin=true", () => {
     renderPage({ has_pin: true });
-    expect(screen.getByText("Введите PIN")).toBeInTheDocument();
+    expect(screen.getByText("Введите PIN-код")).toBeInTheDocument();
     expect(screen.getByText(/Осталось попыток: 5/)).toBeInTheDocument();
   });
 
-  it("renders 'Создайте PIN' heading when has_pin=false", () => {
+  it("renders setup subtitle when has_pin=false (setup_first mode)", () => {
     renderPage({ has_pin: false });
-    expect(screen.getByText("Создайте PIN")).toBeInTheDocument();
+    expect(screen.getByText("Введите PIN-код")).toBeInTheDocument();
+    expect(screen.getByText(/Придумайте 4 цифры/)).toBeInTheDocument();
   });
 
   it("check happy path: 4 digits → checkPin → setPinToken + onUnlocked", async () => {
@@ -157,7 +158,7 @@ describe("<PinPage />", () => {
     renderPage({ has_pin: false }, onUnlocked);
     await typePin(user, "1357");
     expect(
-      await screen.findByText("Подтвердите PIN"),
+      await screen.findByText("Подтвердите PIN-код"),
     ).toBeInTheDocument();
     await typePin(user, "1357");
     await waitFor(() =>
@@ -183,7 +184,7 @@ describe("<PinPage />", () => {
         }),
       ),
     );
-    expect(screen.getByText("Создайте PIN")).toBeInTheDocument();
+    expect(screen.getByText(/Придумайте 4 цифры/)).toBeInTheDocument();
     expect(mockState.setup.mutateAsync).not.toHaveBeenCalled();
   });
 

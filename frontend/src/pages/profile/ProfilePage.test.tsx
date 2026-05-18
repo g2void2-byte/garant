@@ -25,6 +25,8 @@ vi.mock("@/lib/tg", () => ({
   haptic: vi.fn(),
   showBackButton: () => () => {},
   openTelegramLink: vi.fn(),
+  openExternalLink: vi.fn(),
+  getTelegramUser: () => undefined,
 }));
 
 import ProfilePage from "./ProfilePage";
