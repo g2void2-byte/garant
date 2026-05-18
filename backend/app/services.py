@@ -51,7 +51,7 @@ async def _recompute_user_rating(session: AsyncSession, target: User) -> None:
     * ``rating <= 2`` → bad
     * ``rating == 3`` → neutral (excluded from both counters)
 
-    V5-D-10 — single round-trip ``SUM(CASE ...)`` instead of two
+    single round-trip ``SUM(CASE ...)`` instead of two
     ``SELECT COUNT(...)``.  ``post_review`` is on the hot path for
     every newly-finished deal; cutting the recompute from two
     sequential queries to one halves the DB round-trips per review

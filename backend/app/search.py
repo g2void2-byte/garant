@@ -51,7 +51,7 @@ def build_prefix_tsquery(query: str) -> str | None:
     user-supplied tsquery operators (``!|&():*<>``) cannot reach
     Postgres — see :data:`_TOKEN_RE` and :func:`_assert_safe`.
 
-    V5-D-8 (M) — caps tsquery complexity to the first 10 tokens. A
+    caps tsquery complexity to the first 10 tokens. A
     paste-heavy or pathological input (e.g. a one-line wall of 5 000
     words) would otherwise produce a 5 000-clause ``& foo:* & bar:* …``
     expression that explodes the GIN-index scan cost for no useful

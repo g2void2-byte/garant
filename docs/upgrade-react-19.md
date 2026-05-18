@@ -191,9 +191,17 @@ upgrade should make that disappear without a code change.
 5. **Skip Framer Motion** — no longer a dependency in this codebase
    (was removed since this doc was first written). If it gets
    re-added, pin to ≥ 11.11 so the React 19 peer-dep is satisfied.
-6. **Re-generate the OpenAPI typings** — `npm run generate:api-types`
-   then confirm `git diff --exit-code` on `src/api/openapi.generated.ts`
-   is empty. The drift gate (V12-H5/L7) will fail CI otherwise.
+6. **Re-generate the OpenAPI typings** — V12-L12 split the pipeline into
+   two steps:
+   1. `python scripts/dump_openapi.py` (repo root) — re-dumps
+      `frontend/openapi.json` from the live FastAPI app. Requires the
+      backend Python environment.
+   2. `(cd frontend && npm run generate:api-types)` — pure-node call
+      to `openapi-typescript`. No Python needed in the frontend
+      workspace.
+   Confirm `git diff --exit-code` on both `frontend/openapi.json` and
+   `frontend/src/api/openapi.generated.ts` is empty. The drift gate
+   (V12-H5/L7) will fail CI otherwise.
 7. **Smoke-test in production-like build** — `npm run build` and a
    manual click-through of the staging environment.
 

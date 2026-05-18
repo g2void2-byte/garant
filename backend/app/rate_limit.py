@@ -249,14 +249,14 @@ RLCategories = Annotated[None, Depends(rate_limit("categories", limit=120, windo
 RLReviewsList = Annotated[None, Depends(rate_limit("reviews-list", limit=60, window=60))]
 RLSupport = Annotated[None, Depends(rate_limit("support", limit=60, window=60))]
 
-# V5-D-2 — ``POST /api/notifications/read-all`` is a fan-out UPDATE
+# ``POST /api/notifications/read-all`` is a fan-out UPDATE
 # that scans every unread row for the user. Without a throttle, an
 # attacker with a stolen Telegram initData could spam the endpoint to
 # generate constant write churn on the ``notifications`` table.
 # 10/min is more than the UI ever does (a single tap per mailbox visit).
 RLMarkAllRead = Annotated[None, Depends(rate_limit("mark-all-read", limit=10, window=60))]
 
-# V5-B-10 — ``GET /api/wallet/deposits/{id}`` hits CryptoBot's
+# ``GET /api/wallet/deposits/{id}`` hits CryptoBot's
 # ``get_invoices`` for every still-``pending`` deposit, then takes a
 # ``SELECT ... FOR UPDATE`` on the row and possibly credits the
 # balance. Pre-throttle a logged-in client could spin the endpoint at

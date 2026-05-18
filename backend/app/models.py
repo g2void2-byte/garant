@@ -507,6 +507,34 @@ class AppSettings(Base):
 
 
 class Forum(Base):
+    """A darknet forum the user has linked to their profile.
+
+    A-5 (audit v11) — fixated design notes:
+
+    * The entity *is* live, not a stub. ``PATCH /api/me`` replaces the
+      collection wholesale (see :func:`routers.me.patch_me`); the
+      :class:`schemas.ForumOut` validator enforces ``https://`` and
+      length caps; the public profile cards on ``/api/users`` and
+      ``/api/users/{username}`` re-serialise this list via
+      :func:`serializers.UserOut.from_model`.
+    * There is **no** ``/api/forums`` router and the list of
+      *approved* forum names is **intentionally hardcoded on the
+      frontend** in ``frontend/src/pages/profile/AddForumPage.tsx``
+      (``FORUM_OPTIONS``). The trade-off is documented in
+      ``ADMIN-PANEL-SPEC.md §14`` — the whitelist evolves slowly
+      enough that wiring it through admin-CRUD + a settings table
+      would add ceremony without removing any operational pain. If a
+      backend whitelist ever lands, it should live on
+      :class:`AppSettings` (single-row config table) and surface via
+      ``GET /api/forums``; ``AddForumPage`` would then fetch the
+      list instead of carrying it inline.
+    * The backend currently **does not** validate ``name`` against
+      that whitelist either — ``ForumOut._name_ok`` only enforces
+      non-empty and ``len ≤ 64``. A user driving the API directly
+      can therefore record any forum name; the whitelist is a UX
+      affordance for the dropdown, not a security boundary.
+    """
+
     __tablename__ = "forums"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -565,7 +593,7 @@ class Currency(Base):
     min_withdraw: Mapped[float] = mapped_column(Numeric(28, 8), default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
-    # V5-B-4 — anchored regex applied to user-supplied payout addresses
+    # anchored regex applied to user-supplied payout addresses
     # in :func:`backend.app.services_wallet.create_withdrawal`. An empty
     # string means "skip the format check" — back-compat for future
     # currencies seeded before their regex is known. The patterns are

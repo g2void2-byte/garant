@@ -116,7 +116,7 @@ async def list_withdrawals(
         )
     ).all()
 
-    # V5-B-9 — counters across the full table (independent of filters).
+    # counters across the full table (independent of filters).
     # Pre-fix this issued 4 separate ``SELECT id WHERE status=?`` round
     # trips and materialised every id in Python just to call ``len()``
     # on the list — O(N) network + memory per status, for 4 statuses,
@@ -195,7 +195,7 @@ async def decide_withdrawal(
                     app_settings_env.cryptobot_token,
                     testnet=app_settings_env.cryptobot_testnet,
                 ) as cp:
-                    # V5-B-5 — ``spend_id=f"wd:{w.id}"`` is the
+                    # ``spend_id=f"wd:{w.id}"`` is the
                     # idempotency key CryptoBot uses to dedupe
                     # ``transfer`` calls server-side. Per their docs:
                     # "Transfers with the same ``spend_id`` will be
@@ -309,7 +309,7 @@ async def decide_withdrawal(
         w.status = WalletWithdrawStatus.rejected
         w.admin_note = body.note or ""
         w.processed_at = utcnow()
-        # V5-B-6 — clear the cool-down timer on rejection. The
+        # clear the cool-down timer on rejection. The
         # ``locked_until`` column tracks when funds become spendable
         # again after the 24h cool-down (set in
         # ``services_wallet.create_withdrawal``). On reject we just

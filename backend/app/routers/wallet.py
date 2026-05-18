@@ -157,7 +157,7 @@ async def get_deposit(
     session: SessionDep,
     _rl: RLWalletPoll,
 ):
-    # V5-B-10 — ``_rl`` runs first via FastAPI's dep resolution and
+    # ``_rl`` runs first via FastAPI's dep resolution and
     # raises 429 before any DB / CryptoBot work happens, so a hot-loop
     # caller is cheap to refuse.
     deposit = await session.get(WalletDeposit, deposit_id)

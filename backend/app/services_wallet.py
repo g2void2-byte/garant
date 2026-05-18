@@ -214,7 +214,7 @@ async def create_deposit_invoice(
         )
         raise HTTPException(502, f"Ошибка CryptoBot: {e}")
 
-    # V5-B-3 — CryptoBot normally returns at least one non-empty URL,
+    # CryptoBot normally returns at least one non-empty URL,
     # but the API contract is "one of these four MAY be set" rather
     # than "exactly one is guaranteed". If they ever return all four
     # blank (e.g. a misconfigured asset on their side, or an API
@@ -261,7 +261,7 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
     if deposit.status == WalletDepositStatus.paid:
         return deposit
 
-    # V5-B-1 — take a FOR UPDATE lock on the user's balance row before
+    # take a FOR UPDATE lock on the user's balance row before
     # mutating it. Two concurrent webhook deliveries that race past
     # the deposit-row lock (or a webhook racing with the
     # ``poll_deposit_status`` polling fallback in services_wallet)
@@ -399,7 +399,7 @@ async def poll_deposit_status(session: AsyncSession, deposit: WalletDeposit) -> 
         return deposit
     row = rows[0]
     if row.status == "paid":
-        # V5-B-1 follow-up — re-load the deposit with ``FOR UPDATE``
+        # re-load the deposit with ``FOR UPDATE``
         # before crediting so this polling-fallback path acquires
         # locks in the same order as the webhook
         # (``services_payments.handle_invoice_paid``):
@@ -476,7 +476,7 @@ async def create_withdrawal(
             400, f"Минимальная сумма вывода: {currency.min_withdraw} {currency.code}"
         )
 
-    # V5-B-4 — per-currency anchored regex check. Anchored on both
+    # per-currency anchored regex check. Anchored on both
     # ends because ``re.fullmatch`` already requires the whole string
     # to match; the ``^...$`` markers in the seed are defensive against
     # someone swapping ``fullmatch`` for ``search`` later. An empty
@@ -521,7 +521,7 @@ async def create_withdrawal(
     # leave the withdrawal in ``pending`` so admins can still approve
     # manually.
     #
-    # V5-B-5 — ``spend_id=f"wd:{withdrawal.id}"`` is the **idempotency
+    # ``spend_id=f"wd:{withdrawal.id}"`` is the **idempotency
     # key** CryptoBot uses to deduplicate Transfer calls on their
     # side. From their docs: "Transfers with the same ``spend_id``
     # will be processed only once." This is the only thing standing

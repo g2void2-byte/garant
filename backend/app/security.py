@@ -23,7 +23,7 @@ def verify_init_data(init_data: str) -> dict:
 
     parsed = parse_qs(init_data, keep_blank_values=True)
 
-    # V5-A-2 (L) — ``hash`` is the only proof Telegram's WebApp made
+    # ``hash`` is the only proof Telegram's WebApp made
     # this initData (HMAC-SHA256 of the sorted data-check string keyed
     # with the bot-token-derived secret). ``parse_qs(keep_blank_values=True)``
     # would yield ``[""]`` for ``...&hash=`` and ``[None]`` is the
@@ -83,7 +83,7 @@ def verify_init_data(init_data: str) -> dict:
 def _parse_unsigned(init_data: str) -> dict:
     """Accept unsigned init data for local dev.
 
-    V5-A-3 (M) — defence-in-depth check: even though
+    defence-in-depth check: even though
     :mod:`backend.app.main` refuses to boot when
     ``ALLOW_UNSIGNED_INIT_DATA`` is set in production/staging, the
     runtime setting could in theory be toggled inside a test fixture
