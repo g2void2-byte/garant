@@ -67,11 +67,60 @@ def main_reply_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def _webapp(url_path: str) -> WebAppInfo:
-    """Build a WebAppInfo pointing at the configured TMA + optional path."""
+def _webapp_url(url_path: str) -> str:
+    """Resolve a TMA path against the configured ``WEBAPP_URL`` base."""
     base = settings.webapp_url.rstrip("/")
     suffix = url_path if url_path.startswith("/") else "/" + url_path
-    return WebAppInfo(url=base + suffix)
+    return base + suffix
+
+
+def webapp_url_is_https() -> bool:
+    """Whether the configured ``WEBAPP_URL`` is usable for inline ``web_app`` buttons.
+
+    Telegram requires an HTTPS URL with a valid SSL certificate for the
+    ``web_app`` field on inline buttons; an HTTP base (including the
+    ``http://localhost:5173`` default baked into ``.env.compose.example``)
+    causes the Bot API to reject the whole ``sendMessage`` /
+    ``sendPhoto`` call with ``Bad Request: BUTTON_TYPE_INVALID`` and
+    every section button silently looks dead from the user's side. We
+    use this helper to decide whether to attach ``web_app=...`` (proper
+    Mini App launch inside Telegram) or fall back to plain ``url=...``
+    (opens the link in the user's external browser) when building each
+    section keyboard.
+    """
+    return settings.webapp_url.lower().startswith("https://")
+
+
+def _webapp(url_path: str) -> WebAppInfo:
+    """Build a ``WebAppInfo`` pointing at the configured TMA + optional path.
+
+    Callers that build inline-keyboard buttons should prefer
+    :func:`_webapp_button` so the keyboard automatically falls back to
+    a plain ``url=`` button when ``WEBAPP_URL`` is not HTTPS (see
+    :func:`webapp_url_is_https`). This helper stays exported because
+    a few call sites (and tests) still want the raw ``WebAppInfo``.
+    """
+    return WebAppInfo(url=_webapp_url(url_path))
+
+
+def _webapp_button(text: str, url_path: str) -> InlineKeyboardButton:
+    """Build an inline button that opens the TMA, falling back gracefully.
+
+    When ``WEBAPP_URL`` is HTTPS we attach a proper ``web_app=...`` so
+    Telegram opens the Mini App inline. When it is not (e.g. the
+    ``http://localhost:5173`` default in dev compose), Telegram would
+    reject the whole keyboard with ``BUTTON_TYPE_INVALID`` and the bot
+    would look dead to the user. Falling back to a plain ``url=...``
+    button keeps the section message answering — the link may not be
+    reachable from the user's device (``localhost`` is the bot host,
+    not the user's phone), but the bot still responds visibly instead
+    of silently dropping the tap. ``runner.start_polling`` logs a
+    startup warning in this mode so operators know to point
+    ``WEBAPP_URL`` at an HTTPS tunnel before going live.
+    """
+    if webapp_url_is_https():
+        return InlineKeyboardButton(text=text, web_app=_webapp(url_path))
+    return InlineKeyboardButton(text=text, url=_webapp_url(url_path))
 
 
 # ── Section keyboards ─────────────────────────────────────────────────────
@@ -83,8 +132,8 @@ def search_keyboard() -> InlineKeyboardMarkup:
     # The TMA does not consume query strings here, so we use bare routes.
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🥷 Поиск пользователя", web_app=_webapp("/search"))],
-            [InlineKeyboardButton(text="🛒 Поиск услуг", web_app=_webapp("/search/categories"))],
+            [_webapp_button("🥷 Поиск пользователя", "/search")],
+            [_webapp_button("🛒 Поиск услуг", "/search/categories")],
         ]
     )
 
@@ -98,21 +147,10 @@ def deals_keyboard(
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(
-                    text=f"🛒 Покупок: {buys_count}",
-                    web_app=_webapp("/deals"),
-                ),
-                InlineKeyboardButton(
-                    text=f"🎁 Продаж: {sales_count}",
-                    web_app=_webapp("/deals"),
-                ),
+                _webapp_button(f"🛒 Покупок: {buys_count}", "/deals"),
+                _webapp_button(f"🎁 Продаж: {sales_count}", "/deals"),
             ],
-            [
-                InlineKeyboardButton(
-                    text=f"⏰ Ожидающие оплаты: {pending_payment_count}",
-                    web_app=_webapp("/deals"),
-                )
-            ],
+            [_webapp_button(f"⏰ Ожидающие оплаты: {pending_payment_count}", "/deals")],
         ]
     )
 
@@ -125,9 +163,9 @@ def profile_keyboard() -> InlineKeyboardMarkup:
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="👤 Мой профиль", web_app=_webapp("/profile"))],
+            [_webapp_button("👤 Мой профиль", "/profile")],
             second_row,
-            [InlineKeyboardButton(text="💼 Депозит", web_app=_webapp("/deposit"))],
+            [_webapp_button("💼 Депозит", "/deposit")],
         ]
     )
 
@@ -150,7 +188,7 @@ def settings_keyboard(user: User) -> InlineKeyboardMarkup:
             # The TMA has no dedicated PIN settings page — the global
             # PinGate shows a setup/unlock dialog on any protected route,
             # so we route to /profile and let the gate take over.
-            [InlineKeyboardButton(text="🔒 PIN", web_app=_webapp("/profile"))],
+            [_webapp_button("🔒 PIN", "/profile")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data=CB_PROFILE)],
         ]
     )
@@ -169,5 +207,5 @@ def help_keyboard() -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(text="👤 Помощь", url=f"https://t.me/{uname}")])
     # Always offer a way back to the TMA if everything else is empty.
     if not rows:
-        rows.append([InlineKeyboardButton(text="🪄 Открыть приложение", web_app=_webapp("/"))])
+        rows.append([_webapp_button("🪄 Открыть приложение", "/")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

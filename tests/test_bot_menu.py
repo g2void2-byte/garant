@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.bot import handlers, keyboards, sections, texts
+from backend.app.config import settings
 from backend.app.db import async_session
 from backend.app.models import Currency, Deal, DealStatus, User
 
@@ -136,20 +137,63 @@ def test_button_text_variants_cover_vs16_and_bare_keyword():
             assert a.isdisjoint(b), f"button variants overlap: {a & b}"
 
 
-def test_search_keyboard_has_two_webapp_buttons():
+def test_search_keyboard_has_two_webapp_buttons(monkeypatch: pytest.MonkeyPatch):
+    # Telegram only accepts inline ``web_app=`` buttons whose URL is
+    # HTTPS; pin the setting so this test exercises the proper Mini
+    # App launch path rather than the http fallback covered below.
+    monkeypatch.setattr(settings, "webapp_url", "https://example.com/app")
     kb = keyboards.search_keyboard()
     flat = [b for row in kb.inline_keyboard for b in row]
     assert len(flat) == 2
     assert all(b.web_app is not None for b in flat)
+    assert all(b.url is None for b in flat)
 
 
-def test_help_keyboard_falls_back_to_open_app_when_unconfigured():
+def test_search_keyboard_falls_back_to_url_when_webapp_not_https(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Reproduces the dropped-button bug.
+
+    Telegram rejects ``sendMessage`` / ``sendPhoto`` calls whose inline
+    keyboard contains a ``web_app=`` button with a non-HTTPS URL
+    (``Bad Request: BUTTON_TYPE_INVALID``). Pre-fix every section
+    handler hit this with the default ``WEBAPP_URL=http://localhost:5173``
+    and the user saw the bot silently ignore their tap. We now fall
+    back to a plain ``url=`` button so the section message still goes
+    through — the link opens in the user's external browser instead
+    of inline, but the bot stops looking dead.
+    """
+    monkeypatch.setattr(settings, "webapp_url", "http://localhost:5173")
+    kb = keyboards.search_keyboard()
+    flat = [b for row in kb.inline_keyboard for b in row]
+    assert len(flat) == 2
+    assert all(b.web_app is None for b in flat)
+    assert all(b.url is not None and b.url.startswith("http://") for b in flat)
+
+
+def test_help_keyboard_falls_back_to_open_app_when_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+):
     # In tests no BOT_* URL env vars are set — config defaults are empty,
     # so the keyboard should still surface at least one usable button.
+    monkeypatch.setattr(settings, "webapp_url", "https://example.com/app")
     kb = keyboards.help_keyboard()
     flat = [b for row in kb.inline_keyboard for b in row]
     assert len(flat) == 1
     assert flat[0].web_app is not None
+
+
+def test_webapp_url_is_https_detects_protocol(monkeypatch: pytest.MonkeyPatch):
+    """The helper that drives the fallback must treat any non-HTTPS
+    URL (http, scheme-less, empty) as 'not safe for web_app'."""
+    monkeypatch.setattr(settings, "webapp_url", "https://example.com/app")
+    assert keyboards.webapp_url_is_https() is True
+    monkeypatch.setattr(settings, "webapp_url", "HTTPS://example.com/app")
+    assert keyboards.webapp_url_is_https() is True
+    monkeypatch.setattr(settings, "webapp_url", "http://localhost:5173")
+    assert keyboards.webapp_url_is_https() is False
+    monkeypatch.setattr(settings, "webapp_url", "")
+    assert keyboards.webapp_url_is_https() is False
 
 
 def test_settings_keyboard_marks_active_toggles():
