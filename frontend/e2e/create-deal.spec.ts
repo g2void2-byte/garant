@@ -108,6 +108,30 @@ test.describe("Create-deal page", () => {
           body: JSON.stringify(NEW_DEAL),
         }),
     );
+    // ``DealDetailPage`` reads ``useReviews(otherUser)`` and renders
+    // ``DealChatPanel`` (``useDealMessages(id)``) once it lands on
+    // /deals/4242; the catch-all returns ``{}`` for unknown endpoints
+    // and the hooks would then call ``.some(...)`` / ``.map(...)`` on
+    // an object — ``?.`` doesn't short-circuit on ``{}`` — throwing
+    // and tripping the ErrorBoundary before the heading renders.
+    await page.route(
+      /^https?:\/\/[^/]+\/api\/reviews(?:\?.*)?$/,
+      (r) =>
+        r.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([]),
+        }),
+    );
+    await page.route(
+      /^https?:\/\/[^/]+\/api\/deals\/\d+\/messages(?:\?.*)?$/,
+      (r) =>
+        r.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([]),
+        }),
+    );
 
     await page.goto("/deals/new");
     await expect(

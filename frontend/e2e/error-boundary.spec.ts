@@ -74,39 +74,48 @@ test.describe("ErrorBoundary overlay", () => {
     await expect(page.getByText("Что-то пошло не так")).toBeVisible();
   });
 
-  test('"Перезагрузить" calls window.location.reload exactly once', async ({
-    page,
-  }) => {
-    // Replace ``location.reload`` with a counter before the React tree
-    // mounts so the click handler's call is observable. In Chromium
-    // ``window.location`` is a host object whose property descriptors
-    // are mostly non-configurable, so we hook the prototype-level
-    // ``reload`` getter via ``Object.defineProperty`` on the
-    // ``Location.prototype`` chain instead of replacing ``location``
-    // wholesale (which would also break router reads of ``href``).
-    await page.addInitScript(() => {
-      (
-        window as unknown as { __reloadCallCount: number }
-      ).__reloadCallCount = 0;
-      Object.defineProperty(window.location, "reload", {
-        configurable: true,
-        writable: true,
-        value: () => {
-          (
-            window as unknown as { __reloadCallCount: number }
-          ).__reloadCallCount++;
-        },
-      });
-    });
-
+  test('"Перезагрузить" triggers a real page reload', async ({ page }) => {
+    // Chromium locks ``Location.prototype.reload`` — both
+    // ``Object.defineProperty(window.location, "reload", …)`` and the
+    // same call on the prototype are silently rejected, so the unit
+    // pattern from ``ErrorBoundary.test.tsx`` cannot be replicated in
+    // a real browser. Instead, observe the side effect: a reload
+    // re-creates the JS context, which we detect by planting a
+    // marker on ``window`` and asserting it is gone after the click.
+    // The marker doubles as a sanity check that we did *not* trip a
+    // SPA-internal route change (which would keep the JS context and
+    // the marker intact).
     await page.goto("/__dev/crash");
     await expect(page.getByRole("alert")).toBeVisible();
-    await page.getByRole("button", { name: /Перезагрузить/ }).click();
+    await page.evaluate(() => {
+      (window as unknown as { __beforeReload: boolean }).__beforeReload = true;
+    });
 
-    const count = await page.evaluate(
-      () =>
-        (window as unknown as { __reloadCallCount: number }).__reloadCallCount,
+    let postClickLoadCount = 0;
+    const handler = () => {
+      postClickLoadCount += 1;
+    };
+    page.on("load", handler);
+    try {
+      await page.getByRole("button", { name: /Перезагрузить/ }).click();
+      // The dev-only crash route throws on every render, so a real
+      // reload re-mounts the boundary and the overlay re-appears.
+      // ``waitForLoadState("load")`` won't fire again on its own
+      // because Playwright treats the initial load as already
+      // settled, but the ``page.on("load")`` handler above catches
+      // the reload-driven re-load.
+      await expect.poll(() => postClickLoadCount).toBeGreaterThanOrEqual(1);
+    } finally {
+      page.off("load", handler);
+    }
+
+    // Marker was wiped by the reload — proves it was a full document
+    // reload, not just a SPA re-render or a ``history.pushState``.
+    const markerStillPresent = await page.evaluate(
+      () => (window as unknown as { __beforeReload?: boolean }).__beforeReload === true,
     );
-    expect(count).toBe(1);
+    expect(markerStillPresent).toBe(false);
+    // Overlay still mounted post-reload — the route threw again.
+    await expect(page.getByRole("alert")).toBeVisible();
   });
 });

@@ -78,10 +78,9 @@ test.describe("Profile page", () => {
       page.getByRole("heading", { name: "TestBuyer" }),
     ).toBeVisible();
 
-    // Services tab is the default; ServiceCard renders the title.
-    await expect(
-      page.getByRole("heading", { name: "Branding pack" }),
-    ).toBeVisible();
+    // Services tab is the default; ServiceCard renders the title as a
+    // plain ``<div>`` (no heading role), so anchor on the text node.
+    await expect(page.getByText("Branding pack")).toBeVisible();
 
     // Switch to "Отзывы" — ToggleTabs renders as accessible buttons
     // labelled by the option label, with the count appended. Match by

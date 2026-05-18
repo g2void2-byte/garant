@@ -98,6 +98,33 @@ test.describe("Deals list + detail", () => {
           body: JSON.stringify(ACTIVE_DEAL),
         }),
     );
+    // ``DealDetailPage`` reads ``useReviews(otherUser)`` to decide
+    // whether to show the "already reviewed" copy, and renders
+    // ``DealChatPanel`` which calls ``useDealMessages(dealId)``. The
+    // catch-all in ``mockApi`` returns ``{}`` for unknown endpoints;
+    // ``existingReviews?.some(...)`` and ``messages?.map(...)`` both
+    // skip the ``?.`` short-circuit on an object (it only triggers on
+    // ``null``/``undefined``) and then call a missing method, throwing
+    // and tripping the ErrorBoundary. Serve empty arrays so the
+    // detail page stays on its happy path.
+    await page.route(
+      /^https?:\/\/[^/]+\/api\/reviews(?:\?.*)?$/,
+      (r) =>
+        r.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([]),
+        }),
+    );
+    await page.route(
+      /^https?:\/\/[^/]+\/api\/deals\/\d+\/messages(?:\?.*)?$/,
+      (r) =>
+        r.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([]),
+        }),
+    );
 
     await page.goto("/deals");
     await page.getByRole("link", { name: /Logo design package/ }).click();
@@ -119,8 +146,11 @@ test.describe("Deals list + detail", () => {
     await expect(
       page.getByText("В работе", { exact: true }).first(),
     ).toBeVisible();
+    // ``exact: true`` — both the counterparty-handle button and the
+    // "Написать @alice" CTA include ``@alice`` in their accessible
+    // name; we want the bare handle, not the message-Telegram link.
     await expect(
-      page.getByRole("button", { name: "@alice" }),
+      page.getByRole("button", { name: "@alice", exact: true }),
     ).toBeVisible();
     // For a buyer-side ``in_progress`` deal the page renders the
     // confirm-execution CTA in the action grid.
