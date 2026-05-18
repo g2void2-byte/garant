@@ -42,8 +42,20 @@ interface MockOverrides {
 
 /**
  * Intercept every ``/api/**`` call and respond with deterministic
- * fixtures. Unknown endpoints fall back to an empty JSON body so the
- * spec doesn't depend on a running backend.
+ * fixtures. Unknown endpoints fall back to an empty JSON array so
+ * the spec doesn't depend on a running backend.
+ *
+ * Why ``[]`` and not ``{}``: most ``/api/*`` endpoints are list-shaped
+ * (``services``, ``deals``, ``reviews``, ``deals/<id>/messages``,
+ * ``wallet/currencies``, ``notifications``, …) and their consumers
+ * call ``.map`` / ``.some`` / ``.length`` directly. The optional
+ * chain (``data?.map(…)``) short-circuits only on ``null`` /
+ * ``undefined`` — *not* on ``{}`` — so a catch-all that replied with
+ * ``{}`` would silently crash any list-consumer that forgot to mock
+ * its endpoint and trip the ``ErrorBoundary`` instead of failing the
+ * assertion that exercises the feature. ``[]`` is a no-op for those
+ * consumers and equivalent to ``{}`` for object-shaped readers
+ * (``[].field`` is ``undefined`` just like ``{}.field``).
  */
 export async function mockApi(page: Page, overrides: MockOverrides = {}) {
   const me = overrides.me ?? {
@@ -185,8 +197,9 @@ export async function mockApi(page: Page, overrides: MockOverrides = {}) {
 
   // Playwright runs the *last-registered* matching route first, so
   // the catch-all is registered up front and the specific endpoints
-  // win because they're added afterward.
-  await routeApi(/.*/, (r) => json(r, {}));
+  // win because they're added afterward. See the ``mockApi``
+  // docstring for why this is ``[]`` rather than ``{}``.
+  await routeApi(/.*/, (r) => json(r, []));
   await routeApi("pin/status", (r) =>
     json(r, {
       has_pin: true,
