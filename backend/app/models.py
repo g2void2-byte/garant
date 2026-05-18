@@ -688,9 +688,7 @@ class WalletDeposit(Base):
     # Postgres enum) to avoid ``ALTER TYPE ADD VALUE`` if we ever add
     # a third purpose; the application layer enforces the closed set
     # via the ``WalletDepositCreateReq.purpose`` ``Literal``.
-    purpose: Mapped[str] = mapped_column(
-        String(16), default="wallet", server_default="wallet"
-    )
+    purpose: Mapped[str] = mapped_column(String(16), default="wallet", server_default="wallet")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

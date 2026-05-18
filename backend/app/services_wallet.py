@@ -315,9 +315,9 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
             return deposit
         # See M5 in services_deals._debit for why this stays Decimal
         # end-to-end instead of round-tripping through ``float``.
-        user_row.trust_deposit_balance = Decimal(
-            str(user_row.trust_deposit_balance)
-        ) + Decimal(str(deposit.amount))
+        user_row.trust_deposit_balance = Decimal(str(user_row.trust_deposit_balance)) + Decimal(
+            str(deposit.amount)
+        )
         deposit.status = WalletDepositStatus.paid
         deposit.paid_at = utcnow()
     else:
