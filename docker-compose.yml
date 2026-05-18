@@ -167,6 +167,11 @@ services:
       # published port 8080 (CORS handles the cross-origin part). This
       # avoids needing to rewrite vite.config.ts proxy target.
       VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
+      # Inside the docker network ``localhost`` resolves to the
+      # frontend container itself; the vite dev proxy needs the
+      # backend's compose hostname to route ``/api`` and ``/ws``
+      # correctly when the SPA is reached via a tunnel (Telegram TMA).
+      VITE_PROXY_TARGET: ${VITE_PROXY_TARGET:-http://backend:8080}
     ports:
       - "127.0.0.1:5173:5173"
     volumes:
