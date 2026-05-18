@@ -386,7 +386,7 @@ _CSP_DIRECTIVES = (
     "style-src 'self'; "
     "style-src-elem 'self'; "
     "style-src-attr 'none'; "
-    "img-src 'self' data: blob:; "
+    "img-src 'self' data: blob: https:; "
     "font-src 'self' data:; "
     "connect-src 'self'; "
     "worker-src 'self' blob:; "
