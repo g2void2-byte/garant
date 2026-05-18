@@ -56,6 +56,7 @@ def _deposit_dto(d: WalletDeposit, c: Currency) -> WalletDepositOut:
         status=d.status.value,
         pay_url=d.pay_url,
         invoice_id=d.provider_invoice_id,
+        purpose=d.purpose or "wallet",
         created_at=d.created_at,
         paid_at=d.paid_at,
     )
@@ -129,7 +130,9 @@ async def create_deposit(
     # way, so the spam vector is "burn upstream quota / pollute audit
     # trail", not theft. PIN-gating creates UX friction without
     # blocking that vector; rate-limiting blocks the vector directly.
-    deposit = await create_deposit_invoice(session, user, body.currency_code, body.amount)
+    deposit = await create_deposit_invoice(
+        session, user, body.currency_code, body.amount, purpose=body.purpose
+    )
     currency = await session.get(Currency, deposit.currency_id)
     if currency is None:
         raise HTTPException(500, "currency vanished")

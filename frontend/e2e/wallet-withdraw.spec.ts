@@ -60,7 +60,7 @@ test.describe("Wallet withdraw", () => {
     // click into the withdraw flow.
     await page.goto("/wallet");
     await expect(
-      page.getByRole("heading", { name: "Депозит" }),
+      page.getByRole("heading", { name: "Депозит", exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: /Вывести\s+депозит/ }).click();
 

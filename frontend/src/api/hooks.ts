@@ -68,6 +68,9 @@ export function useUpdateMe() {
         dm_system: boolean;
         is_anonymous_deals: boolean;
         is_hidden_profile: boolean;
+        // ISO-3166-1 alpha-2 code (uppercase). ``null`` explicitly
+        // clears the column; omitting the key is a no-op.
+        country: string | null;
       }>,
     ) => api.patch("api/me", { json: body }).json<UserCardDto>(),
     onSuccess: (data) => {
@@ -529,14 +532,28 @@ export function useWalletDeposit(id: number | undefined) {
   });
 }
 
+// ``purpose`` follows ``WalletDepositDto.purpose`` — ``"wallet"``
+// (default, credits ``UserBalance``) or ``"trust"`` (credits
+// ``User.trust_deposit_balance``, no spend / withdraw path).
+export interface CreateWalletDepositBody {
+  currency_code: string;
+  amount: number;
+  purpose?: "wallet" | "trust";
+}
+
 export function useCreateWalletDeposit() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { currency_code: string; amount: number }) =>
+    mutationFn: (body: CreateWalletDepositBody) =>
       api.post("api/wallet/deposits", { json: body }).json<WalletDepositDto>(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.wallet.deposits() });
       qc.invalidateQueries({ queryKey: qk.wallet.balances() });
+      // Trust deposits credit ``User.trust_deposit_balance``, which
+      // is rendered via ``UserCardDto.deposit`` from
+      // ``GET /api/me`` — refresh that cache too so the wallet page's
+      // trust-balance pill updates after a successful invoice.
+      qc.invalidateQueries({ queryKey: qk.me() });
     },
   });
 }

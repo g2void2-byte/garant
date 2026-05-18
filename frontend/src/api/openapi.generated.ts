@@ -3841,6 +3841,8 @@ export interface components {
             bad: number;
             /** Banner Url */
             banner_url: string | null;
+            /** Country */
+            country?: string | null;
             /** Deals Count */
             deals_count: number;
             /** Deals Sum */
@@ -3937,6 +3939,8 @@ export interface components {
             bad: number;
             /** Banner Url */
             banner_url: string | null;
+            /** Country */
+            country?: string | null;
             /** Deals Count */
             deals_count: number;
             /** Deals Sum */
@@ -3989,6 +3993,8 @@ export interface components {
         UserUpdate: {
             /** Banner Url */
             banner_url?: string | null;
+            /** Country */
+            country?: string | null;
             /** Description */
             description?: string | null;
             /** Display Name */
@@ -4039,6 +4045,12 @@ export interface components {
             amount: number;
             /** Currency Code */
             currency_code: string;
+            /**
+             * Purpose
+             * @default wallet
+             * @enum {string}
+             */
+            purpose: "wallet" | "trust";
         };
         /** WalletDepositOut */
         WalletDepositOut: {
@@ -4058,6 +4070,8 @@ export interface components {
             paid_at: string | null;
             /** Pay Url */
             pay_url: string;
+            /** Purpose */
+            purpose: string;
             /** Status */
             status: string;
         };

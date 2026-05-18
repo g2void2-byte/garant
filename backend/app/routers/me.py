@@ -62,6 +62,12 @@ async def update_me(body: UserUpdate, user: CurrentUser, session: SessionDep):
     if body.is_hidden_profile is not None:
         user.is_hidden_profile = body.is_hidden_profile
         touched.append("is_hidden_profile")
+    if body.country is not None:
+        # ``UserUpdate._country_ok`` normalises ``""`` to ``None`` and
+        # upper-cases the alpha-2 code; here we just persist whatever
+        # the validator returned. ``None`` clears the stored country.
+        user.country = body.country
+        touched.append("country")
     await session.commit()
     logger.info(
         "me update: user_id=%d fields=%s",

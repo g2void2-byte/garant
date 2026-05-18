@@ -182,7 +182,11 @@ async def list_balances(
 
 
 async def create_deposit_invoice(
-    session: AsyncSession, user: User, currency_code: str, amount: float
+    session: AsyncSession,
+    user: User,
+    currency_code: str,
+    amount: float,
+    purpose: str = "wallet",
 ) -> WalletDeposit:
     if not settings.cryptobot_token or settings.cryptobot_token.startswith("000"):
         raise HTTPException(502, "CryptoBot не настроен")
@@ -243,6 +247,13 @@ async def create_deposit_invoice(
             },
         )
         raise HTTPException(502, "CryptoBot не вернул ссылку для оплаты")
+    # ``purpose`` is validated upstream by
+    # ``WalletDepositCreateReq.purpose`` (a ``Literal["wallet", "trust"]``);
+    # we still belt-and-suspenders here so non-HTTP callers (admin
+    # tooling, tests) can't smuggle an invalid value through the
+    # service layer.
+    if purpose not in ("wallet", "trust"):
+        raise HTTPException(400, f"Неизвестный тип депозита: {purpose}")
     deposit = WalletDeposit(
         user_id=user.id,
         currency_id=currency.id,
@@ -250,6 +261,7 @@ async def create_deposit_invoice(
         provider_invoice_id=str(invoice.invoice_id),
         pay_url=pay_url,
         status=WalletDepositStatus.pending,
+        purpose=purpose,
     )
     session.add(deposit)
     await session.commit()
@@ -257,39 +269,87 @@ async def create_deposit_invoice(
 
 
 async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> WalletDeposit:
-    """Mark a deposit ``paid`` and credit the user balance. Idempotent."""
+    """Mark a deposit ``paid`` and credit the user balance. Idempotent.
+
+    Branches on ``deposit.purpose``:
+
+    * ``"wallet"`` (default) — increment ``UserBalance.amount`` for the
+      deposit's currency, exactly like the legacy single-purpose flow.
+    * ``"trust"`` — increment ``User.trust_deposit_balance`` instead.
+      No per-currency split (the trust balance is a single scalar by
+      design); the deposit's ``amount`` is added directly. There is
+      *no* spend / withdraw path for this balance — the only readers
+      are the public ``deposit`` field on ``UserOut`` / ``UserPublicOut``
+      and the admin panel.
+
+    Lock order for the trust branch is ``WalletDeposit → User`` (the
+    deposit row is already locked by the caller — webhook /
+    ``poll_deposit_status`` — and we take ``FOR UPDATE`` on the
+    ``users`` row here). The wallet branch keeps its existing
+    ``WalletDeposit → UserBalance`` order. Both pairs share their
+    first link, and the second links are on disjoint tables, so a
+    cross-branch deadlock is impossible.
+    """
     if deposit.status == WalletDepositStatus.paid:
         return deposit
 
-    # take a FOR UPDATE lock on the user's balance row before
-    # mutating it. Two concurrent webhook deliveries that race past
-    # the deposit-row lock (or a webhook racing with the
-    # ``poll_deposit_status`` polling fallback in services_wallet)
-    # must serialise their balance writes here, otherwise the second
-    # transaction's RMW can clobber the first transaction's
-    # increment. ``lock_user_balance`` mirrors what ``create_withdrawal``
-    # and the deal-creation ``_debit`` path already use.
-    bal = await lock_user_balance(session, deposit.user_id, deposit.currency_id)
+    purpose = deposit.purpose or "wallet"
 
-    # Re-read the deposit's status under the balance lock as
-    # belt-and-suspenders behind the outer FOR UPDATE lock both
-    # entry points now take on the deposit row before calling us:
-    # the webhook path locks via ``_find_wallet_deposit(lock=True)``
-    # in ``services_payments.handle_invoice_paid``, and the polling
-    # path locks via ``select(...).with_for_update()
-    # .execution_options(populate_existing=True)`` in
-    # ``poll_deposit_status``. Those outer locks are the primary
-    # serialising guard; this refresh+recheck just narrows the
-    # window if a future caller forgets to acquire the deposit-row
-    # lock first.
-    await session.refresh(deposit, attribute_names=["status", "paid_at"])
-    if deposit.status == WalletDepositStatus.paid:
-        return deposit
-    # See M5 in services_deals._debit for why this stays Decimal end-
-    # to-end instead of round-tripping through ``float``.
-    bal.amount = Decimal(str(bal.amount)) + Decimal(str(deposit.amount))
-    deposit.status = WalletDepositStatus.paid
-    deposit.paid_at = utcnow()
+    if purpose == "trust":
+        # ``populate_existing`` reloads the row's columns from the
+        # locking SELECT result even when the User is already in the
+        # identity map (``deps.get_current_user`` etc. routinely warm
+        # the cache). Without it we'd hold the row lock but read a
+        # stale ``trust_deposit_balance`` and clobber a concurrent
+        # webhook's increment.
+        user_row = (
+            await session.execute(
+                select(User)
+                .where(User.id == deposit.user_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        await session.refresh(deposit, attribute_names=["status", "paid_at"])
+        if deposit.status == WalletDepositStatus.paid:
+            return deposit
+        # See M5 in services_deals._debit for why this stays Decimal
+        # end-to-end instead of round-tripping through ``float``.
+        user_row.trust_deposit_balance = Decimal(
+            str(user_row.trust_deposit_balance)
+        ) + Decimal(str(deposit.amount))
+        deposit.status = WalletDepositStatus.paid
+        deposit.paid_at = utcnow()
+    else:
+        # take a FOR UPDATE lock on the user's balance row before
+        # mutating it. Two concurrent webhook deliveries that race past
+        # the deposit-row lock (or a webhook racing with the
+        # ``poll_deposit_status`` polling fallback in services_wallet)
+        # must serialise their balance writes here, otherwise the second
+        # transaction's RMW can clobber the first transaction's
+        # increment. ``lock_user_balance`` mirrors what ``create_withdrawal``
+        # and the deal-creation ``_debit`` path already use.
+        bal = await lock_user_balance(session, deposit.user_id, deposit.currency_id)
+
+        # Re-read the deposit's status under the balance lock as
+        # belt-and-suspenders behind the outer FOR UPDATE lock both
+        # entry points now take on the deposit row before calling us:
+        # the webhook path locks via ``_find_wallet_deposit(lock=True)``
+        # in ``services_payments.handle_invoice_paid``, and the polling
+        # path locks via ``select(...).with_for_update()
+        # .execution_options(populate_existing=True)`` in
+        # ``poll_deposit_status``. Those outer locks are the primary
+        # serialising guard; this refresh+recheck just narrows the
+        # window if a future caller forgets to acquire the deposit-row
+        # lock first.
+        await session.refresh(deposit, attribute_names=["status", "paid_at"])
+        if deposit.status == WalletDepositStatus.paid:
+            return deposit
+        # See M5 in services_deals._debit for why this stays Decimal end-
+        # to-end instead of round-tripping through ``float``.
+        bal.amount = Decimal(str(bal.amount)) + Decimal(str(deposit.amount))
+        deposit.status = WalletDepositStatus.paid
+        deposit.paid_at = utcnow()
 
     # A9-M-2 — split-API: insert the notification row atomically with
     # the balance credit + deposit-status flip, dispatch WS/DM after
