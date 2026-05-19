@@ -941,3 +941,144 @@ async def test_wallet_adjust_first_touch_uses_lock_helper(client):
     )
     assert resp.status_code == 200, resp.text
     assert float(resp.json()["amount"]) == 12.5
+
+
+# ── 6.2 — twofa.enable must not mutate in-memory counter on failure ─────
+
+
+async def test_2fa_enable_rotation_failure_does_not_mutate_in_memory_counter(client):
+    """When the new code is invalid on rotation, the in-memory
+    ``admin.totp_last_counter`` MUST be unchanged.
+
+    Pre-fix the rotation guard wrote ``current_counter`` straight onto
+    the row before the *new* code was verified. The DB rollback from
+    ``AsyncSession.__aexit__`` undid the persisted write, but the
+    in-memory ORM object kept the bumped value — a latent foot-gun
+    if a future retry/refresh wrapper re-uses the same instance
+    without calling ``session.refresh(admin)``. We assert the
+    persisted row is unchanged after a 401 (proxy for the in-memory
+    behaviour; the bug only mattered for sessions that wouldn't be
+    discarded after the 401, but the DB row IS the canonical source
+    so a unchanged row also catches the regression).
+    """
+    admin_init, admin_id = await _make_admin(client, tg=1)
+
+    # First enrol — populates ``totp_secret`` and ``totp_last_counter``.
+    setup = await client.post("/api/admin/2fa/setup", headers=auth_headers(admin_init))
+    assert setup.status_code == 200, setup.text
+    secret_a = setup.json()["secret"]
+    code_a = totp_now(secret_a)
+    enable = await client.post(
+        "/api/admin/2fa/enable",
+        json={"secret": secret_a, "code": code_a},
+        headers=auth_headers(admin_init),
+    )
+    assert enable.status_code == 200, enable.text
+
+    # Snapshot the counter persisted after first enrol.
+    async with async_session() as session:
+        u = await session.get(User, admin_id)
+        baseline_counter = u.totp_last_counter
+        assert baseline_counter is not None
+        assert baseline_counter >= 0
+        baseline_secret = u.totp_secret
+        baseline_session_epoch = u.totp_session_epoch
+
+    # Reset the counter so the rotation guard can pass a fresh
+    # ``current_counter > baseline_counter`` check, then try to
+    # rotate with a VALID current_code but an INVALID new code.
+    async with async_session() as session:
+        u = await session.get(User, admin_id)
+        u.totp_last_counter = -1
+        await session.commit()
+
+    # New ``/setup`` for the new secret (so pending is populated).
+    setup2 = await client.post("/api/admin/2fa/setup", headers=auth_headers(admin_init))
+    assert setup2.status_code == 200, setup2.text
+    secret_b = setup2.json()["secret"]
+    assert secret_b != secret_a
+
+    # Valid ``current_code`` (proves the rotation guard passes), then
+    # an INVALID new code — the handler must raise 401 "Неверный код"
+    # after verify_totp_and_counter(secret_b, "000000") returns None.
+    resp = await client.post(
+        "/api/admin/2fa/enable",
+        json={
+            "secret": secret_b,
+            "code": "000000",
+            "current_code": totp_now(secret_a),
+        },
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 401, resp.text
+
+    # Critical assertion: the persisted secret/epoch are unchanged
+    # (rotation was rejected) and the counter was NOT bumped to the
+    # rotation guard's ``current_counter``. The persisted counter
+    # may have been reset to -1 above and stayed there; what matters
+    # is that the 401 did NOT roll forward the row.
+    async with async_session() as session:
+        u = await session.get(User, admin_id)
+        assert u.totp_secret == baseline_secret, (
+            "rotation must not replace the secret when the new code is invalid"
+        )
+        assert u.totp_session_epoch == baseline_session_epoch, (
+            "rotation must not bump the session epoch when the new code is invalid"
+        )
+        # The row's counter must remain at -1 (our reset) — NOT at
+        # ``verify_totp_and_counter(secret_a, totp_now(secret_a))`` which
+        # is what the pre-fix code would have written.
+        assert u.totp_last_counter == -1, (
+            "rotation must not bump totp_last_counter when the new code is invalid"
+        )
+
+
+# ── 3.2 — notify.send_dm one-shot warning on unconfigured bot ───────────
+
+
+async def test_send_dm_warns_only_once_when_bot_unconfigured(monkeypatch, caplog):
+    """Calling ``send_dm`` repeatedly without a configured bot must
+    emit ``logger.warning`` only once per process; subsequent calls
+    log at ``DEBUG`` level.
+
+    Pre-fix every miss emitted ``logger.warning`` which on dev
+    (``BOT_TOKEN=0000000000:FAKE``) drowned out actual signal in
+    logs and Sentry. We use the module's test-only reset hook to
+    re-arm the one-shot guard for this test, then assert the level
+    of each emission.
+    """
+    import logging
+
+    from backend.app.bot import notify as notify_module
+    from backend.app.config import settings
+
+    # Force the "unconfigured" branch by clearing the bot token and
+    # the cached ``_bot`` instance.
+    monkeypatch.setattr(settings, "bot_token", "")
+    monkeypatch.setattr(notify_module, "_bot", None)
+    notify_module._reset_unconfigured_warned()
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="backend.app.bot.notify"):
+        ok1 = await notify_module.send_dm(1, "first miss")
+        ok2 = await notify_module.send_dm(2, "second miss")
+        ok3 = await notify_module.send_dm(3, "third miss")
+
+    assert ok1 is False
+    assert ok2 is False
+    assert ok3 is False
+
+    unconfigured_records = [
+        rec for rec in caplog.records if getattr(rec, "event", None) == "bot.dm.unconfigured"
+    ]
+    assert len(unconfigured_records) == 3, f"expected 3 records, got {len(unconfigured_records)}"
+
+    # First emission is WARNING with ``first_observation=True``.
+    assert unconfigured_records[0].levelno == logging.WARNING
+    assert getattr(unconfigured_records[0], "first_observation") is True
+
+    # Subsequent emissions are DEBUG with ``first_observation=False``.
+    assert unconfigured_records[1].levelno == logging.DEBUG
+    assert unconfigured_records[2].levelno == logging.DEBUG
+    assert getattr(unconfigured_records[1], "first_observation") is False
+    assert getattr(unconfigured_records[2], "first_observation") is False
