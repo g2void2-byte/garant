@@ -334,6 +334,53 @@ def test_profile_summary_with_multi_currency():
     assert "Продаж:</b> 1 шт, на сумму: 3 TON" in body
 
 
+def test_profile_summary_escapes_username_for_html_parse_mode():
+    """``bot.notify`` sends DMs with ``parse_mode=HTML``; usernames must
+    therefore be HTML-escaped at the render layer, matching how
+    ``display_name`` is treated.
+
+    Telegram's own username charset cannot in practice carry ``<`` /
+    ``>`` / ``&``, but a future code path that bypasses the upstream
+    constraint (e.g. CSV import, admin override, schema relaxation)
+    must not be able to smuggle markup into a bot DM. The regression
+    asserts no raw ``<`` survives in the rendered body.
+    """
+    user = SimpleNamespace(
+        tg_user_id=42,
+        username="<b>evil</b>&",
+        display_name="<script>alert(1)</script>",
+        is_admin=False,
+        is_arbiter=False,
+        good=0,
+        bad=0,
+        deposit_total=0.0,
+    )
+    body = texts.profile_summary(
+        user,
+        buys_count=0,
+        sales_count=0,
+        by_currency=[],
+    )
+    # Raw username / display_name markup must not appear unescaped in
+    # the rendered body — both fields are now consistently escaped.
+    assert "<b>evil</b>" not in body
+    assert "<script>" not in body
+    # The escaped form should be present instead.
+    assert "&lt;b&gt;evil&lt;/b&gt;&amp;" in body
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body
+
+
+def test_settings_summary_escapes_username_for_html_parse_mode():
+    """Same defence-in-depth contract as ``profile_summary`` — the
+    settings card also interpolates ``user.username`` into an HTML
+    parse-mode body.
+    """
+    user = SimpleNamespace(username="<img src=x onerror=alert(1)>")
+    body = texts.settings_summary(user)
+    assert "<img" not in body
+    assert "&lt;img src=x onerror=alert(1)&gt;" in body
+
+
 # ── DB-backed stats ──────────────────────────────────────────────────────
 
 
