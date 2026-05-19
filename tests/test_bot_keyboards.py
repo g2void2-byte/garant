@@ -1,0 +1,72 @@
+"""Bot DM notification keyboards.
+
+``notification_keyboard()`` is the single switch the notifier uses to
+attach a deep-link inline keyboard to every DM. The shape is narrow
+on purpose — only the ``deals`` and ``deposits`` buckets carry
+structured payload fields, and unrelated buckets fall through to
+``None`` so a docs / payload-shape drift never breaks a notification.
+"""
+
+from __future__ import annotations
+
+from backend.app.bot.keyboards import (
+    CB_TMA_UNAVAILABLE_PREFIX,
+    notification_keyboard,
+)
+
+
+def _button_payload(button) -> str:
+    """Return either the ``WebApp.url`` or the ``callback_data`` of a button."""
+    if button.web_app is not None:
+        return button.web_app.url
+    return button.callback_data or ""
+
+
+def test_notification_keyboard_deal_returns_two_rows():
+    kb = notification_keyboard("deals", {"deal_id": 42})
+    assert kb is not None
+    assert len(kb.inline_keyboard) == 2
+    first = kb.inline_keyboard[0][0]
+    assert "/deals/42" in _button_payload(first)
+
+
+def test_notification_keyboard_deal_missing_payload_returns_none():
+    assert notification_keyboard("deals", None) is None
+    assert notification_keyboard("deals", {}) is None
+    assert notification_keyboard("deals", {"deal_id": "not-an-int"}) is None
+
+
+def test_notification_keyboard_deposit_returns_keyboard():
+    kb = notification_keyboard("deposits", {"deposit_id": 7})
+    assert kb is not None
+    assert len(kb.inline_keyboard) == 2
+    first = kb.inline_keyboard[0][0]
+    assert "/deposit" in _button_payload(first)
+
+
+def test_notification_keyboard_deposit_missing_payload_returns_none():
+    assert notification_keyboard("deposits", None) is None
+    assert notification_keyboard("deposits", {}) is None
+    assert notification_keyboard("deposits", {"deposit_id": "x"}) is None
+
+
+def test_notification_keyboard_unknown_type_returns_none():
+    # System / banner buckets have no deep-link page wired.
+    assert notification_keyboard("system", {"any": "value"}) is None
+    assert notification_keyboard("", {"deal_id": 1}) is None
+
+
+def test_notification_keyboard_falls_back_to_callback_data_when_not_https(monkeypatch):
+    # _webapp_button drops the ``web_app=`` payload when the TMA URL
+    # isn't HTTPS (Telegram rejects HTTP webapp buttons). The
+    # CB_TMA_UNAVAILABLE_PREFIX callback handler renders a friendly
+    # alert instead.
+    from backend.app import config
+
+    monkeypatch.setattr(config.settings, "webapp_url", "http://example.local")
+    kb = notification_keyboard("deals", {"deal_id": 99})
+    assert kb is not None
+    first = kb.inline_keyboard[0][0]
+    assert first.web_app is None
+    assert first.callback_data is not None
+    assert first.callback_data.startswith(CB_TMA_UNAVAILABLE_PREFIX)

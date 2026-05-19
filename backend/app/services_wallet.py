@@ -21,6 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from . import notifier
 from .config import settings
 from .cryptopay import CryptoPay, CryptoPayError
+from .crystalpay import (
+    INVOICE_STATE_FAILED,
+    INVOICE_STATE_PAID,
+    INVOICE_STATE_UNAVAILABLE,
+    Crystalpay,
+    CrystalpayError,
+)
 from .models import (
     AppSettings,
     Currency,
@@ -29,6 +36,7 @@ from .models import (
     User,
     UserBalance,
     WalletDeposit,
+    WalletDepositProvider,
     WalletDepositStatus,
     WalletWithdrawal,
     WalletWithdrawStatus,
@@ -187,21 +195,57 @@ async def create_deposit_invoice(
     currency_code: str,
     amount: float,
     purpose: str = "wallet",
+    provider: str = "cryptobot",
 ) -> WalletDeposit:
-    if not settings.cryptobot_token or settings.cryptobot_token.startswith("000"):
-        raise HTTPException(502, "CryptoBot не настроен")
+    """Create a wallet-deposit invoice on the configured ``provider``.
 
+    Routes to :func:`_create_cryptobot_deposit` (default) or
+    :func:`_create_crystalpay_deposit` based on the ``provider`` arg.
+    The upstream invoice's lifetime is pinned to
+    ``settings.wallet_deposit_expiry_seconds`` so all three sides —
+    the local ``WalletDeposit`` row, the upstream provider invoice,
+    and the background sweep — agree on the terminal moment.
+    """
     currency = await get_currency_by_code(session, currency_code)
     if amount < float(currency.min_deposit):
         raise HTTPException(
             400, f"Минимальная сумма пополнения: {currency.min_deposit} {currency.code}"
         )
+    # ``purpose`` is validated upstream by
+    # ``WalletDepositCreateReq.purpose`` (a ``Literal["wallet", "trust"]``);
+    # we still belt-and-suspenders here so non-HTTP callers (admin
+    # tooling, tests) can't smuggle an invalid value through the
+    # service layer.
+    if purpose not in ("wallet", "trust"):
+        raise HTTPException(400, f"Неизвестный тип депозита: {purpose}")
 
+    if provider == "crystalpay":
+        return await _create_crystalpay_deposit(session, user, currency, amount, purpose)
+    if provider == "cryptobot":
+        return await _create_cryptobot_deposit(session, user, currency, amount, purpose)
+    raise HTTPException(400, f"Неизвестный провайдер: {provider}")
+
+
+async def _create_cryptobot_deposit(
+    session: AsyncSession,
+    user: User,
+    currency: Currency,
+    amount: float,
+    purpose: str,
+) -> WalletDeposit:
+    if not settings.cryptobot_token or settings.cryptobot_token.startswith("000"):
+        raise HTTPException(502, "CryptoBot не настроен")
+
+    expiry_seconds = int(settings.wallet_deposit_expiry_seconds)
     try:
         async with CryptoPay(
             settings.cryptobot_token, testnet=settings.cryptobot_testnet
         ) as crypto:
-            invoice = await crypto.create_invoice(asset=currency.code, amount=amount)
+            invoice = await crypto.create_invoice(
+                asset=currency.code,
+                amount=amount,
+                expires_in=expiry_seconds if expiry_seconds > 0 else None,
+            )
     except CryptoPayError as e:
         # V11-L-15 — ``extra={}`` puts the user/currency/amount onto the
         # JSON log record as structured fields so Loki/Sentry queries
@@ -247,19 +291,80 @@ async def create_deposit_invoice(
             },
         )
         raise HTTPException(502, "CryptoBot не вернул ссылку для оплаты")
-    # ``purpose`` is validated upstream by
-    # ``WalletDepositCreateReq.purpose`` (a ``Literal["wallet", "trust"]``);
-    # we still belt-and-suspenders here so non-HTTP callers (admin
-    # tooling, tests) can't smuggle an invalid value through the
-    # service layer.
-    if purpose not in ("wallet", "trust"):
-        raise HTTPException(400, f"Неизвестный тип депозита: {purpose}")
     deposit = WalletDeposit(
         user_id=user.id,
         currency_id=currency.id,
         amount=amount,
+        provider=WalletDepositProvider.cryptobot,
         provider_invoice_id=str(invoice.invoice_id),
         pay_url=pay_url,
+        status=WalletDepositStatus.pending,
+        purpose=purpose,
+    )
+    session.add(deposit)
+    await session.commit()
+    return deposit
+
+
+async def _create_crystalpay_deposit(
+    session: AsyncSession,
+    user: User,
+    currency: Currency,
+    amount: float,
+    purpose: str,
+) -> WalletDeposit:
+    if not settings.crystalpay_login or not settings.crystalpay_secret:
+        raise HTTPException(502, "Crystalpay не настроен")
+
+    # Crystalpay v3 takes ``lifetime`` in **minutes**; round up so we
+    # don't accidentally truncate a sub-minute window to zero.
+    expiry_seconds = int(settings.wallet_deposit_expiry_seconds)
+    if expiry_seconds <= 0:
+        lifetime_minutes = 30
+    else:
+        lifetime_minutes = max(1, (expiry_seconds + 59) // 60)
+
+    try:
+        async with Crystalpay(settings.crystalpay_login, settings.crystalpay_secret) as cp:
+            invoice = await cp.create_invoice(
+                amount=amount,
+                currency=currency.code,
+                lifetime=lifetime_minutes,
+                description=f"Garant wallet top-up for user #{user.id}",
+                extra=f"user:{user.id}",
+            )
+    except CrystalpayError as e:
+        logger.error(
+            "Crystalpay invoice error: %s",
+            e,
+            extra={
+                "event": "crystalpay.create_invoice.failed",
+                "user_id": user.id,
+                "currency": currency.code,
+                "amount": amount,
+            },
+        )
+        raise HTTPException(502, f"Ошибка Crystalpay: {e}")
+
+    if not invoice.id or not invoice.url:
+        logger.error(
+            "Crystalpay create_invoice returned no id/url",
+            extra={
+                "event": "crystalpay.create_invoice.empty",
+                "provider_invoice_id": str(invoice.id),
+                "user_id": user.id,
+                "currency": currency.code,
+            },
+        )
+        raise HTTPException(502, "Crystalpay не вернул ссылку для оплаты")
+
+    deposit = WalletDeposit(
+        user_id=user.id,
+        currency_id=currency.id,
+        amount=amount,
+        provider=WalletDepositProvider.crystalpay,
+        provider_invoice_id=invoice.id,
+        pay_url=invoice.url,
         status=WalletDepositStatus.pending,
         purpose=purpose,
     )
@@ -383,19 +488,49 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
     return deposit
 
 
+async def _build_expired_notification(
+    session: AsyncSession, deposit: WalletDeposit
+) -> tuple[Notification, dict[str, Any] | None] | None:
+    """Insert (without commit) a ``deposits`` notification for an expired deposit.
+
+    Returns the ``(notif, ws_payload)`` tuple to pass into
+    :func:`notifier.dispatch_after_commit` after the caller commits.
+    Returns ``None`` if the deposit's currency can't be resolved (the
+    notification body would be useless without it).
+    """
+    currency = await session.get(Currency, deposit.currency_id)
+    if currency is None:
+        return None
+    return await notifier.insert(
+        session,
+        deposit.user_id,
+        NotificationType.deposits,
+        "Срок депозита истёк",
+        f"Счёт на {deposit.amount} {currency.code} истёк без оплаты. "
+        "Создайте новый, если хотите пополнить баланс.",
+        {"deposit_id": deposit.id, "currency": currency.code},
+    )
+
+
 async def sweep_expired_deposits(session: AsyncSession) -> int:
     """Mark stale ``pending`` deposits as ``expired``.
 
     M-6 — pre-fix, a ``WalletDeposit(status=pending)`` row created when
     the user clicked "deposit" but never paid sat in the admin queue
     forever. CryptoBot stops issuing webhooks for the invoice once it
-    has expired on their side (default 24h), so the row had no
-    independent path to a terminal state. This sweep closes the loop:
-    every ``wallet_deposit_sweep_seconds`` the loop in
+    has expired on their side, so the row had no independent path to
+    a terminal state. This sweep closes the loop: every
+    ``wallet_deposit_sweep_seconds`` the loop in
     :mod:`backend.app.main` runs us and we flip any
     ``pending`` row older than ``wallet_deposit_expiry_seconds`` to
     ``expired``. No balance is credited; the user can always create
     a fresh deposit if they actually wanted to pay.
+
+    A ``deposits``-bucket notification + DM is inserted atomically
+    with each flip and dispatched after the row-level commit so the
+    user actually finds out the invoice they walked away from is
+    closed (pre-fix the sweep ran silently and the deposit just
+    disappeared from the "pending" tab).
 
     Uses ``with_for_update(skip_locked=True)`` so a concurrent sweep
     in a sibling worker doesn't double-flip rows. Returns the number
@@ -425,17 +560,50 @@ async def sweep_expired_deposits(session: AsyncSession) -> int:
     if not rows:
         return 0
 
+    pending_dispatch: list[tuple[Notification, dict[str, Any] | None]] = []
     for row in rows:
         row.status = WalletDepositStatus.expired
+        # A9-M-2 — insert the notification atomically with the
+        # status flip; dispatch after commit so a rolled-back txn
+        # never leaks a "deposit expired" toast.
+        entry = await _build_expired_notification(session, row)
+        if entry is not None:
+            pending_dispatch.append(entry)
 
     await session.commit()
+
+    for notif, ws_payload in pending_dispatch:
+        try:
+            await notifier.dispatch_after_commit(session, notif, ws_payload)
+        except Exception:
+            logger.exception(
+                "sweep_expired_deposits: post-commit dispatch failed for notif id=%s",
+                notif.id,
+                extra={
+                    "event": "sweep_expired_deposits.dispatch.failed",
+                    "notif_id": notif.id,
+                },
+            )
+
     return len(rows)
 
 
 async def poll_deposit_status(session: AsyncSession, deposit: WalletDeposit) -> WalletDeposit:
-    """Refresh a pending deposit's status from CryptoBot. Idempotent."""
+    """Refresh a pending deposit's status from the upstream provider. Idempotent.
+
+    Dispatches to the per-provider helper based on ``deposit.provider``
+    so the wallet poller can survive a mix of CryptoBot + Crystalpay
+    rows in the same TMA session (each provider has its own ID space
+    and on-the-wire ``status`` vocabulary).
+    """
     if deposit.status != WalletDepositStatus.pending:
         return deposit
+    if deposit.provider == WalletDepositProvider.crystalpay:
+        return await _poll_crystalpay_deposit(session, deposit)
+    return await _poll_cryptobot_deposit(session, deposit)
+
+
+async def _poll_cryptobot_deposit(session: AsyncSession, deposit: WalletDeposit) -> WalletDeposit:
     if not settings.cryptobot_token:
         return deposit
     try:
@@ -478,38 +646,87 @@ async def poll_deposit_status(session: AsyncSession, deposit: WalletDeposit) -> 
         # ``paid``. With the option set, attribute values are
         # refreshed from the result row and the recheck below is
         # the primary serialising guard.
-        locked = (
-            await session.execute(
-                select(WalletDeposit)
-                .where(WalletDeposit.id == deposit.id)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
-        ).scalar_one()
-        if locked.status != WalletDepositStatus.pending:
-            return locked
-        return await credit_deposit(session, locked)
+        return await _lock_and_credit_deposit(session, deposit)
     if row.status == "expired":
-        # Same lock-order rationale as above for the expired branch:
-        # serialise with any concurrent webhook delivery on the same
-        # row and re-check ``status`` so we never clobber a
-        # freshly-paid deposit back to ``expired``.
-        # ``populate_existing=True`` for the same identity-map reason
-        # documented in the ``paid`` branch above.
-        locked = (
-            await session.execute(
-                select(WalletDeposit)
-                .where(WalletDeposit.id == deposit.id)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
-        ).scalar_one()
-        if locked.status != WalletDepositStatus.pending:
-            return locked
-        locked.status = WalletDepositStatus.expired
-        await session.commit()
-        return locked
+        return await _lock_and_expire_deposit(session, deposit)
     return deposit
+
+
+async def _poll_crystalpay_deposit(session: AsyncSession, deposit: WalletDeposit) -> WalletDeposit:
+    if not settings.crystalpay_login or not settings.crystalpay_secret:
+        return deposit
+    try:
+        async with Crystalpay(settings.crystalpay_login, settings.crystalpay_secret) as cp:
+            invoice = await cp.get_invoice(deposit.provider_invoice_id)
+    except CrystalpayError as e:
+        logger.warning(
+            "Crystalpay poll error: %s",
+            e,
+            extra={
+                "event": "crystalpay.poll_deposit.failed",
+                "deposit_id": deposit.id,
+                "provider_invoice_id": deposit.provider_invoice_id,
+            },
+        )
+        return deposit
+
+    if invoice.state == INVOICE_STATE_PAID:
+        return await _lock_and_credit_deposit(session, deposit)
+    if invoice.state in (INVOICE_STATE_UNAVAILABLE, INVOICE_STATE_FAILED):
+        return await _lock_and_expire_deposit(session, deposit)
+    return deposit
+
+
+async def _lock_and_credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> WalletDeposit:
+    locked = (
+        await session.execute(
+            select(WalletDeposit)
+            .where(WalletDeposit.id == deposit.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    if locked.status != WalletDepositStatus.pending:
+        return locked
+    return await credit_deposit(session, locked)
+
+
+async def _lock_and_expire_deposit(session: AsyncSession, deposit: WalletDeposit) -> WalletDeposit:
+    """Lock+flip a pending deposit to ``expired``, then notify the user.
+
+    Same lock-order rationale as :func:`_lock_and_credit_deposit`:
+    serialise with any concurrent webhook delivery on the same row
+    and re-check ``status`` so we never clobber a freshly-paid
+    deposit back to ``expired``. ``populate_existing=True`` for the
+    same identity-map reason documented in the ``paid`` branch.
+    """
+    locked = (
+        await session.execute(
+            select(WalletDeposit)
+            .where(WalletDeposit.id == deposit.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    if locked.status != WalletDepositStatus.pending:
+        return locked
+    locked.status = WalletDepositStatus.expired
+    entry = await _build_expired_notification(session, locked)
+    await session.commit()
+    if entry is not None:
+        notif, ws_payload = entry
+        try:
+            await notifier.dispatch_after_commit(session, notif, ws_payload)
+        except Exception:
+            logger.exception(
+                "poll_deposit_status: post-commit dispatch failed for notif id=%s",
+                notif.id,
+                extra={
+                    "event": "poll_deposit_status.dispatch.failed",
+                    "notif_id": notif.id,
+                },
+            )
+    return locked
 
 
 # ── Withdrawals ────────────────────────────────────────

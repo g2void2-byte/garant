@@ -14,6 +14,7 @@ from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
+from aiogram.types import InlineKeyboardMarkup
 
 from ..config import settings
 
@@ -35,7 +36,12 @@ def get_bot() -> Bot | None:
     return _bot
 
 
-async def send_dm(tg_user_id: int, text: str) -> bool:
+async def send_dm(
+    tg_user_id: int,
+    text: str,
+    *,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> bool:
     """Send an HTML-formatted DM to the given Telegram user.
 
     Security contract (V5-A-7): ``text`` may contain user-visible
@@ -50,6 +56,12 @@ async def send_dm(tg_user_id: int, text: str) -> bool:
     is ever wired up, configure ``send_default_pii=False`` and disable
     ``LoggingIntegration`` breadcrumb capture for this module so the
     secret cannot leak via breadcrumbs either.
+
+    ``reply_markup`` is an optional inline keyboard (typically a "view
+    deal" / "view deposit" deep-link button) attached to the DM. It is
+    passed through to ``Bot.send_message`` unchanged. ``None`` (the
+    default) sends a plain text DM, preserving the historical
+    behaviour for callers that haven't been migrated.
 
     Returns True on success, False if the bot is not configured or the
     Telegram API rejected the call (e.g. user has not /start'ed the bot).
@@ -70,7 +82,7 @@ async def send_dm(tg_user_id: int, text: str) -> bool:
         )
         return False
     try:
-        await bot.send_message(tg_user_id, text)
+        await bot.send_message(tg_user_id, text, reply_markup=reply_markup)
         return True
     except TelegramAPIError as exc:
         logger.warning(

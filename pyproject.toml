@@ -99,6 +99,8 @@ testpaths = ["tests"]
 env = [
     "D:BOT_TOKEN=1234567:test-bot-token-for-pytest-do-not-use-in-prod",
     "D:CRYPTOBOT_TOKEN=test-cryptobot-token-for-pytest",
+    "D:CRYSTALPAY_LOGIN=test-crystalpay-login-for-pytest",
+    "D:CRYSTALPAY_SECRET=test-crystalpay-secret-for-pytest",
     "D:RUN_BOT=false",
     "D:INACTIVITY_SWEEP_SECONDS=0",
     # M-6 / V5-B-7 — disable the deposit / legacy-invoice expiry

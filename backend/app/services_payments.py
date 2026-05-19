@@ -25,9 +25,19 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import crystalpay as crystalpay_client
+from . import notifier
 from .config import settings
-from .models import WalletDeposit, WalletDepositStatus
-from .services_wallet import credit_deposit
+from .crystalpay import (
+    INVOICE_STATE_FAILED,
+    INVOICE_STATE_PAID,
+    INVOICE_STATE_UNAVAILABLE,
+)
+from .models import (
+    WalletDeposit,
+    WalletDepositStatus,
+)
+from .services_wallet import _build_expired_notification, credit_deposit
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +160,24 @@ async def handle_invoice_expired(session: AsyncSession, payload: dict[str, Any])
         ):
             return {"ok": True, "already_terminal": True, "kind": "wallet"}
         wallet.status = WalletDepositStatus.expired
+        # A9-M-2 — insert the notification atomically with the
+        # status flip; dispatch after commit so a rolled-back txn
+        # never leaks a "deposit expired" toast.
+        entry = await _build_expired_notification(session, wallet)
         await session.commit()
+        if entry is not None:
+            notif, ws_payload = entry
+            try:
+                await notifier.dispatch_after_commit(session, notif, ws_payload)
+            except Exception:
+                logger.exception(
+                    "handle_invoice_expired: post-commit dispatch failed for notif id=%s",
+                    notif.id,
+                    extra={
+                        "event": "cryptobot.webhook.expired_dispatch.failed",
+                        "notif_id": notif.id,
+                    },
+                )
         return {"ok": True, "kind": "wallet", "expired": True}
 
     logger.info(
@@ -167,3 +194,138 @@ async def handle_invoice_expired(session: AsyncSession, payload: dict[str, Any])
 def webhook_secret() -> str:
     """Secret used to verify Crypto Pay webhook signatures."""
     return settings.cryptobot_token or ""
+
+
+# ── Crystalpay ────────────────────────────────────────────────
+
+
+def crystalpay_webhook_secret() -> str:
+    """Cashbox secret used to verify Crystalpay webhook signatures.
+
+    Crystalpay's webhook is signed as ``sha1(f"{invoice_id}:{secret}")``
+    where ``secret`` is the cashbox API secret. We re-use the same
+    secret configured for the v3 API client.
+    """
+    return settings.crystalpay_secret or ""
+
+
+def _crystalpay_provider_id(payload: dict[str, Any]) -> str | None:
+    """Pluck the invoice id out of a Crystalpay webhook body.
+
+    Crystalpay sends ``id`` as a string in the JSON envelope; older
+    deliveries used ``invoice_id``. Accept either so a docs-version
+    drift on the upstream side doesn't lose webhooks.
+    """
+    invoice_id = payload.get("id") or payload.get("invoice_id")
+    if invoice_id is None:
+        return None
+    return str(invoice_id)
+
+
+async def handle_crystalpay_invoice(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Idempotently apply a Crystalpay webhook delivery.
+
+    Crystalpay posts one envelope per state change with the invoice
+    ``id`` and ``state``. We translate the upstream state into the
+    same paid / expired transitions the CryptoBot path uses, with
+    the same ``SELECT ... FOR UPDATE`` lock + status recheck against
+    double credit / double expire.
+    """
+    provider_id = _crystalpay_provider_id(payload)
+    if provider_id is None:
+        return {"ok": False, "reason": "missing invoice id"}
+    state = str(payload.get("state") or "").lower()
+
+    wallet = await _find_wallet_deposit(session, provider_id, lock=True)
+    if wallet is None:
+        logger.warning(
+            "Crystalpay webhook for unknown invoice id=%s",
+            provider_id,
+            extra={
+                "event": "crystalpay.webhook.unknown_invoice",
+                "provider_invoice_id": provider_id,
+                "state": state,
+            },
+        )
+        return {"ok": False, "reason": "unknown invoice"}
+
+    if state == INVOICE_STATE_PAID:
+        if wallet.status == WalletDepositStatus.paid:
+            return {"ok": True, "already_paid": True, "kind": "wallet"}
+        if wallet.status in (
+            WalletDepositStatus.expired,
+            WalletDepositStatus.refunded,
+        ):
+            # Crystalpay flipped the invoice to ``payed`` after we
+            # had already terminal-stated the row (most likely an
+            # out-of-order webhook delivery). Log it loudly but do
+            # not credit — the user already saw the deposit close.
+            logger.error(
+                "Crystalpay paid webhook for non-pending deposit id=%s status=%s",
+                wallet.id,
+                wallet.status.value,
+                extra={
+                    "event": "crystalpay.webhook.paid_on_terminal",
+                    "deposit_id": wallet.id,
+                    "provider_invoice_id": provider_id,
+                    "deposit_status": wallet.status.value,
+                },
+            )
+            return {"ok": False, "reason": "deposit not pending"}
+        await credit_deposit(session, wallet)
+        return {"ok": True, "kind": "wallet"}
+
+    if state in (INVOICE_STATE_UNAVAILABLE, INVOICE_STATE_FAILED):
+        if wallet.status in (
+            WalletDepositStatus.paid,
+            WalletDepositStatus.expired,
+            WalletDepositStatus.refunded,
+        ):
+            return {"ok": True, "already_terminal": True, "kind": "wallet"}
+        wallet.status = WalletDepositStatus.expired
+        entry = await _build_expired_notification(session, wallet)
+        await session.commit()
+        if entry is not None:
+            notif, ws_payload = entry
+            try:
+                await notifier.dispatch_after_commit(session, notif, ws_payload)
+            except Exception:
+                logger.exception(
+                    "handle_crystalpay_invoice: post-commit dispatch failed for notif id=%s",
+                    notif.id,
+                    extra={
+                        "event": "crystalpay.webhook.expired_dispatch.failed",
+                        "notif_id": notif.id,
+                    },
+                )
+        return {"ok": True, "kind": "wallet", "expired": True}
+
+    logger.info(
+        "Crystalpay webhook ignored state=%s for id=%s",
+        state or "unknown",
+        provider_id,
+        extra={
+            "event": "crystalpay.webhook.ignored_state",
+            "provider_invoice_id": provider_id,
+            "state": state or "unknown",
+        },
+    )
+    return {"ok": True, "ignored_state": state or "unknown"}
+
+
+__all__ = [
+    "crystalpay_webhook_secret",
+    "handle_crystalpay_invoice",
+    "handle_invoice_expired",
+    "handle_invoice_paid",
+    "verify_webhook_signature",
+    "webhook_secret",
+]
+
+
+# Re-export crystalpay's signature helper so callers can ``from
+# services_payments import verify_crystalpay_webhook_signature`` and
+# stay decoupled from the client module's name.
+verify_crystalpay_webhook_signature = crystalpay_client.verify_webhook_signature

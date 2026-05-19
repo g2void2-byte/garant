@@ -96,13 +96,37 @@ def _format_dm(title: str, body: str) -> str:
     return f"<b>{title_html}</b>"
 
 
-async def _safe_send_dm(tg_user_id: int, text: str) -> None:
+async def _safe_send_dm(
+    tg_user_id: int,
+    text: str,
+    *,
+    notif_type: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
     try:
         # Imported lazily so importing notifier doesn't pull aiogram at
         # module-load time (helps tests + non-bot deployments).
+        from .bot.keyboards import notification_keyboard
         from .bot.notify import send_dm
 
-        await send_dm(tg_user_id, text)
+        reply_markup = None
+        if notif_type is not None:
+            try:
+                reply_markup = notification_keyboard(notif_type, payload)
+            except Exception:
+                # A broken keyboard must never block the DM — fall
+                # back to a plain text message instead of swallowing
+                # the notification entirely.
+                logger.exception(
+                    "notification_keyboard failed for type=%s",
+                    notif_type,
+                    extra={
+                        "event": "notifier.dm.keyboard.failed",
+                        "notif_type": notif_type,
+                    },
+                )
+                reply_markup = None
+        await send_dm(tg_user_id, text, reply_markup=reply_markup)
     except Exception as exc:  # noqa: BLE001
         # V11-L-15 — structured-logging fields so the JSON-logger
         # downstream (Loki/Sentry) can pivot on event/recipient
@@ -166,7 +190,12 @@ async def dispatch_after_commit(
     recipient = await session.get(User, notif.recipient_id)
     if recipient is not None and _dm_enabled(recipient, notif.type):
         asyncio.create_task(
-            _safe_send_dm(recipient.tg_user_id, _format_dm(notif.title, notif.body))
+            _safe_send_dm(
+                recipient.tg_user_id,
+                _format_dm(notif.title, notif.body),
+                notif_type=notif.type.value,
+                payload=ws_payload,
+            )
         )
 
 
