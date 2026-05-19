@@ -349,7 +349,26 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     if row is None:
         raise ValueError("Код недействителен или истёк")
 
-    source = await session.get(User, row.source_user_id)
+    # LOW #2 — re-fetch ``source`` and ``target`` with ``FOR UPDATE``
+    # row locks so the empty-shell check + the ownership swap below
+    # cannot race a concurrent write to either row (e.g. the target
+    # creating a deal / depositing in the ~ms window between
+    # ``_has_tradable_data`` returning ``False`` and the
+    # ``session.delete(target)`` below). Lock order is sorted by
+    # ``user.id`` ascending to keep deadlock geometry deterministic
+    # if two transfers ever race against each other.
+    locked_ids = sorted({row.source_user_id, target.id})
+    locked_rows = (
+        (
+            await session.execute(
+                select(User).where(User.id.in_(locked_ids)).with_for_update().order_by(User.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    locked_by_id = {u.id: u for u in locked_rows}
+    source = locked_by_id.get(row.source_user_id)
     if source is None:
         row.consumed_at = _now()
         await session.commit()
@@ -357,6 +376,12 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
 
     if source.id == target.id:
         raise ValueError("Нельзя перенести аккаунт на самого себя")
+
+    # The caller's ``target`` reference is from the ``current_user``
+    # dependency (not locked); replace it with the freshly-locked
+    # instance so subsequent reads + the ``session.delete`` operate
+    # against the row whose lock we hold.
+    target = locked_by_id.get(target.id, target)
 
     if not _verify_code(code, row.code_hash):
         # Belt-and-braces against a hash collision.

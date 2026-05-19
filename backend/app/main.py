@@ -215,6 +215,25 @@ async def lifespan(app: FastAPI):
             "and is dev-only."
         )
 
+    # LOW #1 — empty ``TRUSTED_PROXIES`` means ``deps._is_trusted_peer``
+    # returns ``True`` for every direct peer, so the
+    # ``X-Forwarded-For`` / ``X-Real-IP`` headers are honoured
+    # unconditionally. That is safe behind a single trusted edge
+    # proxy but lets any unauthenticated caller spoof
+    # ``users.last_ip`` (and any future IP-based rate-limit /
+    # geo-block) when the API is exposed directly. The default is
+    # kept empty for backwards-compat on single-node dev/test
+    # deploys; production/staging must enumerate the trusted CIDRs
+    # explicitly so we refuse to boot rather than silently admit
+    # spoofed headers.
+    if not settings.trusted_proxies.strip() and settings.environment in ("production", "staging"):
+        raise RuntimeError(
+            "TRUSTED_PROXIES must be set when ENVIRONMENT is "
+            f"'{settings.environment}'; an empty list causes the API to honour "
+            "X-Forwarded-For / X-Real-IP from any caller, which lets the "
+            "client spoof users.last_ip and any IP-based rate limiter."
+        )
+
     # V12-H3 — by default run migrations in-process so single-node
     # deploys (manual ``uvicorn``, the test suite) keep working. With
     # ``RUN_MIGRATIONS_ON_STARTUP=false`` (the compose default — see
@@ -514,20 +533,18 @@ async def public_maintenance_status():
     even for un-logged-in users. Returns ``{"enabled": false,
     "message": ""}`` if the row is missing.
     """
-    from sqlalchemy import select as _select
+    # INFO #3 — served from the same in-process cache the maintenance
+    # middleware uses (``backend.app.maintenance._get_maintenance``).
+    # Pre-fix every poll opened a fresh DB session, so an unauthenticated
+    # client could drive one indexed SELECT per call against
+    # ``app_settings``; the 5-second TTL collapses those to one read per
+    # worker per window. The admin settings PATCH handler calls
+    # ``invalidate_cache()`` after committing so a toggle is reflected
+    # immediately on the same worker.
+    from .maintenance import _get_maintenance
 
-    from .models import AppSettings
-
-    async with async_session() as session:
-        row = (
-            await session.execute(_select(AppSettings).order_by(AppSettings.id).limit(1))
-        ).scalar_one_or_none()
-    if row is None:
-        return {"enabled": False, "message": ""}
-    return {
-        "enabled": bool(row.maintenance_enabled),
-        "message": row.maintenance_message,
-    }
+    enabled, message = await _get_maintenance()
+    return {"enabled": enabled, "message": message}
 
 
 @app.get("/health")

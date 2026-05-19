@@ -836,6 +836,26 @@ async def create_withdrawal(
     # defeats the point. ``withdrawal.id`` is the natural key
     # because the ``WalletWithdrawal`` row is created **before** the
     # Transfer call, so its id is stable across retries.
+    #
+    # CRIT #2 — three-phase commit mirrors
+    # ``routers/admin/withdrawals.decide_withdrawal``:
+    #
+    # * Phase 1 (above): debit ``bal.amount`` → ``bal.locked``, insert
+    #   the ``pending`` ``WalletWithdrawal`` row, commit. The
+    #   ``FOR UPDATE`` lock from ``lock_user_balance`` is released
+    #   here so the long CryptoBot HTTP roundtrip below does NOT hold
+    #   any DB locks.
+    # * Phase 2: CryptoBot HTTP transfer without any DB locks. The
+    #   in-memory ``bal`` object is now stale — any other transaction
+    #   (admin adjust, another withdraw, deposit webhook) may have
+    #   modified ``user_balances`` while we awaited the network.
+    # * Phase 3: re-SELECT both ``WalletWithdrawal`` and
+    #   ``UserBalance`` with ``FOR UPDATE``, re-check status (an
+    #   admin could have rejected the row), decrement ``locked``
+    #   atomically against the freshly-locked row, commit. Pre-fix
+    #   this branch mutated the stale ``bal`` Python object and
+    #   committed it, which silently overwrote any concurrent write
+    #   to ``user_balances`` (classic lost-update).
     if await _auto_withdraw_enabled(session) and _cryptopay_configured():
         try:
             async with CryptoPay(
@@ -862,10 +882,75 @@ async def create_withdrawal(
                 },
             )
         else:
-            withdrawal.status = WalletWithdrawStatus.sent
-            withdrawal.processed_at = utcnow()
-            withdrawal.admin_note = f"cryptobot_transfer_id={tr.transfer_id}"
-            bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - amount_d)
+            # Phase 3: re-lock the withdrawal + balance and apply the
+            # ``locked`` decrement against the fresh row. We must NOT
+            # touch the stale ``bal`` from Phase 1 — it carries
+            # in-memory values from before the network call and a
+            # naïve ``bal.locked = …`` write would emit
+            # ``UPDATE user_balances SET amount=$1, locked=$2 …`` with
+            # those stale values, overwriting any concurrent change.
+            w_locked = (
+                await session.execute(
+                    select(WalletWithdrawal)
+                    .where(WalletWithdrawal.id == withdrawal.id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if w_locked is None:
+                # Row vanished between Phase 1 and Phase 3 (admin
+                # delete?). CryptoBot has already shipped — log loudly
+                # so an operator can reconcile manually.
+                logger.error(
+                    "auto-withdraw #%s row vanished before Phase 3",
+                    withdrawal.id,
+                    extra={
+                        "event": "cryptobot.auto_withdraw.row_vanished",
+                        "withdrawal_id": withdrawal.id,
+                        "cryptobot_transfer_id": tr.transfer_id,
+                    },
+                )
+                return withdrawal
+            if w_locked.status == WalletWithdrawStatus.sent:
+                # Idempotent replay after a crash between Phase 2 and
+                # Phase 3 (CryptoBot dedupes via ``spend_id``); return
+                # the already-finalised row.
+                return w_locked
+            if w_locked.status != WalletWithdrawStatus.pending:
+                # An admin rejected/approved the row under us. The
+                # transfer has already been shipped by CryptoBot —
+                # log so the operator notices the inconsistency.
+                logger.error(
+                    "auto-withdraw #%s status changed under Phase 3: %s",
+                    withdrawal.id,
+                    w_locked.status.value,
+                    extra={
+                        "event": "cryptobot.auto_withdraw.race",
+                        "withdrawal_id": withdrawal.id,
+                        "observed_status": w_locked.status.value,
+                        "cryptobot_transfer_id": tr.transfer_id,
+                    },
+                )
+                return w_locked
+
+            bal_locked = (
+                await session.execute(
+                    select(UserBalance)
+                    .where(
+                        UserBalance.user_id == w_locked.user_id,
+                        UserBalance.currency_id == w_locked.currency_id,
+                    )
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if bal_locked is not None:
+                bal_locked.locked = max(
+                    Decimal(0),
+                    Decimal(str(bal_locked.locked)) - amount_d,
+                )
+
+            w_locked.status = WalletWithdrawStatus.sent
+            w_locked.processed_at = utcnow()
+            w_locked.admin_note = f"cryptobot_transfer_id={tr.transfer_id}"
             # A9-M-2 — split-API: persist notification atomically with the
             # "sent" state transition, dispatch WS/DM after commit.
             notif, ws_payload = await notifier.insert(
@@ -874,7 +959,7 @@ async def create_withdrawal(
                 NotificationType.deposits,
                 "Вывод выполнен",
                 f"-{amount} {currency.code} отправлены на {address}",
-                {"withdrawal_id": withdrawal.id},
+                {"withdrawal_id": w_locked.id},
             )
             await session.commit()
             try:
@@ -888,7 +973,7 @@ async def create_withdrawal(
                         "notif_id": notif.id,
                     },
                 )
-            return withdrawal
+            return w_locked
 
     # Manual mode (or auto failed): queue for admin review.
     # A9-M-2 — same split-API rationale: persist all admin notifications

@@ -62,7 +62,7 @@ from ...schemas import (
     AdminDealSplitIn,
     DealMessageOut,
 )
-from ...services_wallet import get_or_create_balance
+from ...services_wallet import get_or_create_balance, lock_user_balance
 from ...time_utils import utcnow
 
 logger = logging.getLogger(__name__)
@@ -505,9 +505,14 @@ async def _release_locked_to_seller(
         locked = amt
         payout = amt - commission
 
-    buyer_balance = await get_or_create_balance(session, deal.buyer_id, currency.id)
+    # CRIT #1 — ``FOR UPDATE`` row lock on both balances so an admin
+    # force-release racing with the buyer's own ``finish_deal`` (or a
+    # parallel admin acting on a sibling deal that shares the same
+    # buyer/seller) cannot read-modify-write a stale snapshot. See
+    # ``services_deals._refund`` for the full lost-update rationale.
+    buyer_balance = await lock_user_balance(session, deal.buyer_id, currency.id)
     buyer_balance.locked = max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked)
-    seller_balance = await get_or_create_balance(session, deal.seller_id, currency.id)
+    seller_balance = await lock_user_balance(session, deal.seller_id, currency.id)
     seller_balance.amount = Decimal(str(seller_balance.amount)) + payout
     return locked, payout
 
@@ -531,7 +536,8 @@ async def _refund_locked_to_buyer(
         locked = amt
         refunded = amt
 
-    buyer_balance = await get_or_create_balance(session, deal.buyer_id, currency.id)
+    # CRIT #1 — ``FOR UPDATE`` lock; see ``_release_locked_to_seller``.
+    buyer_balance = await lock_user_balance(session, deal.buyer_id, currency.id)
     buyer_balance.locked = max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked)
     buyer_balance.amount = Decimal(str(buyer_balance.amount)) + refunded
     return locked, refunded
@@ -556,10 +562,12 @@ async def _split_locked(
     buyer_share = quantize_money(amt * Decimal(str(buyer_percent)) / Decimal(100), decimals)
     seller_share = amt - buyer_share
 
-    buyer_balance = await get_or_create_balance(session, deal.buyer_id, currency.id)
+    # CRIT #1 — ``FOR UPDATE`` lock on both balances; see
+    # ``_release_locked_to_seller`` for the lost-update rationale.
+    buyer_balance = await lock_user_balance(session, deal.buyer_id, currency.id)
     buyer_balance.locked = max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked)
     buyer_balance.amount = Decimal(str(buyer_balance.amount)) + buyer_share
-    seller_balance = await get_or_create_balance(session, deal.seller_id, currency.id)
+    seller_balance = await lock_user_balance(session, deal.seller_id, currency.id)
     seller_balance.amount = Decimal(str(seller_balance.amount)) + seller_share
     return locked, buyer_share, seller_share
 
@@ -921,7 +929,10 @@ async def delete_deal(
             locked_pot = amt + commission
         else:
             locked_pot = amt
-        buyer_balance = await get_or_create_balance(session, deal.buyer_id, currency.id)
+        # CRIT #1 — ``FOR UPDATE`` lock so the refund branch can’t
+        # be read-modify-written by a concurrent admin/user action
+        # on the same buyer balance.
+        buyer_balance = await lock_user_balance(session, deal.buyer_id, currency.id)
         # M-23: assign ``Decimal`` directly to the ``Numeric(28,8)``
         # columns. The previous ``float(...)`` wrapper round-tripped
         # through float64 and dropped the last few satoshi units on

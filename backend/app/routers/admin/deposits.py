@@ -37,7 +37,7 @@ from ...models import (
 from ...money import quantize_money
 from ...rate_limit import rate_limit
 from ...schemas import AdminDepositListOut, AdminDepositOut, AdminReasonIn
-from ...services_wallet import get_or_create_balance
+from ...services_wallet import lock_user_balance
 from ...sql_filters import escape_like_wildcards
 from ...time_utils import utcnow
 
@@ -145,7 +145,12 @@ async def mark_paid(
     if currency is None:
         raise HTTPException(500, "Валюта не найдена")
 
-    bal = await get_or_create_balance(session, d.user_id, d.currency_id)
+    # CRIT #3 — ``FOR UPDATE`` row lock so a manual ``mark-paid``
+    # racing with the CryptoBot ``invoice_paid`` webhook (or any
+    # other balance mutation) cannot read-modify-write a stale
+    # ``UserBalance.amount``. Mirrors the pattern already used by
+    # ``refund_deposit`` below and ``services_wallet.credit_deposit``.
+    bal = await lock_user_balance(session, d.user_id, d.currency_id)
     bal.amount = Decimal(str(bal.amount)) + Decimal(str(d.amount))
     d.status = WalletDepositStatus.paid
     d.paid_at = utcnow()
