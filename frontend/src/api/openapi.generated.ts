@@ -877,19 +877,35 @@ export interface paths {
         put?: never;
         /**
          * Treasury Withdraw
-         * @description Withdraw accumulated commission to an external address.
+         * @description Withdraw accumulated commission to an external Telegram user_id.
          *
          *     Guards:
          *       * 2FA via ``X-Totp-Code`` header.
          *       * ``confirm=true`` — explicit second click.
-         *       * Per-currency advisory lock so two admins can't both pass the
-         *         ``available`` guard concurrently.
+         *       * Per-currency advisory lock taken only for the ``available``
+         *         check + ``pending`` row insert. The lock is **released by
+         *         the commit at the end of Phase 1**, so the CryptoBot HTTP
+         *         roundtrip in Phase 2 is not blocking any other admin or any
+         *         other ``available`` calculation. A second admin attempting
+         *         a payout on the same currency while Phase 2 is in flight
+         *         sees the ``pending`` row counted in ``_OUTSTANDING_STATUSES``
+         *         and gets a "недостаточно комиссии" 400 — not a queued lock
+         *         wait.
          *       * Insert a ``pending`` row before the CryptoBot call so the
-         *         spend_id is deterministic (``treas:{row.id}``). A retry from
-         *         the admin produces a fresh row with its own id and its own
-         *         spend_id; an in-flight crash leaves the ``pending`` row
+         *         ``spend_id`` is deterministic (``treas:{row.id}``). A retry
+         *         from the admin produces a fresh row with its own id and its
+         *         own spend_id; an in-flight crash leaves the ``pending`` row
          *         counted against ``available`` so the balance can't be
          *         double-spent until someone reconciles.
+         *
+         *     Audit follow-up (2026-05-19) — T1/T2:
+         *
+         *       * T1: ``body.address`` is validated to be a digit-only Telegram
+         *         ``user_id`` by ``AdminTreasuryWithdrawIn._address_ok``, so the
+         *         pre-fix ``int(body.address) if body.address.isdigit() else
+         *         admin.tg_user_id`` silent self-payout fallback is gone.
+         *       * T2: the per-currency advisory lock is no longer held across
+         *         the CryptoBot HTTP call. See the three-phase comment above.
          */
         post: operations["treasury_withdraw_api_admin_treasury_withdraw_post"];
         delete?: never;
