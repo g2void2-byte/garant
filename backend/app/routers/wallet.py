@@ -70,7 +70,6 @@ def _withdrawal_dto(w: WalletWithdrawal, c: Currency) -> WalletWithdrawalOut:
         amount=float(w.amount),
         address=w.address,
         status=w.status.value,
-        locked_until=w.locked_until,
         admin_note=w.admin_note,
         created_at=w.created_at,
         processed_at=w.processed_at,

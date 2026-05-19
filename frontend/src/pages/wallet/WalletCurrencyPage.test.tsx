@@ -245,7 +245,6 @@ describe("<WalletCurrencyPage />", () => {
         amount: 30,
         address: "TX-1",
         status: "approved",
-        locked_until: null,
         admin_note: "",
         created_at: "2026-01-01T00:00:00Z",
         processed_at: null,

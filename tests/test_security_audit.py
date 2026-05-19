@@ -82,12 +82,12 @@ async def test_transfer_confirm_burns_code_after_few_misses(client):
         )
         assert resp.status_code == 400
 
-    # The legitimate code must remain untouched — attempts == 0,
-    # not consumed. This proves the DoS vector is closed.
+    # The legitimate code must remain untouched — not consumed by
+    # the attacker's wrong-code attempts. This proves the DoS vector
+    # is closed.
     async with async_session() as session:
         row = (await session.execute(select(AccountTransferCode))).scalar_one()
         assert row.consumed_at is None, "code must NOT be consumed by attacker misses"
-        assert row.attempts == 0, "attacker misses must not increment other codes"
 
 
 async def test_transfer_confirm_rate_limit_applied(client):
@@ -177,6 +177,60 @@ async def test_media_upload_rejects_unknown_content_type(client):
         "/api/media/upload", data=data, files=files, headers=auth_headers(init_data)
     )
     assert resp.status_code == 415, resp.text
+
+
+async def test_media_upload_rejects_content_type_mismatched_payload(client):
+    """Magic-bytes guard: declaring ``Content-Type: image/png`` but
+    actually shipping non-PNG bytes must 415 before anything lands on
+    disk. Without the magic-bytes check the extension would still be
+    locked to ``.png``, but the file body would be e.g. an HTML
+    script — a classic content-sniffing XSS vector."""
+    init_data = signed_init_data(9303, "uploader3")
+    await setup_pin(client, init_data)
+
+    # HTML payload masquerading as PNG.
+    files = {"file": ("evil.png", b"<html><script>alert(1)</script>", "image/png")}
+    resp = await client.post(
+        "/api/media/upload",
+        data={"kind": "avatar"},
+        files=files,
+        headers=auth_headers(init_data),
+    )
+    assert resp.status_code == 415, resp.text
+
+    # JPEG content-type with PNG bytes — even legit image headers
+    # must match the declared type.
+    files = {"file": ("img.jpg", b"\x89PNG\r\n\x1a\n\x00\x00\x00", "image/jpeg")}
+    resp = await client.post(
+        "/api/media/upload",
+        data={"kind": "avatar"},
+        files=files,
+        headers=auth_headers(init_data),
+    )
+    assert resp.status_code == 415, resp.text
+
+
+async def test_media_upload_accepts_each_magic_signature(client):
+    """All four allowed image types accept a payload whose head
+    matches the declared magic-byte signature."""
+    init_data = signed_init_data(9304, "uploader4")
+    await setup_pin(client, init_data)
+
+    cases = [
+        ("a.png", b"\x89PNG\r\n\x1a\n", "image/png", ".png"),
+        ("a.jpg", b"\xff\xd8\xff\xe0\x00\x10JFIF\x00", "image/jpeg", ".jpg"),
+        ("a.gif", b"GIF89a", "image/gif", ".gif"),
+        ("a.webp", b"RIFF\x00\x00\x00\x00WEBPVP8 ", "image/webp", ".webp"),
+    ]
+    for name, body, ctype, ext in cases:
+        resp = await client.post(
+            "/api/media/upload",
+            data={"kind": "avatar"},
+            files={"file": (name, body, ctype)},
+            headers=auth_headers(init_data),
+        )
+        assert resp.status_code == 201, (ctype, resp.text)
+        assert resp.json()["url"].endswith(ext), (ctype, resp.json())
 
 
 # ── 4. CORS — wildcard fallback removed ───────────────────────────────────

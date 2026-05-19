@@ -54,13 +54,6 @@ logger = logging.getLogger(__name__)
 # tunability via env var, not in-process runtime mutation.
 CODE_LEN = settings.account_transfer_code_len
 
-# Max number of failed ``confirm_transfer`` attempts allowed against a
-# single ``AccountTransferCode`` before we burn it. The hash space is
-# only 10⁶ so we have to cap probing aggressively — anything ≥10
-# attempts is well past "user mistyped twice". Lifted to
-# ``settings.account_transfer_max_confirm_attempts`` (V11-L-1).
-MAX_CONFIRM_ATTEMPTS = settings.account_transfer_max_confirm_attempts
-
 
 def _now() -> datetime:
     # Tz-naive UTC to match ``DateTime`` columns in the DB. Postgres
@@ -304,25 +297,18 @@ async def _has_tradable_data(session: AsyncSession, user: User) -> bool:
     return False
 
 
-# V11-M-11 — the legacy ``_register_miss`` helper used to increment
-# ``attempts`` on EVERY active ``AccountTransferCode`` row whenever
-# *anyone* typed a wrong code. That was a textbook DoS: a single
-# attacker spamming random codes burned the legitimate users'
-# transfer windows in ~5 wrong guesses. The function was already
-# neutered to a no-op in a previous review, but the no-op body and
-# every ``await _register_miss(session, target)`` call site survived
-# as a maintenance trap — a future contributor reading the call
-# sites would reasonably infer that "miss tracking" exists somewhere
-# in the system. This audit fixes that by removing the function and
-# the call sites entirely. Brute-force protection is now wholly the
-# job of two layers: the endpoint-level rate limiter
-# (``RLPin`` — 5 req/min/IP) and the per-code ``attempts`` counter
-# that is bumped ONLY when the hash matches an in-flight code (the
-# ``_verify_code`` belt-and-braces branch in ``confirm_transfer``).
-# With a 10⁶ keyspace and a 15-min code TTL that combination puts
-# the per-attempt success probability at ≤0.005 % — well past the
-# point where brute force is more expensive than just abandoning
-# the attack.
+# Brute-force protection for the 6-digit one-time code is wholly the
+# job of the endpoint-level rate limiter (``RLPin`` — 5 req/min/IP).
+# An attacker spamming random codes can't enumerate the 10⁶ keyspace:
+# a miss is rejected by hash lookup with no DB write, so the
+# legitimate code is unaffected and (with the 15-min TTL) the
+# attacker's per-attempt success probability stays at ≤0.005 %.
+#
+# An earlier design also kept a per-``AccountTransferCode`` ``attempts``
+# counter that consumed the code after a small threshold; that column
+# has been dropped because the rate-limit + keyspace + TTL combo
+# already wins the brute-force math and the counter only ever bumped
+# on cosmic-ray-rare hash collisions in practice.
 
 
 async def confirm_transfer(session: AsyncSession, target: User, code: str) -> User:
@@ -334,22 +320,18 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     in place, so the caller's next ``/api/me`` lookup will resolve to
     the source user.
 
-    Brute-force protection: every failed attempt increments ``attempts``
-    on each in-flight code; codes that cross
-    :data:`MAX_CONFIRM_ATTEMPTS` are auto-consumed. Combined with the
-    ``RLPin`` rate-limit on the router, this keeps the 10⁶-keyspace
-    safely outside an attacker's reach.
+    Brute-force protection is delegated entirely to ``RLPin`` (5/min
+    per caller); see the module-level comment above for the security
+    argument.
     """
     await _purge_expired(session)
 
     code = (code or "").strip()
     expected_len = settings.account_transfer_code_len
     if len(code) != expected_len or not code.isdigit():
-        # V11-M-11 — no DB write: brute-force protection is the
-        # endpoint rate-limit, not a per-code counter.
-        # V11 review-follow-up — length is now a deploy-time knob
+        # Length is a deploy-time knob
         # (``settings.account_transfer_code_len``); render the real
-        # expected count instead of the previous hard-coded "6".
+        # expected count instead of a hard-coded "6".
         raise ValueError(f"Введите код из {expected_len} цифр")
 
     stmt = (
@@ -365,8 +347,6 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     result = await session.execute(stmt)
     row = result.scalar_one_or_none()
     if row is None:
-        # V11-M-11 — no DB write: brute-force protection is the
-        # endpoint rate-limit, not a per-code counter.
         raise ValueError("Код недействителен или истёк")
 
     source = await session.get(User, row.source_user_id)
@@ -376,14 +356,10 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
         raise ValueError("Исходный аккаунт не найден")
 
     if source.id == target.id:
-        # Refuse without burning a miss — the caller already controls
-        # the source account; this is a UX error, not an attack.
         raise ValueError("Нельзя перенести аккаунт на самого себя")
 
     if not _verify_code(code, row.code_hash):
         # Belt-and-braces against a hash collision.
-        # V11-M-11 — no DB write: brute-force protection is the
-        # endpoint rate-limit, not a per-code counter.
         raise ValueError("Код недействителен или истёк")
 
     if await _has_tradable_data(session, target):

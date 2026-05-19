@@ -194,8 +194,14 @@ class User(Base):
     # P3.2 — privacy toggles surfaced in the bot "Настройки" submenu.
     is_anonymous_deals: Mapped[bool] = mapped_column(Boolean, default=False)
     is_hidden_profile: Mapped[bool] = mapped_column(Boolean, default=False)
-    # Admin PR-A — moderation state. ``is_banned`` blocks deal/service
-    # creation and withdrawals; ``is_frozen`` blocks spending only.
+    # Admin PR-A — moderation state. Both flags hard-block the user
+    # at the ``deps.current_user`` gate: every request to ``/api/*``
+    # returns 403 with the corresponding admin reason. ``is_banned``
+    # is the permanent/severe state; ``is_frozen`` is the lighter
+    # admin tool with its own freeze_reason. The Russian-language
+    # difference is purely UX wording (banned = "заблокирован",
+    # frozen = "заморожен") so admins can communicate severity to
+    # the user; the enforcement is identical.
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     ban_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_frozen: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
@@ -388,7 +394,7 @@ class ServiceComment(Base):
     service_id: Mapped[int] = mapped_column(
         ForeignKey("services.id", ondelete="CASCADE"), index=True
     )
-    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     text: Mapped[str] = mapped_column(Text, default="")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
@@ -412,7 +418,6 @@ class Deal(Base):
     )
     confirm_buyer: Mapped[bool] = mapped_column(Boolean, default=False)
     confirm_seller: Mapped[bool] = mapped_column(Boolean, default=False)
-    arbitrage_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
@@ -476,8 +481,8 @@ class Review(Base):
     __tablename__ = "reviews"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    target_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     deal_id: Mapped[int | None] = mapped_column(
         ForeignKey("deals.id", ondelete="SET NULL"), nullable=True
     )
@@ -749,18 +754,6 @@ class WalletWithdrawal(Base):
     status: Mapped[WalletWithdrawStatus] = mapped_column(
         Enum(WalletWithdrawStatus), default=WalletWithdrawStatus.pending
     )
-    # A9-L-1 — stub column. Historically intended as a "dispute
-    # window" cool-down (~24h) before admins could act on a
-    # user-submitted withdrawal, but enforcement was never wired:
-    # neither ``decide_withdrawal`` nor auto-mode ``create_withdrawal``
-    # gate on this timestamp, and there is no user-facing cancel
-    # endpoint that would consume the window. We still write the
-    # value on create + expose it via ``WalletWithdrawalOut`` so the
-    # external API surface (incl. frontend types + e2e fixtures)
-    # stays stable; do **not** add new readers without first wiring
-    # the enforcement described in V11-L-1 / A9-L-1. See
-    # ``services_wallet.WITHDRAW_LOCK_HOURS`` for the matching note.
-    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     admin_note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -789,10 +782,6 @@ class AccountTransferCode(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     target_tg_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    # Counts failed ``confirm_transfer`` attempts against this code so a
-    # caller can't enumerate the 10⁶-keyspace by spamming the endpoint —
-    # see ``services_account.confirm_transfer`` for the threshold.
-    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     source_user: Mapped[User] = relationship(foreign_keys=[source_user_id], lazy="selectin")

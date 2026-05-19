@@ -5771,18 +5771,6 @@
             "title": "Id",
             "type": "integer"
           },
-          "locked_until": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Locked Until"
-          },
           "processed_at": {
             "anyOf": [
               {
@@ -5806,7 +5794,6 @@
           "amount",
           "address",
           "status",
-          "locked_until",
           "admin_note",
           "created_at",
           "processed_at"

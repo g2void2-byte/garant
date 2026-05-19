@@ -4195,8 +4195,6 @@ export interface components {
             currency: components["schemas"]["CurrencyOut"];
             /** Id */
             id: number;
-            /** Locked Until */
-            locked_until: string | null;
             /** Processed At */
             processed_at: string | null;
             /** Status */

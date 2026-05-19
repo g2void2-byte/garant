@@ -145,16 +145,14 @@ class Settings(BaseSettings):
 
     # PR-CA — TTL for account-transfer one-time codes.
     account_transfer_code_ttl_seconds: int = 15 * 60
-    # V11-L-1 — operational tuning surface for account-transfer brute-force
-    # protection. ``account_transfer_max_confirm_attempts`` is the number of
-    # failed ``/api/account/confirm`` attempts that burn a single
-    # ``AccountTransferCode`` row; ``account_transfer_max_code_generation_attempts``
-    # bounds the collision-avoidance loop in ``_generate_unique_code`` so a
-    # pathologically full keyspace doesn't spin forever; ``account_transfer_code_len``
-    # is the digit-count of the OTP. Moved out of module-level constants in
-    # ``services_account.py`` so production can dial each lever without a
-    # code change. Defaults match the previous in-code values.
-    account_transfer_max_confirm_attempts: int = 5
+    # Operational tuning surface for account-transfer code generation.
+    # ``account_transfer_max_code_generation_attempts`` bounds the
+    # collision-avoidance loop in ``_generate_unique_code`` so a
+    # pathologically full keyspace doesn't spin forever;
+    # ``account_transfer_code_len`` is the digit-count of the OTP.
+    # Brute-force protection for ``/api/account/confirm`` is delegated
+    # entirely to ``RLPin`` (5/min/caller) — there is no longer a
+    # per-code attempt counter.
     account_transfer_max_code_generation_attempts: int = 100
     account_transfer_code_len: int = 6
     # V11-M-12 — emit a ``logger.warning`` when ``_generate_unique_code``
@@ -215,13 +213,6 @@ class Settings(BaseSettings):
     # the retention window so we don't hold PII forever.
     last_ip_retention_seconds: int = 90 * 24 * 60 * 60  # 90 days
     last_ip_purge_sweep_seconds: int = 3600  # 1 h
-
-    # V11-L-1 — withdrawal cool-down before the admin queue can act on
-    # a user-submitted ``WalletWithdrawal``. Pre-fix this was a
-    # module-level constant in ``services_wallet.py``. Default 24 h
-    # matches the existing behaviour; tunable so production can shorten
-    # / lengthen the dispute window without a code change.
-    withdraw_lock_hours: int = 24
 
     # V11-M-15 — optional override for the SPA dist directory. Empty
     # string (default) falls back to the legacy

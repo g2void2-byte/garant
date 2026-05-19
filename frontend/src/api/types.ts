@@ -261,7 +261,6 @@ export interface WalletWithdrawalDto {
   amount: number;
   address: string;
   status: "pending" | "approved" | "sent" | "rejected" | string;
-  locked_until: string | null;
   admin_note: string;
   created_at: string;
   processed_at: string | null;

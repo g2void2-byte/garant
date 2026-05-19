@@ -306,17 +306,6 @@ async def decide_withdrawal(
         w.status = WalletWithdrawStatus.rejected
         w.admin_note = body.note or ""
         w.processed_at = utcnow()
-        # clear the cool-down timer on rejection. The
-        # ``locked_until`` column tracks when funds become spendable
-        # again after the 24h cool-down (set in
-        # ``services_wallet.create_withdrawal``). On reject we just
-        # restored ``bal.amount`` immediately above, so the cool-down
-        # no longer applies — anything else is a UI lie: the frontend
-        # surfaces ``locked_until`` to mean "your funds are locked
-        # until X" and showing a future timestamp on a row whose funds
-        # are already back in ``amount`` is at best confusing and at
-        # worst makes the user think they were partially refunded.
-        w.locked_until = None
         if currency and user:
             notif, ws_payload = await notifier.insert(
                 session,
