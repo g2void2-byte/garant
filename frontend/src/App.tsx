@@ -1,11 +1,19 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from "react-router-dom";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { MaintenanceBanner } from "@/components/MaintenanceBanner";
 import { MinimizeButton } from "@/components/MinimizeButton";
 import { PinGate } from "@/components/PinGate";
 import { TelegramAvatarSync } from "@/components/TelegramAvatarSync";
+import { TotpGate } from "@/components/TotpGate";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -73,6 +81,29 @@ function LiveNotifications() {
   return null;
 }
 
+/**
+ * Reset the document scroll to the top on every route change.
+ *
+ * Without this, a user who scrolled to the bottom of, say, the admin
+ * dashboard and then tapped "Таксономия" would land on
+ * ``/admin/taxonomy`` with the browser scroll position still pinned
+ * at the bottom — the page renders correctly but the user sees the
+ * footer of the new page until they manually scroll back up. The
+ * user surfaced this as "кнопки валюта и таксономия ведут … в самый
+ * низ окна а не на верх".
+ */
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    try {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    } catch {
+      window.scrollTo(0, 0);
+    }
+  }, [pathname]);
+  return null;
+}
+
 function RedirectUser() {
   const { username } = useParams<{ username: string }>();
   return <Navigate to={`/users/${username ?? ""}`} replace />;
@@ -128,6 +159,8 @@ export function App() {
                   router the hook is unreachable and we'd silently lose
                   the navigation. */}
               <LiveNotifications />
+              <ScrollToTop />
+              <TotpGate />
               <MinimizeButton />
               <div className="min-h-full app-container">
                 <Suspense fallback={<PageFallback />}>

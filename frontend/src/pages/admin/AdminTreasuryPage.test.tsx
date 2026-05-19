@@ -171,13 +171,11 @@ describe("<AdminTreasuryPage />", () => {
     expect(submit).toBeDisabled();
 
     const inputs = document.querySelectorAll("input");
-    // Order in DOM: [amount, address, note, confirm-checkbox, totp]
+    // Order in DOM: [amount, address, note, confirm-checkbox]
     fireEvent.change(inputs[0], { target: { value: "5" } });
     fireEvent.change(inputs[1], { target: { value: "TJaddr" } });
     expect(submit).toBeDisabled();
     fireEvent.click(inputs[3]); // confirm checkbox
-    expect(submit).toBeDisabled();
-    fireEvent.change(inputs[4], { target: { value: "123456" } });
     expect(submit).not.toBeDisabled();
   });
 
@@ -195,19 +193,15 @@ describe("<AdminTreasuryPage />", () => {
     fireEvent.change(inputs[1], { target: { value: "  TJaddr  " } });
     fireEvent.change(inputs[2], { target: { value: "  for ops  " } });
     fireEvent.click(inputs[3]);
-    fireEvent.change(inputs[4], { target: { value: "123456" } });
 
     await user.click(screen.getByRole("button", { name: "Вывести" }));
     await waitFor(() =>
       expect(mockState.withdrawMutation.mutateAsync).toHaveBeenCalledWith({
-        body: {
-          currency_code: "USDT",
-          amount: 5,
-          address: "TJaddr",
-          confirm: true,
-          note: "for ops",
-        },
-        totpCode: "123456",
+        currency_code: "USDT",
+        amount: 5,
+        address: "TJaddr",
+        confirm: true,
+        note: "for ops",
       }),
     );
     expect(toastSpy).toHaveBeenCalledWith(
@@ -232,7 +226,6 @@ describe("<AdminTreasuryPage />", () => {
     fireEvent.change(inputs[0], { target: { value: "5" } });
     fireEvent.change(inputs[1], { target: { value: "TJaddr" } });
     fireEvent.click(inputs[3]);
-    fireEvent.change(inputs[4], { target: { value: "123456" } });
 
     await user.click(screen.getByRole("button", { name: "Вывести" }));
     await waitFor(() =>
@@ -262,15 +255,12 @@ describe("<AdminTreasuryPage />", () => {
     fireEvent.change(inputs[0], { target: { value: "0.1" } });
     fireEvent.change(inputs[1], { target: { value: "bc1xyz" } });
     fireEvent.click(inputs[3]);
-    fireEvent.change(inputs[4], { target: { value: "654321" } });
 
     mockState.withdrawMutation.mutateAsync.mockResolvedValue({});
     await user.click(screen.getByRole("button", { name: "Вывести" }));
     await waitFor(() =>
       expect(mockState.withdrawMutation.mutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({
-          body: expect.objectContaining({ currency_code: "BTC", amount: 0.1 }),
-        }),
+        expect.objectContaining({ currency_code: "BTC", amount: 0.1 }),
       ),
     );
   });

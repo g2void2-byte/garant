@@ -133,7 +133,10 @@ def _token_response(user) -> PinTokenOut:
 
     The caller is expected to have committed any change to
     ``pin_session_epoch`` before calling this so the issued token's
-    claim matches the persisted value.
+    claim matches the persisted value, and to have already stamped
+    ``pin_last_activity_at`` so the very first protected request
+    after unlock isn't immediately rejected as idle-expired by
+    ``require_pin_session``.
     """
     token, expires = issue_session_token(user.id, int(user.pin_session_epoch or 0))
     return PinTokenOut(token=token, expires_at=expires)
@@ -160,6 +163,7 @@ async def pin_setup(
     user.pin_locked_until = None
     user.pin_reset_code_hash = None
     user.pin_reset_expires = None
+    user.pin_last_activity_at = _now()
     await session.commit()
     return _token_response(user)
 
@@ -193,6 +197,7 @@ async def pin_check(
 
     user.pin_attempts = 0
     user.pin_locked_until = None
+    user.pin_last_activity_at = _now()
     await session.commit()
     return _token_response(user)
 
@@ -254,6 +259,11 @@ async def pin_change(
         user.pin_hash = hash_pin(body.new_pin)
         user.pin_attempts = 0
         user.pin_locked_until = None
+        # Bump the session epoch so other devices that hold a token
+        # for the *old* PIN cannot keep operating after the change.
+        # The new token issued below embeds the bumped epoch.
+        user.pin_session_epoch = (user.pin_session_epoch or 0) + 1
+        user.pin_last_activity_at = _now()
         await session.commit()
         return _token_response(user)
     except HTTPException:
@@ -379,5 +389,9 @@ async def pin_reset_confirm(
     user.pin_locked_until = None
     user.pin_reset_code_hash = None
     user.pin_reset_expires = None
+    # Bump session epoch so previously-issued tokens stop working
+    # the moment a reset lands.
+    user.pin_session_epoch = (user.pin_session_epoch or 0) + 1
+    user.pin_last_activity_at = _now()
     await session.commit()
     return _token_response(user)

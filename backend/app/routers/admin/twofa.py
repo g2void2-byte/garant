@@ -31,7 +31,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ...admin_audit import log_admin_action
 from ...auth_2fa import (
+    _consume_totp,
     generate_secret,
+    issue_totp_session_token,
     otpauth_url,
     verify_totp_and_counter,
 )
@@ -40,6 +42,7 @@ from ...rate_limit import rate_limit
 from ...redis_client import get_redis
 from ...schemas import (
     Admin2faConfirmIn,
+    Admin2faSessionOut,
     Admin2faSetupOut,
     Admin2faStatusOut,
     Admin2faVerifyIn,
@@ -150,6 +153,11 @@ async def enable(
     admin.totp_secret = secret
     admin.totp_enabled = True
     admin.totp_last_counter = new_counter
+    # Bump the TOTP session epoch so every 24h session minted before
+    # this enable / rotation is invalidated immediately. Without
+    # this, an attacker who somehow got a session token before the
+    # admin rotated their secret could keep using it for up to 24h.
+    admin.totp_session_epoch = int(admin.totp_session_epoch or 0) + 1
     session.add(admin)
     await log_admin_action(
         session,
@@ -181,6 +189,8 @@ async def disable(
     admin.totp_last_counter = matched
     admin.totp_enabled = False
     admin.totp_secret = None
+    # Disabling 2FA invalidates every outstanding session immediately.
+    admin.totp_session_epoch = int(admin.totp_session_epoch or 0) + 1
     session.add(admin)
     await log_admin_action(
         session,
@@ -193,3 +203,46 @@ async def disable(
     )
     await session.commit()
     return Admin2faStatusOut(enabled=False)
+
+
+@router.post("/session", response_model=Admin2faSessionOut)
+async def open_session(
+    body: Admin2faVerifyIn,
+    admin: AdminUser,
+    session: SessionDep,
+    request: Request,
+):
+    """Mint a 24h ``X-Totp-Session`` JWT after one valid TOTP code.
+
+    The frontend calls this once when the global 2FA gate is opened
+    (either explicitly by the admin via the "Открыть сессию 2FA"
+    affordance on ``/admin/2fa``, or implicitly when a TOTP-gated
+    action 401s with "Введите код 2FA"). The token is cached in
+    ``localStorage`` and replayed on every admin request for the
+    next 24h, so the operator only types a code once per workday.
+
+    Replay protection mirrors :func:`auth_2fa._consume_totp` — the
+    code's counter is burned in Redis + the DB so the same 6-digit
+    value cannot be reused inside its 30s window.
+    """
+    if not admin.totp_enabled or not admin.totp_secret:
+        raise HTTPException(403, "2FA не настроен — пройдите настройку 2FA")
+    await _consume_totp(session, admin, body.code)
+    # ``_consume_totp`` mutates ``admin`` and adds it to the session
+    # but does NOT commit; we have to commit before issuing the JWT
+    # so the new ``totp_last_counter`` is durable (otherwise a crash
+    # between mint and commit would let the same code be replayed
+    # within its 30s window).
+    await session.commit()
+    token, expires = issue_totp_session_token(admin.id, int(admin.totp_session_epoch or 0))
+    await log_admin_action(
+        session,
+        actor=admin,
+        action="2fa.session.open",
+        target_type="user",
+        target_id=admin.id,
+        payload={"expires_at": expires.isoformat()},
+        request=request,
+    )
+    await session.commit()
+    return Admin2faSessionOut(token=token, expires_at=expires)

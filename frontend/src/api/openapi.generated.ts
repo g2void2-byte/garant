@@ -106,6 +106,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/2fa/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Session
+         * @description Mint a 24h ``X-Totp-Session`` JWT after one valid TOTP code.
+         *
+         *     The frontend calls this once when the global 2FA gate is opened
+         *     (either explicitly by the admin via the "Открыть сессию 2FA"
+         *     affordance on ``/admin/2fa``, or implicitly when a TOTP-gated
+         *     action 401s with "Введите код 2FA"). The token is cached in
+         *     ``localStorage`` and replayed on every admin request for the
+         *     next 24h, so the operator only types a code once per workday.
+         *
+         *     Replay protection mirrors :func:`auth_2fa._consume_totp` — the
+         *     code's counter is burned in Redis + the DB so the same 6-digit
+         *     value cannot be reused inside its 30s window.
+         */
+        post: operations["open_session_api_admin_2fa_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/2fa/setup": {
         parameters: {
             query?: never;
@@ -2067,6 +2098,24 @@ export interface components {
             current_code?: string | null;
             /** Secret */
             secret: string;
+        };
+        /**
+         * Admin2faSessionOut
+         * @description Response of ``POST /api/admin/2fa/session``.
+         *
+         *     Mirrors :class:`PinTokenOut` for the 24h TOTP-session JWT — the
+         *     frontend caches both ``token`` and ``expires_at`` in
+         *     localStorage and replays the token on every admin request via
+         *     the ``X-Totp-Session`` header for the lifetime of the session.
+         */
+        Admin2faSessionOut: {
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Token */
+            token: string;
         };
         /**
          * Admin2faSetupOut
@@ -4260,6 +4309,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4296,6 +4346,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4326,12 +4377,50 @@ export interface operations {
             };
         };
     };
+    open_session_api_admin_2fa_session_post: {
+        parameters: {
+            query?: never;
+            header: {
+                authorization: string;
+                "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Admin2faVerifyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Admin2faSessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     setup_api_admin_2fa_setup_post: {
         parameters: {
             query?: never;
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4364,6 +4453,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4396,6 +4486,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4428,6 +4519,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4460,6 +4552,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4496,6 +4589,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4528,6 +4622,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 deal_id: number;
@@ -4573,6 +4668,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4608,6 +4704,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4640,6 +4737,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4676,6 +4774,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4712,6 +4811,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 broadcast_id: number;
@@ -4746,6 +4846,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4778,6 +4879,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4814,6 +4916,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 category_id: number;
@@ -4848,6 +4951,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 comment_id: number;
@@ -4886,6 +4990,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 comment_id: number;
@@ -4922,6 +5027,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4954,6 +5060,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4990,6 +5097,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5035,6 +5143,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5067,6 +5176,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 deal_id: number;
@@ -5101,6 +5211,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 deal_id: number;
@@ -5139,6 +5250,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 deal_id: number;
@@ -5179,6 +5291,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 deal_id: number;
@@ -5217,6 +5330,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 deal_id: number;
@@ -5255,6 +5369,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 deal_id: number;
@@ -5293,6 +5408,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 deal_id: number;
@@ -5337,6 +5453,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5369,6 +5486,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 deposit_id: number;
@@ -5407,6 +5525,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 deposit_id: number;
@@ -5445,6 +5564,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5481,6 +5601,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 review_id: number;
@@ -5519,6 +5640,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 review_id: number;
@@ -5558,6 +5680,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5590,6 +5713,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 service_id: number;
@@ -5628,6 +5752,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 service_id: number;
@@ -5662,6 +5787,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 service_id: number;
@@ -5698,6 +5824,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 service_id: number;
@@ -5736,6 +5863,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5768,6 +5896,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5804,6 +5933,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5836,6 +5966,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5868,6 +5999,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5900,6 +6032,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5939,6 +6072,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5979,6 +6113,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6011,6 +6146,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6045,6 +6181,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6083,6 +6220,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6117,6 +6255,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6155,6 +6294,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6193,6 +6333,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6231,6 +6372,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6271,6 +6413,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6305,6 +6448,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6343,6 +6487,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6377,6 +6522,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6415,6 +6561,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6453,6 +6600,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6495,6 +6643,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6527,6 +6676,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6561,6 +6711,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 user_id: number;
@@ -6604,6 +6755,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6636,6 +6788,7 @@ export interface operations {
             header: {
                 authorization: string;
                 "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
             };
             path: {
                 withdrawal_id: number;

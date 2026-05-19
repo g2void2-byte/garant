@@ -49,10 +49,29 @@ class Settings(BaseSettings):
     run_migrations_on_startup: bool = True
 
     pin_jwt_secret: str = ""
-    pin_session_ttl_seconds: int = 60 * 60 * 12
+    # Idle window for the PIN session. The JWT itself is long-lived
+    # (``pin_session_jwt_ttl_seconds``) so it survives across re-opens
+    # of the TMA — what enforces re-entry is the rolling
+    # ``users.pin_last_activity_at`` column updated on every
+    # authenticated request. If ``now - pin_last_activity_at`` exceeds
+    # this value, the PIN session is rejected and the gate re-prompts.
+    pin_session_ttl_seconds: int = 60 * 30
+    # Absolute JWT lifetime — must be > ``pin_session_ttl_seconds`` to
+    # leave headroom for idle enforcement. 30 days here so the same
+    # PIN unlock can survive ~all reasonable absences while idle-gated.
+    pin_session_jwt_ttl_seconds: int = 60 * 60 * 24 * 30
     pin_max_attempts: int = 3
     pin_lock_minutes: int = 60
     pin_reset_code_ttl_seconds: int = 10 * 60
+    # Sliding idle write-debounce — within this window the activity
+    # timestamp is NOT rewritten to avoid a write on every request.
+    pin_activity_debounce_seconds: int = 30
+    # TOTP session: after a single ``X-Totp-Code`` is accepted, the
+    # server mints a 24h JWT (``X-Totp-Session``) the frontend caches
+    # in localStorage and replays on subsequent admin actions. The
+    # ``users.totp_session_epoch`` claim invalidates outstanding
+    # sessions when 2FA is rotated or disabled.
+    totp_session_ttl_seconds: int = 60 * 60 * 24
 
     # V11-M-1 — bcrypt rounds for PIN hashing. 12 rounds is the 2024
     # OWASP baseline (~200 ms / hash on a modern CPU). Bumped from

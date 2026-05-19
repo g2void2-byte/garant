@@ -68,6 +68,12 @@ vi.mock("@/api/admin/hooks", () => ({
   useAdminSetRole: () => mockState.setRole,
   useAdminSetRating: () => mockState.setRating,
   useAdminSetStats: () => mockState.setStats,
+  useAdminUserWallet: () => ({ data: [] }),
+  useAdminCurrencies: () => ({ data: [] }),
+  useAdminAdjustBalance: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
 }));
 
 vi.mock("@/api/hooks", () => ({

@@ -245,9 +245,19 @@ def issue_session_token(user_id: int, epoch: int = 0) -> tuple[str, datetime]:
     every previously-issued token will fail the equality check in
     :func:`decode_session_token` / ``require_pin_session`` instantly,
     without waiting for the JWT ``exp`` to expire.
+
+    The JWT lifetime is intentionally MUCH longer than the idle
+    window enforced by ``require_pin_session`` (the rolling 30-minute
+    ``settings.pin_session_ttl_seconds`` against
+    ``users.pin_last_activity_at``). Splitting the two dimensions
+    lets a user keep the same token across cold-starts of the TMA
+    (no re-prompt every launch) while still forcing re-entry after
+    a true idle gap. The exposed ``PinTokenOut.expires_at`` mirrors
+    the JWT exp so the frontend's local-storage expiry mirrors it
+    one-to-one.
     """
     now = datetime.now(timezone.utc)
-    expires = now + timedelta(seconds=settings.pin_session_ttl_seconds)
+    expires = now + timedelta(seconds=settings.pin_session_jwt_ttl_seconds)
     payload = {
         "sub": str(user_id),
         "iss": JWT_ISSUER,

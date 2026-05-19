@@ -549,14 +549,14 @@ export function useAdminTreasuryWithdrawals() {
 
 export function useAdminTreasuryWithdraw() {
   const qc = useQueryClient();
-  return useMutation<AdminTreasuryWithdrawDto, Error, { body: AdminTreasuryWithdrawBody; totpCode: string }>({
-    mutationFn: ({ body, totpCode }) =>
-      api
-        .post("api/admin/treasury/withdraw", {
-          json: body,
-          headers: { "X-Totp-Code": totpCode },
-        })
-        .json(),
+  return useMutation<AdminTreasuryWithdrawDto, Error, AdminTreasuryWithdrawBody>({
+    // The 24h ``X-Totp-Session`` JWT is attached transparently by
+    // the ``ky`` ``beforeRequest`` hook in ``api/client.ts``; the
+    // global ``TotpGate`` intercepts the ``401 "Введите код 2FA"``
+    // and prompts the operator for one fresh code. The hook itself
+    // no longer takes a per-call code argument.
+    mutationFn: (body) =>
+      api.post("api/admin/treasury/withdraw", { json: body }).json(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.admin.treasury() });
       qc.invalidateQueries({ queryKey: qk.admin.treasuryHistory() });

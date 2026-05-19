@@ -64,13 +64,19 @@ import os
 import secrets
 import struct
 import time
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
+import jwt
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .config import pin_secret, settings
 from .models import User
 from .redis_client import get_redis
+
+_TOTP_SESSION_JWT_ALGORITHM = "HS256"
+_TOTP_SESSION_JWT_ISSUER = "garant-totp"
 
 logger = logging.getLogger(__name__)
 
@@ -276,3 +282,86 @@ async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> 
 # circular import (``admin_guard`` imports ``_consume_totp`` from this
 # module). Routers should ``from .admin_guard import TotpUser`` going
 # forward.
+
+
+def issue_totp_session_token(user_id: int, epoch: int = 0) -> tuple[str, datetime]:
+    """Mint a ``X-Totp-Session`` JWT that gates admin TOTP for 24h.
+
+    The JWT embeds ``users.totp_session_epoch`` at issue time. Bumping
+    that column (``2fa.disable``, re-enable, admin
+    ``invalidate-sessions``) immediately invalidates every outstanding
+    session without waiting for the TTL — same pattern as the PIN
+    session epoch. We sign with ``pin_secret()`` so a single rotation
+    of the JWT key wipes both surfaces.
+    """
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(seconds=settings.totp_session_ttl_seconds)
+    payload = {
+        "sub": str(user_id),
+        "iss": _TOTP_SESSION_JWT_ISSUER,
+        "iat": int(now.timestamp()),
+        "exp": int(expires.timestamp()),
+        "jti": secrets.token_hex(8),
+        "epoch": int(epoch),
+    }
+    token = jwt.encode(payload, pin_secret(), algorithm=_TOTP_SESSION_JWT_ALGORITHM)
+    return token, expires
+
+
+def decode_totp_session_token(token: str) -> tuple[int, int] | None:
+    """Return ``(user_id, epoch)`` for a valid TOTP-session JWT, or ``None``.
+
+    Mirrors :func:`backend.app.pin.decode_session_token` for the
+    parallel TOTP surface. The caller compares ``epoch`` against the
+    user's current ``totp_session_epoch`` to enforce
+    admin-initiated invalidation.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            pin_secret(),
+            algorithms=[_TOTP_SESSION_JWT_ALGORITHM],
+            issuer=_TOTP_SESSION_JWT_ISSUER,
+        )
+    except jwt.PyJWTError:
+        return None
+    sub = payload.get("sub")
+    if not sub:
+        return None
+    try:
+        user_id = int(sub)
+    except (TypeError, ValueError):
+        return None
+    raw_epoch = payload.get("epoch", 0)
+    try:
+        epoch = int(raw_epoch)
+    except (TypeError, ValueError):
+        return None
+    return user_id, epoch
+
+
+def validate_totp_session(user: User, token: str | None) -> bool:
+    """Return ``True`` if ``token`` is a live TOTP session for ``user``.
+
+    Used by :class:`backend.app.admin_guard.AdminGuard` to decide
+    whether to short-circuit the ``X-Totp-Code`` consumption path. The
+    function is intentionally pure (no DB writes) so it can run on
+    every admin request without amplifying the write load.
+    """
+    if not token:
+        return False
+    decoded = decode_totp_session_token(token)
+    if decoded is None:
+        return False
+    token_user_id, token_epoch = decoded
+    if token_user_id != user.id:
+        return False
+    if token_epoch != int(user.totp_session_epoch or 0):
+        return False
+    # 2FA must still be enabled on the account — disabling it bumps
+    # ``totp_session_epoch`` but we double-check ``totp_enabled`` here
+    # so a user who clears their TOTP secret cannot reach 2FA-gated
+    # endpoints with a stale-but-epoch-matched session.
+    if not user.totp_enabled:
+        return False
+    return True

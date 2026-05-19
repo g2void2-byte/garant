@@ -30,6 +30,26 @@
         "title": "Admin2faConfirmIn",
         "type": "object"
       },
+      "Admin2faSessionOut": {
+        "description": "Response of ``POST /api/admin/2fa/session``.\n\nMirrors :class:`PinTokenOut` for the 24h TOTP-session JWT \u2014 the\nfrontend caches both ``token`` and ``expires_at`` in\nlocalStorage and replays the token on every admin request via\nthe ``X-Totp-Session`` header for the lifetime of the session.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expires_at"
+        ],
+        "title": "Admin2faSessionOut",
+        "type": "object"
+      },
       "Admin2faSetupOut": {
         "description": "Returned by ``POST /api/admin/2fa/setup``.\n\n``secret`` is the base32-encoded shared secret; ``otpauth_url`` is\nthe ``otpauth://`` URI compatible with Google Authenticator / 1Password.\nThe secret is *not* persisted until the admin confirms a code via\n``POST /api/admin/2fa/enable``.",
         "properties": {
@@ -6026,6 +6046,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "requestBody": {
@@ -6094,6 +6130,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "requestBody": {
@@ -6134,6 +6186,91 @@
         ]
       }
     },
+    "/api/admin/2fa/session": {
+      "post": {
+        "description": "Mint a 24h ``X-Totp-Session`` JWT after one valid TOTP code.\n\nThe frontend calls this once when the global 2FA gate is opened\n(either explicitly by the admin via the \"\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u0441\u0435\u0441\u0441\u0438\u044e 2FA\"\naffordance on ``/admin/2fa``, or implicitly when a TOTP-gated\naction 401s with \"\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043a\u043e\u0434 2FA\"). The token is cached in\n``localStorage`` and replayed on every admin request for the\nnext 24h, so the operator only types a code once per workday.\n\nReplay protection mirrors :func:`auth_2fa._consume_totp` \u2014 the\ncode's counter is burned in Redis + the DB so the same 6-digit\nvalue cannot be reused inside its 30s window.",
+        "operationId": "open_session_api_admin_2fa_session_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": true,
+            "schema": {
+              "title": "Authorization",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Admin2faVerifyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Admin2faSessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Session",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/2fa/setup": {
       "post": {
         "operationId": "setup_api_admin_2fa_setup_post",
@@ -6161,6 +6298,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -6220,6 +6373,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -6277,6 +6446,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -6336,6 +6521,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -6393,6 +6594,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -6490,6 +6707,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -6557,6 +6790,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -6739,6 +6988,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -6820,6 +7085,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -6875,6 +7156,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -6943,6 +7240,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -7021,6 +7334,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -7076,6 +7405,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -7136,6 +7481,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -7214,6 +7575,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -7278,6 +7655,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -7356,6 +7749,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -7416,6 +7825,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -7475,6 +7900,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -7544,6 +7985,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -7782,6 +8239,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -7849,6 +8322,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -7915,6 +8404,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -7993,6 +8498,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -8073,6 +8594,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "requestBody": {
@@ -8149,6 +8686,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -8227,6 +8780,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "requestBody": {
@@ -8303,6 +8872,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -8443,6 +9028,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -8509,6 +9110,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -8588,6 +9205,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "requestBody": {
@@ -8656,6 +9289,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -8734,6 +9383,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "requestBody": {
@@ -8810,6 +9475,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -8903,6 +9584,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -8973,6 +9670,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -9051,6 +9764,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -9122,6 +9851,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -9191,6 +9936,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "requestBody": {
@@ -9259,6 +10020,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -9314,6 +10091,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -9384,6 +10177,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -9439,6 +10248,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -9498,6 +10323,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -9556,6 +10397,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -9647,6 +10504,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -9801,6 +10674,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -9868,6 +10757,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -9934,6 +10839,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -10012,6 +10933,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -10082,6 +11019,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -10161,6 +11114,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "requestBody": {
@@ -10239,6 +11208,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "requestBody": {
@@ -10316,6 +11301,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -10405,6 +11406,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -10476,6 +11493,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -10554,6 +11587,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -10625,6 +11674,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -10703,6 +11768,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "requestBody": {
@@ -10779,6 +11860,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -10887,6 +11984,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -10953,6 +12066,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -11024,6 +12153,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],
@@ -11148,6 +12293,22 @@
               ],
               "title": "X-Totp-Code"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
           }
         ],
         "responses": {
@@ -11214,6 +12375,22 @@
                 }
               ],
               "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           }
         ],

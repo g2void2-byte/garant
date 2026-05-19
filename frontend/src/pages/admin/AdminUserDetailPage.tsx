@@ -7,9 +7,12 @@ import {
   Gavel,
   KeyRound,
   LogOut,
+  Minus,
+  Plus,
   Snowflake,
   Star,
   Trash2,
+  Wallet,
   ShieldCheck,
 } from "lucide-react";
 import { Page } from "@/components/layout/Page";
@@ -20,7 +23,9 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { BadgePrefix } from "@/components/ui/BadgePrefix";
 import { useToast } from "@/components/ui/Toast";
 import {
+  useAdminAdjustBalance,
   useAdminBanUser,
+  useAdminCurrencies,
   useAdminFreezeUser,
   useAdminInvalidateSessions,
   useAdminResetPin,
@@ -30,9 +35,11 @@ import {
   useAdminUnbanUser,
   useAdminUnfreezeUser,
   useAdminUser,
+  useAdminUserWallet,
 } from "@/api/admin/hooks";
 import { useMe } from "@/api/hooks";
 import type { AdminUserDetailDto } from "@/api/types";
+import { parseDecimal } from "@/lib/format";
 import { haptic } from "@/lib/tg";
 import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
@@ -87,6 +94,7 @@ export default function AdminUserDetailPage() {
           <RolesSection user={user} isSelf={user.id === me?.id} />
           <RatingSection user={user} />
           <StatsSection user={user} />
+          <BalanceSection user={user} />
           <ServicesSection userId={user.id} />
           <ReviewsSection userId={user.id} />
           <CommentsSection userId={user.id} />
@@ -525,6 +533,129 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
       >
         Сохранить статистику
       </Button>
+    </section>
+  );
+}
+
+// ── Balance ─────────────────────────────────────────────────────────
+
+function BalanceSection({ user }: { user: AdminUserDetailDto }) {
+  const { data: balances } = useAdminUserWallet(user.id);
+  const { data: currencies } = useAdminCurrencies();
+  const adjust = useAdminAdjustBalance(user.id);
+  const toast = useToast();
+  const fallback =
+    balances?.find((b) => parseDecimal(b.total) > 0)?.currency_code ?? "USDT";
+  const [currency, setCurrency] = useState<string>(fallback);
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const allCurrencies = currencies ?? [];
+
+  async function submit(sign: 1 | -1) {
+    const n = Number(amount);
+    if (!n || !Number.isFinite(n)) {
+      toast.show({
+        kind: "error",
+        title: "Введите сумму",
+        body: "Сумма должна быть положительным числом.",
+      });
+      return;
+    }
+    try {
+      await adjust.mutateAsync({
+        currency_code: currency,
+        amount: sign * Math.abs(n),
+        reason: reason.trim() || undefined,
+      });
+      toast.show({
+        kind: "success",
+        title: "Готово",
+        body: `${currency} ${sign > 0 ? "+" : "-"}${Math.abs(n)} применено`,
+      });
+      setAmount("");
+      setReason("");
+    } catch (e) {
+      toast.show({
+        kind: "error",
+        title: "Ошибка",
+        body: (e as Error).message,
+      });
+    }
+  }
+
+  return (
+    <section className="bg-panel rounded-card p-4 space-y-3">
+      <h3 className="font-semibold text-sm flex items-center gap-2">
+        <Wallet size={14} />
+        Баланс пользователя
+      </h3>
+      {balances && balances.length > 0 ? (
+        <div className="space-y-1 text-sm">
+          {balances.map((b) => (
+            <div
+              key={b.currency_code}
+              className="flex justify-between bg-panel-2 rounded-button px-3 py-1.5"
+            >
+              <span className="text-text-muted">{b.currency_code}</span>
+              <span className="font-mono">{b.total}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-xs text-text-muted">Нет балансов</div>
+      )}
+      <div>
+        <label className="block text-xs text-text-muted mb-1">Валюта</label>
+        <div className="flex flex-wrap gap-1.5">
+          {allCurrencies.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setCurrency(c.code)}
+              className={`rounded-button px-3 py-1.5 text-sm transition ${
+                c.code === currency
+                  ? "bg-accent text-accent-fg font-medium"
+                  : "bg-panel-2 text-text-muted"
+              }`}
+            >
+              {c.code}
+            </button>
+          ))}
+        </div>
+      </div>
+      <Input
+        label="Сумма (положительная)"
+        inputMode="decimal"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        placeholder="25.5"
+      />
+      <Input
+        label="Причина (необязательно)"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Возврат / премия / штраф"
+      />
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="danger"
+          className="flex-1"
+          disabled={adjust.isPending || !Number(amount)}
+          onClick={() => submit(-1)}
+        >
+          <Minus size={14} className="mr-1" /> Списать
+        </Button>
+        <Button
+          type="button"
+          variant="primary"
+          className="flex-1"
+          disabled={adjust.isPending || !Number(amount)}
+          onClick={() => submit(1)}
+        >
+          <Plus size={14} className="mr-1" /> Зачислить
+        </Button>
+      </div>
     </section>
   );
 }
