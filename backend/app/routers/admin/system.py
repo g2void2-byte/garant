@@ -28,6 +28,7 @@ from ...deps import AdminUser, SessionDep
 from ...rate_limit import rate_limit
 from ...redis_client import get_redis
 from ...schemas import AdminSystemStatusOut
+from ...services_wallet import is_cryptopay_configured
 from ...time_utils import utcnow
 
 router = APIRouter(
@@ -75,10 +76,7 @@ async def status(_admin: AdminUser, session: SessionDep):
         db_latency_ms=db_latency,
         redis_ok=redis_ok,
         redis_latency_ms=redis_latency,
-        cryptobot_configured=bool(
-            app_settings_env.cryptobot_token
-            and not app_settings_env.cryptobot_token.startswith("000")
-        ),
+        cryptobot_configured=is_cryptopay_configured(app_settings_env.cryptobot_token),
         bot_configured=bool(
             app_settings_env.bot_token and not app_settings_env.bot_token.startswith("0000")
         ),
