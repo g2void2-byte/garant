@@ -57,13 +57,31 @@ _READONLY_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 # meant to prevent.  If a future write-path under ``/api/auth/`` truly
 # needs to bypass maintenance (e.g. an admin-recovery flow), add the
 # specific endpoint here rather than re-broadening the prefix.
+#
+# 11.6.2 — the allow-list is split into ``_ALWAYS_ALLOWED_PREFIXES``
+# (matched via ``startswith``) and ``_ALWAYS_ALLOWED_EXACT``
+# (matched via equality). Pre-fix every entry was a prefix, which
+# meant ``/health`` silently admitted any sibling path like
+# ``/healthcheck``, ``/healthy``, or a future ``POST /healthcleanup``.
+# The probe lives at exactly ``/health`` (see ``backend/app/main.py``),
+# so we now match the exact path here, plus the optional ``/health/``
+# tree if a future sub-endpoint mounts (e.g. ``/health/db``).
+# ``/api/settings/maintenance`` is the public-read maintenance probe;
+# it ends in a path segment that is unlikely to clash but we still
+# pin it as exact-or-trailing-slash for the same hardening reason.
 _ALWAYS_ALLOWED_PREFIXES = (
     "/api/admin/",
     "/api/payments/webhook/",
-    "/api/settings/maintenance",
-    "/health",
     "/assets/",
     "/media/",
+    "/health/",
+    "/api/settings/maintenance/",
+)
+_ALWAYS_ALLOWED_EXACT = frozenset(
+    {
+        "/health",
+        "/api/settings/maintenance",
+    }
 )
 
 
@@ -215,7 +233,9 @@ async def maintenance_middleware(request: Request, call_next: Callable[[Request]
     # lookup.
     if method in _READONLY_METHODS:
         return await call_next(request)
-    if any(path.startswith(prefix) for prefix in _ALWAYS_ALLOWED_PREFIXES):
+    if path in _ALWAYS_ALLOWED_EXACT or any(
+        path.startswith(prefix) for prefix in _ALWAYS_ALLOWED_PREFIXES
+    ):
         return await call_next(request)
 
     enabled, message = await _get_maintenance()

@@ -36,6 +36,7 @@ from ...schemas import (
     AdminWalletListItem,
     AdminWalletListOut,
 )
+from ...services_wallet import lock_user_balance
 from ...sql_filters import escape_like_wildcards
 
 logger = logging.getLogger(__name__)
@@ -206,20 +207,16 @@ async def adjust_user_balance(
 
     # Lock the balance row for the duration of the adjustment so a
     # concurrent admin can't race us on the same column.
-    bal = (
-        await session.execute(
-            select(UserBalance)
-            .where(
-                UserBalance.user_id == user.id,
-                UserBalance.currency_id == currency.id,
-            )
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
-    if bal is None:
-        bal = UserBalance(user_id=user.id, currency_id=currency.id, amount=0, locked=0)
-        session.add(bal)
-        await session.flush()
+    #
+    # 11.5.2 — the cold-path (no row yet) used to do a naked
+    # ``session.add()`` here, which under two concurrent first-touch
+    # admin adjustments on the same ``(user_id, currency_id)`` would
+    # blow up on the unique constraint of the loser. We delegate to
+    # :func:`services_wallet.lock_user_balance` so the cold path uses
+    # the same ``INSERT ... ON CONFLICT DO NOTHING`` + ``SELECT ... FOR
+    # UPDATE`` pattern the production money-moving flows rely on
+    # (V11-L-20). The lock contract is unchanged.
+    bal = await lock_user_balance(session, user.id, currency.id)
 
     before_amount = Decimal(str(bal.amount))
     delta = Decimal(str(body.amount))
