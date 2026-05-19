@@ -61,6 +61,41 @@ def test_verify_init_data_rejects_empty_hash(monkeypatch):
         verify_init_data("user=%7B%22id%22%3A1%7D&auth_date=1700000000")
 
 
+# ── 3.4 — auth_date is mandatory ───────────────────────────────────────
+
+
+def test_verify_init_data_requires_auth_date(monkeypatch):
+    """``auth_date`` MUST be present even when the HMAC is valid.
+
+    Pre-fix the age-check branch was ``if auth_date_str: ...``, which
+    silently skipped expiry / future-clock validation when the field
+    was absent — turning the token into one we treat as "timeless".
+    Telegram always sends ``auth_date`` but a future client or proxy
+    that strips it would have produced un-expirable tokens. We
+    re-build the data-check string with only ``user`` so the HMAC
+    matches but no ``auth_date`` is present, and assert the rejection.
+    """
+    import hashlib as _hashlib
+    import hmac as _hmac
+    import json as _json
+    from urllib.parse import urlencode
+
+    from backend.app.config import settings
+
+    monkeypatch.setattr(settings, "allow_unsigned_init_data", False)
+    monkeypatch.setattr(settings, "bot_token", "test-bot-token")
+
+    user = _json.dumps({"id": 1, "first_name": "x"}, separators=(",", ":"))
+    items = sorted([("user", user)])
+    data_check_string = "\n".join(f"{k}={v}" for k, v in items)
+    secret_key = _hmac.new(b"WebAppData", settings.bot_token.encode(), _hashlib.sha256).digest()
+    h = _hmac.new(secret_key, data_check_string.encode(), _hashlib.sha256).hexdigest()
+    init_data_without_auth_date = urlencode({"user": user, "hash": h})
+
+    with pytest.raises(InitDataError, match="auth_date is missing"):
+        verify_init_data(init_data_without_auth_date)
+
+
 # ── V5-A-3 — _parse_unsigned defence-in-depth ───────────────────────────
 
 

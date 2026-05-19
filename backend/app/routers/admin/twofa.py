@@ -127,6 +127,19 @@ async def enable(
     # Rotation guard: if 2FA is already on, the caller must prove they
     # hold the *current* secret before we accept a new one. Without this
     # a stolen admin session could silently replace the secret.
+    #
+    # 6.2 — don't touch ``admin.totp_last_counter`` until the new code
+    # also verifies. Pre-fix we assigned ``current_counter`` straight
+    # onto the row right after the rotation check, then later raised
+    # 401 if the *new* code was invalid. The DB rollback from
+    # ``AsyncSession.__aexit__`` undid the row write, but the
+    # *in-memory* ``admin`` object kept the bumped counter — a latent
+    # foot-gun for any future retry/refresh wrapper that re-uses the
+    # same instance without ``session.refresh(admin)``. The rotation
+    # guard's ``current_counter`` is therefore only used for the
+    # threshold check here; the canonical counter post-rotation is
+    # ``new_counter`` for the new secret (see the assignment block
+    # right before ``session.add(admin)`` below).
     rotated = False
     if admin.totp_enabled and admin.totp_secret:
         if not body.current_code:
@@ -134,7 +147,6 @@ async def enable(
         current_counter = verify_totp_and_counter(admin.totp_secret, body.current_code)
         if current_counter is None or current_counter <= (admin.totp_last_counter or -1):
             raise HTTPException(401, "Неверный текущий код 2FA")
-        admin.totp_last_counter = current_counter
         rotated = True
 
     # 11.3.1 — on first enrolment the secret enabled for the user
@@ -186,6 +198,9 @@ async def enable(
     if new_counter is None:
         raise HTTPException(401, "Неверный код")
 
+    # Both codes verified — write the row. ``new_counter`` is the
+    # counter of the *new* secret, which is what gates future replay
+    # checks (the old secret is being replaced on rotation).
     admin.totp_secret = secret
     admin.totp_enabled = True
     admin.totp_last_counter = new_counter

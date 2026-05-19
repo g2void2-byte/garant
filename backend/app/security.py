@@ -47,31 +47,40 @@ def verify_init_data(init_data: str) -> dict:
     if not hmac.compare_digest(computed, received_hash):
         raise InitDataError("init data signature mismatch")
 
+    # 3.4 — ``auth_date`` MUST be present. Pre-fix the
+    # ``if auth_date_str:`` branch silently skipped the age-check when
+    # the field was absent, so a (current or future) client that
+    # forgot to include it would produce a token we treat as
+    # "timeless" — defeating the ``init_data_max_age_seconds`` cap.
+    # Telegram WebApp has always sent ``auth_date``; making the
+    # presence check explicit prevents the silent-bypass mode if a
+    # future client / proxy strips the field.
     auth_date_str = parsed.get("auth_date", [None])[0]
-    if auth_date_str:
-        # ``int()`` on a non-numeric ``auth_date`` would raise
-        # ``ValueError`` and surface as HTTP 500 to the caller. A
-        # malformed (or absent) ``auth_date`` is functionally the
-        # same as a forged token from our point of view: we cannot
-        # decide whether it's recent. Treat it as a normal auth
-        # failure so deps.py maps it to 401, not 500.
-        try:
-            auth_date = int(auth_date_str)
-        except (TypeError, ValueError):
-            raise InitDataError("init data auth_date is not numeric")
-        now = time.time()
-        # Reject ``auth_date`` that's far in the future too. HMAC
-        # makes a forgery impossible from a malicious actor, but a
-        # legitimate-but-misconfigured client (clock badly skewed
-        # ahead, or a Telegram-side bug stamping the wrong epoch)
-        # would otherwise produce a token that's "valid forever" by
-        # our own ``time.time() - auth_date`` arithmetic. 5 minutes
-        # of forward drift is enough to absorb NTP wobble without
-        # admitting tokens that are de-facto un-aged.
-        if auth_date - now > 300:
-            raise InitDataError("init data auth_date is in the future")
-        if now - auth_date > settings.init_data_max_age_seconds:
-            raise InitDataError("init data expired")
+    if not auth_date_str:
+        raise InitDataError("auth_date is missing from init data")
+    # ``int()`` on a non-numeric ``auth_date`` would raise
+    # ``ValueError`` and surface as HTTP 500 to the caller. A
+    # malformed ``auth_date`` is functionally the same as a forged
+    # token from our point of view: we cannot decide whether it's
+    # recent. Treat it as a normal auth failure so deps.py maps it
+    # to 401, not 500.
+    try:
+        auth_date = int(auth_date_str)
+    except (TypeError, ValueError):
+        raise InitDataError("init data auth_date is not numeric")
+    now = time.time()
+    # Reject ``auth_date`` that's far in the future too. HMAC
+    # makes a forgery impossible from a malicious actor, but a
+    # legitimate-but-misconfigured client (clock badly skewed
+    # ahead, or a Telegram-side bug stamping the wrong epoch)
+    # would otherwise produce a token that's "valid forever" by
+    # our own ``time.time() - auth_date`` arithmetic. 5 minutes
+    # of forward drift is enough to absorb NTP wobble without
+    # admitting tokens that are de-facto un-aged.
+    if auth_date - now > 300:
+        raise InitDataError("init data auth_date is in the future")
+    if now - auth_date > settings.init_data_max_age_seconds:
+        raise InitDataError("init data expired")
 
     user_json = parsed.get("user", [None])[0]
     if not user_json:
