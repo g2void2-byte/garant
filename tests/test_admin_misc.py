@@ -779,3 +779,165 @@ async def test_audit_log_rbac(client):
     await _bootstrap(client, tg_user_id=10, username="alice")
     resp = await client.get("/api/admin/audit", headers=auth_headers(init))
     assert resp.status_code == 403
+
+
+# ── 11.6.2 — maintenance allow-list: /health is exact, not prefix ───────
+
+
+async def test_maintenance_health_allow_list_does_not_swallow_siblings(client):
+    """A non-exact ``/health`` sibling (``/healthcheck``) must NOT be exempt.
+
+    Pre-fix the allow-list used ``path.startswith("/health")`` so a
+    future ``POST /healthcheck`` would have silently bypassed
+    maintenance mode. The fix splits the entry into an exact
+    ``/health`` plus a ``/health/`` prefix; sibling paths fall through
+    to the normal maintenance gate. We assert that with maintenance
+    on, an arbitrary non-exempt write path is still blocked with 503,
+    confirming the gate is intact for non-allow-listed traffic.
+    """
+    admin_init, _ = await _make_admin(client, tg=1)
+    init = signed_init_data(10, "alice")
+    await _bootstrap(client, tg_user_id=10, username="alice")
+
+    # Flip maintenance on.
+    resp = await client.patch(
+        "/api/admin/settings",
+        json={"maintenance_enabled": True, "maintenance_message": "be back soon"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200
+
+    # A non-allow-listed write path is still blocked. PATCH /api/me is
+    # the canonical "ordinary write" probe used by
+    # ``test_maintenance_blocks_non_admin_writes`` above.
+    blocked = await client.patch(
+        "/api/me",
+        json={"display_name": "alice prime"},
+        headers=auth_headers(init),
+    )
+    assert blocked.status_code == 503
+
+    # Direct assertion on the allow-list shape — the only ``/health*``
+    # entry must be the exact path or the ``/health/`` sub-tree. Any
+    # sibling like ``/healthcheck`` or ``/healthy`` must NOT be
+    # exempt. Walking the data structure here so a future refactor
+    # that re-broadens the prefix breaks this test.
+    from backend.app.maintenance import _ALWAYS_ALLOWED_EXACT, _ALWAYS_ALLOWED_PREFIXES
+
+    assert "/health" in _ALWAYS_ALLOWED_EXACT
+    assert "/health" not in _ALWAYS_ALLOWED_PREFIXES
+    # No prefix entry should swallow ``/healthcheck``.
+    assert not any("/healthcheck".startswith(prefix) for prefix in _ALWAYS_ALLOWED_PREFIXES)
+    assert "/healthcheck" not in _ALWAYS_ALLOWED_EXACT
+
+    # Turn maintenance back off so the rest of the suite isn't affected.
+    ok = await client.patch(
+        "/api/admin/settings",
+        json={"maintenance_enabled": False},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert ok.status_code == 200
+
+
+# ── 11.3.1 — twofa.enable must source secret from pending cache ─────────
+
+
+async def test_2fa_enable_rejects_client_supplied_secret_diverging_from_pending(
+    client,
+):
+    """An attacker who hijacked an admin session BEFORE 2FA was on
+    must not be able to enable 2FA with a secret they control.
+
+    Pre-fix ``/enable`` used ``body.secret`` verbatim when provided,
+    so the attacker could skip ``/setup`` and persist their own
+    secret. The fix pops the pending cache and rejects when the
+    caller-supplied secret diverges from (or has no corresponding)
+    pending entry.
+    """
+    admin_init, admin_id = await _make_admin(client, tg=1)
+
+    # Step 1: legitimate ``/setup`` populates the pending cache.
+    setup = await client.post("/api/admin/2fa/setup", headers=auth_headers(admin_init))
+    assert setup.status_code == 200, setup.text
+    pending_secret = setup.json()["secret"]
+
+    # Step 2: attacker sends a DIFFERENT secret to ``/enable`` — must 400.
+    attacker_secret = generate_secret()
+    assert attacker_secret != pending_secret
+    resp = await client.post(
+        "/api/admin/2fa/enable",
+        json={"secret": attacker_secret, "code": totp_now(attacker_secret)},
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 400, resp.text
+
+    # The DB row must still be 2FA-off and the attacker's secret must
+    # not have been persisted.
+    async with async_session() as session:
+        u = await session.get(User, admin_id)
+        assert u.totp_enabled is False
+        assert u.totp_secret is None
+
+
+async def test_2fa_enable_without_setup_rejected(client):
+    """Calling ``/enable`` without a prior ``/setup`` round-trip must 400.
+
+    This is the same attack vector as the divergence test, just with
+    no pending entry at all. Pre-fix ``body.secret`` was sufficient
+    to persist a secret of the attacker's choice.
+    """
+    admin_init, admin_id = await _make_admin(client, tg=1)
+
+    attacker_secret = generate_secret()
+    resp = await client.post(
+        "/api/admin/2fa/enable",
+        json={"secret": attacker_secret, "code": totp_now(attacker_secret)},
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 400, resp.text
+
+    async with async_session() as session:
+        u = await session.get(User, admin_id)
+        assert u.totp_enabled is False
+        assert u.totp_secret is None
+
+
+# ── 11.5.2 — wallet adjust first-touch must use lock_user_balance ───────
+
+
+async def test_wallet_adjust_first_touch_uses_lock_helper(client):
+    """First-touch admin wallet adjustment must go through the shared
+    ``lock_user_balance`` helper.
+
+    The helper uses ``INSERT ... ON CONFLICT DO NOTHING`` + ``SELECT
+    ... FOR UPDATE`` (V11-L-20) so two concurrent first-touch
+    adjustments don't race on the unique constraint. Pre-fix the
+    cold path did a naked ``session.add() + flush()`` which blew up
+    the loser of a race with an ``IntegrityError`` — the audit
+    finding 11.5.2.
+
+    We assert the import path here so a future refactor that
+    re-introduces the manual ``session.add`` is caught immediately.
+    """
+    from backend.app.routers.admin import wallets as wallets_router
+
+    assert hasattr(wallets_router, "lock_user_balance"), (
+        "wallets router must import lock_user_balance from services_wallet"
+    )
+    from backend.app.services_wallet import lock_user_balance as canonical
+
+    assert wallets_router.lock_user_balance is canonical, (
+        "wallets router must use the shared lock_user_balance helper, not a local re-implementation"
+    )
+
+    # Behaviour-level smoke: a first-touch adjustment still credits
+    # the balance row idempotently (regression guard on the wiring).
+    admin_init, _ = await _make_admin(client, tg=1)
+    bob_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    resp = await client.post(
+        f"/api/admin/wallets/{bob_id}/adjust",
+        json={"currency_code": "USDT", "amount": 12.5, "reason": "first-touch"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    assert float(resp.json()["amount"]) == 12.5

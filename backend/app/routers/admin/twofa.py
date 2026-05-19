@@ -137,14 +137,50 @@ async def enable(
         admin.totp_last_counter = current_counter
         rotated = True
 
-    # Comment 49: resolve the secret from the pending cache when the
-    # client omits ``body.secret`` (the setup endpoint already stored
-    # it server-side).
-    secret = body.secret
-    if not secret:
-        secret = await _pop_pending(admin.id)
-    if not secret:
-        raise HTTPException(400, "TOTP секрет не найден. Повторите /setup.")
+    # 11.3.1 — on first enrolment the secret enabled for the user
+    # MUST come from ``/setup``'s server-side pending cache; we never
+    # accept a client-supplied secret as authoritative. Pre-fix this
+    # branch used ``body.secret`` verbatim when provided, which meant
+    # an attacker who hijacked an admin session BEFORE 2FA was
+    # configured could call ``/enable`` directly with a secret they
+    # control — the server would happily persist it, locking the
+    # legitimate admin out of their own account on the next login.
+    # During a rotation (``admin.totp_enabled`` was already true) the
+    # ``current_code`` check above already proves the caller holds the
+    # current secret — the session-swap attack is impossible there —
+    # so we keep the legacy "trust ``body.secret``" path for rotation
+    # to avoid forcing the frontend into a ``/setup`` round-trip on
+    # every rotation.
+    pending = await _pop_pending(admin.id)
+    if rotated:
+        # Rotation already gated by ``current_code``; accept the
+        # caller-supplied secret. ``pending`` is popped above only so
+        # a stale entry from an aborted ``/setup`` doesn't linger past
+        # the rotation.
+        secret = body.secret or pending
+        if not secret:
+            raise HTTPException(400, "TOTP секрет не найден. Повторите /setup.")
+    else:
+        # First enrolment — the secret MUST equal the one ``/setup``
+        # stashed; an attacker without a valid ``/setup`` round-trip
+        # has nothing to send.
+        if pending is None:
+            raise HTTPException(400, "TOTP секрет не найден. Повторите /setup.")
+        if body.secret and body.secret != pending:
+            # Caller-supplied secret diverges from the one ``/setup``
+            # stored — reject loudly. The log line is structured so
+            # the JSON-logger downstream can alert on repeated
+            # secret-mismatch attempts (a strong signal of an active
+            # session-hijack secret-swap attempt).
+            logger.warning(
+                "admin 2fa.enable: client-supplied secret diverges from pending",
+                extra={
+                    "event": "admin.2fa.enable.secret_mismatch",
+                    "actor_id": admin.id,
+                },
+            )
+            raise HTTPException(400, "Секрет не соответствует /setup. Повторите /setup.")
+        secret = pending
 
     new_counter = verify_totp_and_counter(secret, body.code)
     if new_counter is None:
