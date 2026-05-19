@@ -46,28 +46,6 @@ from .time_utils import utcnow
 logger = logging.getLogger(__name__)
 
 
-# V11-L-1 / A9-L-1 — historically intended as a "dispute window"
-# cool-down before the admin queue could act on a user-submitted
-# ``WalletWithdrawal`` (see ``WalletWithdrawal.locked_until``
-# below). **Enforcement was never wired:**
-#
-# * ``decide_withdrawal`` (approve / reject / mark_sent) does not
-#   check ``locked_until``; admins can act immediately.
-# * ``create_withdrawal`` (auto-mode) fires the CryptoBot transfer
-#   inline; the cool-down never gates the actual money movement.
-# * There is no user-facing ``cancel`` endpoint that consumes the
-#   window.
-#
-# The column is still written on create + read by serializers (so
-# external API/typing stays stable), and the constant remains a
-# deploy-time knob via ``settings.withdraw_lock_hours``. **A9-I-1**:
-# pydantic-settings reads env at ``Settings()`` instantiation, so
-# changing the env var requires a restart — this is intentional
-# until / unless A9-L-1 enforcement is reintroduced, at which point
-# call ``settings.withdraw_lock_hours`` at the use-site instead.
-WITHDRAW_LOCK_HOURS = settings.withdraw_lock_hours
-
-
 async def get_currency_by_code(session: AsyncSession, code: str) -> Currency:
     result = await session.execute(
         select(Currency).where(Currency.code == code.upper(), Currency.is_active.is_(True))
@@ -835,7 +813,6 @@ async def create_withdrawal(
         amount=amount,
         address=address,
         status=WalletWithdrawStatus.pending,
-        locked_until=utcnow() + timedelta(hours=WITHDRAW_LOCK_HOURS),
     )
     session.add(withdrawal)
     await session.commit()

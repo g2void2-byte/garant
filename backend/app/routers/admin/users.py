@@ -408,8 +408,11 @@ async def freeze_user(
             action="user.freeze",
             reason=body.reason,
             payload={"freeze_reason": body.reason},
-            dm_title="Баланс заморожен",
-            dm_body=body.reason or "Ваш баланс временно заморожен. Депозиты по-прежнему работают.",
+            dm_title="Аккаунт заморожен",
+            dm_body=(
+                body.reason
+                or "Ваш аккаунт временно заморожен. Доступ к сервису закрыт до снятия заморозки."
+            ),
         )
     return _to_detail(target, has_pin=await _has_pin(target))
 

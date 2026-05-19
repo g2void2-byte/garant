@@ -8,8 +8,6 @@ One pricked test per fix in the V5-B audit bucket (``audit-status-v8.md
   by H-1.)
 * V5-B-4 — ``create_withdrawal`` rejects an address that doesn't match
   the per-currency regex stored on ``Currency.address_regex``.
-* V5-B-6 — admin ``reject`` clears ``WalletWithdrawal.locked_until`` so
-  the cool-down timer doesn't survive a refund.
 * V5-B-8 — Crypto Pay webhook ignores payloads that only carry the
   legacy ``"type"`` field instead of ``"update_type"`` (the fallback
   was dropped).
@@ -45,7 +43,6 @@ from tests.helpers import (
     get_user_id_by_tg,
     setup_pin,
     signed_init_data,
-    with_totp,
 )
 
 # ── V5-B-3 — pay_url must be non-empty ──────────────────────────────────
@@ -204,7 +201,7 @@ async def test_withdrawal_empty_regex_skips_check(client):
     assert resp.status_code == 200, resp.text
 
 
-# ── V5-B-6 — reject clears locked_until ─────────────────────────────────
+# ── shared helpers ──────────────────────────────────────────────────────
 
 
 async def _bootstrap_user(client, *, tg: int, username: str) -> int:
@@ -222,49 +219,6 @@ async def _make_admin(client, *, tg: int) -> str:
         u.is_admin = True
         await session.commit()
     return init
-
-
-@pytest.mark.asyncio
-async def test_admin_reject_clears_locked_until(client):
-    """Reject must NULL out ``WalletWithdrawal.locked_until`` so the
-    cool-down badge doesn't keep showing for a row whose funds have
-    already been refunded to ``UserBalance.amount``."""
-    from datetime import timedelta
-
-    from backend.app.time_utils import utcnow
-
-    admin_init = await _make_admin(client, tg=8201)
-    bob_id = await _bootstrap_user(client, tg=8202, username="reject_bob")
-
-    async with async_session() as session:
-        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
-        wd = WalletWithdrawal(
-            user_id=bob_id,
-            currency_id=usdt.id,
-            amount=Decimal("12.5"),
-            address="T" + "x" * 33,
-            status=WalletWithdrawStatus.pending,
-            locked_until=utcnow() + timedelta(hours=72),
-        )
-        session.add(wd)
-        bal = UserBalance(user_id=bob_id, currency_id=usdt.id, amount=Decimal("0"), locked=12.5)
-        session.add(bal)
-        await session.commit()
-        wd_id = wd.id
-
-    resp = await client.post(
-        f"/api/admin/withdrawals/{wd_id}/decide",
-        json={"action": "reject", "note": "no-go"},
-        headers=with_totp(auth_headers(admin_init)),
-    )
-    assert resp.status_code == 200, resp.text
-
-    async with async_session() as session:
-        row = (
-            await session.execute(select(WalletWithdrawal).where(WalletWithdrawal.id == wd_id))
-        ).scalar_one()
-        assert row.status == WalletWithdrawStatus.rejected
-        assert row.locked_until is None, row.locked_until
 
 
 # ── V5-B-8 — legacy ``type`` fallback removed ───────────────────────────

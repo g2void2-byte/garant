@@ -633,7 +633,6 @@ class WalletWithdrawalOut(BaseModel):
     amount: float
     address: str
     status: str
-    locked_until: datetime | None
     admin_note: str
     created_at: datetime
     processed_at: datetime | None

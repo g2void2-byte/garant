@@ -522,14 +522,6 @@ async def start_arbitration(session: AsyncSession, deal: Deal, user: User, reaso
     deal.status = DealStatus.arbitration
     deal.arbitration_initiator_id = user.id
     deal.arbitration_reason = reason
-    # A9-I-2 — legacy mirror. ``Deal.arbitrage_reason`` predates the
-    # ``arbitration_reason`` column; ``grep arbitrage_reason`` shows
-    # *no* readers in backend / frontend / admin-UI, so this write
-    # exists only to keep the row consistent for any out-of-process
-    # consumer that might still read the legacy name. Removal is
-    # gated on a drop-column migration (V5-E-1 destructive) — kept
-    # until that lands so we never serve a half-populated row.
-    deal.arbitrage_reason = reason
 
     # V11-H-3 — atomic counter bump; see comment in ``accept_deal``.
     await session.execute(
@@ -620,6 +612,20 @@ async def resolve_arbitration(
 
     winner_id = deal.buyer_id if winner == "buyer" else deal.seller_id
     loser_id = deal.seller_id if winner == "buyer" else deal.buyer_id
+
+    # Counter bookkeeping: ``deals_failed`` for the losing side and
+    # ``deals_success`` for the winning side. Voluntary cancellation
+    # (``accept_cancel``) and inactivity sweeps do NOT bump these
+    # counters because no participant "lost" — only an adversarial
+    # arbitration outcome does. Single atomic UPDATE per side (same
+    # pattern as ``accept_deal`` / ``confirm_deal``).
+    await session.execute(
+        update(User).where(User.id == loser_id).values(deals_failed=User.deals_failed + 1)
+    )
+    await session.execute(
+        update(User).where(User.id == winner_id).values(deals_success=User.deals_success + 1)
+    )
+
     # A9-M-2 — split-API: persist both notifications atomically, dispatch after commit.
     pending: list[tuple[Notification, dict[str, Any] | None]] = []
     winner_notif, winner_ws = await notifier.insert(

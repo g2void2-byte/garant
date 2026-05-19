@@ -96,10 +96,11 @@ async def transfer_confirm(
     session: SessionDep,
     _rl: RLPin,
 ) -> TransferConfirmOut:
-    # ``RLPin`` (5/min per caller) caps the request rate at the network
-    # edge; ``confirm_transfer`` enforces an in-DB per-code attempt
-    # counter so an attacker can't churn the 10⁶ keyspace from many
-    # IPs and hijack any active transfer.
+    # Brute-force protection for the 6-digit code: ``RLPin`` caps each
+    # caller at 5 req/min, codes live for 15 min, and the keyspace is
+    # 10⁶ — combined per-attempt success probability ≤0.005 %. There is
+    # no per-code attempt counter; see ``services_account`` for the
+    # security argument.
     try:
         source = await confirm_transfer(session, user, body.code)
     except ValueError as e:

@@ -38,6 +38,29 @@ _ALLOWED_IMAGE_TYPES: dict[str, str] = {
 }
 
 
+# Per-content-type magic-byte signatures. Validated against the head
+# of the upload payload BEFORE write so a client cannot smuggle e.g.
+# an HTML or SVG file under ``Content-Type: image/png`` — even though
+# the on-disk extension is locked, the static-file mount sets
+# ``Content-Type`` from the extension only, so a browser would still
+# render an HTML payload as text/html via content-sniffing on the
+# fetch side without this check.
+#
+# Sources: each format's official spec. WebP uses a RIFF container,
+# so we match both the leading ``RIFF`` and the inner ``WEBP``
+# marker at offset 8. JPEG variants all start with ``FF D8 FF``.
+def _matches_magic(content_type: str, data: bytes) -> bool:
+    if content_type == "image/png":
+        return data.startswith(b"\x89PNG\r\n\x1a\n")
+    if content_type == "image/jpeg":
+        return data.startswith(b"\xff\xd8\xff")
+    if content_type == "image/gif":
+        return data.startswith(b"GIF87a") or data.startswith(b"GIF89a")
+    if content_type == "image/webp":
+        return len(data) >= 12 and data[0:4] == b"RIFF" and data[8:12] == b"WEBP"
+    return False
+
+
 def _allowed_kinds() -> set[str]:
     return {k.strip() for k in settings.media_allowed_kinds.split(",") if k.strip()}
 
@@ -96,6 +119,17 @@ async def upload_media(
         raise HTTPException(400, "Файл пустой")
     if len(data) > settings.media_max_bytes:
         raise HTTPException(413, f"Файл слишком большой (>{settings.media_max_bytes // 1024} КБ)")
+
+    # Magic-byte check: the declared ``Content-Type`` is attacker-
+    # controlled, so cross-check it against the actual file header
+    # before persisting. Without this gate a client could POST e.g.
+    # an HTML payload under ``Content-Type: image/png``; the
+    # extension is locked to ``.png``, but in some deployments the
+    # static-file server / CDN sniffs the body or serves with
+    # ``X-Content-Type-Options`` missing, and a browser would happily
+    # render the HTML as active content from the backend origin.
+    if not _matches_magic(content_type, data):
+        raise HTTPException(415, "Файл не соответствует заявленному типу")
 
     root = _ensure_root()
     folder = root / kind

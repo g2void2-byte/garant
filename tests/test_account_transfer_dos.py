@@ -93,15 +93,13 @@ async def test_transfer_confirm_lockout_rejects_correct_code(client):
     )
     assert resp.status_code == 429, resp.text
 
-    # The legitimate code itself was not consumed: per-code attempts
-    # stay at 0 because ``_register_miss`` is a no-op (H-4 fix). So
-    # once the limiter window passes \u2014 simulated here by calling
-    # ``reset_state_for_tests`` \u2014 the user can recover with the same
-    # code they originally received.
+    # The legitimate code itself was not consumed: there is no
+    # per-code attempt counter to bump, so once the limiter window
+    # passes — simulated here by ``reset_state_for_tests`` — the
+    # user can recover with the same code they originally received.
     async with async_session() as session:
         row = (await session.execute(select(AccountTransferCode))).scalar_one()
         assert row.consumed_at is None
-        assert row.attempts == 0
 
     reset_state_for_tests()
     resp = await client.post(
