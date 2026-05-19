@@ -15,6 +15,18 @@ import { useToast } from "@/components/ui/Toast";
 import { formatCurrency } from "@/lib/format";
 import { haptic, openTelegramLink } from "@/lib/tg";
 
+type DepositProvider = "cryptobot" | "crystalpay";
+
+const PROVIDER_OPTIONS: { value: DepositProvider; label: string }[] = [
+  { value: "cryptobot", label: "CryptoBot" },
+  { value: "crystalpay", label: "Crystalpay" },
+];
+
+const PROVIDER_LABELS: Record<DepositProvider, string> = {
+  cryptobot: "CryptoBot",
+  crystalpay: "Crystalpay",
+};
+
 /**
  * Continental "Пополнение депозита" page.
  *
@@ -32,6 +44,7 @@ export default function WalletDepositPage() {
 
   const [code, setCode] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
+  const [provider, setProvider] = useState<DepositProvider>("cryptobot");
 
   const current = useMemo(
     () => currencies.data?.find((c) => c.code === code),
@@ -76,13 +89,17 @@ export default function WalletDepositPage() {
       return;
     }
     try {
-      const dep = await create.mutateAsync({ currency_code: current.code, amount: value });
+      const dep = await create.mutateAsync({
+        currency_code: current.code,
+        amount: value,
+        provider,
+      });
       haptic("success");
       if (dep.pay_url) openTelegramLink(dep.pay_url);
       toast.show({
         kind: "success",
         title: "Счёт создан",
-        body: `Оплатите ${formatCurrency(dep.amount, dep.currency.code, current.decimals)} в CryptoBot.`,
+        body: `Оплатите ${formatCurrency(dep.amount, dep.currency.code, current.decimals)} в ${PROVIDER_LABELS[provider]}.`,
       });
     } catch (e: unknown) {
       haptic("error");
@@ -102,6 +119,32 @@ export default function WalletDepositPage() {
     <Page showBack>
       <Header title="Пополнение депозита" />
       <div className="px-4 space-y-3">
+        <div>
+          <div className="mb-1 text-[14px] font-medium">Платёжная система</div>
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Платёжная система">
+            {PROVIDER_OPTIONS.map((opt) => {
+              const selected = provider === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  data-testid={`provider-${opt.value}`}
+                  onClick={() => setProvider(opt.value)}
+                  className={
+                    "rounded-button border px-4 py-2 text-sm font-medium transition " +
+                    (selected
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-border text-text-muted hover:text-text")
+                  }
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div>
           <div className="mb-1 text-[14px] font-medium">Выберите валюту</div>
           <Select

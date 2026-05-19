@@ -235,6 +235,11 @@ export interface WalletDepositDto {
   // instead — non-spendable, non-withdrawable, surfaced only on the
   // public ``deposit`` field of ``UserCardDto``.
   purpose: "wallet" | "trust" | string;
+  // Upstream payment provider that issued this invoice. Drives the
+  // badge on the deposit list/card and is preserved on the wire so a
+  // page refresh after the back-end finishes routing can still render
+  // the correct logo.
+  provider: "cryptobot" | "crystalpay" | string;
   created_at: string;
   paid_at: string | null;
 }
@@ -245,6 +250,9 @@ export interface WalletDepositCreateBody {
   // See ``WalletDepositDto.purpose``. Optional on the wire; the
   // backend defaults to ``"wallet"`` when omitted.
   purpose?: "wallet" | "trust";
+  // Selects the upstream payment provider. ``"cryptobot"`` (default)
+  // hits Crypto Pay; ``"crystalpay"`` hits the Crystalpay v3 API.
+  provider?: "cryptobot" | "crystalpay";
 }
 
 export interface WalletWithdrawalDto {
