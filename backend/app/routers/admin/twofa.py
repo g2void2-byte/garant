@@ -53,6 +53,19 @@ logger = logging.getLogger(__name__)
 # Comment 49: pending TOTP secret TTL (10 minutes).
 _PENDING_TTL = 10 * 60
 # In-process fallback when Redis is unavailable.
+#
+# Audit section 8 — ``_pending_secrets`` is keyed off the local
+# process's memory. With ``REDIS_URL`` set (the production path) the
+# fallback is never touched and ``/setup`` -> ``/enable`` works across
+# any number of backend replicas because the pending secret lives in
+# Redis. Without Redis the fallback works for *single-replica* dev /
+# test deployments but breaks transparently on scale-out: a request
+# landing on the replica that did NOT serve ``/setup`` will not see
+# the secret and will fail enrolment with "TOTP секрет не найден".
+# We surface this explicitly with a structured log line at every
+# fallback write/read (see ``_store_pending`` / ``_pop_pending``
+# below) so operators can detect the misconfiguration before users
+# do.
 _pending_secrets: dict[int, tuple[str, float]] = {}
 
 router = APIRouter(
@@ -65,6 +78,38 @@ router = APIRouter(
 @router.get("/status", response_model=Admin2faStatusOut)
 async def status(admin: AdminUser):
     return Admin2faStatusOut(enabled=bool(admin.totp_enabled and admin.totp_secret))
+
+
+# Audit section 8 — one-shot guard for the fallback warning. We log
+# at WARNING the first time the process writes to the in-process
+# fallback (so a scale-out deployment without Redis emits a visible
+# signal in the very first 2FA setup attempt) and at DEBUG for
+# subsequent occurrences so steady-state logs don't drown in repeats.
+_fallback_warned: bool = False
+
+
+def _warn_fallback_once(event: str, user_id: int) -> None:
+    """Emit a one-shot WARNING when we fall back to in-process storage.
+
+    Operators on scale-out deployments without ``REDIS_URL`` will see
+    this on the very first 2FA enrolment and can configure Redis
+    before users hit "TOTP секрет не найден". Single-replica
+    dev / test runs still get one line of visibility too.
+    """
+    global _fallback_warned
+    level = logging.WARNING if not _fallback_warned else logging.DEBUG
+    logger.log(
+        level,
+        "admin 2fa: Redis unavailable, using in-process pending-secret store. "
+        "This breaks /setup -> /enable handoff on scale-out (multiple replicas) "
+        "because the secret is per-process. Set REDIS_URL to fix.",
+        extra={
+            "event": event,
+            "user_id": user_id,
+            "first_observation": not _fallback_warned,
+        },
+    )
+    _fallback_warned = True
 
 
 async def _store_pending(user_id: int, secret: str) -> None:
@@ -84,6 +129,7 @@ async def _store_pending(user_id: int, secret: str) -> None:
                 "Redis setex failed for pending TOTP; using fallback",
                 extra={"event": "totp.pending.redis_setex_failed", "user_id": user_id},
             )
+    _warn_fallback_once("totp.pending.fallback_write", user_id)
     _pending_secrets[user_id] = (secret, time.monotonic() + _PENDING_TTL)
 
 
@@ -106,7 +152,14 @@ async def _pop_pending(user_id: int) -> str | None:
     secret, expires = entry
     if time.monotonic() > expires:
         return None
+    _warn_fallback_once("totp.pending.fallback_read", user_id)
     return secret
+
+
+def _reset_fallback_warn_for_tests() -> None:
+    """Reset the one-shot fallback guard. Test-only hook."""
+    global _fallback_warned
+    _fallback_warned = False
 
 
 @router.post("/setup", response_model=Admin2faSetupOut)

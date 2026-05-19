@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 from datetime import datetime
 
@@ -58,9 +59,19 @@ async def transfer_status(user: CurrentUser, session: SessionDep) -> TransferSta
 @router.post("/start", response_model=TransferStartOut)
 async def transfer_start(user: PinUser, session: SessionDep) -> TransferStartOut:
     code, expires = await issue_code(session, user)
+    # 5.4 (MED) — ``send_dm`` ships ``text`` with ``parse_mode=HTML``
+    # (see ``bot/notify.py::get_bot``). Every interpolated value
+    # below MUST pass through ``html.escape`` even when the source is
+    # server-controlled (``issue_code`` returns digits only), so a
+    # future change that adds user-supplied input (e.g. a display
+    # name, deeplink) cannot accidentally inject HTML / Telegram
+    # entities and impersonate the admin. The static ``<b>...</b>``
+    # wrappers stay un-escaped because they are the only markup we
+    # *want* the Telegram client to render.
+    # *** DO NOT INTERPOLATE UNESCAPED USER INPUT BELOW. ***
     text = (
         "🔁 Перенос аккаунта в Garant\n\n"
-        f"Ваш код: <b>{code}</b>\n\n"
+        f"Ваш код: <b>{html.escape(code)}</b>\n\n"
         "Введите его в приложении на новом Telegram-аккаунте, чтобы "
         "перенести профиль. Код действителен 15 минут.\n\n"
         "Если вы не запрашивали перенос — игнорируйте это сообщение."
