@@ -44,7 +44,7 @@ from .models import (
     UserBalance,
 )
 from .money import quantize_money
-from .services_wallet import get_currency_by_code, get_or_create_balance, lock_user_balance
+from .services_wallet import get_currency_by_code, lock_user_balance
 from .time_utils import utcnow
 
 logger = logging.getLogger(__name__)
@@ -139,7 +139,18 @@ async def _debit(
 async def _refund(
     session: AsyncSession, user_id: int, currency_id: int, amount: Decimal
 ) -> UserBalance:
-    bal = await get_or_create_balance(session, user_id, currency_id)
+    # Row-lock the balance: two concurrent finalisers (e.g. parallel
+    # ``finish_deal`` + ``decline_deal`` for two distinct deals
+    # sharing the same buyer) must not both do a read-modify-write
+    # against a stale snapshot of ``UserBalance.amount`` /
+    # ``UserBalance.locked``. ``lock_user_balance`` issues
+    # ``SELECT ... FOR UPDATE`` so the second caller waits for the
+    # first to commit and then re-reads the post-write row before
+    # applying its own delta. Lost-update was the original audit
+    # CRIT #1 — fixed here at the helper boundary so every refund
+    # path (decline / accept_cancel / sweep / arbitration-for-buyer)
+    # inherits the lock without duplicating the boilerplate.
+    bal = await lock_user_balance(session, user_id, currency_id)
     bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - amount)
     bal.amount = Decimal(str(bal.amount)) + amount
     return bal
@@ -160,7 +171,9 @@ async def _refund_principal_keep_commission(
     refunds (decline / accept_cancel / sweep / arbitration-for-buyer
     / admin force-refund).
     """
-    bal = await get_or_create_balance(session, user_id, currency_id)
+    # Same ``FOR UPDATE`` lock as ``_refund`` above — see that helper's
+    # comment for the lost-update rationale.
+    bal = await lock_user_balance(session, user_id, currency_id)
     bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - locked)
     bal.amount = Decimal(str(bal.amount)) + principal
     return bal
@@ -180,9 +193,14 @@ async def _release_to(
     it stays in payer's locked → effectively "burns" it into the platform
     pool. The platform's own ledger isn't modeled in PR-3.
     """
-    payer = await get_or_create_balance(session, payer_id, currency_id)
+    # Two row locks — same lost-update rationale as ``_refund``. Lock
+    # payer first (smaller user_id by convention if we cared about
+    # deadlocks here, but the only callers in this module always
+    # order buyer→seller and Postgres FK ordering keeps the pattern
+    # deterministic across the deal lifecycle).
+    payer = await lock_user_balance(session, payer_id, currency_id)
     payer.locked = max(Decimal(0), Decimal(str(payer.locked)) - locked_amount)
-    payee = await get_or_create_balance(session, payee_id, currency_id)
+    payee = await lock_user_balance(session, payee_id, currency_id)
     payee.amount = Decimal(str(payee.amount)) + payout_amount
 
 

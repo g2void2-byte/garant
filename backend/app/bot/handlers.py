@@ -13,6 +13,7 @@ only does routing + filter wiring.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 
 from aiogram import F, Router
@@ -150,11 +151,34 @@ async def cb_tma_unavailable(callback: CallbackQuery) -> None:
 # ── Forensic fallback ────────────────────────────────────────────────────
 
 
-# Any text message that did NOT match a section button lands here. We log
-# the raw text + hex so a stuck reply-keyboard tap (e.g. emoji-variant
-# mismatch, client-side normalisation) leaves a paper trail instead of
-# silently being dropped on the floor. The bot intentionally stays
-# silent — answering every random user message would be noisy.
+# Any text message that did NOT match a section button lands here. We
+# log a short fingerprint so a stuck reply-keyboard tap (e.g.
+# emoji-variant mismatch, client-side normalisation) leaves a paper
+# trail instead of silently being dropped on the floor. The bot
+# intentionally stays silent — answering every random user message
+# would be noisy.
+#
+# INFO #2 — pre-fix the structured payload carried the full ``text`` +
+# UTF-8 ``hex``. That meant any private message a user typed at the
+# bot was preserved verbatim in JSON logs (Loki/Sentry), expanding
+# the PII blast radius beyond what's needed to debug the
+# keyboard-mismatch path. The fingerprint below keeps just enough
+# signal to identify a recurring stuck pattern (length + a stable
+# SHA-256 prefix) without retaining the message body.
+_UNMATCHED_TEXT_FINGERPRINT_BYTES = 8
+
+
+def _fingerprint(text: str) -> str:
+    """Return a short stable hex fingerprint of ``text`` for log correlation.
+
+    Truncated SHA-256 (``_UNMATCHED_TEXT_FINGERPRINT_BYTES`` bytes
+    → 16 hex chars) — enough collision resistance to group repeated
+    occurrences of the same stuck button without storing the
+    plaintext.
+    """
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[: _UNMATCHED_TEXT_FINGERPRINT_BYTES * 2]
+
+
 @router.message(F.text)
 async def _on_unmatched_text(message: Message) -> None:
     text = message.text or ""
@@ -162,10 +186,8 @@ async def _on_unmatched_text(message: Message) -> None:
         "bot: dropping unmatched text message",
         extra={
             "event": "bot.unmatched_text",
-            "text": text,
-            "text_hex": text.encode("utf-8").hex(),
             "text_len": len(text),
-            "from_username": message.from_user.username if message.from_user else None,
+            "text_fingerprint": _fingerprint(text),
             "from_id": message.from_user.id if message.from_user else None,
         },
     )

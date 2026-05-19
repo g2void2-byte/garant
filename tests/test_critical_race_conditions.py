@@ -40,7 +40,14 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from .helpers import auth_headers, credit_balance, get_user_id_by_tg, setup_pin, signed_init_data
+from .helpers import (
+    auth_headers,
+    credit_balance,
+    get_user_id_by_tg,
+    setup_pin,
+    signed_init_data,
+    with_totp,
+)
 
 
 def _sign_webhook(body: bytes) -> str:
@@ -632,3 +639,114 @@ async def test_concurrent_me_for_new_user_is_idempotent(client):
             .all()
         )
         assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_admin_mark_paid_two_deposits_credits_both(client):
+    """CRIT #3 — two parallel ``POST /api/admin/deposits/{id}/mark-paid``
+    for two distinct ``pending`` deposits of the SAME user must credit
+    the balance for both without dropping either increment.
+
+    Pre-fix ``mark_paid`` called ``get_or_create_balance`` (no row lock),
+    so two concurrent calls read the same ``UserBalance.amount``
+    snapshot, each added their own deposit amount to that snapshot,
+    and the loser of the commit race overwrote the winner — the
+    user lost one of the two credits silently. The fix is a
+    ``SELECT ... FOR UPDATE`` on the ``UserBalance`` row inside the
+    handler (mirrors ``refund_deposit`` and
+    ``services_wallet.credit_deposit``).
+    """
+    from sqlalchemy import select
+
+    from backend.app.db import async_session
+    from backend.app.models import (
+        AdminAuditLog,
+        Currency,
+        User,
+        UserBalance,
+        WalletDeposit,
+        WalletDepositStatus,
+    )
+
+    admin_init = signed_init_data(8901, "race_mp_admin")
+    user_init = signed_init_data(8902, "race_mp_user")
+
+    # Bootstrap both rows via /api/me; promote the admin.
+    admin_resp = await client.get("/api/me", headers=auth_headers(admin_init))
+    assert admin_resp.status_code == 200, admin_resp.text
+    user_resp = await client.get("/api/me", headers=auth_headers(user_init))
+    assert user_resp.status_code == 200, user_resp.text
+    user_id = user_resp.json()["id"]
+    async with async_session() as session:
+        admin_row = await session.get(User, admin_resp.json()["id"])
+        assert admin_row is not None
+        admin_row.is_admin = True
+        await session.commit()
+
+    # Create two ``pending`` deposits for the same user directly in
+    # the DB so we can race the mark-paid calls without going through
+    # the CryptoBot mock first.
+    async with async_session() as session:
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
+        d1 = WalletDeposit(
+            user_id=user_id,
+            currency_id=usdt.id,
+            amount=Decimal("11.0"),
+            provider_invoice_id="cb-race-mp-1",
+            pay_url="http://example.com/pay/1",
+            status=WalletDepositStatus.pending,
+        )
+        d2 = WalletDeposit(
+            user_id=user_id,
+            currency_id=usdt.id,
+            amount=Decimal("22.0"),
+            provider_invoice_id="cb-race-mp-2",
+            pay_url="http://example.com/pay/2",
+            status=WalletDepositStatus.pending,
+        )
+        session.add_all([d1, d2])
+        await session.commit()
+        d1_id, d2_id = d1.id, d2.id
+        usdt_id = usdt.id
+
+    headers = with_totp(auth_headers(admin_init))
+    r1, r2 = await asyncio.gather(
+        client.post(f"/api/admin/deposits/{d1_id}/mark-paid", json={}, headers=headers),
+        client.post(f"/api/admin/deposits/{d2_id}/mark-paid", json={}, headers=headers),
+    )
+    assert r1.status_code == 200, r1.text
+    assert r2.status_code == 200, r2.text
+
+    async with async_session() as session:
+        bal = (
+            await session.execute(
+                select(UserBalance).where(
+                    UserBalance.user_id == user_id,
+                    UserBalance.currency_id == usdt_id,
+                )
+            )
+        ).scalar_one()
+        # Pre-fix: the loser overwrote the winner so amount was 11 OR
+        # 22 — never the sum. With ``FOR UPDATE`` the second handler
+        # waits for the first to commit, then reads the
+        # post-credit row and adds its own deposit on top.
+        assert Decimal(str(bal.amount)) == Decimal("33.0")
+
+        # Both deposit rows are marked paid (each handler also locks
+        # the WalletDeposit row separately).
+        for dep_id in (d1_id, d2_id):
+            dep = await session.get(WalletDeposit, dep_id)
+            assert dep is not None
+            assert dep.status == WalletDepositStatus.paid
+
+        # Each successful mark-paid writes one audit row.
+        audits = (
+            (
+                await session.execute(
+                    select(AdminAuditLog).where(AdminAuditLog.action == "deposit.mark_paid")
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(audits) >= 2
