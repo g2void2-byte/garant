@@ -136,8 +136,15 @@ def profile_summary(
 ) -> str:
     """Render the profile card. ``by_currency`` lines split buys/sales
     sums per currency code; mixed-currency users see one line per asset.
+
+    Telegram restricts usernames to ``^[a-z][a-z0-9_]{4,31}$`` so
+    ``user.username`` cannot in practice contain HTML metacharacters,
+    but the bot ships every DM with ``parse_mode=HTML`` so we escape
+    defensively to match how ``display_name`` is handled below — keeps
+    the invariant in one place rather than relying on an upstream
+    constraint that future code paths might not honour.
     """
-    username = f"@{user.username}" if user.username else "—"
+    username = f"@{escape(user.username)}" if user.username else "—"
     name = escape(user.display_name) if user.display_name else "—"
     deposit_value = float(user.deposit_total)
     deposit_str = _format_money(deposit_value) if deposit_value > 0 else "—"
@@ -155,7 +162,12 @@ def profile_summary(
 
 
 def settings_summary(user: User) -> str:
-    username = f"@{user.username}" if user.username else "—"
+    # Escape ``user.username`` for HTML parse-mode (see ``profile_summary``
+    # for the rationale) — even though Telegram's own username charset
+    # cannot carry ``<`` / ``>`` / ``&``, treat the field as untrusted at
+    # the render layer so a future code path that bypasses the upstream
+    # constraint cannot smuggle markup into a bot DM.
+    username = f"@{escape(user.username)}" if user.username else "—"
     return (
         f"⚙️ <b>Настройки профиля</b> для {username}\n\n"
         "Включите анонимность, чтобы скрыть юзернейм во вновь создаваемых "

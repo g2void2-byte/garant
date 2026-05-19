@@ -237,6 +237,29 @@ class CategoryOut(BaseModel):
 
 MAX_SERVICE_PHOTOS = 6
 
+# Maximum length for user-supplied free-form description fields
+# (services, deals). Matches the existing cap on the admin-side
+# ``AdminServiceUpdateIn._description_ok`` so user-initiated and
+# admin-initiated writes converge on the same invariant; without
+# this limit the public create / update endpoints accepted arbitrary-
+# length payloads that ended up in the search-vector pipeline and
+# admin-panel text views, with predictable bloat consequences.
+MAX_DESCRIPTION_LEN = 4000
+
+
+def _validate_description(v: str | None) -> str | None:
+    """Cap free-form description length.
+
+    ``None`` means "don't touch" (only meaningful on update schemas);
+    the empty-string default on create schemas is permitted as-is so
+    optional description fields stay optional.
+    """
+    if v is None:
+        return v
+    if len(v) > MAX_DESCRIPTION_LEN:
+        raise ValueError(f"Описание слишком длинное (≤{MAX_DESCRIPTION_LEN})")
+    return v
+
 
 def _validate_service_photos(v: list[str] | None) -> list[str] | None:
     # V12-UI — gatekeep the photo list (length + each entry's scheme)
@@ -281,6 +304,11 @@ class ServiceCreate(BaseModel):
     price: float = 0
     photo_urls: list[str] = Field(default_factory=list)
 
+    @field_validator("description")
+    @classmethod
+    def _description_ok(cls, v: str) -> str:
+        return _validate_description(v) or ""
+
     @field_validator("photo_urls")
     @classmethod
     def _photo_urls_ok(cls, v: list[str]) -> list[str]:
@@ -293,6 +321,11 @@ class ServiceUpdate(BaseModel):
     price: float | None = None
     status: str | None = None  # draft / active / paused (banned only via admin)
     photo_urls: list[str] | None = None
+
+    @field_validator("description")
+    @classmethod
+    def _description_ok(cls, v: str | None) -> str | None:
+        return _validate_description(v)
 
     @field_validator("photo_urls")
     @classmethod
@@ -371,6 +404,11 @@ class DealCreate(BaseModel):
     description: str = ""
     pay_comission: PayCommission = PayCommission.buyer
     currency_code: str = "USDT"
+
+    @field_validator("description")
+    @classmethod
+    def _description_ok(cls, v: str) -> str:
+        return _validate_description(v) or ""
 
 
 class DealCancelRequest(BaseModel):
