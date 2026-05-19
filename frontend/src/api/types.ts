@@ -647,6 +647,12 @@ export interface AdminTreasuryWithdrawBody {
   note?: string;
 }
 
+export interface AdminTreasuryMarkSentBody {
+  confirm: boolean;
+  cryptobot_transfer_id?: string | null;
+  note?: string;
+}
+
 export interface AdminTreasuryWithdrawDto {
   id: number;
   actor_id: number;

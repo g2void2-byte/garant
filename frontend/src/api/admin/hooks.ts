@@ -43,6 +43,7 @@ import type {
   AdminSettingsDto,
   AdminSettingsUpdateBody,
   AdminSystemStatusDto,
+  AdminTreasuryMarkSentBody,
   AdminTreasuryOverviewDto,
   AdminTreasuryWithdrawBody,
   AdminTreasuryWithdrawDto,
@@ -557,6 +558,30 @@ export function useAdminTreasuryWithdraw() {
     // no longer takes a per-call code argument.
     mutationFn: (body) =>
       api.post("api/admin/treasury/withdraw", { json: body }).json(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.admin.treasury() });
+      qc.invalidateQueries({ queryKey: qk.admin.treasuryHistory() });
+    },
+  });
+}
+
+export function useAdminTreasuryMarkSent() {
+  // Manual reconciliation for a ``pending`` treasury row when
+  // Phase 2 (CryptoBot HTTP) succeeded but Phase 3 (DB commit)
+  // crashed. Same TOTP gate as ``useAdminTreasuryWithdraw`` — the
+  // session JWT is attached by ``api/client.ts``. Invalidates both
+  // the per-currency balance overview and the history list so the
+  // ``available`` projection reflects the now-``sent`` row.
+  const qc = useQueryClient();
+  return useMutation<
+    AdminTreasuryWithdrawDto,
+    Error,
+    { id: number; body: AdminTreasuryMarkSentBody }
+  >({
+    mutationFn: ({ id, body }) =>
+      api
+        .post(`api/admin/treasury/${id}/mark_sent`, { json: body })
+        .json(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.admin.treasury() });
       qc.invalidateQueries({ queryKey: qk.admin.treasuryHistory() });

@@ -931,6 +931,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/treasury/{withdrawal_id}/mark_sent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Treasury Mark Sent
+         * @description Manually flip a stuck ``pending`` treasury row to ``sent``.
+         *
+         *     Recovery path for the Phase 2 → Phase 3 gap in
+         *     :func:`treasury_withdraw`: CryptoBot processed the transfer, but the
+         *     final ``commit()`` never landed (network blip / crash), so the row
+         *     is still ``pending`` and counted against ``available``. The operator
+         *     verifies the transfer on CryptoBot's side (``spend_id=treas:{id}``
+         *     or the dashboard), then calls this endpoint to advance the row.
+         *
+         *     Guards:
+         *       * 2FA via ``X-Totp-Code`` header.
+         *       * ``confirm=true`` — explicit second click.
+         *       * Row must be in ``pending``: ``sent`` rows are idempotent
+         *         no-ops (we'd otherwise log duplicate audit rows), ``failed``
+         *         rows are deliberately terminal and must be re-issued as a
+         *         fresh withdrawal if the operator wants to retry.
+         *       * ``with_for_update()`` row lock during the flip so a concurrent
+         *         Phase 3 retry of the original ``treasury_withdraw`` (e.g. from
+         *         a delayed-but-not-dead async task) doesn't race us.
+         *
+         *     There is **no** new CryptoBot HTTP call here — by contract the
+         *     transfer already happened. We only record what the operator
+         *     observed.
+         */
+        post: operations["treasury_mark_sent_api_admin_treasury__withdrawal_id__mark_sent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users": {
         parameters: {
             query?: never;
@@ -3077,6 +3119,32 @@ export interface components {
             decimals: number;
             /** Withdrawn */
             withdrawn: string;
+        };
+        /**
+         * AdminTreasuryMarkSentIn
+         * @description Body for ``POST /api/admin/treasury/{withdrawal_id}/mark_sent``.
+         *
+         *     Manual reconciliation path for treasury rows stuck at ``pending``:
+         *     the CryptoBot transfer actually went through in Phase 2 of
+         *     ``treasury_withdraw`` but Phase 3 failed to commit (network glitch,
+         *     crash, etc.), leaving the row mid-flight. The operator verifies
+         *     the transfer succeeded on CryptoBot's side (via their dashboard
+         *     or the ``spend_id=treas:{row.id}`` lookup), then calls this
+         *     endpoint to advance the row to ``status="sent"``.
+         *
+         *     Mirrors ``WalletWithdrawAdminDecideIn(action="mark_sent")`` in
+         *     ``routers/admin/withdrawals.py``.
+         */
+        AdminTreasuryMarkSentIn: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Cryptobot Transfer Id */
+            cryptobot_transfer_id?: string | null;
+            /** Note */
+            note?: string | null;
         };
         /** AdminTreasuryOverviewOut */
         AdminTreasuryOverviewOut: {
@@ -6138,6 +6206,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminTreasuryWithdrawOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    treasury_mark_sent_api_admin_treasury__withdrawal_id__mark_sent_post: {
+        parameters: {
+            query?: never;
+            header: {
+                authorization: string;
+                "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
+            };
+            path: {
+                withdrawal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminTreasuryMarkSentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTreasuryWithdrawOut"];
                 };
             };
             /** @description Validation Error */

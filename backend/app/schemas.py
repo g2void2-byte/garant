@@ -1452,6 +1452,44 @@ class AdminTreasuryWithdrawOut(BaseModel):
     created_at: datetime
 
 
+class AdminTreasuryMarkSentIn(BaseModel):
+    """Body for ``POST /api/admin/treasury/{withdrawal_id}/mark_sent``.
+
+    Manual reconciliation path for treasury rows stuck at ``pending``:
+    the CryptoBot transfer actually went through in Phase 2 of
+    ``treasury_withdraw`` but Phase 3 failed to commit (network glitch,
+    crash, etc.), leaving the row mid-flight. The operator verifies
+    the transfer succeeded on CryptoBot's side (via their dashboard
+    or the ``spend_id=treas:{row.id}`` lookup), then calls this
+    endpoint to advance the row to ``status="sent"``.
+
+    Mirrors ``WalletWithdrawAdminDecideIn(action="mark_sent")`` in
+    ``routers/admin/withdrawals.py``.
+    """
+
+    confirm: bool = False
+    cryptobot_transfer_id: str | None = None
+    note: str | None = None
+
+    @field_validator("cryptobot_transfer_id")
+    @classmethod
+    def _transfer_id_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        # CryptoBot returns a numeric ``transfer_id`` (its own auto-
+        # increment id, currently fits int64). Reject anything that
+        # isn't a string of digits so the audit row stays grep-able
+        # and the reconciliation never silently records garbage.
+        if not v.isdigit():
+            raise ValueError("cryptobot_transfer_id должен быть числом")
+        if len(v) > 32:
+            raise ValueError("cryptobot_transfer_id слишком длинный")
+        return v
+
+
 # ── Admin: settings (PR-CDE) ───────────────────────────
 
 
