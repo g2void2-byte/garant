@@ -85,7 +85,7 @@ class _BlankUrlCryptoPay:
     async def __aexit__(self, *_exc):
         return None
 
-    async def create_invoice(self, *, asset, amount, description=None):  # noqa: ARG002
+    async def create_invoice(self, *, asset, amount, **_kwargs):  # noqa: ARG002
         return _BlankUrlInvoice()
 
 

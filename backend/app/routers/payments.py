@@ -6,8 +6,11 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ..deps import SessionDep
 from ..services_payments import (
+    crystalpay_webhook_secret,
+    handle_crystalpay_invoice,
     handle_invoice_expired,
     handle_invoice_paid,
+    verify_crystalpay_webhook_signature,
     verify_webhook_signature,
     webhook_secret,
 )
@@ -102,3 +105,52 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
         },
     )
     return {"ok": True, "ignored": update_type or "unknown"}
+
+
+@router.post("/webhook/crystalpay")
+async def crystalpay_webhook(request: Request, session: SessionDep):
+    """Receive a Crystalpay v3 webhook update.
+
+    Crystalpay posts a JSON envelope containing the invoice ``id``,
+    ``state`` and a ``signature`` field. The signature is
+    ``sha1(f"{id}:{secret}")`` where ``secret`` is the cashbox API
+    secret (the same secret used for the v3 API). We verify it with
+    :func:`backend.app.crystalpay.verify_webhook_signature`, then
+    dispatch on ``state`` via :func:`handle_crystalpay_invoice`.
+
+    Response is always 200 (with an ``ok`` bool) for benign
+    duplicates so Crystalpay doesn't keep retrying.
+    """
+    secret = crystalpay_webhook_secret()
+    if not secret:
+        logger.error(
+            "Crystalpay webhook: secret not configured \u2014 refusing",
+            extra={"event": "crystalpay.webhook.secret_missing"},
+        )
+        raise HTTPException(503, "Webhooks disabled (Crystalpay not configured)")
+
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, "Body must be JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Body must be a JSON object")
+
+    invoice_id = body.get("id") or body.get("invoice_id")
+    signature = body.get("signature")
+    invoice_id_str = str(invoice_id) if invoice_id is not None else None
+    signature_str = str(signature) if isinstance(signature, str) else None
+
+    if not verify_crystalpay_webhook_signature(invoice_id_str or "", secret, signature_str):
+        logger.warning(
+            "Crystalpay webhook bad signature",
+            extra={
+                "event": "crystalpay.webhook.bad_signature",
+                "signature_present": bool(signature_str),
+                "invoice_id_present": bool(invoice_id_str),
+            },
+        )
+        raise HTTPException(401, "Bad signature")
+
+    result = await handle_crystalpay_invoice(session, body)
+    return {"ok": True, **result}

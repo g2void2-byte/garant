@@ -284,7 +284,14 @@ function HistoryList({
   currencyCode: string;
   decimals: number;
   depositsLoading: boolean;
-  deposits: { id: number; amount: number; status: string; created_at: string; pay_url: string }[];
+  deposits: {
+    id: number;
+    amount: number;
+    status: string;
+    created_at: string;
+    pay_url: string;
+    provider: string;
+  }[];
   withdrawals: {
     id: number;
     amount: number;
@@ -304,6 +311,7 @@ function HistoryList({
     status: string;
     created_at: string;
     pay_url?: string;
+    provider?: string;
   };
 
   const rows: Row[] = [
@@ -317,6 +325,7 @@ function HistoryList({
       status: d.status,
       created_at: d.created_at,
       pay_url: d.status === "pending" ? d.pay_url : undefined,
+      provider: d.provider,
     })),
     ...withdrawals.map<Row>((w) => ({
       key: `w-${w.id}`,
@@ -354,7 +363,17 @@ function HistoryList({
       {rows.map((r) => (
         <div key={r.key} className="bg-panel border border-border rounded-card p-3 flex items-center justify-between">
           <div className="min-w-0">
-            <div className="font-semibold truncate">{r.title}</div>
+            <div className="font-semibold truncate flex items-center gap-2">
+              <span>{r.title}</span>
+              {r.kind === "deposit" && r.provider && (
+                <span
+                  className="inline-flex items-center rounded-full border border-border bg-bg px-2 py-[1px] text-[10px] font-medium uppercase text-text-muted"
+                  data-testid={`deposit-provider-${r.provider}`}
+                >
+                  {r.provider === "crystalpay" ? "Crystalpay" : "CryptoBot"}
+                </span>
+              )}
+            </div>
             <div className={`text-xs ${STATUS_TONE[r.status] ?? "text-text-muted"}`}>
               {r.subtitle}
             </div>

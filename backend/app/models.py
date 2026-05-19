@@ -114,9 +114,12 @@ class WalletDepositProvider(str, enum.Enum):
     TYPE`` operations Postgres allows inside a transaction); the
     matching downgrade is a no-op and gets a V5-E-1 marker because
     ``ALTER TYPE ... DROP VALUE`` doesn't exist in Postgres.
+    ``crystalpay`` was added via the
+    ``q7d8e2c1f4a9_add_crystalpay_provider_value`` migration.
     """
 
     cryptobot = "cryptobot"
+    crystalpay = "crystalpay"
 
 
 class WalletDepositStatus(str, enum.Enum):

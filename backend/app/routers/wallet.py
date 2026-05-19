@@ -57,6 +57,7 @@ def _deposit_dto(d: WalletDeposit, c: Currency) -> WalletDepositOut:
         pay_url=d.pay_url,
         invoice_id=d.provider_invoice_id,
         purpose=d.purpose or "wallet",
+        provider=d.provider.value,
         created_at=d.created_at,
         paid_at=d.paid_at,
     )
@@ -131,7 +132,12 @@ async def create_deposit(
     # trail", not theft. PIN-gating creates UX friction without
     # blocking that vector; rate-limiting blocks the vector directly.
     deposit = await create_deposit_invoice(
-        session, user, body.currency_code, body.amount, purpose=body.purpose
+        session,
+        user,
+        body.currency_code,
+        body.amount,
+        purpose=body.purpose,
+        provider=body.provider,
     )
     currency = await session.get(Currency, deposit.currency_id)
     if currency is None:

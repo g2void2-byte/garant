@@ -78,6 +78,7 @@ function makeDeposit(over: Partial<WalletDepositDto> = {}): WalletDepositDto {
     // Default to legacy ``"wallet"`` routing; trust-deposit tests
     // can override via ``over``.
     purpose: "wallet",
+    provider: "cryptobot",
     created_at: "2026-01-01T00:00:00Z",
     paid_at: null,
     currency: makeCurrency(),
@@ -156,12 +157,40 @@ describe("<WalletDepositPage />", () => {
       expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USDT",
         amount: 10,
+        provider: "cryptobot",
       });
     });
     expect(openTelegramLinkSpy).toHaveBeenCalledWith(
       "https://t.me/CryptoBot?start=ok",
     );
     expect(hapticSpy).toHaveBeenCalledWith("success");
+  });
+
+  it("submits provider='crystalpay' when the Crystalpay tile is selected", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(
+      makeDeposit({
+        pay_url: "https://pay.crystalpay.io/cp-1",
+        amount: 10,
+        provider: "crystalpay",
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByTestId("provider-crystalpay"));
+    const amount = screen.getByDisplayValue("5") as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: "10" } });
+    await user.click(screen.getByRole("button", { name: /Пополнить депозит/ }));
+
+    await waitFor(() => {
+      expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "USDT",
+        amount: 10,
+        provider: "crystalpay",
+      });
+    });
+    expect(openTelegramLinkSpy).toHaveBeenCalledWith(
+      "https://pay.crystalpay.io/cp-1",
+    );
   });
 
   it("error path: surfaces server error via haptic('error')", async () => {

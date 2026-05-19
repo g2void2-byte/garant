@@ -564,6 +564,10 @@ export interface CreateWalletDepositBody {
   currency_code: string;
   amount: number;
   purpose?: "wallet" | "trust";
+  // Selects the upstream payment provider. Defaults to
+  // ``"cryptobot"`` on the back-end when omitted; clients only need
+  // to set this when offering the Crystalpay alternative.
+  provider?: "cryptobot" | "crystalpay";
 }
 
 export function useCreateWalletDeposit() {

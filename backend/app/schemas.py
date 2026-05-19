@@ -569,6 +569,14 @@ class WalletDepositCreateReq(BaseModel):
     # spend / withdraw path on purpose (lock-in by design) and only
     # surfaces publicly as ``deposit`` on the user card.
     purpose: Literal["wallet", "trust"] = "wallet"
+    # Selects which upstream payment provider the deposit invoice is
+    # issued on. ``"cryptobot"`` (default, backwards-compatible) uses
+    # Crypto Pay; ``"crystalpay"`` issues a Crystalpay v3 invoice.
+    # Both providers feed the same ``WalletDeposit`` row + the same
+    # post-payment ``credit_deposit`` path — the routing only affects
+    # which API the invoice is created on and which webhook URL the
+    # user pays through.
+    provider: Literal["cryptobot", "crystalpay"] = "cryptobot"
 
     @field_validator("amount")
     @classmethod
@@ -590,6 +598,10 @@ class WalletDepositOut(BaseModel):
     # (and so the wallet ``/deposits`` listing can distinguish the two
     # purposes without an extra round-trip).
     purpose: str
+    # Mirrors ``WalletDeposit.provider`` so the frontend can render a
+    # provider badge on the deposit card / list. The value matches the
+    # backend enum on the wire: ``"cryptobot"`` or ``"crystalpay"``.
+    provider: str
     created_at: datetime
     paid_at: datetime | None
 

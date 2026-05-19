@@ -5630,6 +5630,15 @@
             "title": "Currency Code",
             "type": "string"
           },
+          "provider": {
+            "default": "cryptobot",
+            "enum": [
+              "cryptobot",
+              "crystalpay"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
           "purpose": {
             "default": "wallet",
             "enum": [
@@ -5685,6 +5694,10 @@
             "title": "Pay Url",
             "type": "string"
           },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
           "purpose": {
             "title": "Purpose",
             "type": "string"
@@ -5702,6 +5715,7 @@
           "pay_url",
           "invoice_id",
           "purpose",
+          "provider",
           "created_at",
           "paid_at"
         ],
@@ -13890,6 +13904,26 @@
           }
         },
         "summary": "Cryptobot Webhook",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/payments/webhook/crystalpay": {
+      "post": {
+        "description": "Receive a Crystalpay v3 webhook update.\n\nCrystalpay posts a JSON envelope containing the invoice ``id``,\n``state`` and a ``signature`` field. The signature is\n``sha1(f\"{id}:{secret}\")`` where ``secret`` is the cashbox API\nsecret (the same secret used for the v3 API). We verify it with\n:func:`backend.app.crystalpay.verify_webhook_signature`, then\ndispatch on ``state`` via :func:`handle_crystalpay_invoice`.\n\nResponse is always 200 (with an ``ok`` bool) for benign\nduplicates so Crystalpay doesn't keep retrying.",
+        "operationId": "crystalpay_webhook_api_payments_webhook_crystalpay_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Crystalpay Webhook",
         "tags": [
           "payments"
         ]

@@ -219,6 +219,48 @@ def settings_keyboard(user: User) -> InlineKeyboardMarkup:
     )
 
 
+def notification_keyboard(
+    notif_type: str, payload: dict[str, object] | None
+) -> InlineKeyboardMarkup | None:
+    """Build the inline keyboard attached to a DM notification.
+
+    Wired by :func:`backend.app.notifier.dispatch_after_commit` so every
+    DM the notifier sends carries a deep-link button into the relevant
+    TMA section. The shape is intentionally narrow — only the two
+    notification buckets that already pass structured ``payload``
+    fields (``deals`` with ``deal_id``, ``deposits`` with
+    ``deposit_id``) get a keyboard. Other notification types fall
+    through to ``None`` and the DM is sent unchanged so we never break
+    an unrelated flow.
+    """
+    if not payload:
+        return None
+    if notif_type == "deals":
+        deal_id = payload.get("deal_id")
+        if not isinstance(deal_id, int):
+            return None
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [_webapp_button("👁 Посмотреть сделку", f"/deals/{deal_id}")],
+                [_webapp_button("🔙 Назад", "/")],
+            ]
+        )
+    if notif_type == "deposits":
+        deposit_id = payload.get("deposit_id")
+        if not isinstance(deposit_id, int):
+            return None
+        # Wallet deposit pages don't take an id in the URL — the list
+        # at ``/deposit`` is keyed by ``WalletDepositOut.id`` server-
+        # side, so the button only needs to deep-link the section.
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [_webapp_button("💼 Открыть депозит", "/deposit")],
+                [_webapp_button("🔙 Назад", "/")],
+            ]
+        )
+    return None
+
+
 def help_keyboard() -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if settings.bot_docs_url:

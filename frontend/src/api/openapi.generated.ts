@@ -1683,6 +1683,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/payments/webhook/crystalpay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Crystalpay Webhook
+         * @description Receive a Crystalpay v3 webhook update.
+         *
+         *     Crystalpay posts a JSON envelope containing the invoice ``id``,
+         *     ``state`` and a ``signature`` field. The signature is
+         *     ``sha1(f"{id}:{secret}")`` where ``secret`` is the cashbox API
+         *     secret (the same secret used for the v3 API). We verify it with
+         *     :func:`backend.app.crystalpay.verify_webhook_signature`, then
+         *     dispatch on ``state`` via :func:`handle_crystalpay_invoice`.
+         *
+         *     Response is always 200 (with an ``ok`` bool) for benign
+         *     duplicates so Crystalpay doesn't keep retrying.
+         */
+        post: operations["crystalpay_webhook_api_payments_webhook_crystalpay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pin/change": {
         parameters: {
             query?: never;
@@ -4103,6 +4133,12 @@ export interface components {
             /** Currency Code */
             currency_code: string;
             /**
+             * Provider
+             * @default cryptobot
+             * @enum {string}
+             */
+            provider: "cryptobot" | "crystalpay";
+            /**
              * Purpose
              * @default wallet
              * @enum {string}
@@ -4127,6 +4163,8 @@ export interface components {
             paid_at: string | null;
             /** Pay Url */
             pay_url: string;
+            /** Provider */
+            provider: string;
             /** Purpose */
             purpose: string;
             /** Status */
@@ -7629,6 +7667,26 @@ export interface operations {
         };
     };
     cryptobot_webhook_api_payments_webhook_cryptobot_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    crystalpay_webhook_api_payments_webhook_crystalpay_post: {
         parameters: {
             query?: never;
             header?: never;

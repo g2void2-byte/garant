@@ -22,6 +22,18 @@ class Settings(BaseSettings):
     cryptobot_token: str = ""
     cryptobot_testnet: bool = False
 
+    # Crystalpay v3 API credentials (alternative deposit provider).
+    # ``crystalpay_login`` is the cashbox login displayed in the
+    # Crystalpay merchant cabinet; ``crystalpay_secret`` is the
+    # cashbox secret used both as ``Authorization`` for v3 API calls
+    # and as the salt for ``sha1(invoice_id:secret)`` webhook signature
+    # verification (see ``backend.app.crystalpay``). Both empty
+    # disables the provider — ``services_wallet.create_deposit_invoice``
+    # raises 502 if a request specifies ``provider="crystalpay"`` and
+    # either value is blank.
+    crystalpay_login: str = ""
+    crystalpay_secret: str = ""
+
     webapp_url: str = "http://localhost:5173"
     webapp_port: int = 8080
     allowed_origins: str = "http://localhost:5173"
@@ -105,8 +117,16 @@ class Settings(BaseSettings):
     # accumulate forever. ``wallet_deposit_sweep_seconds`` is how often
     # the background loop runs; ``0`` disables the loop entirely (the
     # default in tests via the env var).
-    wallet_deposit_expiry_seconds: int = 24 * 60 * 60  # 24h
-    wallet_deposit_sweep_seconds: int = 600
+    #
+    # The default is 30 minutes: invoices that sit longer than that
+    # without payment are almost never going to be paid (the user
+    # closed the TMA, the rate moved, etc.) and an active provider
+    # invoice tying up a CryptoBot / Crystalpay slot has a real cost.
+    # 30 min also matches the upstream lifetime we now pass to both
+    # providers when creating the invoice so all three sides agree on
+    # the terminal moment.
+    wallet_deposit_expiry_seconds: int = 30 * 60  # 30 min
+    wallet_deposit_sweep_seconds: int = 60
 
     # H-1 — the legacy ``Invoice`` ledger (``invoice_expiry_seconds`` /
     # ``invoice_sweep_seconds``) was retired together with the
