@@ -212,7 +212,15 @@ def verify_webhook_signature(invoice_id: str, salt: str | None, signature: str |
     """
     if not invoice_id or not salt or not signature:
         return False
-    expected = hashlib.sha1(f"{invoice_id}:{salt}".encode()).hexdigest()
+    # Crystalpay v3 signs webhook bodies as ``sha1(f"{id}:{secret}")``;
+    # we cannot pick a stronger algorithm because the upstream protocol
+    # is the source of truth. The salt is the cashbox API secret, so
+    # the construction is HMAC-equivalent for an attacker who lacks
+    # the secret. Suppressed B324: the choice of SHA-1 is dictated by
+    # the external API contract, not by us.
+    expected = hashlib.sha1(  # noqa: S324  # nosec B324
+        f"{invoice_id}:{salt}".encode()
+    ).hexdigest()
     return hmac.compare_digest(expected, signature)
 
 
