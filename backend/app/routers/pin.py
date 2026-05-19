@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 from datetime import datetime, timedelta
 
@@ -315,9 +316,19 @@ async def pin_reset_request(
     # ``code``, no ``extra=`` payload). See the docstrings on
     # ``backend.app.bot.notify.send_dm`` and
     # ``backend.app.notifier.push`` for the full contract.
+    #
+    # 5.4 (MED) — ``send_dm`` ships ``text`` with ``parse_mode=HTML``
+    # (see ``bot/notify.py::get_bot``). Every interpolated value
+    # below MUST pass through ``html.escape`` even when the source is
+    # server-controlled (``generate_reset_code`` returns digits only),
+    # so a future change that adds user-supplied input to this string
+    # cannot accidentally inject HTML / Telegram entities. The static
+    # ``<b>...</b>`` wrappers stay un-escaped because they are the
+    # only markup we *want* the Telegram client to render.
+    # *** DO NOT INTERPOLATE UNESCAPED USER INPUT BELOW. ***
     text = (
         "🔐 Сброс PIN в Garant\n\n"
-        f"Ваш код: <b>{code}</b>\n\n"
+        f"Ваш код: <b>{html.escape(code)}</b>\n\n"
         "Код действителен 10 минут. Если вы не запрашивали сброс, "
         "просто игнорируйте это сообщение."
     )

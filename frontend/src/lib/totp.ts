@@ -12,6 +12,30 @@
  * ``garant:totp-token-changed`` event is dispatched on every
  * mutation so the global ``TotpGate`` modal can re-render and the
  * 2FA status pill in the admin nav stays in sync.
+ *
+ * Audit 5.3 (MED) — threat model
+ * -------------------------------
+ * The TOTP session token lives in `window.localStorage` (NOT an HttpOnly
+ * cookie) for the same reasons documented at length in
+ * `frontend/src/lib/pin.ts` — the Telegram Mini App platform does not
+ * reliably persist cookies across WebView lifecycles, and the auth model
+ * is header-based (`initData` HMAC + JWT) rather than cookie-based.
+ *
+ * Compensating controls on the *server* side mitigate the XSS exposure
+ * surface for admin sessions: (1) the token is bound to
+ * `users.totp_session_epoch`, so any 2FA disable / rotation / forced
+ * logout invalidates ALL outstanding tokens server-side regardless of
+ * where they were stored; (2) the TTL is bounded to 24h server-side
+ * (`totp_session_ttl_seconds`) and the token claim is validated against
+ * `users.is_admin` on every request, so demoting an admin instantly
+ * neuters every issued token; (3) the backend enforces TOTP-code replay
+ * prevention via `users.totp_last_counter`, so the *initial* mint of the
+ * token still requires a never-before-used 6-digit code.
+ *
+ * Anyone reading this: do NOT migrate the token to `document.cookie`
+ * without first proving that cookies survive the Telegram WebView round
+ * trip on iOS, Android, and Desktop clients. See `pin.ts` for the full
+ * context.
  */
 
 const STORAGE_KEY = "garant.totp_session_token";

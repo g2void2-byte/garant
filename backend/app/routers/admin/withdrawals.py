@@ -180,29 +180,57 @@ async def decide_withdrawal(
         if w.status != WalletWithdrawStatus.pending:
             raise HTTPException(409, "Заявка уже обработана")
 
-        # Check auto-mode: if on, fire the CryptoBot Transfer and mark sent.
         app_row = (
             await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
         ).scalar_one_or_none()
         auto = bool(app_row and app_row.auto_withdraw_enabled)
-        transfer_id: int | None = None
+
         if auto and is_cryptopay_configured(app_settings_env.cryptobot_token):
+            # 4.2 (HIGH) — two-phase commit so the row lock on
+            # ``wallet_withdrawals`` is NOT held through the CryptoBot
+            # HTTP roundtrip. Pre-fix the ``with_for_update()`` lock
+            # was kept alive across ``cp.transfer(...)``, meaning a
+            # slow / retrying CryptoBot upstream would block every
+            # other admin / user query that touches the same row
+            # (repeat Approve clicks, the user's wallet polling)
+            # for the duration of the network call. ``spend_id``
+            # idempotency (see the comment on the ``cp.transfer``
+            # call below) still protects against duplicate payouts
+            # if two admins race after the lock is released.
+            #
+            # Phase 1: mark ``approved`` (intermediate state — same
+            # state the non-auto branch terminates in) and COMMIT,
+            # which drops the row lock. The admin-action audit row
+            # is deliberately written in Phase 2 alongside the
+            # CryptoBot ``transfer_id`` so the audit log records the
+            # outcome, not just the intent. If the worker crashes
+            # between Phase 1 and Phase 2 the row stays at
+            # ``approved`` with no audit row, and a manual operator
+            # can pick it up with the existing ``mark_sent`` path
+            # (CryptoBot will dedupe via ``spend_id``).
+            w.status = WalletWithdrawStatus.approved
+            w.admin_note = body.note or ""
+            await session.commit()
+
+            # Phase 2: CryptoBot HTTP call WITHOUT any DB locks held.
+            transfer_id: int | None = None
             try:
                 async with CryptoPay(
                     app_settings_env.cryptobot_token,
                     testnet=app_settings_env.cryptobot_testnet,
                 ) as cp:
-                    # ``spend_id=f"wd:{w.id}"`` is the
-                    # idempotency key CryptoBot uses to dedupe
-                    # ``transfer`` calls server-side. Per their docs:
-                    # "Transfers with the same ``spend_id`` will be
-                    # processed only once." That's how this auto-send
-                    # path stays safe against a double click on the
-                    # admin Approve button or a retry after a network
-                    # timeout — both retries hit the same ``spend_id``
-                    # and CryptoBot returns the already-processed
-                    # transfer instead of paying out twice. The same
-                    # key is used in
+                    # ``spend_id=f"wd:{w.id}"`` is the idempotency key
+                    # CryptoBot uses to dedupe ``transfer`` calls
+                    # server-side. Per their docs: "Transfers with the
+                    # same ``spend_id`` will be processed only once."
+                    # That's how this auto-send path stays safe
+                    # against a double click on the admin Approve
+                    # button, a retry after a network timeout, OR a
+                    # second admin's race after Phase 1 commits and
+                    # releases the lock — every retry hits the same
+                    # ``spend_id`` and CryptoBot returns the
+                    # already-processed transfer instead of paying
+                    # out twice. The same key is used in
                     # ``services_wallet.create_withdrawal`` for the
                     # user-facing auto-mode path; both share the
                     # ``w.id`` namespace because each withdrawal has
@@ -219,7 +247,9 @@ async def decide_withdrawal(
                 # V11-L-15 — surface withdrawal/user/currency context
                 # as structured log fields so the JSON-logger downstream
                 # (Loki/Sentry) can query by user/currency without
-                # regexing the human message body.
+                # regexing the human message body. We leave the row
+                # at ``approved`` so a manual operator can retry via
+                # ``mark_sent``; CryptoBot will dedupe.
                 logger.error(
                     "withdrawal #%s CryptoBot transfer failed: %s",
                     w.id,
@@ -233,56 +263,133 @@ async def decide_withdrawal(
                         "actor_id": admin.id,
                     },
                 )
+                # Record the failed attempt in the audit log so the
+                # operator timeline shows the error. We re-lock the
+                # row briefly only to attach the audit row
+                # transactionally.
+                await log_admin_action(
+                    session,
+                    actor=admin,
+                    action="withdrawal.auto_send_failed",
+                    target_type="withdrawal",
+                    target_id=w.id,
+                    reason=body.note,
+                    payload={
+                        "user_id": w.user_id,
+                        "currency": currency.code if currency else None,
+                        "amount": str(w.amount),
+                        "auto": True,
+                        "error": str(e),
+                    },
+                    request=request,
+                )
+                await session.commit()
                 raise HTTPException(502, f"Ошибка CryptoBot: {e}")
 
-        if auto and transfer_id is not None:
-            # Locked funds are gone for real now — drop them from the
-            # user's locked column too.
-            bal = (
+            # Phase 3: re-lock the row, mark ``sent``, decrement
+            # ``balance.locked``, stage the notification, write the
+            # audit row, and commit. ``with_for_update()`` is taken
+            # only for this short, network-free critical section.
+            w_locked = (
                 await session.execute(
-                    select(UserBalance)
-                    .where(
-                        UserBalance.user_id == w.user_id,
-                        UserBalance.currency_id == w.currency_id,
-                    )
+                    select(WalletWithdrawal)
+                    .where(WalletWithdrawal.id == withdrawal_id)
                     .with_for_update()
                 )
             ).scalar_one_or_none()
-            if bal is not None:
-                bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - Decimal(str(w.amount)))
-            w.status = WalletWithdrawStatus.sent
-            w.processed_at = utcnow()
+            if w_locked is None:
+                raise HTTPException(404, "Заявка не найдена")
+            if w_locked.status not in (
+                WalletWithdrawStatus.approved,
+                WalletWithdrawStatus.sent,
+            ):
+                # Status changed under us (e.g. someone rejected
+                # before Phase 3 acquired the lock). CryptoBot has
+                # already shipped the funds — bail loudly so the
+                # operator notices the inconsistency.
+                logger.error(
+                    "withdrawal #%s status changed under auto-send Phase 3: %s",
+                    w.id,
+                    w_locked.status.value,
+                    extra={
+                        "event": "cryptobot.admin_decide_transfer.race",
+                        "withdrawal_id": w.id,
+                        "observed_status": w_locked.status.value,
+                        "cryptobot_transfer_id": transfer_id,
+                    },
+                )
+                raise HTTPException(409, "Заявка уже обработана")
+            if w_locked.status == WalletWithdrawStatus.sent:
+                # Already marked sent (idempotent replay of Phase 3
+                # after a crash). Return the existing row.
+                w = w_locked
+            else:
+                bal = (
+                    await session.execute(
+                        select(UserBalance)
+                        .where(
+                            UserBalance.user_id == w_locked.user_id,
+                            UserBalance.currency_id == w_locked.currency_id,
+                        )
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if bal is not None:
+                    bal.locked = max(
+                        Decimal(0),
+                        Decimal(str(bal.locked)) - Decimal(str(w_locked.amount)),
+                    )
+                w_locked.status = WalletWithdrawStatus.sent
+                w_locked.processed_at = utcnow()
+                notif, ws_payload = await notifier.insert(
+                    session,
+                    user.id,
+                    NotificationType.deposits,
+                    "Вывод выполнен",
+                    f"-{w_locked.amount} {currency.code} отправлены на {w_locked.address}",
+                    {"withdrawal_id": w_locked.id},
+                )
+                pending.append((notif, ws_payload))
+                await log_admin_action(
+                    session,
+                    actor=admin,
+                    action="withdrawal.auto_send",
+                    target_type="withdrawal",
+                    target_id=w_locked.id,
+                    reason=body.note,
+                    payload={
+                        "user_id": w_locked.user_id,
+                        "currency": currency.code if currency else None,
+                        "amount": str(w_locked.amount),
+                        "auto": True,
+                        "cryptobot_transfer_id": transfer_id,
+                    },
+                    request=request,
+                )
+                w = w_locked
         else:
+            # Non-auto branch (manual approve, or auto disabled / no
+            # CryptoBot token configured). Stays a single transaction
+            # because no network call is made — the row lock is only
+            # held for local DB work.
             w.status = WalletWithdrawStatus.approved
-        w.admin_note = body.note or ""
-
-        if currency and user and w.status == WalletWithdrawStatus.sent:
-            notif, ws_payload = await notifier.insert(
+            w.admin_note = body.note or ""
+            await log_admin_action(
                 session,
-                user.id,
-                NotificationType.deposits,
-                "Вывод выполнен",
-                f"-{w.amount} {currency.code} отправлены на {w.address}",
-                {"withdrawal_id": w.id},
+                actor=admin,
+                action="withdrawal.approve",
+                target_type="withdrawal",
+                target_id=w.id,
+                reason=body.note,
+                payload={
+                    "user_id": w.user_id,
+                    "currency": currency.code if currency else None,
+                    "amount": str(w.amount),
+                    "auto": False,
+                    "cryptobot_transfer_id": None,
+                },
+                request=request,
             )
-            pending.append((notif, ws_payload))
-
-        await log_admin_action(
-            session,
-            actor=admin,
-            action="withdrawal.approve" if not auto else "withdrawal.auto_send",
-            target_type="withdrawal",
-            target_id=w.id,
-            reason=body.note,
-            payload={
-                "user_id": w.user_id,
-                "currency": currency.code if currency else None,
-                "amount": str(w.amount),
-                "auto": auto,
-                "cryptobot_transfer_id": transfer_id,
-            },
-            request=request,
-        )
 
     elif body.action == "reject":
         if w.status not in (
