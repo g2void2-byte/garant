@@ -237,6 +237,7 @@ async def get_current_user(
 
 async def require_pin_session(
     user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
     x_pin_token: Annotated[str | None, Header(alias="X-Pin-Token")] = None,
 ) -> User:
     """Require a valid PIN session token in addition to the Telegram initData.
@@ -249,6 +250,15 @@ async def require_pin_session(
     an admin has since bumped that column (``invalidate-sessions``), the
     token's epoch no longer matches and the session is rejected without
     waiting for the JWT TTL.
+
+    Idle window enforcement: a token whose JWT exp is still in the
+    future but whose ``user.pin_last_activity_at`` is older than
+    ``settings.pin_session_ttl_seconds`` is rejected with the same
+    "session expired" detail the client uses to wipe the local token
+    and re-prompt for the PIN. ``pin_last_activity_at`` is bumped on
+    every successful gate-pass (debounced via
+    ``settings.pin_activity_debounce_seconds`` to avoid one write per
+    request on busy users).
     """
     if not user.pin_hash:
         raise HTTPException(403, "PIN не установлен")
@@ -262,6 +272,18 @@ async def require_pin_session(
         raise HTTPException(401, "PIN-сессия недействительна")
     if token_epoch != (user.pin_session_epoch or 0):
         raise HTTPException(401, "PIN-сессия отозвана")
+
+    now = utcnow()
+    idle_window = timedelta(seconds=settings.pin_session_ttl_seconds)
+    last = user.pin_last_activity_at
+    if last is not None and (now - last) > idle_window:
+        raise HTTPException(401, "PIN-сессия истекла из-за неактивности")
+    # Debounce the activity write so back-to-back protected calls don't
+    # generate a write per request. NULL → first write unconditionally.
+    debounce = timedelta(seconds=settings.pin_activity_debounce_seconds)
+    if last is None or (now - last) >= debounce:
+        user.pin_last_activity_at = now
+        await session.commit()
     return user
 
 

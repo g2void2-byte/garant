@@ -13,7 +13,6 @@ import {
   Tags,
   Users,
   Vault,
-  Wallet,
   ArrowDownToLine,
   ArrowUpFromLine,
   Server,
@@ -154,7 +153,6 @@ export default function AdminDashboardPage() {
               Разделы
             </h2>
             <div className="grid grid-cols-2 gap-2">
-              <NavTile icon={<Wallet size={18} />} label="Балансы" to="/admin/wallets" />
               <NavTile icon={<ArrowDownToLine size={18} />} label="Депозиты" to="/admin/deposits" />
               <NavTile icon={<ArrowUpFromLine size={18} />} label="Выводы" to="/admin/withdrawals" />
               <NavTile icon={<Vault size={18} />} label="Treasury" to="/admin/treasury" />

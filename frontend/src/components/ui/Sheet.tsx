@@ -38,7 +38,13 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
         ref={drag.elRef}
         className={cn(
           "fixed z-50 left-0 right-0 bottom-0 flex flex-col",
-          "max-h-[88dvh] bg-panel border-t border-border rounded-t-3xl",
+          // ``min-h-[60dvh]`` so a short form (e.g. "edit category"
+          // with a single text input) doesn't render as a sliver at
+          // the bottom edge of the viewport — the user complaint was
+          // "окно рассылки оно обрезано" / "вспывающее окно спавнится
+          // в самом низу". With a floor we always claim enough
+          // vertical space to be obviously the active surface.
+          "min-h-[60dvh] max-h-[92dvh] bg-panel border-t border-border rounded-t-3xl",
           "transition-transform duration-300",
           visible ? "translate-y-0" : "translate-y-full",
           className,

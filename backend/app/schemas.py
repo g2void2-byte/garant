@@ -1871,6 +1871,19 @@ class Admin2faVerifyIn(BaseModel):
         return v
 
 
+class Admin2faSessionOut(BaseModel):
+    """Response of ``POST /api/admin/2fa/session``.
+
+    Mirrors :class:`PinTokenOut` for the 24h TOTP-session JWT — the
+    frontend caches both ``token`` and ``expires_at`` in
+    localStorage and replays the token on every admin request via
+    the ``X-Totp-Session`` header for the lifetime of the session.
+    """
+
+    token: str
+    expires_at: datetime
+
+
 # ── Admin: audit log (PR-CDE) ──────────────────────────
 
 

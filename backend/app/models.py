@@ -264,6 +264,19 @@ class User(Base):
     # 6-digit code can't be reused inside its 30-second window.
     # ``-1`` means "no code accepted yet".
     totp_last_counter: Mapped[int] = mapped_column(BigInteger, default=-1, server_default="-1")
+    # TOTP-session epoch — every minted ``X-Totp-Session`` JWT embeds
+    # this value; bumping it (via ``2fa.disable`` / rotation /
+    # ``invalidate-sessions``) revokes every outstanding 24h session
+    # immediately, without waiting for the JWT TTL.
+    totp_session_epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Rolling "last authenticated request" timestamp. Updated by
+    # ``get_current_user`` (debounced via
+    # ``settings.pin_activity_debounce_seconds``) whenever a request
+    # carries a valid PIN session token, and consumed by
+    # ``require_pin_session`` to enforce the 30-min idle window. NULL
+    # for accounts that have never unlocked a PIN session — those are
+    # treated as "no activity" and fall through to JWT TTL.
+    pin_last_activity_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # P3.4 — full-text search vector. Computed by Postgres on INSERT/UPDATE.

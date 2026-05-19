@@ -124,7 +124,6 @@ function WithdrawForm({ onClose }: { onClose: () => void }) {
   const [address, setAddress] = useState("");
   const [note, setNote] = useState("");
   const [confirm, setConfirm] = useState(false);
-  const [totp, setTotp] = useState("");
   const withdraw = useAdminTreasuryWithdraw();
   const toast = useToast();
   return (
@@ -174,31 +173,21 @@ function WithdrawForm({ onClose }: { onClose: () => void }) {
           Подтверждаю: вывожу {amount || "0"} {currency} на адрес выше
         </span>
       </label>
-      <div>
-        <label className="block text-xs text-text-muted mb-1 flex items-center gap-1">
-          <ShieldCheck size={12} /> Код 2FA (TOTP)
-        </label>
-        <Input
-          inputMode="numeric"
-          value={totp}
-          onChange={(e) => setTotp(e.target.value)}
-          placeholder="6 цифр из аутентификатора"
-        />
+      <div className="text-xs text-text-muted flex items-center gap-1 bg-panel-2 rounded-button px-3 py-2">
+        <ShieldCheck size={12} />
+        Код 2FA будет запрошен один раз в 24 часа во всплывающем окне.
       </div>
       <Button
         type="button"
-        disabled={withdraw.isPending || !confirm || !Number(amount) || !address || !totp}
+        disabled={withdraw.isPending || !confirm || !Number(amount) || !address}
         onClick={async () => {
           try {
             await withdraw.mutateAsync({
-              body: {
-                currency_code: currency,
-                amount: Number(amount),
-                address: address.trim(),
-                confirm: true,
-                note: note.trim() || undefined,
-              },
-              totpCode: totp,
+              currency_code: currency,
+              amount: Number(amount),
+              address: address.trim(),
+              confirm: true,
+              note: note.trim() || undefined,
             });
             toast.show({
               kind: "success",

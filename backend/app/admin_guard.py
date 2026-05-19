@@ -46,7 +46,7 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .auth_2fa import _consume_totp
+from .auth_2fa import _consume_totp, validate_totp_session
 from .deps import get_current_user, get_session
 from .models import User
 
@@ -98,6 +98,7 @@ class AdminGuard:
         user: User = Depends(get_current_user),
         session: AsyncSession = Depends(get_session),
         x_totp_code: str | None = Header(default=None, alias="X-Totp-Code"),
+        x_totp_session: str | None = Header(default=None, alias="X-Totp-Session"),
     ) -> User:
         # Direct ``Depends(...)`` markers (not the ``CurrentUser`` /
         # ``SessionDep`` Annotated aliases from ``deps``) because
@@ -116,7 +117,13 @@ class AdminGuard:
         # TOTP last — burns the counter and writes to the session, so
         # we only do it after the cheaper role gate has passed.
         if self.require_totp:
-            await _consume_totp(session, user, x_totp_code)
+            # 24h ``X-Totp-Session`` JWT short-circuits the per-request
+            # code consumption: one code valid for 24h across every
+            # admin action. The session is pure (no DB write) and
+            # leaves ``_consume_totp`` as the fallback for the very
+            # first action of a new 24h window.
+            if not validate_totp_session(user, x_totp_session):
+                await _consume_totp(session, user, x_totp_code)
         return user
 
 

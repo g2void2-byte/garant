@@ -107,22 +107,6 @@ export default function AdminBroadcastsPage() {
   );
 }
 
-// A-6 — convert a ``<input type="date">`` value (``YYYY-MM-DD``) into the
-// ISO-8601 string the backend's ``datetime`` field expects. Empty input
-// → ``undefined`` so the body omits the field entirely (the audience
-// filter then leaves that side of the temporal window open).
-//
-// The composer stores dates as the user typed them — we deliberately do
-// *not* shift to UTC here. The backend treats the value as naive
-// local-ish admin intent ("everyone before May 1") rather than an exact
-// timestamp; persisting it as ``T00:00:00`` matches the inclusive /
-// half-open semantics documented on ``_audience_filter``.
-function dateInputToIso(v: string): string | undefined {
-  const trimmed = v.trim();
-  if (!trimmed) return undefined;
-  return `${trimmed}T00:00:00`;
-}
-
 function Composer({ onClose }: { onClose: () => void }) {
   const [body, setBody] = useState("");
   const [title, setTitle] = useState("");
@@ -132,8 +116,6 @@ function Composer({ onClose }: { onClose: () => void }) {
   );
   const [activeDays, setActiveDays] = useState("");
   const [minDeals, setMinDeals] = useState("");
-  const [createdAfter, setCreatedAfter] = useState("");
-  const [createdBefore, setCreatedBefore] = useState("");
   const [language, setLanguage] = useState("");
   const [inApp, setInApp] = useState(true);
   const [dm, setDm] = useState(false);
@@ -149,8 +131,6 @@ function Composer({ onClose }: { onClose: () => void }) {
     audience_role: audienceRole || undefined,
     audience_active_days: activeDays ? Number(activeDays) : undefined,
     audience_min_deals: minDeals ? Number(minDeals) : undefined,
-    audience_created_after: dateInputToIso(createdAfter),
-    audience_created_before: dateInputToIso(createdBefore),
     audience_language: language.trim() ? language.trim().toLowerCase() : undefined,
     dispatch_inapp: inApp,
     dispatch_dm: dm,
@@ -215,28 +195,6 @@ function Composer({ onClose }: { onClose: () => void }) {
             inputMode="numeric"
             value={minDeals}
             onChange={(e) => setMinDeals(e.target.value)}
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="block text-xs text-text-muted mb-1">
-            Зарегистрирован c
-          </label>
-          <Input
-            type="date"
-            value={createdAfter}
-            onChange={(e) => setCreatedAfter(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-text-muted mb-1">
-            Зарегистрирован до
-          </label>
-          <Input
-            type="date"
-            value={createdBefore}
-            onChange={(e) => setCreatedBefore(e.target.value)}
           />
         </div>
       </div>

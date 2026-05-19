@@ -497,6 +497,12 @@ async def invalidate_sessions(
     """
     target = await _get_user_or_404(session, user_id)
     target.pin_session_epoch = (target.pin_session_epoch or 0) + 1
+    # Bump the TOTP-session epoch in lockstep with the PIN one so the
+    # 24h ``X-Totp-Session`` JWT cached on every device the user
+    # owned is invalidated by the same admin action. Without this a
+    # target who happens to be a fellow admin would keep TOTP-gated
+    # write access after invalidate-sessions.
+    target.totp_session_epoch = (target.totp_session_epoch or 0) + 1
     await _audit_and_notify(
         session=session,
         request=request,
@@ -504,7 +510,10 @@ async def invalidate_sessions(
         target=target,
         action="user.invalidate_sessions",
         reason=body.reason,
-        payload={"pin_session_epoch": int(target.pin_session_epoch)},
+        payload={
+            "pin_session_epoch": int(target.pin_session_epoch),
+            "totp_session_epoch": int(target.totp_session_epoch),
+        },
         dm_title="Сессия завершена",
         dm_body=body.reason or "Администратор завершил вашу активную сессию. Войдите снова.",
     )
