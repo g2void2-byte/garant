@@ -532,16 +532,15 @@ async def public_maintenance_status():
     Returned to the TMA on every poll so the banner overlay can show
     even for un-logged-in users. Returns ``{"enabled": false,
     "message": ""}`` if the row is missing.
-
-    INFO #3 — served from the same in-process cache the maintenance
-    middleware uses (``backend.app.maintenance._get_maintenance``).
-    Pre-fix every poll opened a fresh DB session, so an unauthenticated
-    client could drive one indexed SELECT per call against
-    ``app_settings``; the 5-second TTL collapses those to one read per
-    worker per window. The admin settings PATCH handler calls
-    ``invalidate_cache()`` after committing so a toggle is reflected
-    immediately on the same worker.
     """
+    # INFO #3 — served from the same in-process cache the maintenance
+    # middleware uses (``backend.app.maintenance._get_maintenance``).
+    # Pre-fix every poll opened a fresh DB session, so an unauthenticated
+    # client could drive one indexed SELECT per call against
+    # ``app_settings``; the 5-second TTL collapses those to one read per
+    # worker per window. The admin settings PATCH handler calls
+    # ``invalidate_cache()`` after committing so a toggle is reflected
+    # immediately on the same worker.
     from .maintenance import _get_maintenance
 
     enabled, message = await _get_maintenance()
