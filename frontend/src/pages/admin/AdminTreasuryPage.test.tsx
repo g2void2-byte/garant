@@ -173,7 +173,9 @@ describe("<AdminTreasuryPage />", () => {
     const inputs = document.querySelectorAll("input");
     // Order in DOM: [amount, address, note, confirm-checkbox]
     fireEvent.change(inputs[0], { target: { value: "5" } });
-    fireEvent.change(inputs[1], { target: { value: "TJaddr" } });
+    // T1 (audit follow-up 2026-05-19) — ``address`` is a numeric
+    // Telegram user_id; the input layer strips non-digits.
+    fireEvent.change(inputs[1], { target: { value: "50000001" } });
     expect(submit).toBeDisabled();
     fireEvent.click(inputs[3]); // confirm checkbox
     expect(submit).not.toBeDisabled();
@@ -190,7 +192,11 @@ describe("<AdminTreasuryPage />", () => {
 
     const inputs = document.querySelectorAll("input");
     fireEvent.change(inputs[0], { target: { value: "5" } });
-    fireEvent.change(inputs[1], { target: { value: "  TJaddr  " } });
+    // T1 (audit follow-up 2026-05-19) — leading/trailing whitespace
+    // is stripped on the way out by ``address.trim()`` in the form
+    // submit handler, and non-digit characters are stripped at the
+    // input layer.
+    fireEvent.change(inputs[1], { target: { value: "  50000001  " } });
     fireEvent.change(inputs[2], { target: { value: "  for ops  " } });
     fireEvent.click(inputs[3]);
 
@@ -199,7 +205,7 @@ describe("<AdminTreasuryPage />", () => {
       expect(mockState.withdrawMutation.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USDT",
         amount: 5,
-        address: "TJaddr",
+        address: "50000001",
         confirm: true,
         note: "for ops",
       }),
@@ -224,7 +230,7 @@ describe("<AdminTreasuryPage />", () => {
     await user.click(screen.getByRole("button", { name: "Вывод" }));
     const inputs = document.querySelectorAll("input");
     fireEvent.change(inputs[0], { target: { value: "5" } });
-    fireEvent.change(inputs[1], { target: { value: "TJaddr" } });
+    fireEvent.change(inputs[1], { target: { value: "50000001" } });
     fireEvent.click(inputs[3]);
 
     await user.click(screen.getByRole("button", { name: "Вывести" }));
@@ -253,7 +259,7 @@ describe("<AdminTreasuryPage />", () => {
 
     const inputs = document.querySelectorAll("input");
     fireEvent.change(inputs[0], { target: { value: "0.1" } });
-    fireEvent.change(inputs[1], { target: { value: "bc1xyz" } });
+    fireEvent.change(inputs[1], { target: { value: "50000099" } });
     fireEvent.click(inputs[3]);
 
     mockState.withdrawMutation.mutateAsync.mockResolvedValue({});

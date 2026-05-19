@@ -156,8 +156,26 @@ function WithdrawForm({ onClose }: { onClose: () => void }) {
         />
       </div>
       <div>
-        <label className="block text-xs text-text-muted mb-1">Адрес / получатель</label>
-        <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+        <label className="block text-xs text-text-muted mb-1">
+          Telegram user_id получателя
+        </label>
+        <Input
+          inputMode="numeric"
+          pattern="[0-9]+"
+          placeholder="например, 50000001"
+          value={address}
+          onChange={(e) =>
+            // Strip non-digits at the input layer so the backend
+            // ``_address_ok`` validator never sees a "Txxx…" wallet
+            // address. CryptoBot ``transfer`` only accepts a numeric
+            // ``user_id`` — wallet addresses aren't supported, so the
+            // input must be a Telegram user_id (digits).
+            setAddress(e.target.value.replace(/\D+/g, ""))
+          }
+        />
+        <p className="text-[11px] text-text-muted mt-1">
+          CryptoBot принимает только Telegram user_id (число), а не wallet-адрес.
+        </p>
       </div>
       <div>
         <label className="block text-xs text-text-muted mb-1">Комментарий</label>
