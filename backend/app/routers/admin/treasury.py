@@ -13,6 +13,11 @@ Endpoints:
 * ``POST /api/admin/treasury/withdraw`` — 2FA-gated payout to an
   external address. Requires ``confirm=true`` (double-confirm) and a
   valid TOTP code in the ``X-Totp-Code`` header.
+* ``POST /api/admin/treasury/{withdrawal_id}/mark_sent`` — manual
+  reconciliation: flip a stuck ``pending`` row to ``sent`` after the
+  operator verified the CryptoBot transfer succeeded out-of-band
+  (Phase 2 OK, Phase 3 crashed). Mirrors the ``mark_sent`` action on
+  ``/api/admin/withdrawals``.
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ from ...money import quantize_money
 from ...rate_limit import rate_limit
 from ...schemas import (
     AdminTreasuryBalanceOut,
+    AdminTreasuryMarkSentIn,
     AdminTreasuryOverviewOut,
     AdminTreasuryWithdrawIn,
     AdminTreasuryWithdrawOut,
@@ -374,3 +380,82 @@ async def treasury_withdraw(
 
     currency_row = await session.get(Currency, currency_id)
     return _withdrawal_to_out(row_locked, currency_row)
+
+
+@router.post("/{withdrawal_id}/mark_sent", response_model=AdminTreasuryWithdrawOut)
+async def treasury_mark_sent(
+    withdrawal_id: int,
+    body: AdminTreasuryMarkSentIn,
+    admin: TotpUser,
+    request: Request,
+    session: SessionDep,
+):
+    """Manually flip a stuck ``pending`` treasury row to ``sent``.
+
+    Recovery path for the Phase 2 → Phase 3 gap in
+    :func:`treasury_withdraw`: CryptoBot processed the transfer, but the
+    final ``commit()`` never landed (network blip / crash), so the row
+    is still ``pending`` and counted against ``available``. The operator
+    verifies the transfer on CryptoBot's side (``spend_id=treas:{id}``
+    or the dashboard), then calls this endpoint to advance the row.
+
+    Guards:
+      * 2FA via ``X-Totp-Code`` header.
+      * ``confirm=true`` — explicit second click.
+      * Row must be in ``pending``: ``sent`` rows are idempotent
+        no-ops (we'd otherwise log duplicate audit rows), ``failed``
+        rows are deliberately terminal and must be re-issued as a
+        fresh withdrawal if the operator wants to retry.
+      * ``with_for_update()`` row lock during the flip so a concurrent
+        Phase 3 retry of the original ``treasury_withdraw`` (e.g. from
+        a delayed-but-not-dead async task) doesn't race us.
+
+    There is **no** new CryptoBot HTTP call here — by contract the
+    transfer already happened. We only record what the operator
+    observed.
+    """
+    if not body.confirm:
+        raise HTTPException(400, "Подтверждение не получено (confirm=false)")
+
+    row = (
+        await session.execute(
+            select(TreasuryWithdrawal)
+            .where(TreasuryWithdrawal.id == withdrawal_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(404, "Запись о выводе казны не найдена")
+    if row.status != "pending":
+        # ``sent`` → already reconciled; ``failed`` → terminal, retry
+        # is a new withdrawal. 409 mirrors the wallet-withdrawal
+        # mark_sent handler.
+        raise HTTPException(409, "Отметить отправленным можно только pending-запись")
+
+    currency = await session.get(Currency, row.currency_id)
+    currency_code = currency.code if currency else ""
+
+    row.status = "sent"
+    if body.cryptobot_transfer_id is not None:
+        row.cryptobot_transfer_id = body.cryptobot_transfer_id
+    if body.note:
+        row.note = (row.note + "\n" if row.note else "") + f"mark_sent: {body.note}"
+
+    await log_admin_action(
+        session,
+        actor=admin,
+        action="treasury.mark_sent",
+        target_type="treasury",
+        target_id=row.id,
+        reason=body.note,
+        payload={
+            "currency": currency_code,
+            "amount": str(row.amount),
+            "address": row.address,
+            "cryptobot_transfer_id": body.cryptobot_transfer_id or row.cryptobot_transfer_id,
+        },
+        request=request,
+    )
+    await session.commit()
+
+    return _withdrawal_to_out(row, currency)

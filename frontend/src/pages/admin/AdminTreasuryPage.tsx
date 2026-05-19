@@ -10,9 +10,11 @@ import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import {
   useAdminTreasury,
+  useAdminTreasuryMarkSent,
   useAdminTreasuryWithdraw,
   useAdminTreasuryWithdrawals,
 } from "@/api/admin/hooks";
+import type { AdminTreasuryWithdrawDto } from "@/api/types";
 import { parseDecimal } from "@/lib/format";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
@@ -79,32 +81,7 @@ export default function AdminTreasuryPage() {
         ) : (
           <div className="space-y-2 pb-24">
             {history.map((h, _idx) => (
-              <div
-                key={h.id}
-                className="bg-panel rounded-card p-3"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="font-medium">
-                      {parseDecimal(h.amount).toFixed(8)} {h.currency_code}
-                    </div>
-                    <div className="text-xs text-text-muted truncate">
-                      → {h.address}
-                    </div>
-                    <div className="text-[11px] text-text-muted">
-                      {new Date(h.created_at).toLocaleString()}
-                    </div>
-                  </div>
-                  <span className="text-[10px] uppercase font-semibold text-success">
-                    {h.status}
-                  </span>
-                </div>
-                {h.cryptobot_transfer_id && (
-                  <div className="text-[10px] text-text-muted mt-1 font-mono">
-                    CB id: {h.cryptobot_transfer_id}
-                  </div>
-                )}
-              </div>
+              <WithdrawalRow key={h.id} h={h} />
             ))}
           </div>
         )}
@@ -114,6 +91,158 @@ export default function AdminTreasuryPage() {
         <WithdrawForm onClose={() => setSheetOpen(false)} />
       </Sheet>
     </Page>
+  );
+}
+
+function WithdrawalRow({ h }: { h: AdminTreasuryWithdrawDto }) {
+  // Manual reconciliation entry point for stuck ``pending`` rows.
+  // Visible only when the row is ``pending`` — the audit-followup PR
+  // documents this as the Phase 2 → Phase 3 recovery path.
+  const [markOpen, setMarkOpen] = useState(false);
+  const statusColor =
+    h.status === "sent"
+      ? "text-success"
+      : h.status === "failed"
+        ? "text-danger"
+        : "text-warning";
+  return (
+    <div className="bg-panel rounded-card p-3">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="font-medium">
+            {parseDecimal(h.amount).toFixed(8)} {h.currency_code}
+          </div>
+          <div className="text-xs text-text-muted truncate">→ {h.address}</div>
+          <div className="text-[11px] text-text-muted">
+            {new Date(h.created_at).toLocaleString()}
+          </div>
+        </div>
+        <span
+          className={`text-[10px] uppercase font-semibold ${statusColor}`}
+        >
+          {h.status}
+        </span>
+      </div>
+      {h.cryptobot_transfer_id && (
+        <div className="text-[10px] text-text-muted mt-1 font-mono">
+          CB id: {h.cryptobot_transfer_id}
+        </div>
+      )}
+      {h.status === "pending" && (
+        <>
+          <button
+            type="button"
+            onClick={() => setMarkOpen(true)}
+            className="mt-2 rounded-button bg-panel-2 text-text-muted px-3 py-1 text-[11px] font-medium active:scale-95"
+          >
+            Отметить отправленным
+          </button>
+          <Sheet
+            open={markOpen}
+            onClose={() => setMarkOpen(false)}
+            title="Ручная сверка"
+          >
+            <MarkSentForm row={h} onClose={() => setMarkOpen(false)} />
+          </Sheet>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MarkSentForm({
+  row,
+  onClose,
+}: {
+  row: AdminTreasuryWithdrawDto;
+  onClose: () => void;
+}) {
+  const [transferId, setTransferId] = useState("");
+  const [note, setNote] = useState("");
+  const [confirm, setConfirm] = useState(false);
+  const markSent = useAdminTreasuryMarkSent();
+  const toast = useToast();
+  return (
+    <div className="space-y-3">
+      <div className="text-xs text-text-muted bg-panel-2 rounded-button px-3 py-2">
+        Используй только после того, как вручную убедился, что CryptoBot уже
+        провёл эту выплату (spend_id или dashboard). Новый transfer не
+        инициируется.
+      </div>
+      <div className="text-sm">
+        <span className="text-text-muted">Сумма:</span>{" "}
+        <span className="font-medium">
+          {parseDecimal(row.amount).toFixed(8)} {row.currency_code}
+        </span>
+      </div>
+      <div className="text-sm">
+        <span className="text-text-muted">Получатель:</span>{" "}
+        <span className="font-mono">{row.address}</span>
+      </div>
+      <div>
+        <label className="block text-xs text-text-muted mb-1">
+          CryptoBot transfer_id (опционально)
+        </label>
+        <Input
+          inputMode="numeric"
+          pattern="[0-9]+"
+          placeholder="напр., 12345678"
+          value={transferId}
+          onChange={(e) => setTransferId(e.target.value.replace(/\D+/g, ""))}
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-text-muted mb-1">
+          Комментарий (будет вписан в audit row)
+        </label>
+        <Input value={note} onChange={(e) => setNote(e.target.value)} />
+      </div>
+      <label className="flex items-center gap-2 text-sm bg-panel-2 rounded-button px-3 py-2">
+        <input
+          type="checkbox"
+          checked={confirm}
+          onChange={(e) => setConfirm(e.target.checked)}
+        />
+        <span>
+          Подтверждаю: CryptoBot уже выплатил по этой заявке
+        </span>
+      </label>
+      <div className="text-xs text-text-muted flex items-center gap-1 bg-panel-2 rounded-button px-3 py-2">
+        <ShieldCheck size={12} />
+        Код 2FA будет запрошен один раз в 24 часа во всплывающем окне.
+      </div>
+      <Button
+        type="button"
+        disabled={markSent.isPending || !confirm}
+        onClick={async () => {
+          try {
+            await markSent.mutateAsync({
+              id: row.id,
+              body: {
+                confirm: true,
+                cryptobot_transfer_id: transferId.trim() || undefined,
+                note: note.trim() || undefined,
+              },
+            });
+            toast.show({
+              kind: "success",
+              title: "Сверка выполнена",
+              body: `#${row.id} → sent`,
+            });
+            onClose();
+          } catch (e) {
+            toast.show({
+              kind: "error",
+              title: "Ошибка",
+              body: (e as Error).message,
+            });
+          }
+        }}
+        className="w-full"
+      >
+        Подтвердить отправку
+      </Button>
+    </div>
   );
 }
 

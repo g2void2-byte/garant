@@ -2693,6 +2693,40 @@
         "title": "AdminTreasuryBalanceOut",
         "type": "object"
       },
+      "AdminTreasuryMarkSentIn": {
+        "description": "Body for ``POST /api/admin/treasury/{withdrawal_id}/mark_sent``.\n\nManual reconciliation path for treasury rows stuck at ``pending``:\nthe CryptoBot transfer actually went through in Phase 2 of\n``treasury_withdraw`` but Phase 3 failed to commit (network glitch,\ncrash, etc.), leaving the row mid-flight. The operator verifies\nthe transfer succeeded on CryptoBot's side (via their dashboard\nor the ``spend_id=treas:{row.id}`` lookup), then calls this\nendpoint to advance the row to ``status=\"sent\"``.\n\nMirrors ``WalletWithdrawAdminDecideIn(action=\"mark_sent\")`` in\n``routers/admin/withdrawals.py``.",
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "cryptobot_transfer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cryptobot Transfer Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "AdminTreasuryMarkSentIn",
+        "type": "object"
+      },
       "AdminTreasuryOverviewOut": {
         "properties": {
           "balances": {
@@ -10551,6 +10585,100 @@
           }
         },
         "summary": "List Treasury Withdrawals",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/treasury/{withdrawal_id}/mark_sent": {
+      "post": {
+        "description": "Manually flip a stuck ``pending`` treasury row to ``sent``.\n\nRecovery path for the Phase 2 \u2192 Phase 3 gap in\n:func:`treasury_withdraw`: CryptoBot processed the transfer, but the\nfinal ``commit()`` never landed (network blip / crash), so the row\nis still ``pending`` and counted against ``available``. The operator\nverifies the transfer on CryptoBot's side (``spend_id=treas:{id}``\nor the dashboard), then calls this endpoint to advance the row.\n\nGuards:\n  * 2FA via ``X-Totp-Code`` header.\n  * ``confirm=true`` \u2014 explicit second click.\n  * Row must be in ``pending``: ``sent`` rows are idempotent\n    no-ops (we'd otherwise log duplicate audit rows), ``failed``\n    rows are deliberately terminal and must be re-issued as a\n    fresh withdrawal if the operator wants to retry.\n  * ``with_for_update()`` row lock during the flip so a concurrent\n    Phase 3 retry of the original ``treasury_withdraw`` (e.g. from\n    a delayed-but-not-dead async task) doesn't race us.\n\nThere is **no** new CryptoBot HTTP call here \u2014 by contract the\ntransfer already happened. We only record what the operator\nobserved.",
+        "operationId": "treasury_mark_sent_api_admin_treasury__withdrawal_id__mark_sent_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "withdrawal_id",
+            "required": true,
+            "schema": {
+              "title": "Withdrawal Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": true,
+            "schema": {
+              "title": "Authorization",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminTreasuryMarkSentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTreasuryWithdrawOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Treasury Mark Sent",
         "tags": [
           "admin"
         ]
