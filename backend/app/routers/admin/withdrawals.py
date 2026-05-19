@@ -47,6 +47,7 @@ from ...schemas import (
     AdminWithdrawalListOut,
     AdminWithdrawalOut,
 )
+from ...services_wallet import is_cryptopay_configured
 from ...sql_filters import escape_like_wildcards
 from ...time_utils import utcnow
 
@@ -185,11 +186,7 @@ async def decide_withdrawal(
         ).scalar_one_or_none()
         auto = bool(app_row and app_row.auto_withdraw_enabled)
         transfer_id: int | None = None
-        if (
-            auto
-            and app_settings_env.cryptobot_token
-            and not (app_settings_env.cryptobot_token.startswith("000"))
-        ):
+        if auto and is_cryptopay_configured(app_settings_env.cryptobot_token):
             try:
                 async with CryptoPay(
                     app_settings_env.cryptobot_token,

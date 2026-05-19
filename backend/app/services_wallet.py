@@ -91,6 +91,17 @@ async def get_or_create_balance(
     no-op and re-SELECTs whichever row landed first. The
     ``flush()`` after the INSERT guarantees the row is visible to
     the follow-up SELECT inside the same transaction.
+
+    6.3 — **Commit contract**: this helper does NOT call
+    ``session.commit()``. The caller owns the transaction boundary;
+    the upsert + select land in the caller's open transaction and
+    are only durable when the caller commits. This is intentional
+    so handlers can compose the balance read with subsequent writes
+    (e.g. ``UserBalance.amount += delta``) atomically, but every
+    caller MUST commit before returning a response — leaving the
+    transaction open here would leak the row write on the next
+    rollback boundary. The same contract applies to
+    :func:`lock_user_balance` below.
     """
     result = await session.execute(
         select(UserBalance).where(
@@ -132,6 +143,17 @@ async def lock_user_balance(session: AsyncSession, user_id: int, currency_id: in
     SELECT is the same one production callers rely on; the INSERT
     itself implicitly row-locks the newly created row, so even if
     the cold path takes it the contract holds.
+
+    6.3 — **Commit contract**: this helper does NOT call
+    ``session.commit()``. The ``FOR UPDATE`` row lock is held
+    *until the caller commits or rolls back* — that is the entire
+    point: the lock protects the caller's subsequent writes from
+    a concurrent reader passing the same balance check. If the
+    caller forgets to commit, the lock will be released by the
+    session's auto-rollback at scope exit, but any balance write
+    the caller made in between will also be discarded. Callers
+    must therefore always commit on the success path and let the
+    session context manager rollback on errors.
     """
     bal = (
         await session.execute(
@@ -233,7 +255,7 @@ async def _create_cryptobot_deposit(
     amount: float,
     purpose: str,
 ) -> WalletDeposit:
-    if not settings.cryptobot_token or settings.cryptobot_token.startswith("000"):
+    if not is_cryptopay_configured():
         raise HTTPException(502, "CryptoBot не настроен")
 
     expiry_seconds = int(settings.wallet_deposit_expiry_seconds)
@@ -739,9 +761,34 @@ async def _auto_withdraw_enabled(session: AsyncSession) -> bool:
     return bool(row and row.auto_withdraw_enabled)
 
 
-def _cryptopay_configured() -> bool:
-    token = settings.cryptobot_token or ""
+def is_cryptopay_configured(token: str | None = None) -> bool:
+    """Return True iff a real (non-placeholder) CryptoBot token is configured.
+
+    7.2 — the placeholder check is a heuristic, not a hard guarantee:
+    we treat any token that ``startswith("000")`` as the well-known
+    docker-compose default (``CRYPTOBOT_TOKEN=000000:FAKE``) so that
+    dev/CI environments don't accidentally fire a network call to the
+    real CryptoBot API on every withdrawal/transfer. A real CryptoBot
+    token starts with the app id (numeric, currently 4–6 digits)
+    followed by ``:`` — a real token whose app id starts with ``000``
+    is theoretically possible but extremely unlikely in practice. If
+    the upstream switches to longer / non-numeric prefixes (or if we
+    want to harden this further), swap the heuristic for a length /
+    prefix-and-format check.
+
+    ``token`` defaults to ``settings.cryptobot_token`` so callers can
+    use the no-arg form, but admin/system endpoints that pre-resolve
+    the token (or test fixtures that inject an override) can pass it
+    explicitly to avoid a second module-attribute lookup.
+    """
+    if token is None:
+        token = settings.cryptobot_token or ""
     return bool(token) and not token.startswith("000")
+
+
+# Internal alias kept for the historical name; new callers should use
+# the public ``is_cryptopay_configured`` above.
+_cryptopay_configured = is_cryptopay_configured
 
 
 async def create_withdrawal(

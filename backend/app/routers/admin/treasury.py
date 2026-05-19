@@ -37,6 +37,7 @@ from ...schemas import (
     AdminTreasuryWithdrawIn,
     AdminTreasuryWithdrawOut,
 )
+from ...services_wallet import is_cryptopay_configured
 
 logger = logging.getLogger(__name__)
 
@@ -222,8 +223,7 @@ async def treasury_withdraw(
     # ever happened. Reject early with 503 instead, before we touch the
     # DB or burn the per-currency advisory lock, so misconfigured envs
     # fail loudly rather than silently double-spending the treasury.
-    token = app_settings_env.cryptobot_token or ""
-    if not token or token.startswith("000"):
+    if not is_cryptopay_configured(app_settings_env.cryptobot_token):
         raise HTTPException(503, "CryptoBot не настроен: вывод казны недоступен")
 
     currency = (
