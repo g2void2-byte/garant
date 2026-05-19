@@ -199,19 +199,35 @@ async def treasury_withdraw(
     request: Request,
     session: SessionDep,
 ):
-    """Withdraw accumulated commission to an external address.
+    """Withdraw accumulated commission to an external Telegram user_id.
 
     Guards:
       * 2FA via ``X-Totp-Code`` header.
       * ``confirm=true`` — explicit second click.
-      * Per-currency advisory lock so two admins can't both pass the
-        ``available`` guard concurrently.
+      * Per-currency advisory lock taken only for the ``available``
+        check + ``pending`` row insert. The lock is **released by
+        the commit at the end of Phase 1**, so the CryptoBot HTTP
+        roundtrip in Phase 2 is not blocking any other admin or any
+        other ``available`` calculation. A second admin attempting
+        a payout on the same currency while Phase 2 is in flight
+        sees the ``pending`` row counted in ``_OUTSTANDING_STATUSES``
+        and gets a "недостаточно комиссии" 400 — not a queued lock
+        wait.
       * Insert a ``pending`` row before the CryptoBot call so the
-        spend_id is deterministic (``treas:{row.id}``). A retry from
-        the admin produces a fresh row with its own id and its own
-        spend_id; an in-flight crash leaves the ``pending`` row
+        ``spend_id`` is deterministic (``treas:{row.id}``). A retry
+        from the admin produces a fresh row with its own id and its
+        own spend_id; an in-flight crash leaves the ``pending`` row
         counted against ``available`` so the balance can't be
         double-spent until someone reconciles.
+
+    Audit follow-up (2026-05-19) — T1/T2:
+
+      * T1: ``body.address`` is validated to be a digit-only Telegram
+        ``user_id`` by ``AdminTreasuryWithdrawIn._address_ok``, so the
+        pre-fix ``int(body.address) if body.address.isdigit() else
+        admin.tg_user_id`` silent self-payout fallback is gone.
+      * T2: the per-currency advisory lock is no longer held across
+        the CryptoBot HTTP call. See the three-phase comment above.
     """
     if not body.confirm:
         raise HTTPException(400, "Подтверждение не получено (confirm=false)")
@@ -232,6 +248,8 @@ async def treasury_withdraw(
     if currency is None:
         raise HTTPException(404, f"Валюта {body.currency_code} не найдена")
 
+    # ─── Phase 1: take advisory lock, check ``available``, INSERT
+    #             ``pending`` row, commit (releases the lock).
     await _lock_treasury(session, currency.id)
 
     accrued = await _accrued_by_currency(session)
@@ -239,6 +257,10 @@ async def treasury_withdraw(
     available = accrued.get(currency.id, Decimal(0)) - withdrawn.get(currency.id, Decimal(0))
     if Decimal(str(body.amount)) > available:
         raise HTTPException(400, f"Недостаточно комиссии: доступно {available} {currency.code}")
+
+    # ``int(body.address)`` is safe because ``_address_ok`` guarantees
+    # the string is digit-only and inside the int64 range.
+    target_user_id = int(body.address)
 
     row = TreasuryWithdrawal(
         actor_id=admin.id,
@@ -250,24 +272,33 @@ async def treasury_withdraw(
     )
     session.add(row)
     await session.flush()
+    row_id = row.id
+    currency_id = currency.id
+    currency_code = currency.code
+    await session.commit()
 
-    # Token presence was already validated at the top of the handler;
-    # the inner ``startswith("000")`` guard would now be unreachable.
-    transfer_id: int | None
+    # ─── Phase 2: CryptoBot HTTP call WITHOUT any DB locks held.
+    # ``spend_id=f"treas:{row_id}"`` is the idempotency key CryptoBot
+    # uses to dedupe ``transfer`` calls server-side: a Phase 3 retry
+    # after a crash hits the same key and CryptoBot returns the
+    # already-processed transfer instead of paying out twice.
+    transfer_id: int | None = None
+    transfer_error: CryptoPayError | None = None
     try:
         async with CryptoPay(
             app_settings_env.cryptobot_token,
             testnet=app_settings_env.cryptobot_testnet,
         ) as cp:
             tr = await cp.transfer(
-                user_id=int(body.address) if body.address.isdigit() else admin.tg_user_id,
-                asset=currency.code,
+                user_id=target_user_id,
+                asset=currency_code,
                 amount=str(body.amount),
-                spend_id=f"treas:{row.id}",
+                spend_id=f"treas:{row_id}",
                 comment="Garant treasury withdrawal",
             )
         transfer_id = tr.transfer_id
     except CryptoPayError as e:
+        transfer_error = e
         # V11-L-15 — structured-logging context so the JSON-logger
         # downstream surfaces actor/currency/amount as queryable
         # fields rather than substrings of the message.
@@ -276,44 +307,63 @@ async def treasury_withdraw(
             e,
             extra={
                 "event": "cryptobot.treasury_withdraw.failed",
-                "treasury_withdrawal_id": row.id,
+                "treasury_withdrawal_id": row_id,
                 "actor_id": admin.id,
-                "currency": currency.code,
+                "currency": currency_code,
                 "amount": str(body.amount),
             },
         )
-        row.status = "failed"
-        row.note = (row.note or "") + f"\nfailed: {e}"
+
+    # ─── Phase 3: reload the row, flip ``sent``/``failed``, write
+    #             the audit row, commit. No long-lived locks held;
+    #             advisory lock is no longer needed because the row
+    #             is keyed by ``id`` and we just update its status.
+    row_locked = (
+        await session.execute(
+            select(TreasuryWithdrawal).where(TreasuryWithdrawal.id == row_id).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if row_locked is None:
+        # Phase 1 row vanished — shouldn't happen, but treat as a hard
+        # error so the operator notices. If CryptoBot already
+        # processed the transfer, the funds are gone; the operator's
+        # only recourse is reconciliation against CryptoBot's
+        # transfer history. ``spend_id`` makes that lookup possible.
+        raise HTTPException(500, "Treasury row исчез между Phase 1 и Phase 3")
+
+    if transfer_error is not None:
+        row_locked.status = "failed"
+        row_locked.note = (row_locked.note or "") + f"\nfailed: {transfer_error}"
         await log_admin_action(
             session,
             actor=admin,
             action="treasury.withdraw_failed",
             target_type="treasury",
-            target_id=row.id,
+            target_id=row_id,
             reason=body.note,
             payload={
-                "currency": currency.code,
+                "currency": currency_code,
                 "amount": str(body.amount),
                 "address": body.address,
-                "error": str(e),
+                "error": str(transfer_error),
             },
             request=request,
         )
         await session.commit()
-        raise HTTPException(502, f"Ошибка CryptoBot: {e}") from e
+        raise HTTPException(502, f"Ошибка CryptoBot: {transfer_error}") from transfer_error
 
-    row.status = "sent"
-    row.cryptobot_transfer_id = str(transfer_id) if transfer_id is not None else None
+    row_locked.status = "sent"
+    row_locked.cryptobot_transfer_id = str(transfer_id) if transfer_id is not None else None
 
     await log_admin_action(
         session,
         actor=admin,
         action="treasury.withdraw",
         target_type="treasury",
-        target_id=row.id,
+        target_id=row_id,
         reason=body.note,
         payload={
-            "currency": currency.code,
+            "currency": currency_code,
             "amount": str(body.amount),
             "address": body.address,
             "cryptobot_transfer_id": transfer_id,
@@ -321,4 +371,6 @@ async def treasury_withdraw(
         request=request,
     )
     await session.commit()
-    return _withdrawal_to_out(row, currency)
+
+    currency_row = await session.get(Currency, currency_id)
+    return _withdrawal_to_out(row_locked, currency_row)

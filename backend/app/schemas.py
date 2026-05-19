@@ -1407,11 +1407,36 @@ class AdminTreasuryWithdrawIn(BaseModel):
     @field_validator("address")
     @classmethod
     def _address_ok(cls, v: str) -> str:
+        # ``CryptoPay.transfer`` only accepts a Telegram ``user_id`` (a
+        # signed 64-bit integer); wallet addresses are not a thing on
+        # the CryptoBot side. Pre-fix this validator accepted any
+        # non-empty ≤256-char string, which let the handler silently
+        # fall back to ``admin.tg_user_id`` when ``isdigit()`` was
+        # false — see the comment on the call site in
+        # ``routers/admin/treasury.py``. Force-rejecting non-digit
+        # input at the schema makes the silent self-payout codepath
+        # unreachable.
         v = (v or "").strip()
         if not v:
             raise ValueError("Адрес не может быть пустым")
-        if len(v) > 256:
-            raise ValueError("Адрес слишком длинный (≤256)")
+        if len(v) > 32:
+            # 19 digits is enough for the full signed-int64 range,
+            # 32 leaves slack for a sign / formatting quirk without
+            # accepting arbitrary blobs.
+            raise ValueError("user_id слишком длинный (≤32 символов)")
+        if not v.isdigit():
+            raise ValueError(
+                "Адрес должен быть Telegram user_id (только цифры). "
+                "CryptoBot не поддерживает wallet-адреса в transfer API."
+            )
+        try:
+            n = int(v)
+        except ValueError as e:
+            raise ValueError("user_id должен быть числом") from e
+        if n <= 0:
+            raise ValueError("user_id должен быть положительным")
+        if n > (1 << 63) - 1:
+            raise ValueError("user_id вне диапазона int64")
         return v
 
 

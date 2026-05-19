@@ -353,7 +353,11 @@ async def test_treasury_withdraw_503_when_cryptobot_token_empty(client, monkeypa
             json={
                 "currency_code": "USDT",
                 "amount": 1.0,
-                "address": "T" + "x" * 33,
+                # T1 (audit follow-up 2026-05-19) — ``address`` is a
+                # Telegram ``user_id`` (digits only); the legacy
+                # wallet-string fixture is now rejected at the
+                # schema level.
+                "address": "50000001",
                 "confirm": True,
                 "note": "test",
             },
@@ -426,7 +430,9 @@ async def test_treasury_withdraw_proceeds_when_token_configured(client, monkeypa
         json={
             "currency_code": "USDT",
             "amount": 1.0,
-            "address": "T" + "x" * 33,
+            # T1 (audit follow-up 2026-05-19) — ``address`` is a
+            # Telegram ``user_id`` (digits only).
+            "address": "50000002",
             "confirm": True,
             "note": "smoke",
         },
