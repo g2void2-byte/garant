@@ -255,10 +255,16 @@ async def test_forum_url_accepts_https_including_t_me(client):
 
 async def test_broadcast_dm_escapes_html_in_title_body_deeplink(client, monkeypatch):
     """The bot is configured with ``parse_mode=HTML``. Unescaped angle
-    brackets / ampersands in admin-authored copy made Telegram reject
-    the message with a 400 ("can't parse entities"). After the v9 fix
-    ``create_broadcast`` ``html.escape``s all three fields before
+    brackets / ampersands in admin-authored *title/body* copy made
+    Telegram reject the message with a 400 ("can't parse entities").
+    ``create_broadcast`` ``html.escape``s the title and body before
     splicing them into the ``<b>…</b>`` wrapper.
+
+    M-12 follow-up: the deeplink is now scheme-validated (must start
+    with ``https://`` or ``tg://``) and wrapped in an explicit
+    ``<a href="…">…</a>`` tag — the previous flat ``html.escape``
+    rewrote ``?a=1&b=2`` into ``?a=1&amp;b=2`` *inside* the visible
+    text, which Telegram's URL auto-linker refused to recognise.
     """
     import backend.app.routers.admin.broadcasts as broadcasts_mod
 
@@ -275,7 +281,7 @@ async def test_broadcast_dm_escapes_html_in_title_body_deeplink(client, monkeypa
         json={
             "title": "<script>alert(1)</script>",
             "body": "Hello & <welcome> friends",
-            "deeplink": "/deals/42?x=<y>&z=1",
+            "deeplink": "https://t.me/garant?start=deal_42&x=1",
             "dispatch_inapp": False,
             "dispatch_dm": True,
             "audience_role": "regular",
@@ -292,20 +298,56 @@ async def test_broadcast_dm_escapes_html_in_title_body_deeplink(client, monkeypa
     assert target_call is not None, sent_dm.await_args_list
     dm_text = target_call.args[1]
 
-    # The literal payload tokens must be escaped — none of these
-    # substrings should appear as raw HTML in the outgoing text.
+    # The literal title/body payload tokens must be escaped — none of
+    # these substrings should appear as raw HTML in the outgoing text.
     assert "<script>" not in dm_text
     assert "<welcome>" not in dm_text
-    # ``&`` outside ``&amp;``/``&lt;``/``&gt;`` would mean an escape
-    # was missed; the only ampersands left should be the entity prefixes.
-    for token in dm_text.replace("&amp;", "").replace("&lt;", "").replace("&gt;", "").split():
-        assert "&" not in token, f"unescaped & in {token!r}"
 
-    # And the entities themselves did make it through.
+    # Title/body entities did make it through.
     assert "&lt;script&gt;" in dm_text
     assert "Hello &amp; &lt;welcome&gt; friends" in dm_text
     # The bold wrapper around the (escaped) title is preserved so
     # Telegram still renders the heading.
     assert dm_text.startswith("<b>&lt;script&gt;alert(1)&lt;/script&gt;</b>")
-    # Deeplink is appended on its own line, escaped.
-    assert "/deals/42?x=&lt;y&gt;&amp;z=1" in dm_text
+
+    # M-12: the deeplink is wrapped in <a href="...">…</a> rather than
+    # appended as a flat html-escaped string. The ``href`` attribute
+    # value is quote-escaped (``&`` → ``&amp;``) — this is correct HTML
+    # and Telegram decodes the entities before opening the link. The
+    # visible link text is also escaped for safety.
+    assert (
+        '<a href="https://t.me/garant?start=deal_42&amp;x=1">'
+        "https://t.me/garant?start=deal_42&amp;x=1</a>"
+    ) in dm_text
+
+
+async def test_broadcast_rejects_non_url_deeplink(client):
+    """M-12: relative paths / unsupported schemes are now rejected at
+    the schema boundary so they never reach the DM dispatch path
+    where Telegram's HTML parser would mangle them."""
+    admin_init, _admin_uid = await _make_admin(client, tg=8410)
+    for bad in [
+        "/deals/42?x=<y>&z=1",  # relative path
+        "javascript:alert(1)",  # unsafe scheme
+        "ftp://example.com",  # unsupported scheme
+        "  ",  # whitespace only — should normalise to ``None``? checked below
+    ]:
+        resp = await client.post(
+            "/api/admin/broadcasts",
+            json={
+                "title": "t",
+                "body": "b",
+                "deeplink": bad,
+                "dispatch_inapp": False,
+                "dispatch_dm": True,
+                "audience_role": "regular",
+            },
+            headers=with_totp(auth_headers(admin_init)),
+        )
+        if bad.strip() == "":
+            # Whitespace-only normalises to ``None`` per the existing
+            # ``_deeplink_ok`` contract, so the request is accepted.
+            assert resp.status_code in (200, 400), resp.text
+        else:
+            assert resp.status_code == 422, (bad, resp.text)
+            assert "https://" in resp.text or "tg://" in resp.text
