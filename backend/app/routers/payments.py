@@ -96,7 +96,12 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
         result = await handle_invoice_expired(session, payload)
         return {"ok": True, **result}
 
-    logger.info(
+    # M-14: a Crypto Pay delivery that doesn't match any handled
+    # ``update_type`` is either (a) a benign new event type Crypto
+    # Pay introduced — worth knowing about so we add a handler — or
+    # (b) a stray scanner ping / mis-routed payload. Either case is
+    # worth more than INFO so dashboards / log alerts can surface it.
+    logger.warning(
         "CryptoBot webhook ignored update_type=%s",
         update_type,
         extra={

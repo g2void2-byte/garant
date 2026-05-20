@@ -1856,6 +1856,18 @@ class AdminBroadcastCreateIn(BaseModel):
             return None
         if len(v) > 256:
             raise ValueError("Ссылка слишком длинная (≤256)")
+        # M-12: the broadcast DM flow used to ``html.escape`` this
+        # value before appending it to the message body, which
+        # rewrote any ``?a=1&b=2`` query string into
+        # ``?a=1&amp;b=2`` and broke Telegram's URL auto-linking.
+        # Validating the scheme up-front lets the DM dispatcher
+        # confidently wrap the link in a proper ``<a href="...">``
+        # tag (with attribute escaping only) downstream. Allowed
+        # schemes mirror the public ForumOut URL validator
+        # (``https://``) plus ``tg://`` for in-app deep links.
+        low = v.lower()
+        if not (low.startswith("https://") or low.startswith("tg://")):
+            raise ValueError("Ссылка должна начинаться с https:// или tg://")
         return v
 
     @field_validator("audience_active_days", "audience_min_deals")

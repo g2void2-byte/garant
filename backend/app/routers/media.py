@@ -10,6 +10,7 @@ Allowed kinds are configured via ``settings.media_allowed_kinds``.
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 from pathlib import Path
 
@@ -65,9 +66,13 @@ def _allowed_kinds() -> set[str]:
     return {k.strip() for k in settings.media_allowed_kinds.split(",") if k.strip()}
 
 
-def _ensure_root() -> Path:
+async def _ensure_root() -> Path:
+    # M-6: hop blocking filesystem operations onto the worker thread
+    # pool so the event loop stays responsive under concurrent
+    # uploads. ``mkdir(parents=True, exist_ok=True)`` is idempotent
+    # so retries from racing callers are safe.
     root = Path(settings.media_root).expanduser().resolve()
-    root.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(root.mkdir, parents=True, exist_ok=True)
     return root
 
 
@@ -131,13 +136,16 @@ async def upload_media(
     if not _matches_magic(content_type, data):
         raise HTTPException(415, "Файл не соответствует заявленному типу")
 
-    root = _ensure_root()
+    root = await _ensure_root()
     folder = root / kind
-    folder.mkdir(parents=True, exist_ok=True)
+    # M-6: same rationale as ``_ensure_root`` — keep the loop free of
+    # blocking ``mkdir`` / ``write_bytes`` syscalls so a slow disk
+    # doesn't stall every other request on the worker.
+    await asyncio.to_thread(folder.mkdir, parents=True, exist_ok=True)
 
     name = f"{user.id}-{utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(6)}{ext}"
     path = folder / name
-    path.write_bytes(data)
+    await asyncio.to_thread(path.write_bytes, data)
 
     base = settings.media_base_url.rstrip("/")
     url = f"{base}/{kind}/{name}"

@@ -255,6 +255,15 @@ async def get_service(service_id: int, user: CurrentUser, session: SessionDep):
         user.is_admin or service.owner_id == user.id
     ):
         raise HTTPException(404, "Услуга не найдена")
+    # M-11: the catalog listing already filters out services whose
+    # owner has ``is_hidden_profile`` set, but the direct-link route
+    # was open — anyone with a service id could still pull the owner
+    # username + profile snippet through ``_owner_out`` below. Apply
+    # the same gate here (owner + admins keep direct-link access so
+    # the owner can still QA their listing from the deep link).
+    owner_hidden = bool(service.owner and service.owner.is_hidden_profile)
+    if owner_hidden and not (user.is_admin or service.owner_id == user.id):
+        raise HTTPException(404, "Услуга не найдена")
 
     count_stmt = select(func.count(ServiceComment.id)).where(
         ServiceComment.service_id == service.id
@@ -296,6 +305,14 @@ async def list_service_comments(
         user.is_admin or service.owner_id == user.id
     ):
         raise HTTPException(404, "Услуга не найдена")
+    # M-11: mirror ``get_service`` — owners with ``is_hidden_profile``
+    # set must not leak comments via the public listing endpoint.
+    if (
+        service.owner
+        and service.owner.is_hidden_profile
+        and not (user.is_admin or service.owner_id == user.id)
+    ):
+        raise HTTPException(404, "Услуга не найдена")
     stmt = (
         select(ServiceComment)
         .where(ServiceComment.service_id == service.id)
@@ -323,6 +340,16 @@ async def create_service_comment(
         raise HTTPException(404, "Услуга не найдена")
     if service.status != ServiceStatus.active and not (
         user.is_admin or service.owner_id == user.id
+    ):
+        raise HTTPException(404, "Услуга не найдена")
+    # M-11: a hidden-profile owner must also be invisible to commenters
+    # via the direct-link endpoint. Admins and the owner themselves
+    # remain unaffected (and the owner can't comment on their own
+    # service anyway — see the next guard).
+    if (
+        service.owner
+        and service.owner.is_hidden_profile
+        and not (user.is_admin or service.owner_id == user.id)
     ):
         raise HTTPException(404, "Услуга не найдена")
     if service.owner_id == user.id:

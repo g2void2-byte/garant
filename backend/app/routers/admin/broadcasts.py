@@ -167,7 +167,20 @@ async def create_broadcast(
                 title = body.title or "Сообщение от администрации"
                 dm_text = f"<b>{html.escape(title)}</b>\n\n{html.escape(body.body)}"
                 if body.deeplink:
-                    dm_text += f"\n\n{html.escape(body.deeplink)}"
+                    # M-12 / L-16: wrap the (already-scheme-validated by
+                    # ``AdminBroadcastCreateIn._deeplink_ok``) URL in an
+                    # explicit ``<a href="...">`` so Telegram renders a
+                    # clickable link in every client. The previous
+                    # ``html.escape(body.deeplink)`` turned ``?a=1&b=2``
+                    # into ``?a=1&amp;b=2`` *inside* the visible text,
+                    # which Telegram's auto-link heuristic then refused
+                    # to recognise. Only the ``href`` attribute needs
+                    # quote-aware escaping; the display text is just
+                    # the URL again (escaped without quote so users see
+                    # ``&`` instead of ``&amp;``).
+                    href = html.escape(body.deeplink, quote=True)
+                    text_part = html.escape(body.deeplink)
+                    dm_text += f'\n\n<a href="{href}">{text_part}</a>'
                 ok = await bot_send_dm(u.tg_user_id, dm_text)
                 if not ok:
                     # In-app counted as delivered; DM-only failure shouldn't
