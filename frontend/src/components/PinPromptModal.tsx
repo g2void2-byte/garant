@@ -74,12 +74,7 @@ export function PinPromptModal({
   if (!mounted) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="pin-prompt-title"
-      data-testid="pin-prompt"
-    >
+    <>
       <div
         className={cn(
           "fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm transition-opacity duration-200",
@@ -95,6 +90,10 @@ export function PinPromptModal({
         )}
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pin-prompt-title"
+          data-testid="pin-prompt"
           className={cn(
             "pointer-events-auto w-full max-w-sm rounded-3xl bg-panel border border-border shadow-pop p-6",
             "transform transition-all duration-200",
@@ -130,6 +129,6 @@ export function PinPromptModal({
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
