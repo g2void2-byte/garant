@@ -2360,15 +2360,15 @@ export interface components {
          */
         AdminBalanceSnapshot: {
             /** Amount */
-            amount: string;
+            amount: number;
             /** Currency Code */
             currency_code: string | null;
             /** Display Name */
             display_name: string;
             /** Locked */
-            locked: string;
+            locked: number;
             /** Total */
-            total: string;
+            total: number;
             /** User Id */
             user_id: number;
             /** Username */
@@ -2640,7 +2640,7 @@ export interface components {
          */
         AdminDealDetailOut: {
             /** Amount */
-            amount: string;
+            amount: number;
             /** Arbitration Initiator */
             arbitration_initiator: string | null;
             /** Arbitration Reason */
@@ -2661,7 +2661,7 @@ export interface components {
             /** Cancellation Requested At */
             cancellation_requested_at: string | null;
             /** Commission Amount */
-            commission_amount: string | null;
+            commission_amount: number | null;
             /** Completed At */
             completed_at: string | null;
             /** Confirm Buyer */
@@ -2732,13 +2732,13 @@ export interface components {
          */
         AdminDealListItem: {
             /** Amount */
-            amount: string;
+            amount: number;
             /** Buyer Id */
             buyer_id: number;
             /** Buyer Username */
             buyer_username: string | null;
             /** Commission Amount */
-            commission_amount: string | null;
+            commission_amount: number | null;
             /** Completed At */
             completed_at: string | null;
             /**
@@ -2806,7 +2806,7 @@ export interface components {
         /** AdminDepositOut */
         AdminDepositOut: {
             /** Amount */
-            amount: string;
+            amount: number;
             /**
              * Created At
              * Format: date-time
@@ -2906,7 +2906,7 @@ export interface components {
             /** Deals Count */
             deals_count: number;
             /** Deposit */
-            deposit: string;
+            deposit: number;
             /** Description */
             description: string;
             /** Id */
@@ -2914,9 +2914,9 @@ export interface components {
             /** Owner Id */
             owner_id: number;
             /** Price */
-            price: string;
+            price: number;
             /** Rating Manual */
-            rating_manual: string | null;
+            rating_manual: number | null;
             /** Status */
             status: string;
             /** Title */
@@ -3023,13 +3023,13 @@ export interface components {
             /** Auto Withdraw Enabled */
             auto_withdraw_enabled: boolean;
             /** Deal Commission Percent */
-            deal_commission_percent: string;
+            deal_commission_percent: number;
             /** Inactivity Pending Cancellation Days */
             inactivity_pending_cancellation_days: number;
             /** Inactivity Pending Confirmation Days */
             inactivity_pending_confirmation_days: number;
             /** Invoice Commission Percent */
-            invoice_commission_percent: string;
+            invoice_commission_percent: number;
             /** Maintenance Enabled */
             maintenance_enabled: boolean;
             /** Maintenance Message */
@@ -3037,11 +3037,11 @@ export interface components {
             /** Max Active Services Per User */
             max_active_services_per_user: number;
             /** Min Deposit */
-            min_deposit: string;
+            min_deposit: number;
             /** Min Withdraw */
-            min_withdraw: string;
+            min_withdraw: number;
             /** Vip Commission Percent */
-            vip_commission_percent: string;
+            vip_commission_percent: number;
         };
         /**
          * AdminSettingsUpdateIn
@@ -3106,9 +3106,9 @@ export interface components {
          */
         AdminTreasuryBalanceOut: {
             /** Accrued */
-            accrued: string;
+            accrued: number;
             /** Available */
-            available: string;
+            available: number;
             /** Currency Code */
             currency_code: string;
             /** Currency Id */
@@ -3118,7 +3118,7 @@ export interface components {
             /** Decimals */
             decimals: number;
             /** Withdrawn */
-            withdrawn: string;
+            withdrawn: number;
         };
         /**
          * AdminTreasuryMarkSentIn
@@ -3182,7 +3182,7 @@ export interface components {
             /** Address */
             address: string;
             /** Amount */
-            amount: string;
+            amount: number;
             /**
              * Created At
              * Format: date-time
@@ -3209,7 +3209,7 @@ export interface components {
          */
         AdminUserBalanceOut: {
             /** Amount */
-            amount: string;
+            amount: number;
             /** Currency Code */
             currency_code: string;
             /** Currency Id */
@@ -3221,9 +3221,9 @@ export interface components {
             /** Display Name */
             display_name: string;
             /** Locked */
-            locked: string;
+            locked: number;
             /** Total */
-            total: string;
+            total: number;
             /** Updated At */
             updated_at: string | null;
             /** User Id */
@@ -3259,7 +3259,7 @@ export interface components {
             /** Deals Total */
             deals_total: number;
             /** Deposit Total */
-            deposit_total: string;
+            deposit_total: number;
             /** Description */
             description: string;
             /** Display Name */
@@ -3295,11 +3295,11 @@ export interface components {
             /** Photo Url */
             photo_url: string | null;
             /** Rating Auto */
-            rating_auto: string;
+            rating_auto: number;
             /** Rating Effective */
-            rating_effective: string;
+            rating_effective: number;
             /** Rating Manual */
-            rating_manual: string | null;
+            rating_manual: number | null;
             /** Tg User Id */
             tg_user_id: number;
             /** Username */
@@ -3320,7 +3320,7 @@ export interface components {
             /** Deals Total */
             deals_total: number;
             /** Deposit Total */
-            deposit_total: string;
+            deposit_total: number;
             /** Display Name */
             display_name: string;
             /** Id */
@@ -3344,7 +3344,7 @@ export interface components {
             /** Prefix */
             prefix: string | null;
             /** Rating */
-            rating: string;
+            rating: number;
             /** Tg User Id */
             tg_user_id: number;
             /** Username */
@@ -3402,7 +3402,7 @@ export interface components {
             /** Photo Url */
             photo_url: string | null;
             /** Total Usd Estimate */
-            total_usd_estimate: string;
+            total_usd_estimate: number;
             /** User Id */
             user_id: number;
             /** Username */
@@ -3448,7 +3448,7 @@ export interface components {
             /** Admin Note */
             admin_note: string;
             /** Amount */
-            amount: string;
+            amount: number;
             /**
              * Created At
              * Format: date-time
@@ -3500,9 +3500,9 @@ export interface components {
             /** Id */
             id: number;
             /** Min Deposit */
-            min_deposit: string;
+            min_deposit: number;
             /** Min Withdraw */
-            min_withdraw: string;
+            min_withdraw: number;
             /** Name */
             name: string;
             /** Network */
@@ -3582,7 +3582,7 @@ export interface components {
         /** DealOut */
         DealOut: {
             /** Amount */
-            amount: string;
+            amount: number;
             /** Arbitration Initiator */
             arbitration_initiator?: string | null;
             /** Arbitration Reason */
@@ -3602,7 +3602,7 @@ export interface components {
             /** Cancellation Requested At */
             cancellation_requested_at?: string | null;
             /** Commission Amount */
-            commission_amount?: string | null;
+            commission_amount?: number | null;
             /** Completed At */
             completed_at?: string | null;
             /** Confirm Buyer */
@@ -3872,9 +3872,9 @@ export interface components {
             /** Photo Urls */
             photo_urls?: string[];
             /** Price */
-            price: string;
+            price: number;
             /** Rating Avg */
-            rating_avg: string | null;
+            rating_avg: number | null;
             /** Rating Count */
             rating_count: number;
             /** Status */
@@ -3908,7 +3908,7 @@ export interface components {
             /** Photo Urls */
             photo_urls?: string[];
             /** Price */
-            price: string;
+            price: number;
             /** Status */
             status: string;
             /** Title */
@@ -3936,7 +3936,7 @@ export interface components {
             /** Photo Url */
             photo_url: string | null;
             /** Rating */
-            rating: string;
+            rating: number;
             /** Username */
             username: string | null;
         };
@@ -4031,9 +4031,9 @@ export interface components {
             /** Deals Count */
             deals_count: number;
             /** Deals Sum */
-            deals_sum: string;
+            deals_sum: number;
             /** Deposit */
-            deposit: string;
+            deposit: number;
             /** Description */
             description: string;
             /** Display Name */
@@ -4095,7 +4095,7 @@ export interface components {
             /** Prefix */
             prefix: string | null;
             /** Rating */
-            rating: string;
+            rating: number;
             /** Reviews Count */
             reviews_count: number;
             /** User Id */
@@ -4129,9 +4129,9 @@ export interface components {
             /** Deals Count */
             deals_count: number;
             /** Deals Sum */
-            deals_sum: string;
+            deals_sum: number;
             /** Deposit */
-            deposit: string;
+            deposit: number;
             /** Description */
             description: string;
             /** Display Name */
@@ -4168,7 +4168,7 @@ export interface components {
             /** Prefix */
             prefix: string | null;
             /** Rating */
-            rating: string;
+            rating: number;
             /** Reviews Count */
             reviews_count: number;
             /** Username */
@@ -4215,12 +4215,12 @@ export interface components {
         /** WalletBalanceOut */
         WalletBalanceOut: {
             /** Amount */
-            amount: string;
+            amount: number;
             currency: components["schemas"]["CurrencyOut"];
             /** Locked */
-            locked: string;
+            locked: number;
             /** Total */
-            total: string;
+            total: number;
             /** Updated At */
             updated_at: string | null;
         };
@@ -4246,7 +4246,7 @@ export interface components {
         /** WalletDepositOut */
         WalletDepositOut: {
             /** Amount */
-            amount: string;
+            amount: number;
             /**
              * Created At
              * Format: date-time
@@ -4284,7 +4284,7 @@ export interface components {
             /** Admin Note */
             admin_note: string;
             /** Amount */
-            amount: string;
+            amount: number;
             /**
              * Created At
              * Format: date-time

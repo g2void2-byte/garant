@@ -4,11 +4,16 @@ import json
 import math
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PlainSerializer, field_validator, model_validator
 
 from .models import PayCommission
+
+# H-1: internal calculations use ``Decimal`` for precision, but the
+# JSON wire format emits a plain number (``float``) so the frontend
+# (JavaScript) can consume values without a string→number parse step.
+MoneyDecimal = Annotated[Decimal, PlainSerializer(lambda v: float(v), return_type=float)]
 
 # ── Users ──────────────────────────────────────────────
 
@@ -60,7 +65,7 @@ class UserOut(BaseModel):
     display_name: str
     photo_url: str | None
     banner_url: str | None
-    deposit: Decimal
+    deposit: MoneyDecimal
     description: str
     prefix: str | None
     is_admin: bool
@@ -71,10 +76,10 @@ class UserOut(BaseModel):
     admin: int
     good: int
     bad: int
-    rating: Decimal
+    rating: MoneyDecimal
     reviews_count: int
     deals_count: int
-    deals_sum: Decimal
+    deals_sum: MoneyDecimal
     online: bool
     forums: list[ForumOut]
     dm_deals: bool = True
@@ -104,7 +109,7 @@ class UserPublicOut(BaseModel):
     display_name: str
     photo_url: str | None
     banner_url: str | None
-    deposit: Decimal
+    deposit: MoneyDecimal
     description: str
     prefix: str | None
     is_admin: bool
@@ -113,10 +118,10 @@ class UserPublicOut(BaseModel):
     admin: int
     good: int
     bad: int
-    rating: Decimal
+    rating: MoneyDecimal
     reviews_count: int
     deals_count: int
-    deals_sum: Decimal
+    deals_sum: MoneyDecimal
     online: bool
     forums: list[ForumOut]
     is_anonymous_deals: bool = False
@@ -311,7 +316,7 @@ class ServiceOut(BaseModel):
     owner_username: str | None
     title: str
     description: str
-    price: Decimal
+    price: MoneyDecimal
     currency: str
     status: str
     category: CategoryOut
@@ -383,7 +388,7 @@ class ServiceOwnerOut(BaseModel):
     username: str | None
     display_name: str
     photo_url: str | None
-    rating: Decimal
+    rating: MoneyDecimal
     deals_count: int
     good: int
     bad: int
@@ -394,7 +399,7 @@ class ServiceOwnerOut(BaseModel):
 class ServiceDetailOut(ServiceOut):
     owner: ServiceOwnerOut | None
     comments_count: int
-    rating_avg: Decimal | None
+    rating_avg: MoneyDecimal | None
     rating_count: int
 
 
@@ -511,8 +516,8 @@ class DealOut(BaseModel):
     created_at: datetime | None
     # PR-3 — multi-currency + state-machine extras.
     currency_code: str | None = None
-    amount: Decimal
-    commission_amount: Decimal | None = None
+    amount: MoneyDecimal
+    commission_amount: MoneyDecimal | None = None
     in_progress_at: datetime | None = None
     completed_at: datetime | None = None
     cancellation_initiator: str | None = None
@@ -652,15 +657,15 @@ class CurrencyOut(BaseModel):
     network: str
     icon_url: str
     decimals: int
-    min_deposit: Decimal
-    min_withdraw: Decimal
+    min_deposit: MoneyDecimal
+    min_withdraw: MoneyDecimal
 
 
 class WalletBalanceOut(BaseModel):
     currency: CurrencyOut
-    amount: Decimal
-    locked: Decimal
-    total: Decimal
+    amount: MoneyDecimal
+    locked: MoneyDecimal
+    total: MoneyDecimal
     updated_at: datetime | None
 
 
@@ -695,7 +700,7 @@ class WalletDepositCreateReq(BaseModel):
 class WalletDepositOut(BaseModel):
     id: int
     currency: CurrencyOut
-    amount: Decimal
+    amount: MoneyDecimal
     status: str
     pay_url: str
     invoice_id: str
@@ -737,7 +742,7 @@ class WalletWithdrawCreateReq(BaseModel):
 class WalletWithdrawalOut(BaseModel):
     id: int
     currency: CurrencyOut
-    amount: Decimal
+    amount: MoneyDecimal
     address: str
     status: str
     admin_note: str
@@ -799,8 +804,8 @@ class AdminUserListItem(BaseModel):
     is_vip: bool
     is_banned: bool
     is_frozen: bool
-    deposit_total: Decimal
-    rating: Decimal
+    deposit_total: MoneyDecimal
+    rating: MoneyDecimal
     deals_total: int
     deals_success: int
     last_ip: str | None
@@ -829,10 +834,10 @@ class AdminUserDetailOut(BaseModel):
     photo_url: str | None
     banner_url: str | None
     description: str
-    deposit_total: Decimal
-    rating_auto: Decimal
-    rating_manual: Decimal | None
-    rating_effective: Decimal
+    deposit_total: MoneyDecimal
+    rating_auto: MoneyDecimal
+    rating_manual: MoneyDecimal | None
+    rating_effective: MoneyDecimal
     good: int
     bad: int
     deals_total: int
@@ -982,8 +987,8 @@ class AdminDealListItem(BaseModel):
     id: int
     status: str
     currency_code: str | None
-    amount: Decimal
-    commission_amount: Decimal | None
+    amount: MoneyDecimal
+    commission_amount: MoneyDecimal | None
     buyer_id: int
     buyer_username: str | None
     seller_id: int
@@ -1016,9 +1021,9 @@ class AdminBalanceSnapshot(BaseModel):
     username: str | None
     display_name: str
     currency_code: str | None
-    amount: Decimal
-    locked: Decimal
-    total: Decimal
+    amount: MoneyDecimal
+    locked: MoneyDecimal
+    total: MoneyDecimal
 
 
 class AdminDealEventItem(BaseModel):
@@ -1046,8 +1051,8 @@ class AdminDealDetailOut(BaseModel):
     status: str
     description: str
     currency_code: str | None
-    amount: Decimal
-    commission_amount: Decimal | None
+    amount: MoneyDecimal
+    commission_amount: MoneyDecimal | None
     pay_commission: str
     buyer: AdminBalanceSnapshot
     seller: AdminBalanceSnapshot
@@ -1153,13 +1158,13 @@ class AdminServiceItemOut(BaseModel):
     category_slug: str | None
     title: str
     description: str
-    price: Decimal
+    price: MoneyDecimal
     status: str
     ban_reason: str | None
     views: int
     deals_count: int
-    deposit: Decimal
-    rating_manual: Decimal | None
+    deposit: MoneyDecimal
+    rating_manual: MoneyDecimal | None
     created_at: datetime
 
 
@@ -1328,9 +1333,9 @@ class AdminUserBalanceOut(BaseModel):
     currency_code: str
     currency_name: str
     decimals: int
-    amount: Decimal
-    locked: Decimal
-    total: Decimal
+    amount: MoneyDecimal
+    locked: MoneyDecimal
+    total: MoneyDecimal
     updated_at: datetime | None
 
 
@@ -1347,7 +1352,7 @@ class AdminWalletListItem(BaseModel):
     is_banned: bool
     is_frozen: bool
     balances: list[AdminUserBalanceOut]
-    total_usd_estimate: Decimal
+    total_usd_estimate: MoneyDecimal
 
 
 class AdminWalletListOut(BaseModel):
@@ -1410,7 +1415,7 @@ class AdminDepositOut(BaseModel):
     username: str | None
     display_name: str
     currency_code: str
-    amount: Decimal
+    amount: MoneyDecimal
     status: str
     provider_invoice_id: str
     pay_url: str
@@ -1434,7 +1439,7 @@ class AdminWithdrawalOut(BaseModel):
     username: str | None
     display_name: str
     currency_code: str
-    amount: Decimal
+    amount: MoneyDecimal
     address: str
     status: str
     admin_note: str
@@ -1482,9 +1487,9 @@ class AdminTreasuryBalanceOut(BaseModel):
     currency_code: str
     currency_name: str
     decimals: int
-    accrued: Decimal
-    withdrawn: Decimal
-    available: Decimal
+    accrued: MoneyDecimal
+    withdrawn: MoneyDecimal
+    available: MoneyDecimal
 
 
 class AdminTreasuryOverviewOut(BaseModel):
@@ -1561,7 +1566,7 @@ class AdminTreasuryWithdrawOut(BaseModel):
     id: int
     actor_id: int
     currency_code: str
-    amount: Decimal
+    amount: MoneyDecimal
     address: str
     status: str
     note: str
@@ -1611,11 +1616,11 @@ class AdminTreasuryMarkSentIn(BaseModel):
 
 
 class AdminSettingsOut(BaseModel):
-    deal_commission_percent: Decimal
-    invoice_commission_percent: Decimal
-    vip_commission_percent: Decimal
-    min_deposit: Decimal
-    min_withdraw: Decimal
+    deal_commission_percent: MoneyDecimal
+    invoice_commission_percent: MoneyDecimal
+    vip_commission_percent: MoneyDecimal
+    min_deposit: MoneyDecimal
+    min_withdraw: MoneyDecimal
     inactivity_pending_confirmation_days: int
     inactivity_pending_cancellation_days: int
     max_active_services_per_user: int

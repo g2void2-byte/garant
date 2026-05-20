@@ -478,9 +478,8 @@
         "description": "Per-currency wallet balance + lock state at request time.\n\nH-1: previously this DTO included the legacy USD ``user.balance``\ncolumn. After the legacy ledger was retired the snapshot is\npurely the per-currency ``UserBalance`` row pair (``amount`` +\n``locked``); ``currency_code`` is non-null on every live deal.",
         "properties": {
           "amount": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "string"
+            "type": "number"
           },
           "currency_code": {
             "anyOf": [
@@ -498,14 +497,12 @@
             "type": "string"
           },
           "locked": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Locked",
-            "type": "string"
+            "type": "number"
           },
           "total": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total",
-            "type": "string"
+            "type": "number"
           },
           "user_id": {
             "title": "User Id",
@@ -1309,9 +1306,8 @@
         "description": "Full admin view of a deal.",
         "properties": {
           "amount": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "string"
+            "type": "number"
           },
           "arbitration_initiator": {
             "anyOf": [
@@ -1420,8 +1416,7 @@
           "commission_amount": {
             "anyOf": [
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -1600,9 +1595,8 @@
         "description": "Single row in ``GET /api/admin/deals`` listing.\n\nContains identity, money, status, timestamps and a small set of\nderived flags (``has_arbitration``, ``has_cancel_request``) so the\nlist view can filter and badge without a separate per-row fetch.",
         "properties": {
           "amount": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "string"
+            "type": "number"
           },
           "buyer_id": {
             "title": "Buyer Id",
@@ -1622,8 +1616,7 @@
           "commission_amount": {
             "anyOf": [
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -1825,9 +1818,8 @@
       "AdminDepositOut": {
         "properties": {
           "amount": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "string"
+            "type": "number"
           },
           "created_at": {
             "format": "date-time",
@@ -2085,9 +2077,8 @@
             "type": "integer"
           },
           "deposit": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deposit",
-            "type": "string"
+            "type": "number"
           },
           "description": {
             "title": "Description",
@@ -2102,15 +2093,13 @@
             "type": "integer"
           },
           "price": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Price",
-            "type": "string"
+            "type": "number"
           },
           "rating_manual": {
             "anyOf": [
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -2414,9 +2403,8 @@
             "type": "boolean"
           },
           "deal_commission_percent": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deal Commission Percent",
-            "type": "string"
+            "type": "number"
           },
           "inactivity_pending_cancellation_days": {
             "title": "Inactivity Pending Cancellation Days",
@@ -2427,9 +2415,8 @@
             "type": "integer"
           },
           "invoice_commission_percent": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Invoice Commission Percent",
-            "type": "string"
+            "type": "number"
           },
           "maintenance_enabled": {
             "title": "Maintenance Enabled",
@@ -2444,19 +2431,16 @@
             "type": "integer"
           },
           "min_deposit": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Min Deposit",
-            "type": "string"
+            "type": "number"
           },
           "min_withdraw": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Min Withdraw",
-            "type": "string"
+            "type": "number"
           },
           "vip_commission_percent": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Vip Commission Percent",
-            "type": "string"
+            "type": "number"
           }
         },
         "required": [
@@ -2702,14 +2686,12 @@
         "description": "Per-currency commission accumulator.\n\n``accrued`` sums up ``commission_amount`` on every completed deal in\nthis currency; ``withdrawn`` subtracts the sum of successful\n``treasury_withdrawals`` rows. ``available`` is the diff and the\nonly amount the admin can withdraw.",
         "properties": {
           "accrued": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Accrued",
-            "type": "string"
+            "type": "number"
           },
           "available": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Available",
-            "type": "string"
+            "type": "number"
           },
           "currency_code": {
             "title": "Currency Code",
@@ -2728,9 +2710,8 @@
             "type": "integer"
           },
           "withdrawn": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Withdrawn",
-            "type": "string"
+            "type": "number"
           }
         },
         "required": [
@@ -2859,9 +2840,8 @@
             "type": "string"
           },
           "amount": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "string"
+            "type": "number"
           },
           "created_at": {
             "format": "date-time",
@@ -2914,9 +2894,8 @@
         "description": "A single ``(user, currency, amount, locked)`` row.\n\nReturned in admin wallet views and inside :class:`AdminUserWalletOut`.\n``user_id`` / ``username`` are denormalised so the list page can\nrender without a second fetch.",
         "properties": {
           "amount": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "string"
+            "type": "number"
           },
           "currency_code": {
             "title": "Currency Code",
@@ -2939,14 +2918,12 @@
             "type": "string"
           },
           "locked": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Locked",
-            "type": "string"
+            "type": "number"
           },
           "total": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total",
-            "type": "string"
+            "type": "number"
           },
           "updated_at": {
             "anyOf": [
@@ -3043,9 +3020,8 @@
             "type": "integer"
           },
           "deposit_total": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deposit Total",
-            "type": "string"
+            "type": "number"
           },
           "description": {
             "title": "Description",
@@ -3145,20 +3121,17 @@
             "title": "Photo Url"
           },
           "rating_auto": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rating Auto",
-            "type": "string"
+            "type": "number"
           },
           "rating_effective": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rating Effective",
-            "type": "string"
+            "type": "number"
           },
           "rating_manual": {
             "anyOf": [
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -3235,9 +3208,8 @@
             "type": "integer"
           },
           "deposit_total": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deposit Total",
-            "type": "string"
+            "type": "number"
           },
           "display_name": {
             "title": "Display Name",
@@ -3313,9 +3285,8 @@
             "title": "Prefix"
           },
           "rating": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rating",
-            "type": "string"
+            "type": "number"
           },
           "tg_user_id": {
             "title": "Tg User Id",
@@ -3471,9 +3442,8 @@
             "title": "Photo Url"
           },
           "total_usd_estimate": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Usd Estimate",
-            "type": "string"
+            "type": "number"
           },
           "user_id": {
             "title": "User Id",
@@ -3603,9 +3573,8 @@
             "type": "string"
           },
           "amount": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "string"
+            "type": "number"
           },
           "created_at": {
             "format": "date-time",
@@ -3743,14 +3712,12 @@
             "type": "integer"
           },
           "min_deposit": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Min Deposit",
-            "type": "string"
+            "type": "number"
           },
           "min_withdraw": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Min Withdraw",
-            "type": "string"
+            "type": "number"
           },
           "name": {
             "title": "Name",
@@ -3928,9 +3895,8 @@
       "DealOut": {
         "properties": {
           "amount": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "string"
+            "type": "number"
           },
           "arbitration_initiator": {
             "anyOf": [
@@ -4036,8 +4002,7 @@
           "commission_amount": {
             "anyOf": [
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -4795,15 +4760,13 @@
             "type": "array"
           },
           "price": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Price",
-            "type": "string"
+            "type": "number"
           },
           "rating_avg": {
             "anyOf": [
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -4908,9 +4871,8 @@
             "type": "array"
           },
           "price": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Price",
-            "type": "string"
+            "type": "number"
           },
           "status": {
             "title": "Status",
@@ -4978,9 +4940,8 @@
             "title": "Photo Url"
           },
           "rating": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rating",
-            "type": "string"
+            "type": "number"
           },
           "username": {
             "anyOf": [
@@ -5261,14 +5222,12 @@
             "type": "integer"
           },
           "deals_sum": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deals Sum",
-            "type": "string"
+            "type": "number"
           },
           "deposit": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deposit",
-            "type": "string"
+            "type": "number"
           },
           "description": {
             "title": "Description",
@@ -5368,9 +5327,8 @@
             "title": "Prefix"
           },
           "rating": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rating",
-            "type": "string"
+            "type": "number"
           },
           "reviews_count": {
             "title": "Reviews Count",
@@ -5455,14 +5413,12 @@
             "type": "integer"
           },
           "deals_sum": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deals Sum",
-            "type": "string"
+            "type": "number"
           },
           "deposit": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deposit",
-            "type": "string"
+            "type": "number"
           },
           "description": {
             "title": "Description",
@@ -5537,9 +5493,8 @@
             "title": "Prefix"
           },
           "rating": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rating",
-            "type": "string"
+            "type": "number"
           },
           "reviews_count": {
             "title": "Reviews Count",
@@ -5754,22 +5709,19 @@
       "WalletBalanceOut": {
         "properties": {
           "amount": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "string"
+            "type": "number"
           },
           "currency": {
             "$ref": "#/components/schemas/CurrencyOut"
           },
           "locked": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Locked",
-            "type": "string"
+            "type": "number"
           },
           "total": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total",
-            "type": "string"
+            "type": "number"
           },
           "updated_at": {
             "anyOf": [
@@ -5841,9 +5793,8 @@
       "WalletDepositOut": {
         "properties": {
           "amount": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "string"
+            "type": "number"
           },
           "created_at": {
             "format": "date-time",
@@ -5947,9 +5898,8 @@
             "type": "string"
           },
           "amount": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "string"
+            "type": "number"
           },
           "created_at": {
             "format": "date-time",
