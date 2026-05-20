@@ -253,6 +253,36 @@ describe("openTelegramLink", () => {
     expect(openSpy).toHaveBeenCalledWith("https://example.com", "_blank", "noopener,noreferrer");
     openSpy.mockRestore();
   });
+
+  it.each([
+    ["javascript:alert(1)"],
+    ["JavaScript:alert(1)"],
+    ["data:text/html,<script>alert(1)</script>"],
+    ["vbscript:msgbox"],
+    ["file:///etc/passwd"],
+    ["not-a-url"],
+    [""],
+  ])("refuses to open unsafe URL %s", async (badUrl) => {
+    // Audit L-13 — only ``http(s):`` URLs are allowed through. Anything
+    // else is silently dropped before delegating to Telegram or to
+    // ``window.open`` so a server-injected URL can't execute script.
+    const { fake, mod } = await importTgWithFake("ios");
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    mod.openTelegramLink(badUrl);
+    expect(fake.openTelegramLink).not.toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalled();
+    openSpy.mockRestore();
+  });
+
+  it("refuses unsafe URLs in the no-Telegram fallback too", async () => {
+    (window as unknown as { Telegram?: unknown }).Telegram = undefined;
+    vi.resetModules();
+    const mod = await import("./tg");
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    mod.openTelegramLink("javascript:alert(1)");
+    expect(openSpy).not.toHaveBeenCalled();
+    openSpy.mockRestore();
+  });
 });
 
 describe("showBackButton / showMainButton", () => {

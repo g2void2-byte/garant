@@ -2,7 +2,29 @@ import { getInitData } from "@/lib/tg";
 
 export interface WsEvent {
   event: string;
-  data?: any;
+  data?: unknown;
+}
+
+interface AuthAckFrame {
+  type: "auth";
+  ok?: boolean;
+}
+
+function isAuthAck(value: unknown): value is AuthAckFrame {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { type?: unknown }).type === "auth" &&
+    (value as { ok?: unknown }).ok === true
+  );
+}
+
+function isWsEvent(value: unknown): value is WsEvent {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { event?: unknown }).event === "string"
+  );
 }
 
 export interface WsHandlers {
@@ -68,7 +90,7 @@ export function connectNotifications(handlers: WsHandlers): () => void {
       }
     });
     socket.addEventListener("message", (msg) => {
-      let parsed: any;
+      let parsed: unknown;
       try {
         parsed = JSON.parse(msg.data);
       } catch {
@@ -78,7 +100,7 @@ export function connectNotifications(handlers: WsHandlers): () => void {
         // The first frame must be the auth ACK. Anything else means
         // the server changed shape or we reconnected against an old
         // build — close and let backoff retry.
-        if (parsed && parsed.type === "auth" && parsed.ok === true) {
+        if (isAuthAck(parsed)) {
           authed = true;
           backoff = MIN_BACKOFF;
           handlers.onOpen?.();
@@ -91,7 +113,12 @@ export function connectNotifications(handlers: WsHandlers): () => void {
         }
         return;
       }
-      handlers.onEvent(parsed as WsEvent);
+      // Drop frames that don't carry the documented ``{event,data?}``
+      // shape — server-side bug or a future-versioned message we don't
+      // know how to dispatch yet.
+      if (isWsEvent(parsed)) {
+        handlers.onEvent(parsed);
+      }
     });
     socket.addEventListener("close", () => {
       handlers.onClose?.();

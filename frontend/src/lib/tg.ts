@@ -232,7 +232,30 @@ export function openExternalLink(url: string) {
   if (typeof window !== "undefined") window.open(url, "_blank", "noopener,noreferrer");
 }
 
+// Audit L-13 — schemes we allow to flow through ``openTelegramLink`` /
+// ``openExternalLink``. Anything else (``javascript:``, ``data:``,
+// ``vbscript:``, ``file:`` …) is refused before it can reach
+// ``tg.openTelegramLink`` or ``window.open`` so an attacker who manages
+// to inject a hostile URL into a server-controlled field (e.g.
+// ``WalletDeposit.pay_url``, a username, a forum mirror) can't escalate
+// to in-context script execution against the TMA.
+const _SAFE_LINK_SCHEMES = new Set(["http:", "https:"]);
+
+function isSafeLink(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return _SAFE_LINK_SCHEMES.has(u.protocol);
+  } catch {
+    return false;
+  }
+}
+
 export function openTelegramLink(url: string) {
+  // Audit L-13 — reject anything that isn't a plain ``http(s):`` URL
+  // before delegating; the host is intentionally not constrained so we
+  // can still open CryptoBot (``t.me/CryptoBot?...``) and Crystalpay
+  // invoice URLs (``pay.crystalpay.io/...``).
+  if (!isSafeLink(url)) return;
   // Audit M-7 — the fallback path is only taken outside of Telegram
   // (desktop preview / unit tests). Match ``openExternalLink`` and pass
   // ``noopener,noreferrer`` so the destination page can't reach back
