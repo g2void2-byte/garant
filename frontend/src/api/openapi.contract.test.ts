@@ -79,6 +79,7 @@ const dealFixture = {
   seller: "alice",
   description: "Logo design package",
   pay_comission: "buyer",
+  pay_commission: "buyer",
   status: "in_progress",
   confirm_buyer: false,
   confirm_seller: false,

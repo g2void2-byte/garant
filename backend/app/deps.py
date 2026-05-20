@@ -55,10 +55,16 @@ def _get_trusted_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Networ
 
 
 def _is_trusted_peer(request: Request) -> bool:
-    """Check if the direct peer is in the trusted proxy list."""
+    """Check if the direct peer is in the trusted proxy list.
+
+    H-3: when ``TRUSTED_PROXIES`` is empty (the default) we now return
+    ``False`` — i.e. do NOT trust ``X-Forwarded-For`` from arbitrary
+    callers. Previously the empty-list case returned ``True`` which
+    let any client spoof their IP.
+    """
     nets = _get_trusted_networks()
     if not nets:
-        return True
+        return False
     peer = request.client.host if request.client else None
     if not peer:
         return False
@@ -74,7 +80,7 @@ def _client_ip(request: Request) -> str | None:
 
     Only honours ``X-Forwarded-For`` / ``X-Real-IP`` when the direct
     peer is in ``TRUSTED_PROXIES``. When that list is empty (default),
-    all peers are trusted for backwards compatibility.
+    no peers are trusted (H-3) — returns the direct socket peer.
     """
     if _is_trusted_peer(request):
         fwd = request.headers.get("x-forwarded-for")

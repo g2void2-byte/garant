@@ -34,7 +34,7 @@ from ...time_utils import utcnow
 router = APIRouter(
     prefix="/api/admin/system",
     tags=["admin"],
-    dependencies=[Depends(rate_limit("admin", limit=600, window=60))],
+    dependencies=[Depends(rate_limit("admin:system", limit=600, window=60))],
 )
 
 

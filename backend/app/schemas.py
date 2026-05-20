@@ -4,11 +4,16 @@ import json
 import math
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PlainSerializer, field_validator, model_validator
 
 from .models import PayCommission
+
+# H-1: internal calculations use ``Decimal`` for precision, but the
+# JSON wire format emits a plain number (``float``) so the frontend
+# (JavaScript) can consume values without a string→number parse step.
+MoneyDecimal = Annotated[Decimal, PlainSerializer(lambda v: float(v), return_type=float)]
 
 # ── Users ──────────────────────────────────────────────
 
@@ -60,7 +65,7 @@ class UserOut(BaseModel):
     display_name: str
     photo_url: str | None
     banner_url: str | None
-    deposit: float
+    deposit: MoneyDecimal
     description: str
     prefix: str | None
     is_admin: bool
@@ -71,10 +76,10 @@ class UserOut(BaseModel):
     admin: int
     good: int
     bad: int
-    rating: float
+    rating: MoneyDecimal
     reviews_count: int
     deals_count: int
-    deals_sum: float
+    deals_sum: MoneyDecimal
     online: bool
     forums: list[ForumOut]
     dm_deals: bool = True
@@ -104,7 +109,7 @@ class UserPublicOut(BaseModel):
     display_name: str
     photo_url: str | None
     banner_url: str | None
-    deposit: float
+    deposit: MoneyDecimal
     description: str
     prefix: str | None
     is_admin: bool
@@ -113,10 +118,10 @@ class UserPublicOut(BaseModel):
     admin: int
     good: int
     bad: int
-    rating: float
+    rating: MoneyDecimal
     reviews_count: int
     deals_count: int
-    deals_sum: float
+    deals_sum: MoneyDecimal
     online: bool
     forums: list[ForumOut]
     is_anonymous_deals: bool = False
@@ -262,19 +267,23 @@ def _validate_description(v: str | None) -> str | None:
     return v
 
 
-def _reject_non_finite_money(v: float | None) -> float | None:
-    """Reject ``float('inf')``/``float('-inf')``/``float('nan')`` on money fields.
+def _reject_non_finite_money(v: Decimal | float | int | None) -> Decimal | None:
+    """Coerce to ``Decimal`` and reject non-finite sentinels on money fields.
 
-    L-1/L-2: Pydantic happily coerces JSON ``"Infinity"``/``"NaN"`` into
-    Python ``float`` sentinels, which then propagate into
-    ``Decimal(str(amount))`` (raises
-    :class:`decimal.InvalidOperation`) or short-circuit downstream
-    arithmetic. Reject them at the schema boundary instead of letting
-    them surface as opaque 500s deeper in the stack.
+    H-1: all public-API money fields are ``Decimal`` now.  Pydantic v2
+    coerces JSON numbers to ``Decimal`` natively, but ``float`` inputs
+    via Python callers or ``"Infinity"``/``"NaN"`` strings still need
+    guarding.
     """
     if v is None:
-        return v
-    if not math.isfinite(v):
+        return None
+    if isinstance(v, float):
+        if not math.isfinite(v):
+            raise ValueError("Сумма должна быть конечным числом")
+        v = Decimal(str(v))
+    elif isinstance(v, int):
+        v = Decimal(v)
+    if not v.is_finite():
         raise ValueError("Сумма должна быть конечным числом")
     return v
 
@@ -307,7 +316,7 @@ class ServiceOut(BaseModel):
     owner_username: str | None
     title: str
     description: str
-    price: float
+    price: MoneyDecimal
     currency: str
     status: str
     category: CategoryOut
@@ -323,17 +332,14 @@ class ServiceCreate(BaseModel):
     # router. The non-finite check below catches ``NaN``/``±inf`` JSON
     # values that bypass the ``ge=0`` comparison (``NaN < 0`` is
     # ``False``).
-    price: float = Field(default=0, ge=0)
+    price: Decimal = Field(default=Decimal(0), ge=0)
     photo_urls: list[str] = Field(default_factory=list)
 
     @field_validator("price")
     @classmethod
-    def _price_finite(cls, v: float) -> float:
+    def _price_finite(cls, v: Decimal | float) -> Decimal:
         result = _reject_non_finite_money(v)
-        # ``Field(ge=0)`` already excludes negatives; the validator only
-        # has to fend off ``inf``/``nan``. ``result`` is non-``None``
-        # because the field itself is non-optional with a default of 0.
-        return result if result is not None else 0.0
+        return result if result is not None else Decimal(0)
 
     @field_validator("description")
     @classmethod
@@ -350,13 +356,13 @@ class ServiceUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     # L-2: same finiteness/non-negative guard as ``ServiceCreate.price``.
-    price: float | None = Field(default=None, ge=0)
+    price: Decimal | None = Field(default=None, ge=0)
     status: str | None = None  # draft / active / paused (banned only via admin)
     photo_urls: list[str] | None = None
 
     @field_validator("price")
     @classmethod
-    def _price_finite(cls, v: float | None) -> float | None:
+    def _price_finite(cls, v: Decimal | float | None) -> Decimal | None:
         return _reject_non_finite_money(v)
 
     @field_validator("description")
@@ -382,7 +388,7 @@ class ServiceOwnerOut(BaseModel):
     username: str | None
     display_name: str
     photo_url: str | None
-    rating: float
+    rating: MoneyDecimal
     deals_count: int
     good: int
     bad: int
@@ -393,7 +399,7 @@ class ServiceOwnerOut(BaseModel):
 class ServiceDetailOut(ServiceOut):
     owner: ServiceOwnerOut | None
     comments_count: int
-    rating_avg: float | None
+    rating_avg: MoneyDecimal | None
     rating_count: int
 
 
@@ -444,19 +450,29 @@ class DealCreate(BaseModel):
     # ``Field(gt=0)`` — but ``+inf > 0`` is ``True``, which would slip
     # through and break downstream ``Decimal(str(amount))``
     # conversion).
-    amount: float = Field(gt=0)
+    amount: Decimal = Field(gt=0)
     description: str = ""
-    pay_comission: PayCommission = PayCommission.buyer
+    # H-2: canonical field with correct spelling.
+    pay_commission: PayCommission = PayCommission.buyer
+    # H-2: deprecated alias for backward-compatible JSON input.
+    pay_comission: PayCommission | None = Field(default=None, exclude=True)
     currency_code: str = "USDT"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_pay_comission(cls, values: dict) -> dict:  # type: ignore[override]
+        """Accept the legacy ``pay_comission`` key and copy it to ``pay_commission``."""
+        if isinstance(values, dict):
+            legacy = values.get("pay_comission")
+            if legacy is not None and "pay_commission" not in values:
+                values["pay_commission"] = legacy
+        return values
 
     @field_validator("amount")
     @classmethod
-    def _amount_finite(cls, v: float) -> float:
+    def _amount_finite(cls, v: Decimal | float) -> Decimal:
         result = _reject_non_finite_money(v)
-        # ``Field(gt=0)`` enforces the positivity invariant; the
-        # validator only has to fend off ``inf``. ``result`` is
-        # non-``None`` because the field is required.
-        return result if result is not None else 0.0
+        return result if result is not None else Decimal(0)
 
     @field_validator("description")
     @classmethod
@@ -489,7 +505,10 @@ class DealOut(BaseModel):
     buyer: str | None
     seller: str | None
     description: str
-    pay_comission: str
+    # H-2: both spellings emitted for backward compat; canonical is
+    # ``pay_commission``.
+    pay_commission: str
+    pay_comission: str  # deprecated alias
     status: str
     confirm_buyer: bool
     confirm_seller: bool
@@ -497,8 +516,8 @@ class DealOut(BaseModel):
     created_at: datetime | None
     # PR-3 — multi-currency + state-machine extras.
     currency_code: str | None = None
-    amount: float
-    commission_amount: float | None = None
+    amount: MoneyDecimal
+    commission_amount: MoneyDecimal | None = None
     in_progress_at: datetime | None = None
     completed_at: datetime | None = None
     cancellation_initiator: str | None = None
@@ -638,21 +657,21 @@ class CurrencyOut(BaseModel):
     network: str
     icon_url: str
     decimals: int
-    min_deposit: float
-    min_withdraw: float
+    min_deposit: MoneyDecimal
+    min_withdraw: MoneyDecimal
 
 
 class WalletBalanceOut(BaseModel):
     currency: CurrencyOut
-    amount: float
-    locked: float
-    total: float
+    amount: MoneyDecimal
+    locked: MoneyDecimal
+    total: MoneyDecimal
     updated_at: datetime | None
 
 
 class WalletDepositCreateReq(BaseModel):
     currency_code: str
-    amount: float
+    amount: Decimal
     # Routing tag for ``services_wallet.create_deposit_invoice``.
     # ``"wallet"`` (default) credits the per-currency ``UserBalance``
     # ledger that funds deals + withdrawals. ``"trust"`` credits the
@@ -671,16 +690,17 @@ class WalletDepositCreateReq(BaseModel):
 
     @field_validator("amount")
     @classmethod
-    def positive(cls, v: float) -> float:
-        if v <= 0:
+    def positive(cls, v: Decimal | float) -> Decimal:
+        result = _reject_non_finite_money(v)
+        if result is None or result <= 0:
             raise ValueError("Сумма должна быть больше нуля")
-        return v
+        return result
 
 
 class WalletDepositOut(BaseModel):
     id: int
     currency: CurrencyOut
-    amount: float
+    amount: MoneyDecimal
     status: str
     pay_url: str
     invoice_id: str
@@ -699,15 +719,16 @@ class WalletDepositOut(BaseModel):
 
 class WalletWithdrawCreateReq(BaseModel):
     currency_code: str
-    amount: float
+    amount: Decimal
     address: str
 
     @field_validator("amount")
     @classmethod
-    def positive(cls, v: float) -> float:
-        if v <= 0:
+    def positive(cls, v: Decimal | float) -> Decimal:
+        result = _reject_non_finite_money(v)
+        if result is None or result <= 0:
             raise ValueError("Сумма должна быть больше нуля")
-        return v
+        return result
 
     @field_validator("address")
     @classmethod
@@ -721,7 +742,7 @@ class WalletWithdrawCreateReq(BaseModel):
 class WalletWithdrawalOut(BaseModel):
     id: int
     currency: CurrencyOut
-    amount: float
+    amount: MoneyDecimal
     address: str
     status: str
     admin_note: str
@@ -783,8 +804,8 @@ class AdminUserListItem(BaseModel):
     is_vip: bool
     is_banned: bool
     is_frozen: bool
-    deposit_total: float
-    rating: float
+    deposit_total: MoneyDecimal
+    rating: MoneyDecimal
     deals_total: int
     deals_success: int
     last_ip: str | None
@@ -813,10 +834,10 @@ class AdminUserDetailOut(BaseModel):
     photo_url: str | None
     banner_url: str | None
     description: str
-    deposit_total: float
-    rating_auto: float
-    rating_manual: float | None
-    rating_effective: float
+    deposit_total: MoneyDecimal
+    rating_auto: MoneyDecimal
+    rating_manual: MoneyDecimal | None
+    rating_effective: MoneyDecimal
     good: int
     bad: int
     deals_total: int
@@ -912,7 +933,7 @@ class AdminSetStatsIn(BaseModel):
     deals_arbitrage: int | None = None
     good: int | None = None
     bad: int | None = None
-    deposit_total: float | None = None
+    deposit_total: Decimal | None = None
 
     @field_validator(
         "deals_total",
@@ -930,10 +951,13 @@ class AdminSetStatsIn(BaseModel):
 
     @field_validator("deposit_total")
     @classmethod
-    def _non_negative_float(cls, v: float | None) -> float | None:
-        if v is not None and v < 0:
+    def _non_negative_decimal(cls, v: Decimal | float | None) -> Decimal | None:
+        if v is None:
+            return None
+        d = _reject_non_finite_money(v)
+        if d is not None and d < 0:
             raise ValueError("Значение не может быть отрицательным")
-        return v
+        return d
 
 
 class AdminAuditLogOut(BaseModel):
@@ -963,6 +987,10 @@ class AdminDealListItem(BaseModel):
     id: int
     status: str
     currency_code: str | None
+    # M-3 wire format: ``Decimal`` (not ``MoneyDecimal``) so Pydantic
+    # serialises as a JSON string and the admin UI sees full
+    # ``Numeric(28, 8)`` precision.  ``MoneyDecimal`` would re-cast to
+    # ``float`` and silently drop trailing satoshi on large BTC sums.
     amount: Decimal
     commission_amount: Decimal | None
     buyer_id: int
@@ -997,6 +1025,7 @@ class AdminBalanceSnapshot(BaseModel):
     username: str | None
     display_name: str
     currency_code: str | None
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
     amount: Decimal
     locked: Decimal
     total: Decimal
@@ -1027,6 +1056,7 @@ class AdminDealDetailOut(BaseModel):
     status: str
     description: str
     currency_code: str | None
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
     amount: Decimal
     commission_amount: Decimal | None
     pay_commission: str
@@ -1087,15 +1117,16 @@ class AdminDealSplitIn(BaseModel):
     commission back to either party.
     """
 
-    buyer_percent: float
+    buyer_percent: Decimal
     reason: str | None = None
 
     @field_validator("buyer_percent")
     @classmethod
-    def _percent_ok(cls, v: float) -> float:
-        if v < 0 or v > 100:
+    def _percent_ok(cls, v: Decimal | float) -> Decimal:
+        d = Decimal(str(v)) if isinstance(v, float) else v
+        if d < 0 or d > 100:
             raise ValueError("Доля покупателя должна быть в диапазоне 0..100")
-        return round(v, 2)
+        return d.quantize(Decimal("0.01"))
 
 
 class AdminDealAssignArbiterIn(BaseModel):
@@ -1133,13 +1164,13 @@ class AdminServiceItemOut(BaseModel):
     category_slug: str | None
     title: str
     description: str
-    price: float
+    price: MoneyDecimal
     status: str
     ban_reason: str | None
     views: int
     deals_count: int
-    deposit: float
-    rating_manual: float | None
+    deposit: MoneyDecimal
+    rating_manual: MoneyDecimal | None
     created_at: datetime
 
 
@@ -1154,11 +1185,11 @@ class AdminServiceUpdateIn(BaseModel):
 
     title: str | None = None
     description: str | None = None
-    price: float | None = None
-    deposit: float | None = None
+    price: Decimal | None = None
+    deposit: Decimal | None = None
     views: int | None = None
     deals_count: int | None = None
-    rating_manual: float | None = None
+    rating_manual: Decimal | None = None
     clear_rating: bool = False
     status: Literal["draft", "active", "paused", "banned"] | None = None
     ban_reason: str | None = None
@@ -1186,10 +1217,13 @@ class AdminServiceUpdateIn(BaseModel):
 
     @field_validator("price", "deposit")
     @classmethod
-    def _non_negative_float(cls, v: float | None) -> float | None:
-        if v is not None and v < 0:
+    def _non_negative_decimal(cls, v: Decimal | float | None) -> Decimal | None:
+        if v is None:
+            return None
+        d = _reject_non_finite_money(v)
+        if d is not None and d < 0:
             raise ValueError("Значение не может быть отрицательным")
-        return v
+        return d
 
     @field_validator("views", "deals_count")
     @classmethod
@@ -1200,12 +1234,13 @@ class AdminServiceUpdateIn(BaseModel):
 
     @field_validator("rating_manual")
     @classmethod
-    def _rating_ok(cls, v: float | None) -> float | None:
+    def _rating_ok(cls, v: Decimal | float | None) -> Decimal | None:
         if v is None:
             return v
-        if v < 0 or v > 5:
+        d = Decimal(str(v)) if isinstance(v, float) else v
+        if d < 0 or d > 5:
             raise ValueError("Рейтинг должен быть в диапазоне 0..5")
-        return round(v, 1)
+        return d.quantize(Decimal("0.1"))
 
 
 class AdminReviewItemOut(BaseModel):
@@ -1304,6 +1339,7 @@ class AdminUserBalanceOut(BaseModel):
     currency_code: str
     currency_name: str
     decimals: int
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
     amount: Decimal
     locked: Decimal
     total: Decimal
@@ -1323,6 +1359,7 @@ class AdminWalletListItem(BaseModel):
     is_banned: bool
     is_frozen: bool
     balances: list[AdminUserBalanceOut]
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
     total_usd_estimate: Decimal
 
 
@@ -1345,7 +1382,7 @@ class AdminWalletAdjustIn(BaseModel):
     """
 
     currency_code: str
-    amount: float
+    amount: Decimal
     reason: str | None = None
 
     @field_validator("currency_code")
@@ -1358,10 +1395,11 @@ class AdminWalletAdjustIn(BaseModel):
 
     @field_validator("amount")
     @classmethod
-    def _amount_ok(cls, v: float) -> float:
-        if v == 0:
+    def _amount_ok(cls, v: Decimal | float) -> Decimal:
+        d = _reject_non_finite_money(v)
+        if d is None or d == 0:
             raise ValueError("Сумма не может быть равна нулю")
-        return v
+        return d
 
     @field_validator("reason")
     @classmethod
@@ -1385,6 +1423,7 @@ class AdminDepositOut(BaseModel):
     username: str | None
     display_name: str
     currency_code: str
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
     amount: Decimal
     status: str
     provider_invoice_id: str
@@ -1409,6 +1448,7 @@ class AdminWithdrawalOut(BaseModel):
     username: str | None
     display_name: str
     currency_code: str
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
     amount: Decimal
     address: str
     status: str
@@ -1457,6 +1497,7 @@ class AdminTreasuryBalanceOut(BaseModel):
     currency_code: str
     currency_name: str
     decimals: int
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
     accrued: Decimal
     withdrawn: Decimal
     available: Decimal
@@ -1475,7 +1516,7 @@ class AdminTreasuryWithdrawIn(BaseModel):
     """
 
     currency_code: str
-    amount: float
+    amount: Decimal
     address: str
     confirm: bool = False
     note: str | None = None
@@ -1490,10 +1531,11 @@ class AdminTreasuryWithdrawIn(BaseModel):
 
     @field_validator("amount")
     @classmethod
-    def _amount_ok(cls, v: float) -> float:
-        if v <= 0:
+    def _amount_ok(cls, v: Decimal | float) -> Decimal:
+        d = _reject_non_finite_money(v)
+        if d is None or d <= 0:
             raise ValueError("Сумма должна быть положительной")
-        return v
+        return d
 
     @field_validator("address")
     @classmethod
@@ -1535,6 +1577,7 @@ class AdminTreasuryWithdrawOut(BaseModel):
     id: int
     actor_id: int
     currency_code: str
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
     amount: Decimal
     address: str
     status: str
@@ -1585,11 +1628,11 @@ class AdminTreasuryMarkSentIn(BaseModel):
 
 
 class AdminSettingsOut(BaseModel):
-    deal_commission_percent: float
-    invoice_commission_percent: float
-    vip_commission_percent: float
-    min_deposit: float
-    min_withdraw: float
+    deal_commission_percent: MoneyDecimal
+    invoice_commission_percent: MoneyDecimal
+    vip_commission_percent: MoneyDecimal
+    min_deposit: MoneyDecimal
+    min_withdraw: MoneyDecimal
     inactivity_pending_confirmation_days: int
     inactivity_pending_cancellation_days: int
     max_active_services_per_user: int
@@ -1605,11 +1648,11 @@ class AdminSettingsUpdateIn(BaseModel):
     (commission percentages additionally bounded to ``0..100``).
     """
 
-    deal_commission_percent: float | None = None
-    invoice_commission_percent: float | None = None
-    vip_commission_percent: float | None = None
-    min_deposit: float | None = None
-    min_withdraw: float | None = None
+    deal_commission_percent: Decimal | None = None
+    invoice_commission_percent: Decimal | None = None
+    vip_commission_percent: Decimal | None = None
+    min_deposit: Decimal | None = None
+    min_withdraw: Decimal | None = None
     inactivity_pending_confirmation_days: int | None = None
     inactivity_pending_cancellation_days: int | None = None
     max_active_services_per_user: int | None = None
@@ -1623,25 +1666,26 @@ class AdminSettingsUpdateIn(BaseModel):
         "vip_commission_percent",
     )
     @classmethod
-    def _commission_ok(cls, v: float | None) -> float | None:
+    def _commission_ok(cls, v: Decimal | float | None) -> Decimal | None:
         if v is None:
             return v
-        # ``vip_commission_percent`` allows -1 ("no override").
-        if v < -1 or v > 100:
+        d = Decimal(str(v)) if isinstance(v, float) else v
+        if d < -1 or d > 100:
             raise ValueError("Комиссия должна быть в диапазоне -1..100")
-        return round(v, 2)
+        return d.quantize(Decimal("0.01"))
 
     @field_validator(
         "min_deposit",
         "min_withdraw",
     )
     @classmethod
-    def _min_ok(cls, v: float | None) -> float | None:
+    def _min_ok(cls, v: Decimal | float | None) -> Decimal | None:
         if v is None:
             return v
-        if v < 0:
+        d = _reject_non_finite_money(v)
+        if d is not None and d < 0:
             raise ValueError("Значение не может быть отрицательным")
-        return v
+        return d
 
     @field_validator(
         "inactivity_pending_confirmation_days",

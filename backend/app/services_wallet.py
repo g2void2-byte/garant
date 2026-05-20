@@ -207,7 +207,7 @@ async def create_deposit_invoice(
     and the background sweep — agree on the terminal moment.
     """
     currency = await get_currency_by_code(session, currency_code)
-    if amount < float(currency.min_deposit):
+    if amount < currency.min_deposit:
         raise HTTPException(
             400, f"Минимальная сумма пополнения: {currency.min_deposit} {currency.code}"
         )
@@ -773,7 +773,7 @@ async def create_withdrawal(
     session: AsyncSession, user: User, currency_code: str, amount: float, address: str
 ) -> WalletWithdrawal:
     currency = await get_currency_by_code(session, currency_code)
-    if amount < float(currency.min_withdraw):
+    if amount < currency.min_withdraw:
         raise HTTPException(
             400, f"Минимальная сумма вывода: {currency.min_withdraw} {currency.code}"
         )

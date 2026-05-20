@@ -28,7 +28,7 @@ from ...schemas import (
 router = APIRouter(
     prefix="/api/admin",
     tags=["admin"],
-    dependencies=[Depends(rate_limit("admin", limit=600, window=60))],
+    dependencies=[Depends(rate_limit("admin:taxonomy", limit=600, window=60))],
 )
 
 

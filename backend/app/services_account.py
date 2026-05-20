@@ -32,8 +32,6 @@ from .config import settings
 from .models import (
     AccountTransferCode,
     Deal,
-    Forum,
-    Notification,
     Review,
     Service,
     User,
@@ -397,13 +395,9 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     new_photo_url = target.photo_url
     new_display_name = target.display_name
 
-    # Notifications + balances of the empty target shell are wiped to
-    # release the unique tg_user_id and any FK references before the
-    # row itself is removed.
-    await session.execute(delete(Notification).where(Notification.recipient_id == target.id))
-    await session.execute(delete(UserBalance).where(UserBalance.user_id == target.id))
-    await session.execute(delete(Forum).where(Forum.owner_id == target.id))
-
+    # M-13: FK cascades now handle child-row cleanup automatically
+    # (notifications, balances, forums, media, etc.) when the user
+    # row is deleted.
     target_id = target.id
     await session.delete(target)
     await session.flush()

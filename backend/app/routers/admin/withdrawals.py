@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/admin/withdrawals",
     tags=["admin"],
-    dependencies=[Depends(rate_limit("admin", limit=600, window=60))],
+    dependencies=[Depends(rate_limit("admin:withdrawals", limit=600, window=60))],
 )
 
 

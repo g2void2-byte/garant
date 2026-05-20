@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/admin/broadcasts",
     tags=["admin"],
-    dependencies=[Depends(rate_limit("admin", limit=600, window=60))],
+    dependencies=[Depends(rate_limit("admin:broadcasts", limit=600, window=60))],
 )
 
 
@@ -133,88 +133,69 @@ async def create_broadcast(
     request: Request,
 ):
     clause = _audience_filter(body)
-    user_stmt = select(User)
+
+    # H-4: count recipients first instead of loading all rows at once.
+    count_stmt = select(func.count()).select_from(User)
     if clause is not None:
-        user_stmt = user_stmt.where(clause)
-    recipients = (await session.execute(user_stmt)).scalars().all()
+        count_stmt = count_stmt.where(clause)
+    total_recipients = int((await session.execute(count_stmt)).scalar_one())
+
+    # H-4: stream recipients in chunks to avoid loading the entire
+    # user table into memory for large audiences.
+    _CHUNK_SIZE = 500
+    user_id_stmt = select(User.id)
+    if clause is not None:
+        user_id_stmt = user_id_stmt.where(clause)
+    user_id_stmt = user_id_stmt.order_by(User.id)
+    all_user_ids = list((await session.execute(user_id_stmt)).scalars().all())
 
     delivered = 0
     failed = 0
-    # A9-M-2 — stage every in-app notification row before commit
-    # (atomic with the Broadcast audit row), defer WS dispatch until
-    # after commit so a rolled-back broadcast can never leak "new
-    # message" toasts. DMs are direct Telegram calls (no DB row), so
-    # they remain inline within the per-recipient loop.
     pending: list[tuple[Notification, dict[str, Any] | None]] = []
-    for u in recipients:
-        try:
-            if body.dispatch_inapp:
-                notif, ws_payload = await notifier.insert(
-                    session,
+
+    for chunk_start in range(0, len(all_user_ids), _CHUNK_SIZE):
+        chunk_ids = all_user_ids[chunk_start : chunk_start + _CHUNK_SIZE]
+        chunk_stmt = select(User).where(User.id.in_(chunk_ids))
+        chunk_users = (await session.execute(chunk_stmt)).scalars().all()
+
+        for u in chunk_users:
+            try:
+                if body.dispatch_inapp:
+                    notif, ws_payload = await notifier.insert(
+                        session,
+                        u.id,
+                        NotificationType.system,
+                        body.title or "Сообщение от администрации",
+                        body.body,
+                        {"deeplink": body.deeplink} if body.deeplink else None,
+                    )
+                    pending.append((notif, ws_payload))
+                if body.dispatch_dm and u.tg_user_id:
+                    title = body.title or "Сообщение от администрации"
+                    dm_text = f"<b>{html.escape(title)}</b>\n\n{html.escape(body.body)}"
+                    if body.deeplink:
+                        href = html.escape(body.deeplink, quote=True)
+                        text_part = html.escape(body.deeplink)
+                        dm_text += f'\n\n<a href="{href}">{text_part}</a>'
+                    ok = await bot_send_dm(u.tg_user_id, dm_text)
+                    if not ok:
+                        failed += 1
+                        continue
+                delivered += 1
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "broadcast: delivery failed for user_id=%s",
                     u.id,
-                    NotificationType.system,
-                    body.title or "Сообщение от администрации",
-                    body.body,
-                    {"deeplink": body.deeplink} if body.deeplink else None,
+                    extra={
+                        "event": "broadcast.delivery_failed",
+                        "actor_id": admin.id,
+                        "recipient_user_id": u.id,
+                        "recipient_tg_user_id": u.tg_user_id,
+                        "dispatch_inapp": bool(body.dispatch_inapp),
+                        "dispatch_dm": bool(body.dispatch_dm),
+                    },
                 )
-                pending.append((notif, ws_payload))
-            if body.dispatch_dm and u.tg_user_id:
-                # Comment 34 (audit v9): the Telegram bot is configured with
-                # ``parse_mode=HTML`` (see ``bot.notify._bot``). Unescaped
-                # angle brackets / ampersands in admin-authored copy made
-                # the API reject the message with 400 ("can't parse entities").
-                # ``html.escape`` keeps the wrapping ``<b>...</b>`` markup
-                # intact while neutralising everything inside.
-                title = body.title or "Сообщение от администрации"
-                dm_text = f"<b>{html.escape(title)}</b>\n\n{html.escape(body.body)}"
-                if body.deeplink:
-                    # M-12 / L-16: wrap the (already-scheme-validated by
-                    # ``AdminBroadcastCreateIn._deeplink_ok``) URL in an
-                    # explicit ``<a href="...">`` so Telegram renders a
-                    # clickable link in every client. The previous
-                    # ``html.escape(body.deeplink)`` turned ``?a=1&b=2``
-                    # into ``?a=1&amp;b=2`` *inside* the visible text,
-                    # which Telegram's auto-link heuristic then refused
-                    # to recognise. Only the ``href`` attribute needs
-                    # quote-aware escaping; the display text is just
-                    # the URL again (escaped without quote so users see
-                    # ``&`` instead of ``&amp;``).
-                    href = html.escape(body.deeplink, quote=True)
-                    text_part = html.escape(body.deeplink)
-                    dm_text += f'\n\n<a href="{href}">{text_part}</a>'
-                ok = await bot_send_dm(u.tg_user_id, dm_text)
-                if not ok:
-                    # In-app counted as delivered; DM-only failure shouldn't
-                    # negate that, but we record it as a partial failure.
-                    failed += 1
-                    continue
-            delivered += 1
-        except Exception:  # noqa: BLE001
-            # Audit N-9 — deliberately broad. The per-recipient loop
-            # has many heterogeneous failure modes (SQL during
-            # ``stage_inapp``, ``OSError`` against Redis/Telegram,
-            # ``TelegramAPIError`` already swallowed inside
-            # ``send_dm``, ``asyncio.TimeoutError`` on the gather);
-            # crashing on an unanticipated exception type would
-            # silently abort an in-progress broadcast for every
-            # *subsequent* recipient. ``logger.exception`` below
-            # captures the type+stack so audit/oncall can react.
-            # V11-L-15 — structured-logging fields so a partially-failed
-            # broadcast is correlatable to specific recipients in
-            # JSON-logger pipelines (Loki/Sentry) without regex.
-            logger.exception(
-                "broadcast: delivery failed for user_id=%s",
-                u.id,
-                extra={
-                    "event": "broadcast.delivery_failed",
-                    "actor_id": admin.id,
-                    "recipient_user_id": u.id,
-                    "recipient_tg_user_id": u.tg_user_id,
-                    "dispatch_inapp": bool(body.dispatch_inapp),
-                    "dispatch_dm": bool(body.dispatch_dm),
-                },
-            )
-            failed += 1
+                failed += 1
 
     bcast = Broadcast(
         actor_id=admin.id,
@@ -230,7 +211,7 @@ async def create_broadcast(
         dispatch_inapp=body.dispatch_inapp,
         dispatch_dm=body.dispatch_dm,
         status="sent",
-        total_recipients=len(recipients),
+        total_recipients=total_recipients,
         delivered_count=delivered,
         failed_count=failed,
         sent_at=utcnow(),
@@ -263,7 +244,7 @@ async def create_broadcast(
                 else None
             ),
             "audience_language": body.audience_language,
-            "total_recipients": len(recipients),
+            "total_recipients": total_recipients,
             "delivered": delivered,
             "failed": failed,
         },

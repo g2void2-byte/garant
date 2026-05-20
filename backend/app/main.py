@@ -454,53 +454,10 @@ from .maintenance import maintenance_middleware  # noqa: E402
 
 app.middleware("http")(maintenance_middleware)
 
-from .routers import (  # noqa: E402
-    account,
-    arbitration,
-    categories,
-    csp_report,
-    deal_messages,
-    deals,
-    me,
-    media,
-    notifications,
-    payments,
-    pin,
-    reviews,
-    services,
-    support,
-    users,
-    wallet,
-    ws,
-)
-from .routers.admin import routers as admin_routers  # noqa: E402
+# N-1: centralised router registry.
+from .routers import all_routers  # noqa: E402
 
-for r in (
-    me,
-    pin,
-    account,
-    categories,
-    services,
-    users,
-    deals,
-    deal_messages,
-    reviews,
-    notifications,
-    payments,
-    wallet,
-    support,
-    arbitration,
-    media,
-    ws,
-    csp_report,
-):
-    app.include_router(r.router)
-
-app.include_router(services.admin_router)
-
-# Admin panel routers (PR-A: dashboard + users management). All routes
-# under /api/admin/* require an authenticated admin.
-for r in admin_routers:
+for r in all_routers:
     app.include_router(r)
 
 # Serve uploaded media files from disk.

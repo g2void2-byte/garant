@@ -28,7 +28,7 @@ from ...schemas import AdminSettingsOut, AdminSettingsUpdateIn
 router = APIRouter(
     prefix="/api/admin",
     tags=["admin"],
-    dependencies=[Depends(rate_limit("admin", limit=600, window=60))],
+    dependencies=[Depends(rate_limit("admin:settings", limit=600, window=60))],
 )
 
 # Defence-in-depth: only ``AppSettings`` columns named here are allowed

@@ -108,6 +108,7 @@ export interface DealDto {
   seller: string;
   description: string;
   pay_comission: string;
+  pay_commission?: string;
   status: DealStatus | string;
   confirm_buyer: boolean;
   confirm_seller: boolean;
