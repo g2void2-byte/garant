@@ -987,8 +987,12 @@ class AdminDealListItem(BaseModel):
     id: int
     status: str
     currency_code: str | None
-    amount: MoneyDecimal
-    commission_amount: MoneyDecimal | None
+    # M-3 wire format: ``Decimal`` (not ``MoneyDecimal``) so Pydantic
+    # serialises as a JSON string and the admin UI sees full
+    # ``Numeric(28, 8)`` precision.  ``MoneyDecimal`` would re-cast to
+    # ``float`` and silently drop trailing satoshi on large BTC sums.
+    amount: Decimal
+    commission_amount: Decimal | None
     buyer_id: int
     buyer_username: str | None
     seller_id: int
@@ -1021,9 +1025,10 @@ class AdminBalanceSnapshot(BaseModel):
     username: str | None
     display_name: str
     currency_code: str | None
-    amount: MoneyDecimal
-    locked: MoneyDecimal
-    total: MoneyDecimal
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
+    amount: Decimal
+    locked: Decimal
+    total: Decimal
 
 
 class AdminDealEventItem(BaseModel):
@@ -1051,8 +1056,9 @@ class AdminDealDetailOut(BaseModel):
     status: str
     description: str
     currency_code: str | None
-    amount: MoneyDecimal
-    commission_amount: MoneyDecimal | None
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
+    amount: Decimal
+    commission_amount: Decimal | None
     pay_commission: str
     buyer: AdminBalanceSnapshot
     seller: AdminBalanceSnapshot
@@ -1333,9 +1339,10 @@ class AdminUserBalanceOut(BaseModel):
     currency_code: str
     currency_name: str
     decimals: int
-    amount: MoneyDecimal
-    locked: MoneyDecimal
-    total: MoneyDecimal
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
+    amount: Decimal
+    locked: Decimal
+    total: Decimal
     updated_at: datetime | None
 
 
@@ -1352,7 +1359,8 @@ class AdminWalletListItem(BaseModel):
     is_banned: bool
     is_frozen: bool
     balances: list[AdminUserBalanceOut]
-    total_usd_estimate: MoneyDecimal
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
+    total_usd_estimate: Decimal
 
 
 class AdminWalletListOut(BaseModel):
@@ -1415,7 +1423,8 @@ class AdminDepositOut(BaseModel):
     username: str | None
     display_name: str
     currency_code: str
-    amount: MoneyDecimal
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
+    amount: Decimal
     status: str
     provider_invoice_id: str
     pay_url: str
@@ -1439,7 +1448,8 @@ class AdminWithdrawalOut(BaseModel):
     username: str | None
     display_name: str
     currency_code: str
-    amount: MoneyDecimal
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
+    amount: Decimal
     address: str
     status: str
     admin_note: str
@@ -1487,9 +1497,10 @@ class AdminTreasuryBalanceOut(BaseModel):
     currency_code: str
     currency_name: str
     decimals: int
-    accrued: MoneyDecimal
-    withdrawn: MoneyDecimal
-    available: MoneyDecimal
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
+    accrued: Decimal
+    withdrawn: Decimal
+    available: Decimal
 
 
 class AdminTreasuryOverviewOut(BaseModel):
@@ -1566,7 +1577,8 @@ class AdminTreasuryWithdrawOut(BaseModel):
     id: int
     actor_id: int
     currency_code: str
-    amount: MoneyDecimal
+    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
+    amount: Decimal
     address: str
     status: str
     note: str

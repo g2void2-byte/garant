@@ -478,8 +478,9 @@
         "description": "Per-currency wallet balance + lock state at request time.\n\nH-1: previously this DTO included the legacy USD ``user.balance``\ncolumn. After the legacy ledger was retired the snapshot is\npurely the per-currency ``UserBalance`` row pair (``amount`` +\n``locked``); ``currency_code`` is non-null on every live deal.",
         "properties": {
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "number"
+            "type": "string"
           },
           "currency_code": {
             "anyOf": [
@@ -497,12 +498,14 @@
             "type": "string"
           },
           "locked": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Locked",
-            "type": "number"
+            "type": "string"
           },
           "total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total",
-            "type": "number"
+            "type": "string"
           },
           "user_id": {
             "title": "User Id",
@@ -1306,8 +1309,9 @@
         "description": "Full admin view of a deal.",
         "properties": {
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "number"
+            "type": "string"
           },
           "arbitration_initiator": {
             "anyOf": [
@@ -1416,7 +1420,8 @@
           "commission_amount": {
             "anyOf": [
               {
-                "type": "number"
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -1595,8 +1600,9 @@
         "description": "Single row in ``GET /api/admin/deals`` listing.\n\nContains identity, money, status, timestamps and a small set of\nderived flags (``has_arbitration``, ``has_cancel_request``) so the\nlist view can filter and badge without a separate per-row fetch.",
         "properties": {
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "number"
+            "type": "string"
           },
           "buyer_id": {
             "title": "Buyer Id",
@@ -1616,7 +1622,8 @@
           "commission_amount": {
             "anyOf": [
               {
-                "type": "number"
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -1818,8 +1825,9 @@
       "AdminDepositOut": {
         "properties": {
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "number"
+            "type": "string"
           },
           "created_at": {
             "format": "date-time",
@@ -2686,12 +2694,14 @@
         "description": "Per-currency commission accumulator.\n\n``accrued`` sums up ``commission_amount`` on every completed deal in\nthis currency; ``withdrawn`` subtracts the sum of successful\n``treasury_withdrawals`` rows. ``available`` is the diff and the\nonly amount the admin can withdraw.",
         "properties": {
           "accrued": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Accrued",
-            "type": "number"
+            "type": "string"
           },
           "available": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Available",
-            "type": "number"
+            "type": "string"
           },
           "currency_code": {
             "title": "Currency Code",
@@ -2710,8 +2720,9 @@
             "type": "integer"
           },
           "withdrawn": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Withdrawn",
-            "type": "number"
+            "type": "string"
           }
         },
         "required": [
@@ -2840,8 +2851,9 @@
             "type": "string"
           },
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "number"
+            "type": "string"
           },
           "created_at": {
             "format": "date-time",
@@ -2894,8 +2906,9 @@
         "description": "A single ``(user, currency, amount, locked)`` row.\n\nReturned in admin wallet views and inside :class:`AdminUserWalletOut`.\n``user_id`` / ``username`` are denormalised so the list page can\nrender without a second fetch.",
         "properties": {
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "number"
+            "type": "string"
           },
           "currency_code": {
             "title": "Currency Code",
@@ -2918,12 +2931,14 @@
             "type": "string"
           },
           "locked": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Locked",
-            "type": "number"
+            "type": "string"
           },
           "total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total",
-            "type": "number"
+            "type": "string"
           },
           "updated_at": {
             "anyOf": [
@@ -3442,8 +3457,9 @@
             "title": "Photo Url"
           },
           "total_usd_estimate": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Usd Estimate",
-            "type": "number"
+            "type": "string"
           },
           "user_id": {
             "title": "User Id",
@@ -3573,8 +3589,9 @@
             "type": "string"
           },
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "number"
+            "type": "string"
           },
           "created_at": {
             "format": "date-time",

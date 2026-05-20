@@ -345,10 +345,17 @@ def test_v5_c_5_client_ip_returns_none_without_request():
     assert admin_audit._client_ip_from_request(None) is None
 
 
-def test_v5_c_5_xff_honoured_when_trusted_proxies_empty(monkeypatch):
-    """Default config (``TRUSTED_PROXIES=""``) trusts every peer for
-    backwards compatibility — single-host deploys terminate TLS on
-    the same box and need this to keep working.
+def test_v5_c_5_xff_dropped_when_trusted_proxies_empty(monkeypatch):
+    """H-3: with the default ``TRUSTED_PROXIES=""`` (no proxies
+    declared) the audit helper ignores ``X-Forwarded-For`` entirely
+    and records the direct peer.
+
+    Pre-H-3 the empty-list case was treated as "trust every peer", so
+    any client could spoof their audited IP by sending a fabricated
+    header.  Single-host deploys terminating TLS on the same box are
+    unaffected because the direct peer **is** the originating client;
+    multi-proxy deploys must now opt in by listing the proxy's
+    IP/CIDR in ``TRUSTED_PROXIES``.
     """
     monkeypatch.setattr(app_settings, "trusted_proxies", "")
     # Force the cached parse to refresh so the monkeypatched value
@@ -361,7 +368,7 @@ def test_v5_c_5_xff_honoured_when_trusted_proxies_empty(monkeypatch):
         {"x-forwarded-for": "198.51.100.7, 10.0.0.1"},
         client_host="127.0.0.1",
     )
-    assert admin_audit._client_ip_from_request(req) == "198.51.100.7"
+    assert admin_audit._client_ip_from_request(req) == "127.0.0.1"
 
 
 def test_v5_c_5_xff_dropped_for_untrusted_peer(monkeypatch):

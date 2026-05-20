@@ -2360,15 +2360,15 @@ export interface components {
          */
         AdminBalanceSnapshot: {
             /** Amount */
-            amount: number;
+            amount: string;
             /** Currency Code */
             currency_code: string | null;
             /** Display Name */
             display_name: string;
             /** Locked */
-            locked: number;
+            locked: string;
             /** Total */
-            total: number;
+            total: string;
             /** User Id */
             user_id: number;
             /** Username */
@@ -2640,7 +2640,7 @@ export interface components {
          */
         AdminDealDetailOut: {
             /** Amount */
-            amount: number;
+            amount: string;
             /** Arbitration Initiator */
             arbitration_initiator: string | null;
             /** Arbitration Reason */
@@ -2661,7 +2661,7 @@ export interface components {
             /** Cancellation Requested At */
             cancellation_requested_at: string | null;
             /** Commission Amount */
-            commission_amount: number | null;
+            commission_amount: string | null;
             /** Completed At */
             completed_at: string | null;
             /** Confirm Buyer */
@@ -2732,13 +2732,13 @@ export interface components {
          */
         AdminDealListItem: {
             /** Amount */
-            amount: number;
+            amount: string;
             /** Buyer Id */
             buyer_id: number;
             /** Buyer Username */
             buyer_username: string | null;
             /** Commission Amount */
-            commission_amount: number | null;
+            commission_amount: string | null;
             /** Completed At */
             completed_at: string | null;
             /**
@@ -2806,7 +2806,7 @@ export interface components {
         /** AdminDepositOut */
         AdminDepositOut: {
             /** Amount */
-            amount: number;
+            amount: string;
             /**
              * Created At
              * Format: date-time
@@ -3106,9 +3106,9 @@ export interface components {
          */
         AdminTreasuryBalanceOut: {
             /** Accrued */
-            accrued: number;
+            accrued: string;
             /** Available */
-            available: number;
+            available: string;
             /** Currency Code */
             currency_code: string;
             /** Currency Id */
@@ -3118,7 +3118,7 @@ export interface components {
             /** Decimals */
             decimals: number;
             /** Withdrawn */
-            withdrawn: number;
+            withdrawn: string;
         };
         /**
          * AdminTreasuryMarkSentIn
@@ -3182,7 +3182,7 @@ export interface components {
             /** Address */
             address: string;
             /** Amount */
-            amount: number;
+            amount: string;
             /**
              * Created At
              * Format: date-time
@@ -3209,7 +3209,7 @@ export interface components {
          */
         AdminUserBalanceOut: {
             /** Amount */
-            amount: number;
+            amount: string;
             /** Currency Code */
             currency_code: string;
             /** Currency Id */
@@ -3221,9 +3221,9 @@ export interface components {
             /** Display Name */
             display_name: string;
             /** Locked */
-            locked: number;
+            locked: string;
             /** Total */
-            total: number;
+            total: string;
             /** Updated At */
             updated_at: string | null;
             /** User Id */
@@ -3402,7 +3402,7 @@ export interface components {
             /** Photo Url */
             photo_url: string | null;
             /** Total Usd Estimate */
-            total_usd_estimate: number;
+            total_usd_estimate: string;
             /** User Id */
             user_id: number;
             /** Username */
@@ -3448,7 +3448,7 @@ export interface components {
             /** Admin Note */
             admin_note: string;
             /** Amount */
-            amount: number;
+            amount: string;
             /**
              * Created At
              * Format: date-time

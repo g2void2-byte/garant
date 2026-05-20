@@ -8,22 +8,22 @@ Why a helper instead of an ORM hook: the audit row needs the request
 context (IP, actor) which is only available inside the route handler,
 not in a global ``after_flush`` listener.
 
-Trusted-proxy assumption (V5-C-5)
----------------------------------
+Trusted-proxy assumption (V5-C-5 + H-3)
+---------------------------------------
 :func:`_client_ip_from_request` reads ``X-Forwarded-For`` /
 ``X-Real-IP`` only when the direct peer is in
 ``settings.trusted_proxies``.  When ``TRUSTED_PROXIES`` is unset (the
-default, suitable for a single-proxy / single-host deploy) the
-function trusts every peer — matching the long-standing semantics of
-:func:`backend.app.deps._client_ip` and keeping the legacy behaviour
-for callers who terminate TLS on the same machine running the app.
-
-Operators terminating TLS in front of multiple reverse proxies **must**
-populate ``TRUSTED_PROXIES`` with the proxy's IP / CIDR; otherwise an
-admin acting through the panel could spoof the audit-log ``ip`` column
-by forging an ``X-Forwarded-For`` header, hiding their real address
-behind whatever value they care to send.  The same warning lives next
-to :func:`backend.app.deps._client_ip` so both code paths agree on the
+default) the function **ignores** the forwarded headers entirely —
+no peer is trusted.  H-3 from audit v12 tightened the previous
+"empty list = trust everyone" semantic because that default let any
+client spoof their audited IP by sending a fabricated
+``X-Forwarded-For`` header.  Operators terminating TLS on the same
+host that runs the app are unaffected (the direct peer **is** the
+originating client, so the header is already redundant); operators
+behind one or more reverse proxies must now explicitly opt in by
+populating ``TRUSTED_PROXIES`` with the proxy's IP / CIDR.  The same
+warning and behaviour live next to
+:func:`backend.app.deps._client_ip` so both code paths agree on the
 threat model.
 """
 
@@ -67,16 +67,29 @@ def _client_ip_from_request(request: Request | None) -> str | None:
 
 
 def _serialize_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Enforce the 4 KB cap on the ``payload`` JSON.
+    """Enforce the 4 KB cap on the ``payload`` JSON and coerce non-JSON
+    types (``Decimal``, ``datetime``, …) to their ``str`` form.
 
-    Returns the original mapping when it serialises under the cap, or
-    ``None`` (with a warning) when it does not.  Dropping the payload
-    rather than truncating mirrors :func:`backend.app.notifier._serialize_payload`
-    — half-JSON is worse than no JSON for the admin viewer, which
-    pretty-prints the column as a tree.  The surrounding ``action`` /
-    ``actor`` / ``target_*`` columns still record that the action
-    happened, so an oversized payload doesn't lose the audit
-    breadcrumb itself; only the structured context is dropped.
+    Returns a JSON-roundtripped copy of the mapping when it serialises
+    under the cap, or ``None`` (with a warning) when it does not.  The
+    roundtrip is intentional: the ``admin_audit_log.payload`` column is
+    ``JSONB`` and asyncpg writes it via the stdlib ``json`` encoder,
+    which has no native support for ``Decimal``.  Passing the raw
+    mapping through would raise
+    ``TypeError: Object of type Decimal is not JSON serializable`` at
+    INSERT time and roll back the surrounding admin transaction —
+    losing both the audit row *and* the admin action.  Coercing here
+    keeps the row writable while the audit viewer still receives a
+    structurally identical JSON tree (with money figures as strings,
+    preserving full ``Numeric(28, 8)`` precision).
+
+    Dropping the payload on a JSON failure rather than truncating
+    mirrors :func:`backend.app.notifier._serialize_payload` — half-JSON
+    is worse than no JSON for the admin viewer, which pretty-prints
+    the column as a tree.  The surrounding ``action`` / ``actor`` /
+    ``target_*`` columns still record that the action happened, so an
+    oversized payload doesn't lose the audit breadcrumb itself; only
+    the structured context is dropped.
     """
     if not payload:
         return None
@@ -114,7 +127,11 @@ def _serialize_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
             },
         )
         return None
-    return payload
+    # Roundtrip through the encoded string so ``Decimal`` / ``datetime`` /
+    # other ``default=str``-coerced values land in the column as plain
+    # JSON-native types.  ``json.loads`` here is operating on a string
+    # we just produced, so it cannot raise.
+    return json.loads(encoded)
 
 
 def state_change_payload(
