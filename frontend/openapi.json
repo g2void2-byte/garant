@@ -4896,6 +4896,17 @@
         "title": "ServiceOwnerOut",
         "type": "object"
       },
+      "ServiceStatus": {
+        "description": "Service moderation lifecycle.\n\n* ``draft``    \u2014 the owner is still editing; hidden from public.\n* ``active``   \u2014 visible in catalog and search.\n* ``paused``   \u2014 owner-side hide (keeps the row, hides from catalog).\n* ``banned``   \u2014 admin-side ban (hidden, owner cannot reactivate).",
+        "enum": [
+          "draft",
+          "active",
+          "paused",
+          "banned"
+        ],
+        "title": "ServiceStatus",
+        "type": "string"
+      },
       "ServiceUpdate": {
         "properties": {
           "description": {
@@ -9573,7 +9584,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ServiceStatus"
                 },
                 {
                   "type": "null"
@@ -14528,7 +14539,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ServiceStatus"
                 },
                 {
                   "type": "null"

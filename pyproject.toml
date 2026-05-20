@@ -59,7 +59,13 @@ include = ["backend*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+# N-6 — bring the ruff parser target in line with what CI and the
+# Dockerfile actually run (``actions/setup-python@v5`` with
+# ``python-version: "3.12"``). The ``requires-python = ">=3.11"``
+# floor in ``[project]`` stays unchanged for now; bumping ``ruff``
+# alone just lets the linter flag 3.12-aware patterns (e.g. PEP 695
+# ``type`` aliases) without changing the install matrix.
+target-version = "py312"
 extend-exclude = ["frontend"]
 
 [tool.ruff.lint]
