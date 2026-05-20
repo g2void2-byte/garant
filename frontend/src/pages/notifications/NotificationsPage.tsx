@@ -18,7 +18,9 @@ import {
 import { dayKey } from "@/lib/format";
 import { haptic } from "@/lib/tg";
 
-const TABS: { value: "all" | "deals" | "deposits" | "system"; label: string }[] = [
+type CounterTab = "all" | "deals" | "deposits" | "system";
+
+const TABS: { value: CounterTab; label: string }[] = [
   { value: "all", label: "Все" },
   { value: "deals", label: "Сделки" },
   { value: "deposits", label: "Депозиты" },
@@ -26,7 +28,7 @@ const TABS: { value: "all" | "deals" | "deposits" | "system"; label: string }[] 
 ];
 
 export default function NotificationsPage() {
-  const [tab, setTab] = useState<"all" | "deals" | "deposits" | "system">("all");
+  const [tab, setTab] = useState<CounterTab>("all");
   const { data: counters } = useNotificationCounters();
   const { data, isLoading } = useNotifications(tab === "all" ? undefined : tab);
   const { data: me } = useMe();
@@ -96,7 +98,7 @@ export default function NotificationsPage() {
           options={TABS.map((t) => ({
             value: t.value,
             label: t.label,
-            count: counters ? (counters as any)[t.value] : undefined,
+            count: counters ? counters[t.value] : undefined,
           }))}
           onChange={setTab}
         />
