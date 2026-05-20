@@ -100,7 +100,7 @@ class _StubCryptoPay:
     def __init__(self, *_args, **_kwargs) -> None:
         pass
 
-    async def __aenter__(self) -> "_StubCryptoPay":
+    async def __aenter__(self) -> _StubCryptoPay:
         return self
 
     async def __aexit__(self, *_exc) -> None:  # noqa: ANN001

@@ -9,7 +9,7 @@ refactor can't silently revert.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from backend.app.db import async_session
 from backend.app.models import User
@@ -63,7 +63,7 @@ def test_user_to_out_marks_recently_seen_as_online():
         tg_user_id=12001,
         username="recent",
         display_name="Recent",
-        last_login_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+        last_login_at=datetime.now(UTC) - timedelta(seconds=30),
     )
     out: UserOut = user_to_out(u)
     assert out.online is True
@@ -75,7 +75,7 @@ def test_user_to_out_marks_long_idle_as_offline():
         tg_user_id=12002,
         username="idle",
         display_name="Idle",
-        last_login_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        last_login_at=datetime.now(UTC) - timedelta(hours=1),
     )
     out = user_to_out(u)
     assert out.online is False
@@ -99,7 +99,7 @@ def test_user_to_out_threshold_boundary_within_window():
         tg_user_id=12004,
         username="edge",
         display_name="Edge",
-        last_login_at=datetime.now(timezone.utc) - timedelta(minutes=4, seconds=55),
+        last_login_at=datetime.now(UTC) - timedelta(minutes=4, seconds=55),
     )
     assert user_to_out(u).online is True
 
@@ -110,7 +110,7 @@ def test_user_to_out_threshold_boundary_outside_window():
         tg_user_id=12005,
         username="edge2",
         display_name="Edge2",
-        last_login_at=datetime.now(timezone.utc) - timedelta(minutes=5, seconds=1),
+        last_login_at=datetime.now(UTC) - timedelta(minutes=5, seconds=1),
     )
     assert user_to_out(u).online is False
 

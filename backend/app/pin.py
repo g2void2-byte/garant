@@ -12,7 +12,7 @@ import hashlib
 import hmac
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 import jwt
@@ -71,7 +71,6 @@ COMMON_PINS: frozenset[str] = frozenset(
         "2121",
         "1313",
         "1010",
-        "1010",
         "2020",
         "3030",
         "4040",
@@ -85,7 +84,6 @@ COMMON_PINS: frozenset[str] = frozenset(
         "3344",
         "4455",
         "5566",
-        "1313",
         "1414",
         # Keypad geometry (vertical / horizontal / diagonal runs on a
         # standard 0-9 grid).
@@ -97,7 +95,6 @@ COMMON_PINS: frozenset[str] = frozenset(
         "1470",
         "0147",
         "7410",
-        "3210",
         "1593",
         # Year-of-birth (1960-1999 / 2000-2010 most popular). DataGenetics
         # shows these dominate the long tail.
@@ -149,7 +146,6 @@ COMMON_PINS: frozenset[str] = frozenset(
         "1004",
         "6969",
         "4242",
-        "1313",
         "0420",
         "0007",
         "0911",
@@ -256,7 +252,7 @@ def issue_session_token(user_id: int, epoch: int = 0) -> tuple[str, datetime]:
     the JWT exp so the frontend's local-storage expiry mirrors it
     one-to-one.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires = now + timedelta(seconds=settings.pin_session_jwt_ttl_seconds)
     payload = {
         "sub": str(user_id),

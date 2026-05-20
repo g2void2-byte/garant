@@ -110,7 +110,7 @@ class _CapturingCryptoPay:
     def __init__(self, *_a, **_kw) -> None:
         pass
 
-    async def __aenter__(self) -> "_CapturingCryptoPay":
+    async def __aenter__(self) -> _CapturingCryptoPay:
         return self
 
     async def __aexit__(self, *_exc) -> None:  # noqa: ANN001
@@ -136,7 +136,7 @@ class _ErrorCryptoPay:
     def __init__(self, *_a, **_kw) -> None:
         pass
 
-    async def __aenter__(self) -> "_ErrorCryptoPay":
+    async def __aenter__(self) -> _ErrorCryptoPay:
         return self
 
     async def __aexit__(self, *_exc) -> None:  # noqa: ANN001

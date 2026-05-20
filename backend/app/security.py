@@ -66,8 +66,8 @@ def verify_init_data(init_data: str) -> dict:
     # to 401, not 500.
     try:
         auth_date = int(auth_date_str)
-    except (TypeError, ValueError):
-        raise InitDataError("init data auth_date is not numeric")
+    except (TypeError, ValueError) as e:
+        raise InitDataError("init data auth_date is not numeric") from e
     now = time.time()
     # Reject ``auth_date`` that's far in the future too. HMAC
     # makes a forgery impossible from a malicious actor, but a
@@ -116,8 +116,8 @@ def _parse_unsigned(init_data: str) -> dict:
         pass
     try:
         return json.loads(init_data)
-    except Exception:
-        raise InitDataError("Cannot parse unsigned init data")
+    except Exception as e:
+        raise InitDataError("Cannot parse unsigned init data") from e
 
 
 def build_dev_init_data(user_id: int, username: str = "dev_user") -> str:

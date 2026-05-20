@@ -90,8 +90,8 @@ async def list_deposits(
     if status:
         try:
             stmt = stmt.where(WalletDeposit.status == WalletDepositStatus(status))
-        except ValueError:
-            raise HTTPException(422, f"Неизвестный статус: {status}")
+        except ValueError as e:
+            raise HTTPException(422, f"Неизвестный статус: {status}") from e
     if currency:
         stmt = stmt.where(Currency.code == currency.upper())
     if q:

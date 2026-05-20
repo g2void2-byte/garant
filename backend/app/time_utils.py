@@ -14,7 +14,7 @@ persist into, ``DateTime`` columns continue to see a naive value.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def utcnow() -> datetime:
@@ -23,4 +23,4 @@ def utcnow() -> datetime:
     Equivalent to the now-deprecated ``datetime.utcnow()`` but uses the
     supported ``datetime.now(timezone.utc)`` API under the hood.
     """
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)

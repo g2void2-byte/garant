@@ -47,7 +47,7 @@ class Invoice:
     created_at: str | None
 
     @classmethod
-    def from_api(cls, data: dict[str, Any]) -> "Invoice":
+    def from_api(cls, data: dict[str, Any]) -> Invoice:
         return cls(
             invoice_id=int(data["invoice_id"]),
             status=data.get("status", "active"),
@@ -74,7 +74,7 @@ class Transfer:
     completed_at: str | None
 
     @classmethod
-    def from_api(cls, data: dict[str, Any]) -> "Transfer":
+    def from_api(cls, data: dict[str, Any]) -> Transfer:
         return cls(
             transfer_id=int(data["transfer_id"]),
             user_id=int(data["user_id"]),
@@ -109,7 +109,7 @@ class CryptoPay:
         self._timeout = timeout
         self._client: httpx.AsyncClient | None = None
 
-    async def __aenter__(self) -> "CryptoPay":
+    async def __aenter__(self) -> CryptoPay:
         self._client = httpx.AsyncClient(
             base_url=self._base,
             timeout=self._timeout,

@@ -43,6 +43,10 @@ vi.mock("@/components/ui/Toast", () => ({
 vi.mock("@/lib/tg", () => ({
   haptic: () => {},
   showBackButton: () => () => {},
+  // L-15 — ``confirmDialog`` reads ``tg.showConfirm``; ``undefined``
+  // forces the fallback through ``window.confirm`` so the existing
+  // ``vi.spyOn(window, "confirm")`` mocks below keep working.
+  tg: undefined,
 }));
 
 import AdminSystemPage from "./AdminSystemPage";

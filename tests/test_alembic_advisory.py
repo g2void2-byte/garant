@@ -98,7 +98,7 @@ async def test_concurrent_alembic_upgrade_head_does_not_collide():
         _run_alembic_upgrade(env),
     )
 
-    for label, (rc, out, err) in zip(("A", "B"), (rc1, rc2)):
+    for label, (rc, out, err) in zip(("A", "B"), (rc1, rc2), strict=True):
         assert rc == 0, (
             f"alembic upgrade head process {label} exited with {rc}\n"
             f"--- stdout ---\n{out}\n--- stderr ---\n{err}"

@@ -150,12 +150,15 @@ describe("<AdminDealsPage />", () => {
     );
   });
 
-  it("clicking 'Все' resets status to undefined / any", async () => {
+  it("clicking 'Все' resets status to undefined (no filter)", async () => {
+    // Audit L-10 — the legacy ``"any"`` sentinel is gone; the
+    // "all statuses" chip now drops the URL param entirely so the
+    // hook sees ``status === undefined``.
     mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
     const user = userEvent.setup();
     renderPage(["/admin/deals?status=in_progress"]);
     await user.click(screen.getByRole("button", { name: "Все" }));
-    await waitFor(() => expect(mockState.lastQuery?.status).toBe("any"));
+    await waitFor(() => expect(mockState.lastQuery?.status).toBeUndefined());
   });
 
   it("renders active filter chips and removes them on click", async () => {

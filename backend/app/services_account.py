@@ -139,7 +139,7 @@ async def _generate_unique_code(session: AsyncSession) -> str:
                 )
             return candidate
     raise RuntimeError(
-        "unable to generate a unique account-transfer code after %d tries" % max_attempts
+        f"unable to generate a unique account-transfer code after {max_attempts} tries"
     )
 
 

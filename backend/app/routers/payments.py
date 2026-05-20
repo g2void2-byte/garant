@@ -67,8 +67,8 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
 
     try:
         body = await request.json()
-    except ValueError:
-        raise HTTPException(400, "Body must be JSON")
+    except ValueError as e:
+        raise HTTPException(400, "Body must be JSON") from e
 
     # Crypto Pay's webhook envelope has ALWAYS used
     # ``update_type`` (per their public docs, `https://help.crypt.bot/
@@ -136,8 +136,8 @@ async def crystalpay_webhook(request: Request, session: SessionDep):
 
     try:
         body = await request.json()
-    except ValueError:
-        raise HTTPException(400, "Body must be JSON")
+    except ValueError as e:
+        raise HTTPException(400, "Body must be JSON") from e
     if not isinstance(body, dict):
         raise HTTPException(400, "Body must be a JSON object")
 

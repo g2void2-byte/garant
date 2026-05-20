@@ -1075,10 +1075,10 @@ async def test_send_dm_warns_only_once_when_bot_unconfigured(monkeypatch, caplog
 
     # First emission is WARNING with ``first_observation=True``.
     assert unconfigured_records[0].levelno == logging.WARNING
-    assert getattr(unconfigured_records[0], "first_observation") is True
+    assert unconfigured_records[0].first_observation is True
 
     # Subsequent emissions are DEBUG with ``first_observation=False``.
     assert unconfigured_records[1].levelno == logging.DEBUG
     assert unconfigured_records[2].levelno == logging.DEBUG
-    assert getattr(unconfigured_records[1], "first_observation") is False
-    assert getattr(unconfigured_records[2], "first_observation") is False
+    assert unconfigured_records[1].first_observation is False
+    assert unconfigured_records[2].first_observation is False

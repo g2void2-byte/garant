@@ -260,7 +260,7 @@ async def _create_cryptobot_deposit(
                 "amount": amount,
             },
         )
-        raise HTTPException(502, f"Ошибка CryptoBot: {e}")
+        raise HTTPException(502, f"Ошибка CryptoBot: {e}") from e
 
     # CryptoBot normally returns at least one non-empty URL,
     # but the API contract is "one of these four MAY be set" rather
@@ -344,7 +344,7 @@ async def _create_crystalpay_deposit(
                 "amount": amount,
             },
         )
-        raise HTTPException(502, f"Ошибка Crystalpay: {e}")
+        raise HTTPException(502, f"Ошибка Crystalpay: {e}") from e
 
     if not invoice.id or not invoice.url:
         logger.error(

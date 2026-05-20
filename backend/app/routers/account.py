@@ -115,7 +115,7 @@ async def transfer_confirm(
     try:
         source = await confirm_transfer(session, user, body.code)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     # The source user keeps its PIN; the frontend drops its local PIN
     # token after a successful response and PinGate re-prompts.
     return TransferConfirmOut(ok=True, tg_user_id=source.tg_user_id)

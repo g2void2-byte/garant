@@ -26,6 +26,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
+import { confirmDialog } from "@/lib/dialog";
 import { api } from "@/api/client";
 import {
   useAdminCreateReview,
@@ -197,7 +198,8 @@ function ServiceEditSheet({
 
   const onDelete = async () => {
     if (!service) return;
-    if (!window.confirm("Удалить услугу?")) return;
+    // Audit L-15 — ``confirmDialog`` prefers ``Telegram.WebApp.showConfirm``.
+    if (!(await confirmDialog("Удалить услугу?"))) return;
     try {
       await del.mutateAsync(service.id);
       toast.show({ kind: "success", title: "Услуга удалена" });
@@ -491,7 +493,8 @@ function ReviewEditSheet({
 
   const onDelete = async () => {
     if (!review) return;
-    if (!window.confirm("Удалить отзыв?")) return;
+    // Audit L-15 — ``confirmDialog`` prefers ``Telegram.WebApp.showConfirm``.
+    if (!(await confirmDialog("Удалить отзыв?"))) return;
     try {
       await del.mutateAsync(review.id);
       toast.show({ kind: "success", title: "Отзыв удалён" });
@@ -637,7 +640,8 @@ function CommentEditSheet({
 
   const onDelete = async () => {
     if (!comment) return;
-    if (!window.confirm("Удалить комментарий?")) return;
+    // Audit L-15 — ``confirmDialog`` prefers ``Telegram.WebApp.showConfirm``.
+    if (!(await confirmDialog("Удалить комментарий?"))) return;
     try {
       await del.mutateAsync(comment.id);
       toast.show({ kind: "success", title: "Комментарий удалён" });

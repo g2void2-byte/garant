@@ -1900,7 +1900,7 @@ class AdminBroadcastCreateIn(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _validate_audience_window(self) -> "AdminBroadcastCreateIn":
+    def _validate_audience_window(self) -> AdminBroadcastCreateIn:
         # A-6 — guard the obvious caller mistake (``created_after`` past
         # ``created_before``) at the edge. The audience-builder would
         # otherwise quietly emit ``0`` recipients and the admin would

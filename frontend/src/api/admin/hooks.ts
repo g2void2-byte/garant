@@ -72,8 +72,10 @@ export function useAdminDashboard() {
 function buildUsersSearchParams(query: AdminListUsersQuery): URLSearchParams {
   const params = new URLSearchParams();
   if (query.q) params.set("q", query.q);
-  if (query.role && query.role !== "any") params.set("role", query.role);
-  if (query.status && query.status !== "any") params.set("status", query.status);
+  // Audit L-10 — ``role``/``status`` are now ``undefined``-or-value;
+  // omitting the param is what we previously sent as ``"any"``.
+  if (query.role) params.set("role", query.role);
+  if (query.status) params.set("status", query.status);
   if (query.sort) params.set("sort", query.sort);
   params.set("page", String(query.page ?? 1));
   params.set("page_size", String(query.page_size ?? 20));
@@ -169,7 +171,9 @@ export function useAdminSetStats() {
 
 function buildDealsSearchParams(query: AdminListDealsQuery): URLSearchParams {
   const params = new URLSearchParams();
-  if (query.status && query.status !== "any") params.set("status", query.status);
+  // Audit L-10 — same convention as ``buildUsersSearchParams``: omit
+  // the param entirely when no filter is active.
+  if (query.status) params.set("status", query.status);
   if (query.currency) params.set("currency", query.currency);
   if (query.min_amount !== undefined) params.set("min_amount", String(query.min_amount));
   if (query.max_amount !== undefined) params.set("max_amount", String(query.max_amount));

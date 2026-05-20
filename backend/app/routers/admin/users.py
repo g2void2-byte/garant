@@ -35,6 +35,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ... import notifier
@@ -223,10 +224,13 @@ async def _audit_and_notify(
         notif, ws_payload = pending
         try:
             await notifier.dispatch_after_commit(session, notif, ws_payload)
-        except Exception:  # noqa: BLE001
-            # Best-effort: commit already landed; a delivery-side
-            # failure must not bubble up and surface as 500 on an
-            # otherwise successful admin action.
+        except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+            # Audit N-9 — narrowed from ``except Exception``. The
+            # commit already landed; transient delivery failures
+            # (DB read of the recipient, WS publish, Redis I/O) must
+            # not surface as 500 on the admin action. Programming-bug
+            # exceptions (``KeyError``/``AttributeError``/...) still
+            # propagate so they're visible during development.
             pass
 
 
@@ -526,9 +530,12 @@ async def invalidate_sessions(
     # forces the now-untrusted device to reconnect and re-auth.
     try:
         await ws_manager.invalidate_user(target.id)
-    except Exception:  # noqa: BLE001
-        # WS fan-out is best-effort — a failure here must not roll back
-        # the admin action.
+    except (OSError, RuntimeError):
+        # Audit N-9 — narrowed from ``except Exception``. WS fan-out
+        # is best-effort, but only socket-state errors are expected
+        # here (the manager already swallows individual close
+        # failures internally). Anything broader is a real bug worth
+        # surfacing.
         pass
     return _to_detail(target, has_pin=await _has_pin(target))
 

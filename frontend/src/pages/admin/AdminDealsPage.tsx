@@ -12,8 +12,9 @@ import { parseDecimal } from "@/lib/format";
 import type { AdminDealListItemDto, AdminListDealsQuery } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
+// Audit L-10 — ``null`` is the in-component sentinel for "all statuses";
+// the legacy ``"any"`` string is gone from both UI state and the URL.
 const STATUS_LABEL: Record<string, string> = {
-  any: "Все",
   cancelled: "Отменена",
   pending_confirmation: "Подтверждение",
   pending_payment: "Ожидание оплаты",
@@ -26,7 +27,10 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled_for_inactivity: "Отменена по неактивности",
 };
 
-const STATUSES = Object.keys(STATUS_LABEL) as Array<keyof typeof STATUS_LABEL>;
+const STATUSES: Array<{ value: string | null; label: string }> = [
+  { value: null, label: "Все" },
+  ...Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label })),
+];
 
 /**
  * Continental admin deals list.
@@ -43,7 +47,9 @@ export default function AdminDealsPage() {
   const [draftMin, setDraftMin] = useState(params.get("min_amount") ?? "");
   const [draftMax, setDraftMax] = useState(params.get("max_amount") ?? "");
 
-  const status = (params.get("status") ?? "any") as NonNullable<AdminListDealsQuery["status"]>;
+  // Audit L-10 — ``status`` is ``string | undefined``; ``undefined`` is the
+  // "no filter" sentinel and translates to an omitted URL param.
+  const status = params.get("status") ?? undefined;
   const currency = params.get("currency") ?? undefined;
   const min_amount = params.get("min_amount") ? Number(params.get("min_amount")) : undefined;
   const max_amount = params.get("max_amount") ? Number(params.get("max_amount")) : undefined;
@@ -69,7 +75,9 @@ export default function AdminDealsPage() {
   const update = (next: Record<string, string | number | boolean | undefined | null>) => {
     const sp = new URLSearchParams(params);
     for (const [k, v] of Object.entries(next)) {
-      if (v === undefined || v === null || v === "" || v === false || v === "any") {
+      // Audit L-10 — ``null``/``undefined``/empty/``false`` all mean
+      // "clear the filter". The legacy ``"any"`` sentinel is gone.
+      if (v === undefined || v === null || v === "" || v === false) {
         sp.delete(k);
       } else {
         sp.set(k, String(v));
@@ -104,16 +112,16 @@ export default function AdminDealsPage() {
       <div className="px-4 -mx-1 overflow-x-auto no-scrollbar flex gap-2 mb-3 pb-1">
         {STATUSES.map((s) => (
           <button
-            key={s}
+            key={s.value ?? "__none__"}
             type="button"
-            onClick={() => update({ status: s === "any" ? undefined : s })}
+            onClick={() => update({ status: s.value ?? undefined })}
             className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs border transition-colors ${
-              status === s
+              (status ?? null) === s.value
                 ? "bg-accent text-black border-accent"
                 : "bg-panel text-text-muted border-border hover:bg-panel-2"
             }`}
           >
-            {STATUS_LABEL[s]}
+            {s.label}
           </button>
         ))}
       </div>

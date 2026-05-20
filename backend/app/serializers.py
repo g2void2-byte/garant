@@ -6,7 +6,7 @@ each ship a near-identical ``_user_out`` (and accidentally drift).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from .models import User
 from .schemas import ForumOut, UserOut, UserPublicOut
@@ -84,8 +84,7 @@ def _common_user_fields(
         deals_sum=deals_sum,
         online=bool(
             user.last_login_at is not None
-            and (datetime.now(timezone.utc) - user.last_login_at.replace(tzinfo=timezone.utc))
-            < _ONLINE_THRESHOLD
+            and (datetime.now(UTC) - user.last_login_at.replace(tzinfo=UTC)) < _ONLINE_THRESHOLD
         ),
         forums=[ForumOut(name=f.name, url=f.url) for f in user.forums],
         is_anonymous_deals=bool(user.is_anonymous_deals),

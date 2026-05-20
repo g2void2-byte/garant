@@ -5,6 +5,7 @@ import { Header } from "@/components/layout/Header";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
+import { confirmDialog } from "@/lib/dialog";
 import { useAdminFlushRedis, useAdminSystemStatus } from "@/api/admin/hooks";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
@@ -88,7 +89,9 @@ export default function AdminSystemPage() {
                   variant="danger"
                   disabled={flush.isPending || !data.redis_ok}
                   onClick={async () => {
-                    if (!window.confirm("Очистить все ключи в Redis? Это сбросит кеши и блокировки.")) return;
+                    // Audit L-15 — ``confirmDialog`` prefers Telegram’s native
+                    // ``showConfirm``; falls back to ``window.confirm`` outside Telegram.
+                    if (!(await confirmDialog("Очистить все ключи в Redis? Это сбросит кеши и блокировки."))) return;
                     try {
                       const res = await flush.mutateAsync();
                       toast.show({

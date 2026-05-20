@@ -64,7 +64,7 @@ import os
 import secrets
 import struct
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 
 import jwt
@@ -294,7 +294,7 @@ def issue_totp_session_token(user_id: int, epoch: int = 0) -> tuple[str, datetim
     session epoch. We sign with ``pin_secret()`` so a single rotation
     of the JWT key wipes both surfaces.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires = now + timedelta(seconds=settings.totp_session_ttl_seconds)
     payload = {
         "sub": str(user_id),

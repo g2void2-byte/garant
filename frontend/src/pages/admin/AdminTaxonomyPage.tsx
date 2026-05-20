@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
+import { confirmDialog } from "@/lib/dialog";
 import {
   useAdminCategories,
   useAdminCurrencies,
@@ -99,7 +100,9 @@ function CategoriesPane() {
             <button
               type="button"
               onClick={async () => {
-                if (!window.confirm(`Удалить категорию ${c.name}?`)) return;
+                // Audit L-15 — ``confirmDialog`` prefers Telegram’s native
+                // ``showConfirm``; falls back to ``window.confirm`` outside Telegram.
+                if (!(await confirmDialog(`Удалить категорию ${c.name}?`))) return;
                 try {
                   await del.mutateAsync(c.id);
                   toast.show({ kind: "info", title: "Удалено" });

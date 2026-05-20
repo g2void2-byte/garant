@@ -157,6 +157,18 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
+      # Audit N-10 — every ``frontend/package.json`` dependency is
+      # pinned to an exact version (no ``^`` or ``~`` prefix) so the
+      # committed ``package-lock.json`` is the single source of truth
+      # for what the install resolves to. A caret slipping into the
+      # manifest would silently re-enable npm's "compatible minor"
+      # upgrade behaviour the next time anyone deletes the lockfile
+      # — defeating the reproducibility ``npm ci`` is meant to enforce
+      # and reintroducing the supply-chain failure mode the lockfile
+      # is supposed to close. Fail loud here.
+      - name: Forbid caret/tilde version ranges in package.json
+        run: node ../scripts/check-pinned-deps.cjs package.json
+
       - name: Lint (eslint)
         run: npm run lint
 
