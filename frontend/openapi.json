@@ -3723,6 +3723,7 @@
       "DealCreate": {
         "properties": {
           "amount": {
+            "exclusiveMinimum": 0.0,
             "title": "Amount",
             "type": "number"
           },
@@ -4607,6 +4608,7 @@
           },
           "price": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Price",
             "type": "number"
           },
@@ -4924,6 +4926,7 @@
           "price": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "number"
               },
               {
