@@ -3937,6 +3937,17 @@ export interface components {
             /** Username */
             username: string | null;
         };
+        /**
+         * ServiceStatus
+         * @description Service moderation lifecycle.
+         *
+         *     * ``draft``    — the owner is still editing; hidden from public.
+         *     * ``active``   — visible in catalog and search.
+         *     * ``paused``   — owner-side hide (keeps the row, hides from catalog).
+         *     * ``banned``   — admin-side ban (hidden, owner cannot reactivate).
+         * @enum {string}
+         */
+        ServiceStatus: "draft" | "active" | "paused" | "banned";
         /** ServiceUpdate */
         ServiceUpdate: {
             /** Description */
@@ -5794,7 +5805,7 @@ export interface operations {
     admin_list_services_api_admin_services_get: {
         parameters: {
             query?: {
-                status?: string | null;
+                status?: components["schemas"]["ServiceStatus"] | null;
                 q?: string | null;
             };
             header: {
@@ -8106,7 +8117,7 @@ export interface operations {
                 q?: string | null;
                 owner?: string | null;
                 /** @description Filter by status; default behaviour is 'active' for the public catalog. Owners and admins can pass any of draft|active|paused|banned. */
-                status?: string | null;
+                status?: components["schemas"]["ServiceStatus"] | null;
                 /** @description Max rows to return. Capped at 200 to protect the DB. */
                 limit?: number;
                 /** @description Row offset for cursorless pagination. */

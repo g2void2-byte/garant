@@ -255,11 +255,64 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            await websocket.receive_text()
+            raw = await websocket.receive_text()
             # Comment 38: inbound rate check.
             if not manager.check_recv_rate(websocket):
                 await websocket.close(code=4008, reason="Rate limit exceeded")
                 break
+            # L-4: there is no client-driven protocol after the auth
+            # handshake today — the server is push-only. Anything the
+            # client sends is therefore either (a) a stray frame from
+            # an older client / keep-alive ping, or (b) a probe. Cap
+            # the size so a misbehaving client can't OOM the worker
+            # with a multi-megabyte frame, and structurally validate
+            # the JSON so future protocol additions (heartbeat / ack
+            # / subscribe) have a single well-defined hook. Frames
+            # that don't fit the envelope are *logged and dropped*
+            # rather than closing the socket — slamming the door on
+            # an old client that sends a ``{"type":"pong"}`` would
+            # surface as a "ws keeps dropping" UX bug, but a 4xMB
+            # blob almost certainly is an attack and gets a hard
+            # close with code 1009 (message too big).
+            if len(raw) > WS_AUTH_MAX_BYTES:
+                logger.warning(
+                    "ws frame too large (%d bytes, cap %d) — closing",
+                    len(raw),
+                    WS_AUTH_MAX_BYTES,
+                    extra={
+                        "event": "ws.frame.too_large",
+                        "size_bytes": len(raw),
+                        "cap_bytes": WS_AUTH_MAX_BYTES,
+                        "user_id": user_id,
+                    },
+                )
+                await websocket.close(code=1009, reason="Frame too large")
+                break
+            try:
+                payload = json.loads(raw)
+            except (json.JSONDecodeError, ValueError):
+                logger.info(
+                    "ws received non-JSON frame; ignoring",
+                    extra={"event": "ws.frame.non_json", "user_id": user_id},
+                )
+                continue
+            if not isinstance(payload, dict) or not isinstance(payload.get("type"), str):
+                logger.info(
+                    "ws received malformed frame envelope; ignoring",
+                    extra={"event": "ws.frame.malformed", "user_id": user_id},
+                )
+                continue
+            # Unknown ``type``? Log so the future protocol addition
+            # has a single discoverable point to wire its handler.
+            logger.info(
+                "ws received unhandled frame type=%s",
+                payload["type"],
+                extra={
+                    "event": "ws.frame.unknown_type",
+                    "user_id": user_id,
+                    "frame_type": payload["type"],
+                },
+            )
     except WebSocketDisconnect:
         pass
     except Exception:

@@ -123,7 +123,11 @@ async def list_services(
     category: str | None = Query(None),
     q: str | None = Query(None),
     owner: str | None = Query(None),
-    status: str | None = Query(
+    # L-9: lean on FastAPI/Pydantic enum validation instead of the
+    # old ``status: str`` + manual ``ServiceStatus(status)`` try/except.
+    # An unknown value now surfaces as a typed ``422`` straight from
+    # the framework so OpenAPI clients can introspect the allowed set.
+    status: ServiceStatus | None = Query(
         None,
         description="Filter by status; default behaviour is 'active' for the public catalog. "
         "Owners and admins can pass any of draft|active|paused|banned.",
@@ -158,15 +162,11 @@ async def list_services(
 
     target_owner_self = owner and owner == (user.username or "")
 
-    if status:
-        try:
-            wanted = ServiceStatus(status)
-        except ValueError as exc:
-            raise HTTPException(400, "Неизвестный статус услуги") from exc
+    if status is not None:
         # only owner-of-listing and admins can ask for non-active rows.
-        if wanted != ServiceStatus.active and not (user.is_admin or target_owner_self):
+        if status != ServiceStatus.active and not (user.is_admin or target_owner_self):
             raise HTTPException(403, "Нет доступа к этому статусу")
-        stmt = stmt.where(Service.status == wanted)
+        stmt = stmt.where(Service.status == status)
     elif target_owner_self or user.is_admin:
         # owner or admin: show every row of the requested owner
         pass
@@ -483,16 +483,13 @@ admin_router = APIRouter(
 async def admin_list_services(
     _admin: AdminUser,
     session: SessionDep,
-    status: str | None = Query(None),
+    # L-9: same upgrade as the public ``list_services`` endpoint.
+    status: ServiceStatus | None = Query(None),
     q: str | None = Query(None),
 ):
     stmt = select(Service)
-    if status:
-        try:
-            wanted = ServiceStatus(status)
-        except ValueError as exc:
-            raise HTTPException(400, "Неизвестный статус услуги") from exc
-        stmt = stmt.where(Service.status == wanted)
+    if status is not None:
+        stmt = stmt.where(Service.status == status)
     ts_q = build_prefix_tsquery(q) if q else None
     if ts_q:
         tsq = func.to_tsquery("simple", ts_q)
