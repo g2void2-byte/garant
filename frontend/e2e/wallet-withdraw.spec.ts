@@ -1,5 +1,5 @@
 import { test } from "@playwright/test";
-import { expect, mockApi, seedSession } from "./fixtures";
+import { enterPinPromptDigits, expect, mockApi, seedSession } from "./fixtures";
 
 /**
  * V12-M5 — withdraw/deposit e2e (withdraw half).
@@ -78,7 +78,28 @@ test.describe("Wallet withdraw", () => {
     // Submit and assert the success toast surfaces. ``Toast`` renders
     // both the title and the body, so the title is enough to scope.
     await page.getByRole("button", { name: /Запросить вывод/ }).click();
+    // V12-Ix — PIN re-prompt now gates withdrawals. Punch in 1234 on
+    // the on-screen PIN pad; the mocked ``POST /api/pin/check`` (see
+    // fixtures) returns a fresh token and the withdrawal POST fires.
+    await enterPinPromptDigits(page);
     await expect(page.getByText("Заявка отправлена")).toBeVisible();
+  });
+
+  test("Card method opens info modal with a deeplink to the admin", async ({
+    page,
+  }) => {
+    await mockApi(page);
+    await page.goto("/wallet/withdraw");
+    await expect(
+      page.getByRole("heading", { name: "Вывести депозит" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: /^Карта$/ }).click();
+    await expect(
+      page.getByRole("heading", { name: /Вывод на карту/ }),
+    ).toBeVisible();
+    const adminBtn = page.getByRole("button", { name: /Написать админу/ });
+    await expect(adminBtn).toBeEnabled();
   });
 
   test("rejects empty address with an error toast before posting", async ({

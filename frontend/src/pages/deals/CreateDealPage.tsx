@@ -2,11 +2,14 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
+import { PinPromptModal } from "@/components/PinPromptModal";
 import { ToggleTabs } from "@/components/ui/ToggleTabs";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
+import { useToast } from "@/components/ui/Toast";
+import { UserPicker } from "@/components/domain/UserPicker";
 import { useCreateDeal, useCurrencies } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
 
@@ -14,6 +17,7 @@ export default function CreateDealPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const create = useCreateDeal();
+  const toast = useToast();
   const { data: currencies } = useCurrencies();
   const [counterparty, setCounterparty] = useState(params.get("to") ?? "");
   const [role, setRole] = useState<"buyer" | "seller">("buyer");
@@ -23,6 +27,7 @@ export default function CreateDealPage() {
     "buyer",
   );
   const [currencyCode, setCurrencyCode] = useState("USDT");
+  const [pinOpen, setPinOpen] = useState(false);
 
   const currencyOptions = useMemo(
     () =>
@@ -33,12 +38,17 @@ export default function CreateDealPage() {
     [currencies],
   );
 
-  const submit = async () => {
+  function validate(): boolean {
     const amount = parseFloat(sum);
     if (!counterparty || !description || !Number.isFinite(amount) || amount <= 0) {
       haptic("error");
-      return;
+      return false;
     }
+    return true;
+  }
+
+  async function submitDeal() {
+    const amount = parseFloat(sum);
     try {
       const deal = await create.mutateAsync({
         counterparty,
@@ -50,10 +60,20 @@ export default function CreateDealPage() {
       });
       haptic("success");
       navigate(`/deals/${deal.id}`);
-    } catch {
+    } catch (e: unknown) {
       haptic("error");
+      toast.show({
+        kind: "error",
+        title: (e as Error)?.message || "Не удалось создать сделку",
+      });
     }
-  };
+  }
+
+  function requestSubmit() {
+    if (!validate()) return;
+    // PIN re-prompt — sensitive money-moving action.
+    setPinOpen(true);
+  }
 
   return (
     <Page showBack>
@@ -67,11 +87,11 @@ export default function CreateDealPage() {
           ]}
           onChange={setRole}
         />
-        <Input
+        <UserPicker
           label="Контрагент (username)"
-          placeholder="username без @"
+          placeholder="@username или ID"
           value={counterparty}
-          onChange={(e) => setCounterparty(e.target.value)}
+          onChange={setCounterparty}
         />
         {currencyOptions.length > 0 && (
           <div className="space-y-1">
@@ -105,10 +125,20 @@ export default function CreateDealPage() {
           ]}
           onChange={setComissionFrom}
         />
-        <Button fullWidth onClick={submit} disabled={create.isPending}>
+        <Button fullWidth onClick={requestSubmit} disabled={create.isPending}>
           {create.isPending ? "Создаю..." : "Создать сделку"}
         </Button>
       </div>
+      <PinPromptModal
+        open={pinOpen}
+        onClose={() => setPinOpen(false)}
+        onSuccess={() => {
+          setPinOpen(false);
+          void submitDeal();
+        }}
+        title="Подтвердите PIN"
+        subtitle="Введите PIN, чтобы создать сделку"
+      />
     </Page>
   );
 }

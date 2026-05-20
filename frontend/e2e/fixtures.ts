@@ -220,6 +220,15 @@ export async function mockApi(page: Page, overrides: MockOverrides = {}) {
       session_ttl_seconds: 600,
     }),
   );
+  // ``PinPromptModal`` re-verifies the user's PIN before sensitive
+  // mutations (deal creation, withdrawal). Return a fresh token so
+  // the modal resolves and the underlying action fires.
+  await routeApi("pin/check", (r) =>
+    json(r, {
+      token: "e2e-pin-token",
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    }),
+  );
   await routeApi("me", (r) => json(r, me));
   await routeApi("settings/maintenance", (r) =>
     json(r, { enabled: false, message: null }),
@@ -237,6 +246,28 @@ export async function mockApi(page: Page, overrides: MockOverrides = {}) {
   await routeApi("wallet/currencies", (r) => json(r, currencies));
   await routeApi("wallet/deposits", (r) => json(r, []));
   await routeApi("wallet/withdrawals", (r) => json(r, []));
+  // ``WalletWithdrawPage`` reads ``useAdmins`` to power the
+  // "Написать админу" deeplink in the Card-method modal.
+  await routeApi("support/admins", (r) =>
+    json(r, [{ id: 1, user_id: 1, username: "admin", display_name: "Admin" }]),
+  );
+}
+
+/**
+ * Click "1 2 3 4" on the on-screen PIN pad rendered by
+ * ``PinPromptModal``. Use this after triggering a sensitive action
+ * (deal creation, withdrawal) to clear the modal so the underlying
+ * POST fires.
+ */
+export async function enterPinPromptDigits(page: Page) {
+  // ``role=dialog[aria-labelledby="pin-prompt-title"]`` scopes the
+  // search to the modal — there can be other "1"/"2"/"3"/"4" buttons
+  // on the page (e.g. the digit-only sum input).
+  const modal = page.getByTestId("pin-prompt");
+  await modal.waitFor({ state: "visible" });
+  for (const d of ["1", "2", "3", "4"]) {
+    await modal.getByRole("button", { name: d, exact: true }).click();
+  }
 }
 
 function escapeRegex(s: string): string {

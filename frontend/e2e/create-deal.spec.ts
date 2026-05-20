@@ -1,5 +1,5 @@
 import { test } from "@playwright/test";
-import { expect, mockApi, seedSession } from "./fixtures";
+import { enterPinPromptDigits, expect, mockApi, seedSession } from "./fixtures";
 
 /**
  * V12-M5 — happy-path e2e for ``/deals/new``.
@@ -122,6 +122,11 @@ test.describe("Create-deal page", () => {
       .fill("Custom illustration");
 
     await page.getByRole("button", { name: /Создать сделку/ }).click();
+
+    // V12-Ix — PIN re-prompt now gates deal creation. Punch in 1234
+    // on the on-screen PIN pad; the mocked ``POST /api/pin/check``
+    // (see fixtures) returns a fresh token and the deal POST fires.
+    await enterPinPromptDigits(page);
 
     // Reached the new deal detail page.
     await expect(page).toHaveURL(/\/deals\/4242$/);
