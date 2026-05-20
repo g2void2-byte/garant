@@ -31,6 +31,7 @@ Safety invariants enforced here:
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -62,7 +63,7 @@ from ...ws import manager as ws_manager
 router = APIRouter(
     prefix="/api/admin/users",
     tags=["admin"],
-    dependencies=[Depends(rate_limit("admin", limit=600, window=60))],
+    dependencies=[Depends(rate_limit("admin:users", limit=600, window=60))],
 )
 
 # --------------------------------------------------------------------- helpers
@@ -78,14 +79,14 @@ def _prefix_for(user: User) -> str | None:
     return None
 
 
-def _rating_auto(user: User) -> float:
+def _rating_auto(user: User) -> Decimal:
     total = (user.good + user.bad) or 1
-    return round(user.good / total * 5, 1)
+    return Decimal(str(round(user.good / total * 5, 1)))
 
 
 def _to_detail(user: User, *, has_pin: bool) -> AdminUserDetailOut:
     auto = _rating_auto(user)
-    manual = float(user.rating_manual) if user.rating_manual is not None else None
+    manual = Decimal(str(user.rating_manual)) if user.rating_manual is not None else None
     effective = manual if manual is not None else auto
     return AdminUserDetailOut(
         id=user.id,
@@ -95,7 +96,7 @@ def _to_detail(user: User, *, has_pin: bool) -> AdminUserDetailOut:
         photo_url=user.photo_url,
         banner_url=user.banner_url,
         description=user.description,
-        deposit_total=float(user.deposit_total),
+        deposit_total=user.deposit_total,
         rating_auto=auto,
         rating_manual=manual,
         rating_effective=effective,
@@ -135,8 +136,10 @@ def _to_list_item(user: User) -> AdminUserListItem:
         is_vip=user.is_vip,
         is_banned=user.is_banned,
         is_frozen=user.is_frozen,
-        deposit_total=float(user.deposit_total),
-        rating=_rating_auto(user) if user.rating_manual is None else float(user.rating_manual),
+        deposit_total=user.deposit_total,
+        rating=(
+            _rating_auto(user) if user.rating_manual is None else Decimal(str(user.rating_manual))
+        ),
         deals_total=user.deals_total,
         deals_success=user.deals_success,
         last_ip=user.last_ip,
@@ -625,7 +628,7 @@ async def set_rating(
     override and restores the auto-computed rating.
     """
     target = await _get_user_or_404(session, user_id)
-    before = float(target.rating_manual) if target.rating_manual is not None else None
+    before = Decimal(str(target.rating_manual)) if target.rating_manual is not None else None
     target.rating_manual = body.rating
 
     if before == body.rating:
@@ -695,9 +698,9 @@ async def set_stats(
         before["bad"] = target.bad
         after["bad"] = body.bad
         target.bad = body.bad
-    if body.deposit_total is not None and float(body.deposit_total) != float(target.deposit_total):
-        before["deposit_total"] = float(target.deposit_total)
-        after["deposit_total"] = float(body.deposit_total)
+    if body.deposit_total is not None and body.deposit_total != target.deposit_total:
+        before["deposit_total"] = str(target.deposit_total)
+        after["deposit_total"] = str(body.deposit_total)
         target.deposit_total = body.deposit_total
 
     if not after:

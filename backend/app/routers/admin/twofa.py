@@ -71,7 +71,7 @@ _pending_secrets: dict[int, tuple[str, float]] = {}
 router = APIRouter(
     prefix="/api/admin/2fa",
     tags=["admin"],
-    dependencies=[Depends(rate_limit("admin", limit=600, window=60))],
+    dependencies=[Depends(rate_limit("admin:twofa", limit=600, window=60))],
 )
 
 

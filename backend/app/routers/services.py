@@ -13,6 +13,8 @@ The number of simultaneously-active services per user is capped by
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select
 
@@ -50,8 +52,8 @@ def _service_out(s: Service) -> ServiceOut:
         owner_username=s.owner.username if s.owner else None,
         title=s.title,
         description=s.description,
-        price=float(s.price),
-        currency="USD",
+        price=s.price,
+        currency=s.currency.code if s.currency else "USD",
         status=s.status.value if isinstance(s.status, ServiceStatus) else str(s.status),
         category=CategoryOut(
             id=s.category.id,
@@ -279,7 +281,7 @@ async def get_service(service_id: int, user: CurrentUser, session: SessionDep):
         ServiceComment.rating.is_not(None),
     )
     rating_row = (await session.execute(rating_stmt)).one()
-    rating_avg = float(rating_row[0]) if rating_row[0] is not None else None
+    rating_avg = Decimal(str(rating_row[0])) if rating_row[0] is not None else None
     rating_count = int(rating_row[1] or 0)
 
     base = _service_out(service)
@@ -287,7 +289,7 @@ async def get_service(service_id: int, user: CurrentUser, session: SessionDep):
         **base.model_dump(),
         owner=_owner_out(service.owner),
         comments_count=comments_count,
-        rating_avg=round(rating_avg, 2) if rating_avg is not None else None,
+        rating_avg=rating_avg.quantize(Decimal("0.01")) if rating_avg is not None else None,
         rating_count=rating_count,
     )
 
@@ -493,7 +495,7 @@ async def delete_service(
                 "owner_id": service.owner_id,
                 "title": service.title,
                 "description": service.description,
-                "price": float(service.price),
+                "price": str(service.price),
                 "status": service.status.value,
                 "via": "user_route",
             },
@@ -510,7 +512,7 @@ async def delete_service(
 admin_router = APIRouter(
     prefix="/api/admin/services",
     tags=["admin"],
-    dependencies=[Depends(rate_limit("admin", limit=600, window=60))],
+    dependencies=[Depends(rate_limit("admin:services", limit=600, window=60))],
 )
 
 
@@ -521,6 +523,9 @@ async def admin_list_services(
     # L-9: same upgrade as the public ``list_services`` endpoint.
     status: ServiceStatus | None = Query(None),
     q: str | None = Query(None),
+    # M-3: pagination support.
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
 ):
     stmt = select(Service)
     if status is not None:
@@ -535,6 +540,8 @@ async def admin_list_services(
         )
     else:
         stmt = stmt.order_by(Service.created_at.desc())
+    # M-3: paginate instead of returning all rows.
+    stmt = stmt.offset(offset).limit(limit)
     result = await session.execute(stmt)
     return [_service_out(s) for s in result.scalars().all()]
 
@@ -545,10 +552,14 @@ async def admin_moderate(
     body: ServiceModerationDecision,
     admin: TotpUser,
     session: SessionDep,
+    request: Request,
 ):
     service = await session.get(Service, service_id)
     if not service:
         raise HTTPException(404, "Услуга не найдена")
+    old_status = (
+        service.status.value if isinstance(service.status, ServiceStatus) else str(service.status)
+    )
     if body.action == "ban":
         service.status = ServiceStatus.banned
         service.ban_reason = body.reason or "Нарушение правил"
@@ -557,5 +568,25 @@ async def admin_moderate(
         service.ban_reason = None
     else:
         raise HTTPException(400, "Неизвестное действие")
+    new_status = (
+        service.status.value if isinstance(service.status, ServiceStatus) else str(service.status)
+    )
+    # M-4: audit-log the moderation action.
+    await log_admin_action(
+        session,
+        actor=admin,
+        action=f"service.{body.action}",
+        target_type="service",
+        target_id=service.id,
+        reason=body.reason,
+        payload={
+            "service_id": service.id,
+            "owner_id": service.owner_id,
+            "title": service.title,
+            "old_status": old_status,
+            "new_status": new_status,
+        },
+        request=request,
+    )
     await session.commit()
     return _service_out(service)

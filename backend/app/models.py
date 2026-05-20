@@ -322,7 +322,8 @@ class Service(Base):
     __tablename__ = "services"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    # M-13: CASCADE so deleting the owner also deletes their services.
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"))
     title: Mapped[str] = mapped_column(String(256))
     description: Mapped[str] = mapped_column(Text, default="")
@@ -375,8 +376,15 @@ class Service(Base):
         nullable=True,
     )
 
+    # M-2: optional FK to ``currencies``. Nullable so existing rows
+    # (created before multi-currency support) default to NULL (= USD).
+    currency_id: Mapped[int | None] = mapped_column(
+        ForeignKey("currencies.id"), nullable=True, index=True
+    )
+
     owner: Mapped[User] = relationship(back_populates="services", lazy="selectin")
     category: Mapped[Category] = relationship(back_populates="services", lazy="selectin")
+    currency: Mapped[Currency | None] = relationship(lazy="selectin")
 
 
 class ServiceComment(Base):
@@ -498,7 +506,9 @@ class Notification(Base):
     __tablename__ = "notifications"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    recipient_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    recipient_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     type: Mapped[NotificationType] = mapped_column(
         Enum(NotificationType), default=NotificationType.system
     )
@@ -593,7 +603,7 @@ class Forum(Base):
     __tablename__ = "forums"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(256), default="")
     url: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -613,7 +623,7 @@ class Media(Base):
     __tablename__ = "media"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     kind: Mapped[str] = mapped_column(String(32), index=True)
     url: Mapped[str] = mapped_column(Text)
     name: Mapped[str] = mapped_column(String(256), default="")
@@ -680,12 +690,9 @@ class UserBalance(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # M-13: CASCADE on user FK so ``DELETE FROM users`` cascades.
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
-    # H-2 — Numeric(28,8) so a balance can hold the full domain of
-    # ``Deal.amount`` (also Numeric(28,8)) without silent truncation
-    # at the 10¹⁰ scale. The migration ``9c3a4d2e1f08`` widens both
-    # ``amount`` and ``locked`` in the DB.
     amount: Mapped[float] = mapped_column(Numeric(28, 8), default=0)
     locked: Mapped[float] = mapped_column(Numeric(28, 8), default=0)
     updated_at: Mapped[datetime] = mapped_column(
@@ -702,11 +709,8 @@ class WalletDeposit(Base):
     __tablename__ = "wallet_deposits"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
-    # H-2 — Numeric(28,8) so a single invoice can ledger an amount
-    # bigger than 10¹⁰ without truncation; matches ``UserBalance.amount``
-    # and ``Deal.amount``.
     amount: Mapped[float] = mapped_column(Numeric(28, 8))
     provider: Mapped[WalletDepositProvider] = mapped_column(
         Enum(WalletDepositProvider, name="walletdepositprovider"),
@@ -745,10 +749,8 @@ class WalletWithdrawal(Base):
     __tablename__ = "wallet_withdrawals"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
-    # H-2 — Numeric(28,8) so withdrawals match ``UserBalance.amount``
-    # / ``Deal.amount`` precision and don't lose data at the 10¹⁰ scale.
     amount: Mapped[float] = mapped_column(Numeric(28, 8))
     address: Mapped[str] = mapped_column(String(256))
     status: Mapped[WalletWithdrawStatus] = mapped_column(

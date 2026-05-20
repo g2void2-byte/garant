@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/admin/treasury",
     tags=["admin"],
-    dependencies=[Depends(rate_limit("admin", limit=600, window=60))],
+    dependencies=[Depends(rate_limit("admin:treasury", limit=600, window=60))],
 )
 
 

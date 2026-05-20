@@ -247,8 +247,8 @@ async def create_deal(
     deal = Deal(
         buyer_id=buyer.id,
         seller_id=seller.id,
-        amount=float(amt),
-        commission_amount=float(commission),
+        amount=amt,
+        commission_amount=commission,
         currency_id=currency.id,
         description=description,
         pay_commission=pay_commission,

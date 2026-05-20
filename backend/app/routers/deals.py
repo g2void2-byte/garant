@@ -37,6 +37,7 @@ def _deal_out(deal: Deal, user_id: int) -> DealOut:
         buyer=deal.buyer.username if deal.buyer else None,
         seller=deal.seller.username if deal.seller else None,
         description=deal.description,
+        pay_commission=deal.pay_commission.value,
         pay_comission=deal.pay_commission.value,
         status=deal.status.value,
         confirm_buyer=deal.confirm_buyer,
@@ -44,10 +45,8 @@ def _deal_out(deal: Deal, user_id: int) -> DealOut:
         role=role,
         created_at=deal.created_at,
         currency_code=currency_code,
-        amount=float(deal.amount),
-        commission_amount=(
-            float(deal.commission_amount) if deal.commission_amount is not None else None
-        ),
+        amount=deal.amount,
+        commission_amount=deal.commission_amount,
         in_progress_at=deal.in_progress_at,
         completed_at=deal.completed_at,
         cancellation_initiator=_role_for(deal, deal.cancellation_initiator_id),
@@ -152,7 +151,7 @@ async def create_deal_endpoint(
             body.currency_code,
             body.amount,
             body.description,
-            body.pay_comission,
+            body.pay_commission,
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e

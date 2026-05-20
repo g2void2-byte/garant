@@ -19,7 +19,7 @@ from ...schemas import AdminAuditLogListOut, AdminAuditLogOut
 router = APIRouter(
     prefix="/api/admin/audit",
     tags=["admin"],
-    dependencies=[Depends(rate_limit("admin", limit=600, window=60))],
+    dependencies=[Depends(rate_limit("admin:audit", limit=600, window=60))],
 )
 
 

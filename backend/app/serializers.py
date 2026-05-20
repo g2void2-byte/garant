@@ -7,6 +7,7 @@ each ship a near-identical ``_user_out`` (and accidentally drift).
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from .models import User
 from .schemas import ForumOut, UserOut, UserPublicOut
@@ -17,8 +18,8 @@ _ONLINE_THRESHOLD = timedelta(minutes=5)
 def _common_user_fields(
     user: User,
     *,
-    deposit: float | None,
-    deals_sum: float,
+    deposit: Decimal | None,
+    deals_sum: Decimal,
 ) -> dict:
     """Fields shared between :func:`user_to_out` and :func:`user_to_public_out`."""
     reviews_count = user.good + user.bad
@@ -26,7 +27,11 @@ def _common_user_fields(
     computed_rating = round(user.good / total * 5, 1)
     # Admin PR-A — an admin may override the rating manually; when set
     # we return that value instead of the auto-computed one.
-    rating = float(user.rating_manual) if user.rating_manual is not None else computed_rating
+    rating = (
+        Decimal(str(user.rating_manual))
+        if user.rating_manual is not None
+        else Decimal(str(computed_rating))
+    )
     # Precedence: admin > arbiter > vip > regular. Admin and VIP can
     # co-exist but admin wins for the *primary* prefix shown next to
     # the username; ``is_vip`` flag is still surfaced separately so
@@ -69,7 +74,7 @@ def _common_user_fields(
         display_name=user.display_name,
         photo_url=user.photo_url,
         banner_url=user.banner_url,
-        deposit=float(deposit if deposit is not None else trust_balance),
+        deposit=Decimal(str(deposit if deposit is not None else trust_balance)),
         description=user.description,
         prefix=prefix,
         is_admin=user.is_admin,
@@ -96,8 +101,8 @@ def _common_user_fields(
 def user_to_out(
     user: User,
     *,
-    deposit: float | None = None,
-    deals_sum: float = 0.0,
+    deposit: Decimal | None = None,
+    deals_sum: Decimal = Decimal(0),
 ) -> UserOut:
     """Convert a :class:`User` ORM row into a :class:`UserOut` DTO.
 
@@ -127,8 +132,8 @@ def user_to_out(
 def user_to_public_out(
     user: User,
     *,
-    deposit: float | None = None,
-    deals_sum: float = 0.0,
+    deposit: Decimal | None = None,
+    deals_sum: Decimal = Decimal(0),
 ) -> UserPublicOut:
     """Convert a :class:`User` row into the public :class:`UserPublicOut` DTO.
 

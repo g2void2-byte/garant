@@ -7,6 +7,8 @@ are admin-processed (see ``services_wallet``).
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
@@ -43,8 +45,8 @@ def _currency_dto(c: Currency) -> CurrencyOut:
         network=c.network,
         icon_url=c.icon_url,
         decimals=c.decimals,
-        min_deposit=float(c.min_deposit),
-        min_withdraw=float(c.min_withdraw),
+        min_deposit=c.min_deposit,
+        min_withdraw=c.min_withdraw,
     )
 
 
@@ -52,7 +54,7 @@ def _deposit_dto(d: WalletDeposit, c: Currency) -> WalletDepositOut:
     return WalletDepositOut(
         id=d.id,
         currency=_currency_dto(c),
-        amount=float(d.amount),
+        amount=d.amount,
         status=d.status.value,
         pay_url=d.pay_url,
         invoice_id=d.provider_invoice_id,
@@ -67,7 +69,7 @@ def _withdrawal_dto(w: WalletWithdrawal, c: Currency) -> WalletWithdrawalOut:
     return WalletWithdrawalOut(
         id=w.id,
         currency=_currency_dto(c),
-        amount=float(w.amount),
+        amount=w.amount,
         address=w.address,
         status=w.status.value,
         admin_note=w.admin_note,
@@ -102,9 +104,9 @@ async def get_balances(user: CurrentUser, session: SessionDep):
     return [
         WalletBalanceOut(
             currency=_currency_dto(c),
-            amount=float(b.amount) if b else 0.0,
-            locked=float(b.locked) if b else 0.0,
-            total=(float(b.amount) + float(b.locked)) if b else 0.0,
+            amount=b.amount if b else Decimal(0),
+            locked=b.locked if b else Decimal(0),
+            total=(b.amount + b.locked) if b else Decimal(0),
             updated_at=b.updated_at if b else None,
         )
         for c, b in rows
