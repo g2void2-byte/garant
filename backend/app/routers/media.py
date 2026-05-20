@@ -11,10 +11,13 @@ Allowed kinds are configured via ``settings.media_allowed_kinds``.
 from __future__ import annotations
 
 import asyncio
+import io
 import secrets
 from pathlib import Path
+from typing import Any, Final
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from PIL import Image, UnidentifiedImageError
 
 from ..config import settings
 from ..deps import CurrentUser, SessionDep
@@ -24,6 +27,32 @@ from ..schemas import MediaOut
 from ..time_utils import utcnow
 
 router = APIRouter(prefix="/api/media", tags=["media"])
+
+
+# L-6 — stream uploads in 64 KiB chunks instead of buffering the full
+# body up-front. Small enough that an oversized payload is aborted
+# within a few iterations (bounded peak memory), large enough that the
+# per-chunk syscall / await overhead stays amortised for a 5 MiB image.
+_UPLOAD_CHUNK_BYTES: Final[int] = 64 * 1024
+
+# L-5 — hard cap on decoded pixel count to defuse decompression bombs.
+# Pillow's stock ``Image.MAX_IMAGE_PIXELS`` only ``warnings.warn()``s,
+# which means a 10 KB PNG that decompresses to 200M pixels would still
+# allocate the full RGBA buffer and OOM the worker.  50M pixels (~190
+# MiB RGBA on the decode side) is generous for legitimate avatars and
+# deal-chat screenshots but well under the worker's RSS budget.
+_MAX_IMAGE_PIXELS: Final[int] = 50_000_000
+
+# L-5 — Pillow ``save()`` format identifier keyed by content-type.
+# Kept aligned with ``_ALLOWED_IMAGE_TYPES`` below; adding a new type
+# requires touching both maps so a missed entry trips a ``KeyError``
+# at decode time rather than a silent pass-through.
+_PILLOW_FORMATS: dict[str, str] = {
+    "image/png": "PNG",
+    "image/jpeg": "JPEG",
+    "image/webp": "WEBP",
+    "image/gif": "GIF",
+}
 
 
 # Canonical (content-type → on-disk extension) mapping. The saved file
@@ -98,6 +127,96 @@ def _safe_extension(content_type: str) -> str | None:
     return _ALLOWED_IMAGE_TYPES.get(content_type)
 
 
+async def _stream_capped(file: UploadFile, cap: int) -> bytes:
+    """Drain the upload in fixed-size chunks, aborting the moment the
+    accumulated size exceeds ``cap``.
+
+    L-6 motivation: a bare ``await file.read()`` returns *all* of the
+    spooled body before we ever look at it, so a client posting a
+    1 GiB blob would spend the full spool before the size check fires.
+    Reading in ``_UPLOAD_CHUNK_BYTES``-sized slices and tripping the
+    413 as soon as the running total crosses the cap keeps peak
+    memory bounded by the cap itself rather than by the body length
+    the client happens to advertise.
+    """
+    buf = bytearray()
+    while True:
+        chunk = await file.read(_UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > cap:
+            raise HTTPException(
+                413,
+                f"Файл слишком большой (>{cap // 1024} КБ)",
+            )
+    return bytes(buf)
+
+
+def _reencode_image(data: bytes, content_type: str) -> bytes:
+    """Decode + re-encode the image through Pillow as a defensive sieve.
+
+    L-5 threat model: the magic-byte gate only validates the first
+    8–12 bytes; everything that follows is opaque to the upload
+    handler.  A crafted payload that satisfies the header check can
+    still smuggle malformed chunks, oversized metadata, or
+    intentionally-huge dimensions — vectors that have historically
+    surfaced as libpng / libwebp / ImageMagick RCEs and as
+    decompression-bomb DoS.
+
+    Re-encoding strips every byte the decoder didn't consume (EXIF,
+    ICC profiles, comment chunks, trailing garbage) and fails closed
+    on payloads that don't fully parse, so what lands on disk is
+    always a fresh container holding only the decoded pixel buffer.
+    The pixel-count cap (`_MAX_IMAGE_PIXELS`) is enforced *before*
+    ``load()`` so a bomb header never allocates the underlying
+    buffer.
+
+    Animation is intentionally not preserved — animated GIF / WebP
+    payloads are re-saved as their first frame.  The decode path for
+    multi-frame containers is materially larger than the single-frame
+    path and is the same surface that has yielded most of the
+    image-library CVE traffic over the years; for the avatar /
+    deal-attachment use case a static representation is the right
+    trade-off.
+    """
+    fmt = _PILLOW_FORMATS[content_type]
+    out = io.BytesIO()
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            w, h = img.size
+            if w * h > _MAX_IMAGE_PIXELS:
+                raise HTTPException(
+                    415,
+                    "Изображение слишком большое (превышен лимит пикселей)",
+                )
+            save_kwargs: dict[str, Any] = {}
+            if fmt == "JPEG":
+                # JPEG has no alpha channel; flatten transparency onto
+                # white so palette / RGBA inputs survive the round-trip
+                # instead of raising ``OSError: cannot write mode RGBA``.
+                if img.mode in ("RGBA", "LA", "P"):
+                    flat = Image.new("RGB", img.size, "white")
+                    alpha = img.convert("RGBA")
+                    flat.paste(alpha, mask=alpha.split()[-1])
+                    img = flat
+                else:
+                    img = img.convert("RGB")
+                save_kwargs["quality"] = 90
+                save_kwargs["optimize"] = False
+            else:
+                # Force a full decode here so an early-truncation
+                # ``OSError`` is raised inside this ``try`` block
+                # rather than propagating from inside ``save()``.
+                img.load()
+            img.save(out, format=fmt, **save_kwargs)
+    except HTTPException:
+        raise
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError):
+        raise HTTPException(415, "Не удалось распознать изображение") from None
+    return out.getvalue()
+
+
 @router.post("/upload", response_model=MediaOut, status_code=201)
 async def upload_media(
     user: CurrentUser,
@@ -119,11 +238,9 @@ async def upload_media(
     if ext is None:
         raise HTTPException(415, "Допустимы только PNG / JPEG / WebP / GIF")
 
-    data = await file.read()
+    data = await _stream_capped(file, settings.media_max_bytes)
     if not data:
         raise HTTPException(400, "Файл пустой")
-    if len(data) > settings.media_max_bytes:
-        raise HTTPException(413, f"Файл слишком большой (>{settings.media_max_bytes // 1024} КБ)")
 
     # Magic-byte check: the declared ``Content-Type`` is attacker-
     # controlled, so cross-check it against the actual file header
@@ -133,8 +250,20 @@ async def upload_media(
     # static-file server / CDN sniffs the body or serves with
     # ``X-Content-Type-Options`` missing, and a browser would happily
     # render the HTML as active content from the backend origin.
+    #
+    # The magic-byte gate is cheap (8 bytes) and runs before Pillow
+    # so an obvious HTML/script payload short-circuits without
+    # spinning up the decoder.  Pillow's own format detection is
+    # tolerant of trailing garbage and would happily decode the first
+    # IDAT chunk of a smuggled payload, so we keep both checks.
     if not _matches_magic(content_type, data):
         raise HTTPException(415, "Файл не соответствует заявленному типу")
+
+    # L-5 — defensive Pillow re-encode.  See ``_reencode_image`` for
+    # the threat model; running it through ``asyncio.to_thread``
+    # because Pillow is pure CPU work and would otherwise stall the
+    # event loop on a 5 MiB image.
+    sanitised = await asyncio.to_thread(_reencode_image, data, content_type)
 
     root = await _ensure_root()
     folder = root / kind
@@ -145,7 +274,7 @@ async def upload_media(
 
     name = f"{user.id}-{utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(6)}{ext}"
     path = folder / name
-    await asyncio.to_thread(path.write_bytes, data)
+    await asyncio.to_thread(path.write_bytes, sanitised)
 
     base = settings.media_base_url.rstrip("/")
     url = f"{base}/{kind}/{name}"
@@ -155,7 +284,7 @@ async def upload_media(
         kind=kind,
         url=url,
         name=file.filename or name,
-        size=len(data),
+        size=len(sanitised),
         content_type=content_type,
     )
     session.add(media)

@@ -40,7 +40,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from .helpers import (
+from tests.helpers import (
     auth_headers,
     credit_balance,
     get_user_id_by_tg,

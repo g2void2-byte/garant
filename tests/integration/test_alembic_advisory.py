@@ -60,7 +60,7 @@ async def _run_alembic_upgrade(env: dict[str, str]) -> tuple[int, str, str]:
         "alembic",
         "upgrade",
         "head",
-        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -109,7 +109,7 @@ async def test_concurrent_alembic_upgrade_head_does_not_collide():
     proc = await asyncio.create_subprocess_exec(
         "alembic",
         "current",
-        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,

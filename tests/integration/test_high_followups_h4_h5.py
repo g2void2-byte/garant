@@ -35,7 +35,7 @@ def test_dev_init_data_fallback_is_dev_gated():
     value bypasses auth when the backend has
     ``allow_unsigned_init_data`` enabled).
     """
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[2]
     src = (repo_root / "frontend" / "src" / "lib" / "tg.ts").read_text()
     # Locate the function body.
     func_start = src.find("export function getInitData")
@@ -184,7 +184,7 @@ def test_alembic_migration_revision_is_registered():
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[2]
     cfg = Config(str(repo_root / "alembic.ini"))
     script = ScriptDirectory.from_config(cfg)
     revisions = {rev.revision for rev in script.walk_revisions()}

@@ -10,7 +10,13 @@ from __future__ import annotations
 
 import pytest
 
-from .helpers import auth_headers, credit_balance, get_user_id_by_tg, setup_pin, signed_init_data
+from tests.helpers import (
+    auth_headers,
+    credit_balance,
+    get_user_id_by_tg,
+    setup_pin,
+    signed_init_data,
+)
 
 
 @pytest.mark.asyncio

@@ -24,7 +24,7 @@ import asyncio
 import pytest
 from sqlalchemy import func, select
 
-from .helpers import auth_headers, setup_pin, signed_init_data
+from tests.helpers import auth_headers, setup_pin, signed_init_data
 
 # ── M-4 — _get_or_create_user race ─────────────────────────────────────
 

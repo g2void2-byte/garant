@@ -364,7 +364,7 @@ async def test_recompute_user_rating_sums_full_ladder(client):
 # ── V5-E-1 / V5-E-2 / V5-E-3 ───────────────────────────────────────
 
 
-_ALEMBIC_VERSIONS = pathlib.Path(__file__).resolve().parents[1] / "alembic" / "versions"
+_ALEMBIC_VERSIONS = pathlib.Path(__file__).resolve().parents[2] / "alembic" / "versions"
 
 # Mig-1 — manual allow-list of destructive downgrades. Audited by a
 # human; the rows here are migrations whose downgrade either (a) drops

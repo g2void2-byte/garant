@@ -25,7 +25,7 @@ import json
 import websockets
 from sqlalchemy import select
 
-from .helpers import auth_headers, setup_pin, signed_init_data, with_totp
+from tests.helpers import auth_headers, setup_pin, signed_init_data, with_totp
 
 
 async def _connect_and_auth(ws_server: int, init_data: str):

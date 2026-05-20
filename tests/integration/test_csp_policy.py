@@ -43,7 +43,7 @@ from backend.app.main import _CSP_DIRECTIVES
 # Repo-relative path to the SPA shell. Anchored at this file's parent
 # so the test works in CI (where the repo is checked out at a stable
 # path) and locally regardless of the user's working directory.
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _INDEX_HTML = _REPO_ROOT / "frontend" / "index.html"
 
 

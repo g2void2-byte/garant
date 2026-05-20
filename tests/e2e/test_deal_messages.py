@@ -13,6 +13,7 @@ from tests.helpers import (
     get_user_id_by_tg,
     setup_pin,
     signed_init_data,
+    tiny_image_bytes,
 )
 
 
@@ -128,14 +129,10 @@ async def test_message_with_attachment(client):
 
     deal_id, buyer_init, seller_init, _, _ = await _create_deal(client)
 
-    # Upload a 1×1 PNG as a deal attachment.
-    png_bytes = (
-        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
-        b"\x00\x00\x00\x01\x00\x00\x00\x01"
-        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
-        b"\x00\x00\x00\rIDATx\x9cc\xfc\xff\xff?\x03\x00\x05\xfe\x02\xfe"
-        b"\xa3\x95\xed\x97\x00\x00\x00\x00IEND\xaeB`\x82"
-    )
+    # Upload a 1×1 PNG as a deal attachment.  ``tiny_image_bytes``
+    # round-trips through Pillow so it survives the L-5 re-encode
+    # gate on ``/api/media/upload``.
+    png_bytes = tiny_image_bytes("PNG")
     files = {"file": ("a.png", io.BytesIO(png_bytes), "image/png")}
     up = await client.post(
         "/api/media/upload",
@@ -180,7 +177,7 @@ async def test_attachment_must_belong_to_sender(client):
     deal_id, buyer_init, seller_init, _, _ = await _create_deal(client)
 
     # Seller uploads an attachment of kind="deal".
-    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+    png = tiny_image_bytes("PNG")
     files = {"file": ("x.png", io.BytesIO(png), "image/png")}
     up = await client.post(
         "/api/media/upload",

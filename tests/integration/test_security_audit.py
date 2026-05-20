@@ -27,6 +27,7 @@ from tests.helpers import (
     get_user_id_by_tg,
     setup_pin,
     signed_init_data,
+    tiny_image_bytes,
     with_totp,
 )
 
@@ -148,7 +149,7 @@ async def test_media_upload_rejects_html_disguised_as_image(client):
     init_data = signed_init_data(9301, "uploader")
     await setup_pin(client, init_data)  # bootstraps the user row
 
-    files = {"file": ("evil.html", b"\x89PNG\r\n\x1a\n", "image/png")}
+    files = {"file": ("evil.html", tiny_image_bytes("PNG"), "image/png")}
     data = {"kind": "avatar"}
     resp = await client.post(
         "/api/media/upload", data=data, files=files, headers=auth_headers(init_data)
@@ -200,7 +201,7 @@ async def test_media_upload_rejects_content_type_mismatched_payload(client):
 
     # JPEG content-type with PNG bytes — even legit image headers
     # must match the declared type.
-    files = {"file": ("img.jpg", b"\x89PNG\r\n\x1a\n\x00\x00\x00", "image/jpeg")}
+    files = {"file": ("img.jpg", tiny_image_bytes("PNG"), "image/jpeg")}
     resp = await client.post(
         "/api/media/upload",
         data={"kind": "avatar"},
@@ -217,10 +218,10 @@ async def test_media_upload_accepts_each_magic_signature(client):
     await setup_pin(client, init_data)
 
     cases = [
-        ("a.png", b"\x89PNG\r\n\x1a\n", "image/png", ".png"),
-        ("a.jpg", b"\xff\xd8\xff\xe0\x00\x10JFIF\x00", "image/jpeg", ".jpg"),
-        ("a.gif", b"GIF89a", "image/gif", ".gif"),
-        ("a.webp", b"RIFF\x00\x00\x00\x00WEBPVP8 ", "image/webp", ".webp"),
+        ("a.png", tiny_image_bytes("PNG"), "image/png", ".png"),
+        ("a.jpg", tiny_image_bytes("JPEG"), "image/jpeg", ".jpg"),
+        ("a.gif", tiny_image_bytes("GIF"), "image/gif", ".gif"),
+        ("a.webp", tiny_image_bytes("WEBP"), "image/webp", ".webp"),
     ]
     for name, body, ctype, ext in cases:
         resp = await client.post(
@@ -231,6 +232,52 @@ async def test_media_upload_accepts_each_magic_signature(client):
         )
         assert resp.status_code == 201, (ctype, resp.text)
         assert resp.json()["url"].endswith(ext), (ctype, resp.json())
+
+
+async def test_media_upload_rejects_garbage_after_valid_magic(client):
+    """L-5: a payload that starts with a real PNG signature but is
+    otherwise unparseable garbage must be rejected by the Pillow
+    re-encode pass, *not* silently saved as a corrupt ``.png`` that
+    image viewers refuse to render.  This closes the gap between the
+    8-byte magic-bytes gate and the full decode the route now does
+    before persisting anything on disk."""
+    init_data = signed_init_data(9305, "uploader5")
+    await setup_pin(client, init_data)
+
+    payload = b"\x89PNG\r\n\x1a\n" + b"\x00" * 256
+    resp = await client.post(
+        "/api/media/upload",
+        data={"kind": "avatar"},
+        files={"file": ("almost.png", payload, "image/png")},
+        headers=auth_headers(init_data),
+    )
+    assert resp.status_code == 415, resp.text
+
+
+async def test_media_upload_caps_streamed_body(client, monkeypatch):
+    """L-6: a payload larger than ``media_max_bytes`` must trip the 413
+    even when the client tries to slip it past as a streamed upload.
+    The cap is now enforced incrementally per chunk, so this test sets
+    a tiny limit and confirms the streamed reader fails fast instead of
+    quietly buffering the full body before the size check."""
+    from backend.app.config import settings as cfg
+
+    monkeypatch.setattr(cfg, "media_max_bytes", 128)
+    init_data = signed_init_data(9306, "uploader6")
+    await setup_pin(client, init_data)
+
+    # Pick a size large enough that even the (highly compressible)
+    # solid-fill PNG ``tiny_image_bytes`` returns exceeds the patched
+    # 128-byte cap, so we exercise the streaming abort path.
+    oversized = tiny_image_bytes("PNG", size=(64, 64))
+    assert len(oversized) > 128, "fixture must exceed the patched cap"
+    resp = await client.post(
+        "/api/media/upload",
+        data={"kind": "avatar"},
+        files={"file": ("big.png", oversized, "image/png")},
+        headers=auth_headers(init_data),
+    )
+    assert resp.status_code == 413, resp.text
 
 
 # ── 4. CORS — wildcard fallback removed ───────────────────────────────────
