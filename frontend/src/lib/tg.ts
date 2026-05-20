@@ -97,8 +97,14 @@ export function initTelegram() {
   } catch (err) {
     // Swallowing this used to mask Telegram-side regressions
     // entirely: surface it to the browser console so operators can
-    // notice when ``ready`` / ``expand`` start failing in production.
-    console.warn("initTelegram: Telegram.WebApp call failed", err);
+    // notice when ``ready`` / ``expand`` start failing.
+    // L-18: gate the dev-only diagnostics on ``import.meta.env.DEV``
+    // so Vite's dead-code elimination strips them from the production
+    // bundle (the Telegram WebView still has a console but we don't
+    // want to ship noise to it).
+    if (import.meta.env.DEV) {
+      console.warn("initTelegram: Telegram.WebApp call failed", err);
+    }
   }
   lockToFullscreen();
 }
@@ -138,7 +144,10 @@ export function lockToFullscreen() {
     tg.enableClosingConfirmation?.();
     tg.requestFullscreen?.();
   } catch (err) {
-    console.warn("lockToFullscreen: Telegram.WebApp call failed", err);
+    // L-18: dev-only diagnostics; stripped from the production bundle.
+    if (import.meta.env.DEV) {
+      console.warn("lockToFullscreen: Telegram.WebApp call failed", err);
+    }
   }
   if (fullscreenListenerInstalled) return;
   try {
@@ -150,13 +159,21 @@ export function lockToFullscreen() {
         try {
           tg.requestFullscreen?.();
         } catch (err) {
-          console.warn("lockToFullscreen: re-request failed", err);
+          // L-18: dev-only diagnostics; stripped from the production
+          // bundle so a flaky fullscreen API doesn't spam Telegram
+          // WebView consoles.
+          if (import.meta.env.DEV) {
+            console.warn("lockToFullscreen: re-request failed", err);
+          }
         }
       }
     });
     fullscreenListenerInstalled = true;
   } catch (err) {
-    console.warn("lockToFullscreen: onEvent failed", err);
+    // L-18: dev-only diagnostics; stripped from the production bundle.
+    if (import.meta.env.DEV) {
+      console.warn("lockToFullscreen: onEvent failed", err);
+    }
   }
 }
 
@@ -170,12 +187,18 @@ export function minimizeApp() {
   try {
     tg.exitFullscreen?.();
   } catch (err) {
-    console.warn("minimizeApp: exitFullscreen failed", err);
+    // L-18: dev-only diagnostics; stripped from the production bundle.
+    if (import.meta.env.DEV) {
+      console.warn("minimizeApp: exitFullscreen failed", err);
+    }
   }
   try {
     tg.close();
   } catch (err) {
-    console.warn("minimizeApp: close failed", err);
+    // L-18: dev-only diagnostics; stripped from the production bundle.
+    if (import.meta.env.DEV) {
+      console.warn("minimizeApp: close failed", err);
+    }
   }
 }
 
@@ -195,7 +218,10 @@ export function haptic(kind: "light" | "medium" | "heavy" | "success" | "error" 
   } catch (err) {
     // Haptics are best-effort — old Telegram clients don't support
     // them — but we still want a console trail when they fail.
-    console.warn("haptic: Telegram.WebApp call failed", kind, err);
+    // L-18: dev-only diagnostics; stripped from the production bundle.
+    if (import.meta.env.DEV) {
+      console.warn("haptic: Telegram.WebApp call failed", kind, err);
+    }
   }
 }
 
