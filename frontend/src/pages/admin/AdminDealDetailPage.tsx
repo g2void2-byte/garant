@@ -32,7 +32,11 @@ import {
 } from "@/api/admin/hooks";
 import { useMe } from "@/api/hooks";
 import { parseDecimal } from "@/lib/format";
-import type { AdminDealDetailDto, AdminBalanceSnapshotDto } from "@/api/types";
+import type {
+  AdminDealDetailDto,
+  AdminBalanceSnapshotDto,
+  AdminUserListDto,
+} from "@/api/types";
 import { api } from "@/api/client";
 import { haptic } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
@@ -252,13 +256,16 @@ function ActionPanel({ deal }: { deal: AdminDealDetailDto }) {
           toast.show({ kind: "error", title: "Введите username арбитра" });
           return;
         }
-        // Lookup user by username
-        const u: any = await api
+        // Lookup user by username. Uses the OpenAPI-generated
+        // ``AdminUserListDto`` instead of ``any`` so a field rename
+        // on the backend trips ``tsc`` instead of surfacing at
+        // runtime as ``Cannot read properties of undefined``.
+        const u: AdminUserListDto = await api
           .get(`api/admin/users`, { searchParams: { q: arbiterUsername.trim() } })
           .json();
+        const needle = arbiterUsername.trim().toLowerCase().replace(/^@/, "");
         const candidate = u.items.find(
-          (x: any) =>
-            x.username?.toLowerCase() === arbiterUsername.trim().toLowerCase().replace(/^@/, ""),
+          (x) => x.username?.toLowerCase() === needle,
         );
         if (!candidate) {
           toast.show({ kind: "error", title: "Юзер не найден" });
@@ -280,8 +287,8 @@ function ActionPanel({ deal }: { deal: AdminDealDetailDto }) {
       }
       setSheet(null);
       setReason("");
-    } catch (e: any) {
-      toast.show({ kind: "error", title: "Ошибка", body: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.show({ kind: "error", title: "Ошибка", body: (e as Error)?.message ?? "" });
     }
   };
 
@@ -453,8 +460,8 @@ function MessagesFeed({ deal }: { deal: AdminDealDetailDto }) {
       setText("");
       // Refresh the page-level query
       window.dispatchEvent(new CustomEvent("admin-deal-refetch"));
-    } catch (e: any) {
-      toast.show({ kind: "error", title: "Не отправлено", body: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.show({ kind: "error", title: "Не отправлено", body: (e as Error)?.message ?? "" });
     } finally {
       setSending(false);
     }

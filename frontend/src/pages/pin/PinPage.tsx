@@ -78,9 +78,9 @@ export default function PinPage({ status, onUnlocked }: PinPageProps) {
       try {
         const t = await check.mutateAsync(full);
         applyToken(t);
-      } catch (e: any) {
+      } catch (e: unknown) {
         haptic("error");
-        toast.show({ kind: "error", title: e?.message || "Неверный PIN" });
+        toast.show({ kind: "error", title: (e as Error)?.message || "Неверный PIN" });
         setPin("");
       }
       return;
@@ -103,8 +103,8 @@ export default function PinPage({ status, onUnlocked }: PinPageProps) {
       try {
         const t = await setup.mutateAsync(memo);
         applyToken(t);
-      } catch (e: any) {
-        toast.show({ kind: "error", title: e?.message || "Не удалось установить PIN" });
+      } catch (e: unknown) {
+        toast.show({ kind: "error", title: (e as Error)?.message || "Не удалось установить PIN" });
         setPin("");
         setMode("setup_first");
         setMemo("");
@@ -128,8 +128,8 @@ export default function PinPage({ status, onUnlocked }: PinPageProps) {
       try {
         const t = await confirmReset.mutateAsync({ code: resetCode, new_pin: memo });
         applyToken(t);
-      } catch (e: any) {
-        toast.show({ kind: "error", title: e?.message || "Не удалось сбросить PIN" });
+      } catch (e: unknown) {
+        toast.show({ kind: "error", title: (e as Error)?.message || "Не удалось сбросить PIN" });
         setPin("");
         setMode("reset_code");
         setMemo("");
@@ -151,8 +151,8 @@ export default function PinPage({ status, onUnlocked }: PinPageProps) {
       }
       setResetCode("");
       setMode("reset_code");
-    } catch (e: any) {
-      toast.show({ kind: "error", title: e?.message || "Не удалось запросить сброс" });
+    } catch (e: unknown) {
+      toast.show({ kind: "error", title: (e as Error)?.message || "Не удалось запросить сброс" });
     }
   }
 

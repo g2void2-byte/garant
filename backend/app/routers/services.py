@@ -13,9 +13,10 @@ The number of simultaneously-active services per user is capped by
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select
 
+from ..admin_audit import log_admin_action
 from ..admin_guard import TotpUser
 from ..deps import AdminUser, CurrentUser, SessionDep
 from ..models import (
@@ -458,12 +459,46 @@ async def update_service(
 
 
 @router.delete("/{service_id}")
-async def delete_service(service_id: int, user: CurrentUser, session: SessionDep):
+async def delete_service(
+    service_id: int,
+    user: CurrentUser,
+    session: SessionDep,
+    request: Request,
+):
     service = await session.get(Service, service_id)
     if not service:
         raise HTTPException(404, "Услуга не найдена")
     if service.owner_id != user.id and not user.is_admin:
         raise HTTPException(403, "Нет доступа")
+    # M-10 — user-driven deletes of one's own service stay un-audited
+    # (regular user activity is logged via notifications, not the
+    # admin audit log). However, when an *admin* deletes someone
+    # else's service through this endpoint we must drop an audit
+    # breadcrumb — otherwise the only trace of the deletion is the
+    # cascaded ``service_comments`` row removal, which is
+    # indistinguishable from the owner self-deleting. ``admin/content
+    # .delete_service`` (the dedicated moderator endpoint) is the
+    # preferred path and already does this; this branch covers admins
+    # who hit the user-facing route by hand or via a script.
+    if user.is_admin and service.owner_id != user.id:
+        await log_admin_action(
+            session,
+            actor=user,
+            action="service.delete",
+            target_type="service",
+            target_id=service.id,
+            reason=None,
+            payload={
+                "id": service.id,
+                "owner_id": service.owner_id,
+                "title": service.title,
+                "description": service.description,
+                "price": float(service.price),
+                "status": service.status.value,
+                "via": "user_route",
+            },
+            request=request,
+        )
     await session.delete(service)
     await session.commit()
     return {"ok": True}
