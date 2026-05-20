@@ -515,3 +515,52 @@ async def test_security_response_headers_present(client):
     assert "object-src 'none'" in csp
     assert "form-action 'self'" in csp
     assert "base-uri 'self'" in csp
+
+
+# ── 7. CORS preflight — admin 2FA headers are allowlisted ─────────────────
+
+
+async def test_cors_preflight_allows_totp_session_header(client):
+    """The admin SPA attaches ``X-Totp-Session`` to every request once
+    a 2FA session is active (see ``frontend/src/api/client.ts``), so
+    the browser fires an ``OPTIONS`` preflight with
+    ``Access-Control-Request-Headers: x-totp-session`` before any
+    admin GET. If the header is missing from ``allow_headers`` the
+    middleware refuses the preflight with ``400 Bad Request`` and the
+    underlying admin call never happens — every ``/admin/*`` page
+    hangs on ``isLoading``.
+    """
+    resp = await client.options(
+        "/api/pin/status",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "x-totp-session",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    allowed = {
+        h.strip().lower() for h in resp.headers.get("access-control-allow-headers", "").split(",")
+    }
+    assert "x-totp-session" in allowed
+
+
+async def test_cors_preflight_allows_totp_code_header(client):
+    """Companion to the ``X-Totp-Session`` preflight test — the admin
+    2FA bootstrap / step-up endpoints in
+    ``backend/app/routers/admin/twofa.py`` read ``X-Totp-Code``, so it
+    must also clear the CORS preflight.
+    """
+    resp = await client.options(
+        "/api/admin/2fa/enroll",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "x-totp-code, content-type",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    allowed = {
+        h.strip().lower() for h in resp.headers.get("access-control-allow-headers", "").split(",")
+    }
+    assert "x-totp-code" in allowed
