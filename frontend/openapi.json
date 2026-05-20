@@ -1762,8 +1762,16 @@
         "description": "Body for ``POST /api/admin/deals/:id/split``.\n\n``buyer_percent`` is the share returned to the buyer; the seller\ngets ``100 - buyer_percent`` of the same locked pot. The commission\ncomponent (when ``pay_commission=buyer``) is *always* retained by\nthe platform regardless of split \u2014 admin-forced splits do not give\ncommission back to either party.",
         "properties": {
           "buyer_percent": {
-            "title": "Buyer Percent",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Buyer Percent"
           },
           "reason": {
             "anyOf": [
@@ -2077,8 +2085,9 @@
             "type": "integer"
           },
           "deposit": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deposit",
-            "type": "number"
+            "type": "string"
           },
           "description": {
             "title": "Description",
@@ -2093,13 +2102,15 @@
             "type": "integer"
           },
           "price": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Price",
-            "type": "number"
+            "type": "string"
           },
           "rating_manual": {
             "anyOf": [
               {
-                "type": "number"
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -2175,6 +2186,10 @@
                 "type": "number"
               },
               {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -2197,6 +2212,10 @@
                 "type": "number"
               },
               {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -2206,6 +2225,10 @@
             "anyOf": [
               {
                 "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -2360,6 +2383,10 @@
                 "type": "number"
               },
               {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -2387,8 +2414,9 @@
             "type": "boolean"
           },
           "deal_commission_percent": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deal Commission Percent",
-            "type": "number"
+            "type": "string"
           },
           "inactivity_pending_cancellation_days": {
             "title": "Inactivity Pending Cancellation Days",
@@ -2399,8 +2427,9 @@
             "type": "integer"
           },
           "invoice_commission_percent": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Invoice Commission Percent",
-            "type": "number"
+            "type": "string"
           },
           "maintenance_enabled": {
             "title": "Maintenance Enabled",
@@ -2415,16 +2444,19 @@
             "type": "integer"
           },
           "min_deposit": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Min Deposit",
-            "type": "number"
+            "type": "string"
           },
           "min_withdraw": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Min Withdraw",
-            "type": "number"
+            "type": "string"
           },
           "vip_commission_percent": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Vip Commission Percent",
-            "type": "number"
+            "type": "string"
           }
         },
         "required": [
@@ -2463,6 +2495,10 @@
                 "type": "number"
               },
               {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -2494,6 +2530,10 @@
             "anyOf": [
               {
                 "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -2540,6 +2580,10 @@
                 "type": "number"
               },
               {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -2551,6 +2595,10 @@
                 "type": "number"
               },
               {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -2560,6 +2608,10 @@
             "anyOf": [
               {
                 "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -2756,8 +2808,16 @@
             "type": "string"
           },
           "amount": {
-            "title": "Amount",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
           },
           "confirm": {
             "default": false,
@@ -2983,8 +3043,9 @@
             "type": "integer"
           },
           "deposit_total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deposit Total",
-            "type": "number"
+            "type": "string"
           },
           "description": {
             "title": "Description",
@@ -3084,17 +3145,20 @@
             "title": "Photo Url"
           },
           "rating_auto": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rating Auto",
-            "type": "number"
+            "type": "string"
           },
           "rating_effective": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rating Effective",
-            "type": "number"
+            "type": "string"
           },
           "rating_manual": {
             "anyOf": [
               {
-                "type": "number"
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3171,8 +3235,9 @@
             "type": "integer"
           },
           "deposit_total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deposit Total",
-            "type": "number"
+            "type": "string"
           },
           "display_name": {
             "title": "Display Name",
@@ -3248,8 +3313,9 @@
             "title": "Prefix"
           },
           "rating": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rating",
-            "type": "number"
+            "type": "string"
           },
           "tg_user_id": {
             "title": "Tg User Id",
@@ -3325,8 +3391,16 @@
         "description": "Body for ``POST /api/admin/wallets/:user_id/adjust``.\n\n``amount`` is the *delta* in the asset's native unit. Positive values\ncredit, negative debit. ``currency_code`` references the asset; the\nuser-balance row is created if absent.\n\nReason is optional per the user's directive (\"\u0435\u0441\u043b\u0438 \u043d\u0435 \u0443\u043a\u0430\u0437\u044b\u0432\u0430\u044e \u043f\u0440\u043e\u0441\u0442\u043e\n\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u0438\u0440\u0443\u0435\u0442 \u0431\u0430\u043b\u0430\u043d\u0441 \u043a\u0430\u043a \u044f \u0443\u043a\u0430\u0436\u0443\").",
         "properties": {
           "amount": {
-            "title": "Amount",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
           },
           "currency_code": {
             "title": "Currency Code",
@@ -3669,12 +3743,14 @@
             "type": "integer"
           },
           "min_deposit": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Min Deposit",
-            "type": "number"
+            "type": "string"
           },
           "min_withdraw": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Min Withdraw",
-            "type": "number"
+            "type": "string"
           },
           "name": {
             "title": "Name",
@@ -3723,9 +3799,17 @@
       "DealCreate": {
         "properties": {
           "amount": {
-            "exclusiveMinimum": 0.0,
-            "title": "Amount",
-            "type": "number"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
           },
           "counterparty": {
             "title": "Counterparty",
@@ -3742,6 +3826,16 @@
             "type": "string"
           },
           "pay_comission": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PayCommission"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pay_commission": {
             "$ref": "#/components/schemas/PayCommission",
             "default": "buyer"
           },
@@ -3834,8 +3928,9 @@
       "DealOut": {
         "properties": {
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "number"
+            "type": "string"
           },
           "arbitration_initiator": {
             "anyOf": [
@@ -3941,7 +4036,8 @@
           "commission_amount": {
             "anyOf": [
               {
-                "type": "number"
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4016,6 +4112,10 @@
             "title": "Pay Comission",
             "type": "string"
           },
+          "pay_commission": {
+            "title": "Pay Commission",
+            "type": "string"
+          },
           "role": {
             "title": "Role",
             "type": "string"
@@ -4041,6 +4141,7 @@
           "buyer",
           "seller",
           "description",
+          "pay_commission",
           "pay_comission",
           "status",
           "confirm_buyer",
@@ -4607,10 +4708,18 @@
             "type": "array"
           },
           "price": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Price",
-            "type": "number"
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Price"
           },
           "title": {
             "title": "Title",
@@ -4686,13 +4795,15 @@
             "type": "array"
           },
           "price": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Price",
-            "type": "number"
+            "type": "string"
           },
           "rating_avg": {
             "anyOf": [
               {
-                "type": "number"
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4797,8 +4908,9 @@
             "type": "array"
           },
           "price": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Price",
-            "type": "number"
+            "type": "string"
           },
           "status": {
             "title": "Status",
@@ -4866,8 +4978,9 @@
             "title": "Photo Url"
           },
           "rating": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rating",
-            "type": "number"
+            "type": "string"
           },
           "username": {
             "anyOf": [
@@ -4939,6 +5052,10 @@
               {
                 "minimum": 0.0,
                 "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -5144,12 +5261,14 @@
             "type": "integer"
           },
           "deals_sum": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deals Sum",
-            "type": "number"
+            "type": "string"
           },
           "deposit": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deposit",
-            "type": "number"
+            "type": "string"
           },
           "description": {
             "title": "Description",
@@ -5249,8 +5368,9 @@
             "title": "Prefix"
           },
           "rating": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rating",
-            "type": "number"
+            "type": "string"
           },
           "reviews_count": {
             "title": "Reviews Count",
@@ -5335,12 +5455,14 @@
             "type": "integer"
           },
           "deals_sum": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deals Sum",
-            "type": "number"
+            "type": "string"
           },
           "deposit": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deposit",
-            "type": "number"
+            "type": "string"
           },
           "description": {
             "title": "Description",
@@ -5415,8 +5537,9 @@
             "title": "Prefix"
           },
           "rating": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rating",
-            "type": "number"
+            "type": "string"
           },
           "reviews_count": {
             "title": "Reviews Count",
@@ -5631,19 +5754,22 @@
       "WalletBalanceOut": {
         "properties": {
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "number"
+            "type": "string"
           },
           "currency": {
             "$ref": "#/components/schemas/CurrencyOut"
           },
           "locked": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Locked",
-            "type": "number"
+            "type": "string"
           },
           "total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total",
-            "type": "number"
+            "type": "string"
           },
           "updated_at": {
             "anyOf": [
@@ -5671,8 +5797,16 @@
       "WalletDepositCreateReq": {
         "properties": {
           "amount": {
-            "title": "Amount",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
           },
           "currency_code": {
             "title": "Currency Code",
@@ -5707,8 +5841,9 @@
       "WalletDepositOut": {
         "properties": {
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "number"
+            "type": "string"
           },
           "created_at": {
             "format": "date-time",
@@ -5777,8 +5912,16 @@
             "type": "string"
           },
           "amount": {
-            "title": "Amount",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
           },
           "currency_code": {
             "title": "Currency Code",
@@ -5804,8 +5947,9 @@
             "type": "string"
           },
           "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
-            "type": "number"
+            "type": "string"
           },
           "created_at": {
             "format": "date-time",
@@ -9607,6 +9751,29 @@
                 }
               ],
               "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           },
           {
