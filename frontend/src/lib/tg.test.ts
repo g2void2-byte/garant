@@ -241,13 +241,16 @@ describe("openTelegramLink", () => {
     expect(fake.openTelegramLink).toHaveBeenCalledWith("https://t.me/test");
   });
 
-  it("falls back to window.open when Telegram is unavailable", async () => {
+  it("falls back to window.open with noopener,noreferrer when Telegram is unavailable", async () => {
     (window as unknown as { Telegram?: unknown }).Telegram = undefined;
     vi.resetModules();
     const mod = await import("./tg");
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     mod.openTelegramLink("https://example.com");
-    expect(openSpy).toHaveBeenCalledWith("https://example.com", "_blank");
+    // Audit M-7 — the fallback path opens links outside Telegram (desktop
+    // preview / tests). We must pass ``noopener,noreferrer`` so the target
+    // page can't reach back through ``window.opener``.
+    expect(openSpy).toHaveBeenCalledWith("https://example.com", "_blank", "noopener,noreferrer");
     openSpy.mockRestore();
   });
 });

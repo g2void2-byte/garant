@@ -233,8 +233,12 @@ export function openExternalLink(url: string) {
 }
 
 export function openTelegramLink(url: string) {
+  // Audit M-7 — the fallback path is only taken outside of Telegram
+  // (desktop preview / unit tests). Match ``openExternalLink`` and pass
+  // ``noopener,noreferrer`` so the destination page can't reach back
+  // through ``window.opener``.
   if (tg) tg.openTelegramLink(url);
-  else window.open(url, "_blank");
+  else if (typeof window !== "undefined") window.open(url, "_blank", "noopener,noreferrer");
 }
 
 export function showBackButton(onClick: () => void) {

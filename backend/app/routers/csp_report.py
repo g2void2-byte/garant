@@ -169,20 +169,31 @@ async def csp_report(request: Request, _rl: RLCSPReport) -> Response:
     except Exception:  # pragma: no cover — decode("replace") never raises
         text = "<undecodable>"
 
-    category = "signal"
+    parsed: Any
     try:
         parsed = json.loads(text) if text else None
     except ValueError:
         parsed = None
+
     if isinstance(parsed, list):
         # Reporting-API ships an array of records; classify as "noise"
         # only if *every* record is noise — a single real violation
         # in a batch still warrants visibility.
         records = [r for r in parsed if isinstance(r, dict)]
-        if records and all(_classify_report(r) == "noise" for r in records):
+        if not records:
+            category = "unparseable"
+        elif all(_classify_report(r) == "noise" for r in records):
             category = "noise"
+        else:
+            category = "signal"
     elif isinstance(parsed, dict):
         category = _classify_report(parsed)
+    else:
+        # ``None`` from a broken JSON decode, or a non-dict/non-list
+        # top-level (e.g. an integer / string). Doesn't match any of
+        # the documented CSP envelope shapes — log at INFO so a new
+        # browser-side format doesn't get silently swallowed at DEBUG.
+        category = "unparseable"
 
     truncated = text[:_MAX_BODY]
     # V11-L-15 — structured-logging fields so the JSON-logger
@@ -197,6 +208,12 @@ async def csp_report(request: Request, _rl: RLCSPReport) -> Response:
             "csp violation report (noise): %s",
             truncated,
             extra={"event": "csp.report.noise"},
+        )
+    elif category == "unparseable":
+        logger.info(
+            "csp violation report (unparseable): %s",
+            truncated,
+            extra={"event": "csp.report.unparseable"},
         )
     else:
         logger.info(
