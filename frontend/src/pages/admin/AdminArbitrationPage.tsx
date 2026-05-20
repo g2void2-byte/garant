@@ -51,12 +51,12 @@ export default function AdminArbitrationPage() {
       await claim.mutateAsync(dealId);
       toast.show({ kind: "success", title: "Дело взято в работу" });
       setQueue("in_progress");
-    } catch (e: any) {
-      const status = e?.response?.status;
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } })?.response?.status;
       if (status === 409) {
         toast.show({ kind: "error", title: "Дело уже занято", body: "Кто-то опередил вас" });
       } else {
-        toast.show({ kind: "error", title: "Не удалось взять", body: e?.message ?? "" });
+        toast.show({ kind: "error", title: "Не удалось взять", body: (e as Error)?.message ?? "" });
       }
     }
   };

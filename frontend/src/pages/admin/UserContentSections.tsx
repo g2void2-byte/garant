@@ -190,8 +190,8 @@ function ServiceEditSheet({
       await update.mutateAsync({ serviceId: service.id, body });
       toast.show({ kind: "success", title: "Услуга обновлена" });
       close();
-    } catch (e: any) {
-      toast.show({ kind: "error", title: "Ошибка", body: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.show({ kind: "error", title: "Ошибка", body: (e as Error)?.message ?? "" });
     }
   };
 
@@ -202,8 +202,8 @@ function ServiceEditSheet({
       await del.mutateAsync(service.id);
       toast.show({ kind: "success", title: "Услуга удалена" });
       close();
-    } catch (e: any) {
-      toast.show({ kind: "error", title: "Ошибка", body: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.show({ kind: "error", title: "Ошибка", body: (e as Error)?.message ?? "" });
     }
   };
 
@@ -411,8 +411,8 @@ function ReviewCreateSheet({
       });
       toast.show({ kind: "success", title: "Отзыв создан" });
       close();
-    } catch (e: any) {
-      toast.show({ kind: "error", title: "Ошибка", body: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.show({ kind: "error", title: "Ошибка", body: (e as Error)?.message ?? "" });
     }
   };
 
@@ -484,8 +484,8 @@ function ReviewEditSheet({
       await update.mutateAsync({ reviewId: review.id, body: { rating: r, text } });
       toast.show({ kind: "success", title: "Отзыв обновлён" });
       close();
-    } catch (e: any) {
-      toast.show({ kind: "error", title: "Ошибка", body: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.show({ kind: "error", title: "Ошибка", body: (e as Error)?.message ?? "" });
     }
   };
 
@@ -496,8 +496,8 @@ function ReviewEditSheet({
       await del.mutateAsync(review.id);
       toast.show({ kind: "success", title: "Отзыв удалён" });
       close();
-    } catch (e: any) {
-      toast.show({ kind: "error", title: "Ошибка", body: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.show({ kind: "error", title: "Ошибка", body: (e as Error)?.message ?? "" });
     }
   };
 
@@ -630,8 +630,8 @@ function CommentEditSheet({
       await update.mutateAsync({ commentId: comment.id, body });
       toast.show({ kind: "success", title: "Комментарий обновлён" });
       close();
-    } catch (e: any) {
-      toast.show({ kind: "error", title: "Ошибка", body: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.show({ kind: "error", title: "Ошибка", body: (e as Error)?.message ?? "" });
     }
   };
 
@@ -642,8 +642,8 @@ function CommentEditSheet({
       await del.mutateAsync(comment.id);
       toast.show({ kind: "success", title: "Комментарий удалён" });
       close();
-    } catch (e: any) {
-      toast.show({ kind: "error", title: "Ошибка", body: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.show({ kind: "error", title: "Ошибка", body: (e as Error)?.message ?? "" });
     }
   };
 
