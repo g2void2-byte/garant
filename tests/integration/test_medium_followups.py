@@ -30,8 +30,7 @@ from backend.app.models import AppSettings, Currency, User, UserBalance
 from backend.app.security import InitDataError, verify_init_data
 from backend.app.services_deals import _debit, _refund, _release_to
 from backend.app.services_wallet import get_or_create_balance
-
-from .helpers import auth_headers, signed_init_data, with_totp
+from tests.helpers import auth_headers, signed_init_data, with_totp
 
 # --- M1: maintenance cache --------------------------------------------------
 

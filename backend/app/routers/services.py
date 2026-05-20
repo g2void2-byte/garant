@@ -224,6 +224,15 @@ async def create_service(
     # leave the user with ``max + 1`` active services. The user row is
     # a natural serialization point because every active-service mutation
     # already touches the same user; the lock is released on commit.
+    #
+    # L-3 (audit v12) — the per-user limit is the only quota that
+    # exists today, so the ``users.id`` row-lock is sufficient.  If a
+    # *per-category* cap is ever introduced (e.g. "≤ N active services
+    # per category, globally") the new serialization point will be
+    # ``categories.id``, not ``users.id``, and this block will need a
+    # second ``SELECT … FOR UPDATE`` against the category row before
+    # the count.  Filing this here so the extension point is obvious
+    # to whoever lands that requirement.
     await session.execute(select(User.id).where(User.id == user.id).with_for_update())
 
     active_now = await _count_active(session, user.id)

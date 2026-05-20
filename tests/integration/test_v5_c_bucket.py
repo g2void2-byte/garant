@@ -39,8 +39,7 @@ from backend.app import maintenance as maintenance_module
 from backend.app.config import settings as app_settings
 from backend.app.db import async_session
 from backend.app.models import AdminAuditLog, User
-
-from .helpers import auth_headers, signed_init_data, with_totp
+from tests.helpers import auth_headers, signed_init_data, with_totp
 
 # ── shared fixtures ──────────────────────────────────────────────────────
 

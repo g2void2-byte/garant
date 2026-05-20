@@ -18,7 +18,7 @@ from tests.helpers import (
     signed_init_data,
 )
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 # ═══════════════════════ Comment 32 — split notifier API ═══════════════════
 

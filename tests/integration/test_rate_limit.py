@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import io
 
-from tests.helpers import auth_headers, setup_pin, signed_init_data
+from tests.helpers import auth_headers, setup_pin, signed_init_data, tiny_image_bytes
 
 
 async def test_pin_rate_limit_blocks_after_threshold(client):
@@ -44,7 +44,7 @@ async def test_media_upload_rate_limit(client):
     init = signed_init_data(3002, "rl_media_user")
     await setup_pin(client, init)
 
-    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+    png = tiny_image_bytes("PNG")
 
     for i in range(20):
         files = {"file": (f"a{i}.png", io.BytesIO(png), "image/png")}

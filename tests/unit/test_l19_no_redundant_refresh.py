@@ -112,7 +112,7 @@ ALLOWED_SITES: frozenset[tuple[str, str, str, tuple[str, ...]]] = frozenset(
 
 
 def _repo_root() -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parents[1]
+    return pathlib.Path(__file__).resolve().parents[2]
 
 
 def _backend_python_files() -> list[pathlib.Path]:

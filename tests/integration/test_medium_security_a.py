@@ -28,8 +28,7 @@ from backend.app.config import settings as app_settings
 from backend.app.db import async_session
 from backend.app.models import Review, User
 from backend.app.security import InitDataError, verify_init_data
-
-from .helpers import auth_headers, signed_init_data
+from tests.helpers import auth_headers, signed_init_data
 
 # ── M-1 — non-numeric auth_date ────────────────────────────────────────────
 

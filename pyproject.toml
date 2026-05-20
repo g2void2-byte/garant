@@ -124,7 +124,7 @@ extend-immutable-calls = [
 # Audit N-5 — ``test_admin_guard`` deliberately injects the production
 # ``AdminGuard()`` callable as a ``Depends(...)`` default to test the
 # resolver wiring. The B008 nags don't apply.
-"tests/test_admin_guard.py" = ["B008"]
+"tests/integration/test_admin_guard.py" = ["B008"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

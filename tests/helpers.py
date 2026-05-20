@@ -4,14 +4,33 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import io
 import json
 import os
 import time
 from urllib.parse import urlencode
 
 from httpx import AsyncClient
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def tiny_image_bytes(fmt: str = "PNG", size: tuple[int, int] = (1, 1)) -> bytes:
+    """Return a minimal but *valid* image of the requested Pillow format.
+
+    The ``/api/media/upload`` route re-encodes incoming payloads through
+    Pillow (L-5 defensive sieve), so test fixtures need to ship bodies
+    that decode cleanly rather than hand-rolled 8-byte magic-byte stubs.
+    Keeping the generator in one place means the format/mode quirks
+    (JPEG having no alpha, GIF needing ``P`` mode, …) only have to be
+    settled once.
+    """
+    mode = "RGB" if fmt.upper() in ("JPEG", "GIF") else "RGBA"
+    img = Image.new(mode, size, color=(255, 0, 0) if mode == "RGB" else (255, 0, 0, 255))
+    buf = io.BytesIO()
+    img.save(buf, format=fmt.upper())
+    return buf.getvalue()
 
 
 def signed_init_data(
