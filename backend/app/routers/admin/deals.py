@@ -236,7 +236,10 @@ async def _to_detail(session: AsyncSession, deal: Deal) -> AdminDealDetailOut:
     currency = await session.get(Currency, deal.currency_id) if deal.currency_id else None
     buyer = await session.get(User, deal.buyer_id)
     seller = await session.get(User, deal.seller_id)
-    assert buyer is not None and seller is not None
+    # M-1: ``assert`` is stripped under ``python -O``; raise explicitly
+    # so a corrupt FK never silently dereferences ``None`` downstream.
+    if buyer is None or seller is None:
+        raise HTTPException(500, "Внутренняя ошибка: участник сделки не найден")
     buyer_snap = await _balance_snapshot(session, buyer, currency)
     seller_snap = await _balance_snapshot(session, seller, currency)
     arbiter_username: str | None = None
@@ -597,7 +600,9 @@ async def force_release(
     if deal.currency_id is None or deal.amount is None:
         raise HTTPException(400, "У сделки не задана валюта")
     currency = await session.get(Currency, deal.currency_id)
-    assert currency is not None
+    # M-1: ``assert`` is stripped under ``python -O``; raise explicitly.
+    if currency is None:
+        raise HTTPException(500, "Внутренняя ошибка: валюта сделки не найдена")
 
     before_status = deal.status.value
     locked, payout = await _release_locked_to_seller(session, deal, currency)
@@ -664,7 +669,9 @@ async def force_refund(
     if deal.currency_id is None or deal.amount is None:
         raise HTTPException(400, "У сделки не задана валюта")
     currency = await session.get(Currency, deal.currency_id)
-    assert currency is not None
+    # M-1: ``assert`` is stripped under ``python -O``; raise explicitly.
+    if currency is None:
+        raise HTTPException(500, "Внутренняя ошибка: валюта сделки не найдена")
 
     before_status = deal.status.value
     locked, refunded = await _refund_locked_to_buyer(session, deal, currency)
@@ -730,7 +737,9 @@ async def split_deal(
     if deal.currency_id is None or deal.amount is None:
         raise HTTPException(400, "У сделки не задана валюта")
     currency = await session.get(Currency, deal.currency_id)
-    assert currency is not None
+    # M-1: ``assert`` is stripped under ``python -O``; raise explicitly.
+    if currency is None:
+        raise HTTPException(500, "Внутренняя ошибка: валюта сделки не найдена")
 
     before_status = deal.status.value
     locked, buyer_share, seller_share = await _split_locked(

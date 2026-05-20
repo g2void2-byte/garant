@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
@@ -261,6 +262,23 @@ def _validate_description(v: str | None) -> str | None:
     return v
 
 
+def _reject_non_finite_money(v: float | None) -> float | None:
+    """Reject ``float('inf')``/``float('-inf')``/``float('nan')`` on money fields.
+
+    L-1/L-2: Pydantic happily coerces JSON ``"Infinity"``/``"NaN"`` into
+    Python ``float`` sentinels, which then propagate into
+    ``Decimal(str(amount))`` (raises
+    :class:`decimal.InvalidOperation`) or short-circuit downstream
+    arithmetic. Reject them at the schema boundary instead of letting
+    them surface as opaque 500s deeper in the stack.
+    """
+    if v is None:
+        return v
+    if not math.isfinite(v):
+        raise ValueError("Сумма должна быть конечным числом")
+    return v
+
+
 def _validate_service_photos(v: list[str] | None) -> list[str] | None:
     # V12-UI — gatekeep the photo list (length + each entry's scheme)
     # in one place so both ``ServiceCreate`` and ``ServiceUpdate``
@@ -301,8 +319,21 @@ class ServiceCreate(BaseModel):
     category_slug: str
     title: str
     description: str = ""
-    price: float = 0
+    # L-2: ``ge=0`` mirrors the explicit ``price < 0`` guard in the
+    # router. The non-finite check below catches ``NaN``/``±inf`` JSON
+    # values that bypass the ``ge=0`` comparison (``NaN < 0`` is
+    # ``False``).
+    price: float = Field(default=0, ge=0)
     photo_urls: list[str] = Field(default_factory=list)
+
+    @field_validator("price")
+    @classmethod
+    def _price_finite(cls, v: float) -> float:
+        result = _reject_non_finite_money(v)
+        # ``Field(ge=0)`` already excludes negatives; the validator only
+        # has to fend off ``inf``/``nan``. ``result`` is non-``None``
+        # because the field itself is non-optional with a default of 0.
+        return result if result is not None else 0.0
 
     @field_validator("description")
     @classmethod
@@ -318,9 +349,15 @@ class ServiceCreate(BaseModel):
 class ServiceUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
-    price: float | None = None
+    # L-2: same finiteness/non-negative guard as ``ServiceCreate.price``.
+    price: float | None = Field(default=None, ge=0)
     status: str | None = None  # draft / active / paused (banned only via admin)
     photo_urls: list[str] | None = None
+
+    @field_validator("price")
+    @classmethod
+    def _price_finite(cls, v: float | None) -> float | None:
+        return _reject_non_finite_money(v)
 
     @field_validator("description")
     @classmethod
@@ -400,10 +437,26 @@ class ServiceCommentOut(BaseModel):
 class DealCreate(BaseModel):
     counterparty: str
     role: str
-    amount: float
+    # L-1: ``gt=0`` matches the explicit ``if amt <= 0`` guard in
+    # ``services_deals.create_deal``. The validator below additionally
+    # rejects ``NaN``/``±inf`` JSON values that bypass the ``gt=0``
+    # comparison (``NaN > 0`` is ``False`` — still rejected by
+    # ``Field(gt=0)`` — but ``+inf > 0`` is ``True``, which would slip
+    # through and break downstream ``Decimal(str(amount))``
+    # conversion).
+    amount: float = Field(gt=0)
     description: str = ""
     pay_comission: PayCommission = PayCommission.buyer
     currency_code: str = "USDT"
+
+    @field_validator("amount")
+    @classmethod
+    def _amount_finite(cls, v: float) -> float:
+        result = _reject_non_finite_money(v)
+        # ``Field(gt=0)`` enforces the positivity invariant; the
+        # validator only has to fend off ``inf``. ``result`` is
+        # non-``None`` because the field is required.
+        return result if result is not None else 0.0
 
     @field_validator("description")
     @classmethod

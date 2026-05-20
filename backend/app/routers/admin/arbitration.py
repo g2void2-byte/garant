@@ -150,7 +150,11 @@ async def claim_arbitration(
         raise HTTPException(409, "Сделка уже взята в работу другим арбитром")
 
     deal = await session.get(Deal, deal_id)
-    assert deal is not None
+    # M-1: ``assert`` is stripped under ``python -O``; the row was just
+    # locked by the previous UPDATE, but raise explicitly to keep the
+    # invariant under ``-O`` as well.
+    if deal is None:
+        raise HTTPException(500, "Внутренняя ошибка: сделка пропала после claim")
     await log_admin_action(
         session,
         actor=user,
