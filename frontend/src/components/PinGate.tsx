@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { usePinStatus } from "@/api/hooks";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import { PIN_TOKEN_CHANGED_EVENT, hasValidPinToken } from "@/lib/pin";
 
-const PinPage = lazy(() => import("@/pages/pin/PinPage"));
+const PinPage = lazyWithRetry(() => import("@/pages/pin/PinPage"), "PinPage");
 
 function FullScreenLoader() {
   return (

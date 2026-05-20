@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { lazy, Suspense, useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -18,52 +18,62 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ToastProvider } from "@/components/ui/Toast";
 import { installDevtoolsGuard } from "@/lib/devtoolsGuard";
+import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import { useLiveNotifications } from "@/lib/useLiveNotifications";
 import { queryClient } from "@/lib/queryClient";
 import { initTelegram } from "@/lib/tg";
 
-const SearchPage = lazy(() => import("@/pages/search/SearchPage"));
-const CategoriesPage = lazy(() => import("@/pages/search/CategoriesPage"));
-const UserProfilePage = lazy(() => import("@/pages/search/UserProfilePage"));
-const DealsPage = lazy(() => import("@/pages/deals/DealsPage"));
-const DealDetailPage = lazy(() => import("@/pages/deals/DealDetailPage"));
-const CreateDealPage = lazy(() => import("@/pages/deals/CreateDealPage"));
-const SupportPage = lazy(() => import("@/pages/help/HelpPage"));
-const NotificationsPage = lazy(() => import("@/pages/notifications/NotificationsPage"));
-const NotificationDetailPage = lazy(() => import("@/pages/notifications/NotificationDetailPage"));
-const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
-const AddServicePage = lazy(() => import("@/pages/profile/AddServicePage"));
-const AddForumPage = lazy(() => import("@/pages/profile/AddForumPage"));
-const SettingsPage = lazy(() => import("@/pages/profile/SettingsPage"));
-const AccountTransferPage = lazy(() => import("@/pages/profile/AccountTransferPage"));
-const WalletPage = lazy(() => import("@/pages/wallet/WalletPage"));
-const WalletDepositPage = lazy(() => import("@/pages/wallet/WalletDepositPage"));
-const WalletTrustDepositPage = lazy(
+// ``lazyWithRetry`` (V12-Ix) wraps ``React.lazy`` with a one-shot
+// hard-reload on chunk-load failures. The previous bare ``lazy(() =>
+// import(...))`` paths surfaced ``Failed to fetch dynamically imported
+// module: …/DealDetailPage.tsx`` straight into the ErrorBoundary
+// after the Vite dev server was restarted (or a fresh production
+// build replaced hashed chunk filenames the open tab still cached);
+// the wrapper forces a single ``location.reload()`` so the browser
+// fetches the up-to-date ``index.html`` and the next mount resolves.
+const SearchPage = lazyWithRetry(() => import("@/pages/search/SearchPage"), "SearchPage");
+const CategoriesPage = lazyWithRetry(() => import("@/pages/search/CategoriesPage"), "CategoriesPage");
+const UserProfilePage = lazyWithRetry(() => import("@/pages/search/UserProfilePage"), "UserProfilePage");
+const DealsPage = lazyWithRetry(() => import("@/pages/deals/DealsPage"), "DealsPage");
+const DealDetailPage = lazyWithRetry(() => import("@/pages/deals/DealDetailPage"), "DealDetailPage");
+const CreateDealPage = lazyWithRetry(() => import("@/pages/deals/CreateDealPage"), "CreateDealPage");
+const SupportPage = lazyWithRetry(() => import("@/pages/help/HelpPage"), "HelpPage");
+const NotificationsPage = lazyWithRetry(() => import("@/pages/notifications/NotificationsPage"), "NotificationsPage");
+const NotificationDetailPage = lazyWithRetry(() => import("@/pages/notifications/NotificationDetailPage"), "NotificationDetailPage");
+const ProfilePage = lazyWithRetry(() => import("@/pages/profile/ProfilePage"), "ProfilePage");
+const AddServicePage = lazyWithRetry(() => import("@/pages/profile/AddServicePage"), "AddServicePage");
+const AddForumPage = lazyWithRetry(() => import("@/pages/profile/AddForumPage"), "AddForumPage");
+const SettingsPage = lazyWithRetry(() => import("@/pages/profile/SettingsPage"), "SettingsPage");
+const AccountTransferPage = lazyWithRetry(() => import("@/pages/profile/AccountTransferPage"), "AccountTransferPage");
+const WalletPage = lazyWithRetry(() => import("@/pages/wallet/WalletPage"), "WalletPage");
+const WalletDepositPage = lazyWithRetry(() => import("@/pages/wallet/WalletDepositPage"), "WalletDepositPage");
+const WalletTrustDepositPage = lazyWithRetry(
   () => import("@/pages/wallet/WalletTrustDepositPage"),
+  "WalletTrustDepositPage",
 );
-const WalletWithdrawPage = lazy(() => import("@/pages/wallet/WalletWithdrawPage"));
-const WalletCurrencyPage = lazy(() => import("@/pages/wallet/WalletCurrencyPage"));
-const ServiceDetailPage = lazy(() => import("@/pages/search/ServiceDetailPage"));
-const ArbitrationPage = lazy(() => import("@/pages/arbitration/ArbitrationPage"));
-const DealPaymentPage = lazy(() => import("@/pages/deals/DealPaymentPage"));
-const PinResetPage = lazy(() => import("@/pages/pin/PinResetPage"));
-const AdminDashboardPage = lazy(() => import("@/pages/admin/AdminDashboardPage"));
-const AdminUsersPage = lazy(() => import("@/pages/admin/AdminUsersPage"));
-const AdminUserDetailPage = lazy(() => import("@/pages/admin/AdminUserDetailPage"));
-const AdminDealsPage = lazy(() => import("@/pages/admin/AdminDealsPage"));
-const AdminDealDetailPage = lazy(() => import("@/pages/admin/AdminDealDetailPage"));
-const AdminArbitrationPage = lazy(() => import("@/pages/admin/AdminArbitrationPage"));
-const AdminWalletsPage = lazy(() => import("@/pages/admin/AdminWalletsPage"));
-const AdminDepositsPage = lazy(() => import("@/pages/admin/AdminDepositsPage"));
-const AdminWithdrawalsPage = lazy(() => import("@/pages/admin/AdminWithdrawalsPage"));
-const AdminTreasuryPage = lazy(() => import("@/pages/admin/AdminTreasuryPage"));
-const AdminSettingsPage = lazy(() => import("@/pages/admin/AdminSettingsPage"));
-const AdminBroadcastsPage = lazy(() => import("@/pages/admin/AdminBroadcastsPage"));
-const AdminAnalyticsPage = lazy(() => import("@/pages/admin/AdminAnalyticsPage"));
-const AdminTaxonomyPage = lazy(() => import("@/pages/admin/AdminTaxonomyPage"));
-const AdminSystemPage = lazy(() => import("@/pages/admin/AdminSystemPage"));
-const AdminAuditPage = lazy(() => import("@/pages/admin/AdminAuditPage"));
-const AdminTwoFactorPage = lazy(() => import("@/pages/admin/AdminTwoFactorPage"));
+const WalletWithdrawPage = lazyWithRetry(() => import("@/pages/wallet/WalletWithdrawPage"), "WalletWithdrawPage");
+const WalletCurrencyPage = lazyWithRetry(() => import("@/pages/wallet/WalletCurrencyPage"), "WalletCurrencyPage");
+const ServiceDetailPage = lazyWithRetry(() => import("@/pages/search/ServiceDetailPage"), "ServiceDetailPage");
+const ArbitrationPage = lazyWithRetry(() => import("@/pages/arbitration/ArbitrationPage"), "ArbitrationPage");
+const DealPaymentPage = lazyWithRetry(() => import("@/pages/deals/DealPaymentPage"), "DealPaymentPage");
+const PinResetPage = lazyWithRetry(() => import("@/pages/pin/PinResetPage"), "PinResetPage");
+const AdminDashboardPage = lazyWithRetry(() => import("@/pages/admin/AdminDashboardPage"), "AdminDashboardPage");
+const AdminUsersPage = lazyWithRetry(() => import("@/pages/admin/AdminUsersPage"), "AdminUsersPage");
+const AdminUserDetailPage = lazyWithRetry(() => import("@/pages/admin/AdminUserDetailPage"), "AdminUserDetailPage");
+const AdminDealsPage = lazyWithRetry(() => import("@/pages/admin/AdminDealsPage"), "AdminDealsPage");
+const AdminDealDetailPage = lazyWithRetry(() => import("@/pages/admin/AdminDealDetailPage"), "AdminDealDetailPage");
+const AdminArbitrationPage = lazyWithRetry(() => import("@/pages/admin/AdminArbitrationPage"), "AdminArbitrationPage");
+const AdminWalletsPage = lazyWithRetry(() => import("@/pages/admin/AdminWalletsPage"), "AdminWalletsPage");
+const AdminDepositsPage = lazyWithRetry(() => import("@/pages/admin/AdminDepositsPage"), "AdminDepositsPage");
+const AdminWithdrawalsPage = lazyWithRetry(() => import("@/pages/admin/AdminWithdrawalsPage"), "AdminWithdrawalsPage");
+const AdminTreasuryPage = lazyWithRetry(() => import("@/pages/admin/AdminTreasuryPage"), "AdminTreasuryPage");
+const AdminSettingsPage = lazyWithRetry(() => import("@/pages/admin/AdminSettingsPage"), "AdminSettingsPage");
+const AdminBroadcastsPage = lazyWithRetry(() => import("@/pages/admin/AdminBroadcastsPage"), "AdminBroadcastsPage");
+const AdminAnalyticsPage = lazyWithRetry(() => import("@/pages/admin/AdminAnalyticsPage"), "AdminAnalyticsPage");
+const AdminTaxonomyPage = lazyWithRetry(() => import("@/pages/admin/AdminTaxonomyPage"), "AdminTaxonomyPage");
+const AdminSystemPage = lazyWithRetry(() => import("@/pages/admin/AdminSystemPage"), "AdminSystemPage");
+const AdminAuditPage = lazyWithRetry(() => import("@/pages/admin/AdminAuditPage"), "AdminAuditPage");
+const AdminTwoFactorPage = lazyWithRetry(() => import("@/pages/admin/AdminTwoFactorPage"), "AdminTwoFactorPage");
 
 function PageFallback() {
   return (

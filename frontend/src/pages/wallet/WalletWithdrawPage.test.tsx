@@ -26,6 +26,11 @@ const mockState = vi.hoisted(() => ({
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
   },
+  checkPinMutation: {
+    mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
+    isPending: false,
+  },
+  admins: [] as { id: number; username: string }[],
 }));
 
 vi.mock("@/api/hooks", () => ({
@@ -34,12 +39,30 @@ vi.mock("@/api/hooks", () => ({
     isLoading: mockState.balancesLoading,
   }),
   useCreateWalletWithdrawal: () => mockState.createMutation,
+  // ``CardWithdrawModal`` deep-links to the first admin's Telegram
+  // chat — stub the source list so the button stays enabled when
+  // the card flow is exercised in tests.
+  useAdmins: () => ({ data: mockState.admins, isLoading: false }),
+  // ``PinPromptModal`` validates the entered PIN before the
+  // withdrawal POST is fired; resolve immediately so we don't have
+  // to spin up a real PIN endpoint.
+  useCheckPin: () => mockState.checkPinMutation,
 }));
 
 const hapticSpy = vi.hoisted(() => vi.fn());
+const openTelegramSpy = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/tg", () => ({
   haptic: hapticSpy,
+  openTelegramLink: openTelegramSpy,
   showBackButton: () => () => {},
+}));
+
+vi.mock("@/lib/pin", () => ({
+  setPinToken: vi.fn(),
+  hasValidPinToken: () => true,
+  clearPinToken: vi.fn(),
+  getPinToken: () => "e2e-pin-token",
+  PIN_TOKEN_CHANGED_EVENT: "garant:pin-token-changed",
 }));
 
 import WalletWithdrawPage from "./WalletWithdrawPage";
@@ -80,13 +103,29 @@ function makeBalance(
 
 beforeEach(() => {
   hapticSpy.mockClear();
+  openTelegramSpy.mockClear();
   mockState.balances = undefined;
   mockState.balancesLoading = false;
   mockState.createMutation = {
     mutateAsync: vi.fn(),
     isPending: false,
   };
+  mockState.checkPinMutation = {
+    mutateAsync: vi.fn().mockResolvedValue({
+      token: "e2e-pin-token",
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+    }),
+    isPending: false,
+  };
+  mockState.admins = [{ id: 1, username: "admin" }];
 });
+
+async function enterPin(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: "1" }));
+  await user.click(screen.getByRole("button", { name: "2" }));
+  await user.click(screen.getByRole("button", { name: "3" }));
+  await user.click(screen.getByRole("button", { name: "4" }));
+}
 
 describe("<WalletWithdrawPage />", () => {
   it("renders the loading skeleton", () => {
@@ -158,6 +197,8 @@ describe("<WalletWithdrawPage />", () => {
     fireEvent.change(address, { target: { value: "  TXYZ-some-address  " } });
 
     await user.click(screen.getByRole("button", { name: /Запросить вывод/ }));
+    // PIN re-prompt now gates the withdrawal — punch in 1234.
+    await enterPin(user);
     await waitFor(() => {
       expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USDT",
@@ -181,8 +222,25 @@ describe("<WalletWithdrawPage />", () => {
     const address = screen.getByPlaceholderText("Адрес USDT") as HTMLInputElement;
     fireEvent.change(address, { target: { value: "addr" } });
     await user.click(screen.getByRole("button", { name: /Запросить вывод/ }));
+    await enterPin(user);
     await waitFor(() => {
       expect(hapticSpy).toHaveBeenCalledWith("error");
     });
+  });
+
+  it("opens the Card-withdraw modal and links to the first admin via t.me", async () => {
+    mockState.balances = [makeBalance(100, "USDT")];
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      screen.getByRole("button", { name: /Карта/, pressed: false }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: /Вывод на карту/ }),
+    ).toBeInTheDocument();
+    // Tapping the primary CTA hands off to Telegram.
+    await user.click(screen.getByRole("button", { name: /Написать админу/ }));
+    expect(openTelegramSpy).toHaveBeenCalledWith("https://t.me/admin");
   });
 });
