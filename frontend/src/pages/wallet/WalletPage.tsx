@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -22,8 +22,11 @@ import type { WalletBalanceDto } from "@/api/types";
  *   - List of currency rows, each: icon + name/network + balance.
  *   - Two action tiles at the bottom: "Внести депозит" / "Вывести депозит".
  *
- * Rows are *not* clickable; the in/out flows live on dedicated subpages
- * (`/wallet/deposit`, `/wallet/withdraw`) — same as Continental.
+ * Each currency row is a ``<Link>`` to ``/wallet/<code>`` so users can
+ * drill into the per-currency deposit / withdraw / history page
+ * (``WalletCurrencyPage``). The two action tiles at the bottom still
+ * point at the multi-currency ``/wallet/deposit`` and
+ * ``/wallet/withdraw`` aggregator flows.
  */
 export default function WalletPage() {
   const navigate = useNavigate();
@@ -118,7 +121,11 @@ export default function WalletPage() {
 function WalletBalanceRow({ balance }: { balance: WalletBalanceDto }) {
   const { currency, amount } = balance;
   return (
-    <div className="flex items-center justify-between bg-panel rounded-card p-3">
+    <Link
+      to={`/wallet/${currency.code}`}
+      className="flex items-center justify-between bg-panel rounded-card p-3 active:scale-[0.98] transition"
+      aria-label={`Открыть ${currency.name}`}
+    >
       <div className="flex items-center gap-3">
         <div className="size-10 rounded-full bg-panel-2 grid place-items-center text-[13px] font-bold text-accent">
           {currency.code.slice(0, 4)}
@@ -140,6 +147,6 @@ function WalletBalanceRow({ balance }: { balance: WalletBalanceDto }) {
           </div>
         )}
       </div>
-    </div>
+    </Link>
   );
 }

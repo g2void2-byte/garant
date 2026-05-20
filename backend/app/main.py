@@ -329,6 +329,13 @@ app.add_middleware(
         "Content-Type",
         "X-Pin-Token",
         "X-Requested-With",
+        # ``X-Totp-Session`` is attached to every admin request by
+        # ``frontend/src/api/client.ts`` whenever a 2FA session is
+        # active (see ``getTotpSessionToken()``); ``X-Totp-Code`` is
+        # sent by the admin 2FA bootstrap / step-up calls in
+        # ``backend/app/routers/admin/twofa.py``.
+        "X-Totp-Session",
+        "X-Totp-Code",
     ],
 )
 

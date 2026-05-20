@@ -78,6 +78,48 @@ describe("<WalletPage />", () => {
     expect(screen.getByText(/123\.46 USDT/)).toBeInTheDocument();
   });
 
+  it("wraps each balance row in a Link to /wallet/<code>", () => {
+    mockState.data = [
+      {
+        currency: {
+          id: 1,
+          code: "USDT",
+          name: "Tether",
+          network: "TRC20",
+          icon_url: "",
+          decimals: 2,
+          min_deposit: 1,
+          min_withdraw: 1,
+        },
+        amount: 1,
+        locked: 0,
+        total: 1,
+        updated_at: null,
+      },
+      {
+        currency: {
+          id: 2,
+          code: "TON",
+          name: "Toncoin",
+          network: "TON",
+          icon_url: "",
+          decimals: 9,
+          min_deposit: 1,
+          min_withdraw: 1,
+        },
+        amount: 2,
+        locked: 0,
+        total: 2,
+        updated_at: null,
+      },
+    ];
+    renderPage();
+    const usdt = screen.getByRole("link", { name: /Tether/ });
+    expect(usdt).toHaveAttribute("href", "/wallet/USDT");
+    const ton = screen.getByRole("link", { name: /Toncoin/ });
+    expect(ton).toHaveAttribute("href", "/wallet/TON");
+  });
+
   it('renders the "locked" hint when balance has reserves', () => {
     mockState.data = [
       {
