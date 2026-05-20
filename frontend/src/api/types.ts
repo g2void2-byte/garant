@@ -349,10 +349,19 @@ export interface AdminUserDetailDto {
   created_at: string;
 }
 
+// Audit L-10 — the public backend route still accepts ``"any"`` as the
+// "no filter" sentinel (see ``backend/app/routers/admin/users.py`` —
+// the union is preserved there for OpenAPI / wire compatibility), but
+// the frontend now omits the param entirely instead of round-tripping
+// a magic string. ``role``/``status`` being ``undefined`` here means
+// the same thing as ``"any"`` on the wire.
+export type AdminUserRoleFilter = "admin" | "arbiter" | "vip" | "regular";
+export type AdminUserStatusFilter = "active" | "banned" | "frozen";
+
 export interface AdminListUsersQuery {
   q?: string;
-  role?: "admin" | "arbiter" | "vip" | "regular" | "any";
-  status?: "any" | "active" | "banned" | "frozen";
+  role?: AdminUserRoleFilter;
+  status?: AdminUserStatusFilter;
   sort?: "created_desc" | "created_asc" | "rating" | "deals" | "deposit";
   page?: number;
   page_size?: number;
@@ -442,7 +451,10 @@ export interface AdminDealMessageDto {
 }
 
 export interface AdminListDealsQuery {
-  status?: "any" | DealStatus | string;
+  // Audit L-10 — ``undefined`` (param omitted) is the canonical "no
+  // filter" value; the previous ``"any"`` literal is no longer part
+  // of the union on the frontend.
+  status?: DealStatus | string;
   currency?: string;
   min_amount?: number;
   max_amount?: number;

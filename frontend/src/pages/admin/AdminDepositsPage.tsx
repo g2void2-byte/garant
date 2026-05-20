@@ -14,14 +14,20 @@ import {
 import { parseDecimal } from "@/lib/format";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
-const STATUSES = ["any", "pending", "paid", "refunded", "expired"] as const;
-type StatusFilter = (typeof STATUSES)[number];
+// Audit L-10 — ``null`` is the in-component sentinel for "all
+// statuses"; the legacy ``"any"`` string is gone.
+const DEPOSIT_STATUSES = ["pending", "paid", "refunded", "expired"] as const;
+type DepositStatus = (typeof DEPOSIT_STATUSES)[number];
+const STATUSES: Array<{ value: DepositStatus | null; label: string }> = [
+  { value: null, label: "Все" },
+  ...DEPOSIT_STATUSES.map((value) => ({ value, label: value })),
+];
 
 export default function AdminDepositsPage() {
   const navigate = useNavigate();
-  const [status, setStatus] = useState<StatusFilter>("any");
+  const [status, setStatus] = useState<DepositStatus | null>(null);
   const { data, isLoading } = useAdminDeposits({
-    status: status === "any" ? undefined : status,
+    status: status ?? undefined,
     page: 1,
     page_size: 50,
   });
@@ -41,16 +47,16 @@ export default function AdminDepositsPage() {
       <div className="px-4 mb-3 flex flex-wrap gap-1.5">
         {STATUSES.map((s) => (
           <button
-            key={s}
+            key={s.value ?? "__none__"}
             type="button"
-            onClick={() => setStatus(s)}
+            onClick={() => setStatus(s.value)}
             className={`rounded-button px-3 py-1.5 text-sm transition ${
-              s === status
+              s.value === status
                 ? "bg-accent text-accent-fg font-medium"
                 : "bg-panel text-text-muted"
             }`}
           >
-            {s === "any" ? "Все" : s}
+            {s.label}
           </button>
         ))}
       </div>

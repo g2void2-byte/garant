@@ -98,8 +98,8 @@ async def list_withdrawals(
     if status:
         try:
             stmt = stmt.where(WalletWithdrawal.status == WalletWithdrawStatus(status))
-        except ValueError:
-            raise HTTPException(422, f"Неизвестный статус: {status}")
+        except ValueError as e:
+            raise HTTPException(422, f"Неизвестный статус: {status}") from e
     if q:
         like = f"%{escape_like_wildcards(q)}%"
         stmt = stmt.where(
@@ -284,7 +284,7 @@ async def decide_withdrawal(
                     request=request,
                 )
                 await session.commit()
-                raise HTTPException(502, f"Ошибка CryptoBot: {e}")
+                raise HTTPException(502, f"Ошибка CryptoBot: {e}") from e
 
             # Phase 3: re-lock the row, mark ``sent``, decrement
             # ``balance.locked``, stage the notification, write the

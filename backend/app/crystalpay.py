@@ -55,7 +55,7 @@ class CrystalpayInvoice:
     raw: dict[str, Any] | None = None
 
     @classmethod
-    def from_api(cls, data: dict[str, Any]) -> "CrystalpayInvoice":
+    def from_api(cls, data: dict[str, Any]) -> CrystalpayInvoice:
         return cls(
             id=str(data.get("id") or ""),
             url=str(data.get("url") or ""),
@@ -98,7 +98,7 @@ class Crystalpay:
         self._timeout = timeout
         self._client: httpx.AsyncClient | None = None
 
-    async def __aenter__(self) -> "Crystalpay":
+    async def __aenter__(self) -> Crystalpay:
         self._client = httpx.AsyncClient(base_url=self._base, timeout=self._timeout)
         return self
 

@@ -145,6 +145,12 @@ export default function AdminWithdrawalsPage() {
                     size="sm"
                     variant="danger"
                     onClick={async () => {
+                      // Audit L-15 — Telegram WebApp has no native
+                      // text-input prompt (``showConfirm`` is boolean,
+                      // ``showPopup`` only takes fixed buttons), so
+                      // ``window.prompt`` remains the least-bad option
+                      // here. A future iteration can replace this with
+                      // a Sheet-driven modal carrying a text input.
                       const note = window.prompt("Причина отказа (необязательно)") ?? "";
                       try {
                         await decide.mutateAsync({

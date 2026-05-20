@@ -9,23 +9,39 @@ import { useAdminUsers } from "@/api/admin/hooks";
 import type {
   AdminListUsersQuery,
   AdminUserListItemDto,
+  AdminUserRoleFilter,
+  AdminUserStatusFilter,
 } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
-const ROLES: Array<{ value: NonNullable<AdminListUsersQuery["role"]>; label: string }> = [
-  { value: "any", label: "Все" },
+// Audit L-10 — ``null`` is the in-component sentinel for "no filter"
+// (replaces the string ``"any"``); the value sent to the API is
+// ``undefined`` so the URL param is omitted entirely.
+const ROLES: Array<{ value: AdminUserRoleFilter | null; label: string }> = [
+  { value: null, label: "Все" },
   { value: "admin", label: "Админы" },
   { value: "arbiter", label: "Арбитры" },
   { value: "vip", label: "VIP" },
   { value: "regular", label: "Обычные" },
 ];
 
-const STATUSES: Array<{ value: NonNullable<AdminListUsersQuery["status"]>; label: string }> = [
-  { value: "any", label: "Все" },
+const STATUSES: Array<{ value: AdminUserStatusFilter | null; label: string }> = [
+  { value: null, label: "Все" },
   { value: "active", label: "Активные" },
   { value: "banned", label: "Забаненные" },
   { value: "frozen", label: "Заморожены" },
 ];
+
+const ROLE_VALUES = new Set<AdminUserRoleFilter>(["admin", "arbiter", "vip", "regular"]);
+const STATUS_VALUES = new Set<AdminUserStatusFilter>(["active", "banned", "frozen"]);
+
+function parseRoleParam(raw: string | null): AdminUserRoleFilter | undefined {
+  return raw && ROLE_VALUES.has(raw as AdminUserRoleFilter) ? (raw as AdminUserRoleFilter) : undefined;
+}
+
+function parseStatusParam(raw: string | null): AdminUserStatusFilter | undefined {
+  return raw && STATUS_VALUES.has(raw as AdminUserStatusFilter) ? (raw as AdminUserStatusFilter) : undefined;
+}
 
 /**
  * Continental admin users list.
@@ -40,8 +56,8 @@ export default function AdminUsersPage() {
   const [draftQ, setDraftQ] = useState(searchParams.get("q") ?? "");
   const [showFilters, setShowFilters] = useState(false);
 
-  const role = (searchParams.get("role") ?? "any") as NonNullable<AdminListUsersQuery["role"]>;
-  const status = (searchParams.get("status") ?? "any") as NonNullable<AdminListUsersQuery["status"]>;
+  const role = parseRoleParam(searchParams.get("role"));
+  const status = parseStatusParam(searchParams.get("status"));
   const page = Number(searchParams.get("page") ?? "1") || 1;
   const q = searchParams.get("q") ?? "";
 
@@ -54,7 +70,9 @@ export default function AdminUsersPage() {
   const update = (next: Partial<AdminListUsersQuery>) => {
     const sp = new URLSearchParams(searchParams);
     for (const [k, v] of Object.entries(next)) {
-      if (v === undefined || v === null || v === "" || v === "any") {
+      // Audit L-10 — ``null``/``undefined``/empty string all mean
+      // "clear the filter". The legacy ``"any"`` sentinel is gone.
+      if (v === undefined || v === null || v === "") {
         sp.delete(k);
       } else {
         sp.set(k, String(v));
@@ -104,14 +122,14 @@ export default function AdminUsersPage() {
           <FilterRow
             label="Роль"
             options={ROLES}
-            value={role}
-            onChange={(v) => update({ role: v })}
+            value={role ?? null}
+            onChange={(v) => update({ role: v ?? undefined })}
           />
           <FilterRow
             label="Статус"
             options={STATUSES}
-            value={status}
-            onChange={(v) => update({ status: v })}
+            value={status ?? null}
+            onChange={(v) => update({ status: v ?? undefined })}
           />
         </div>
       )}
@@ -152,8 +170,12 @@ export default function AdminUsersPage() {
   );
 }
 
+// Audit L-10 — ``value`` is ``T | null`` so the "no filter" sentinel is
+// a real ``null`` instead of a magic string. ``T`` itself stays narrow
+// (e.g. ``"admin" | "arbiter" | ...``) so a typo in the options list
+// is still caught at compile time.
 interface FilterOption<T extends string> {
-  value: T;
+  value: T | null;
   label: string;
 }
 
@@ -165,8 +187,8 @@ function FilterRow<T extends string>({
 }: {
   label: string;
   options: FilterOption<T>[];
-  value: T;
-  onChange: (v: T) => void;
+  value: T | null;
+  onChange: (v: T | null) => void;
 }) {
   return (
     <div>
@@ -176,7 +198,7 @@ function FilterRow<T extends string>({
           const active = opt.value === value;
           return (
             <button
-              key={opt.value}
+              key={opt.value ?? "__none__"}
               type="button"
               onClick={() => onChange(opt.value)}
               className={`rounded-button px-3 py-1.5 text-sm transition ${

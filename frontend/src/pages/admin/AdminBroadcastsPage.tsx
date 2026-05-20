@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
+import { confirmDialog } from "@/lib/dialog";
 import {
   useAdminBroadcastPreview,
   useAdminBroadcasts,
@@ -77,7 +78,9 @@ export default function AdminBroadcastsPage() {
                 <button
                   type="button"
                   onClick={async () => {
-                    if (!window.confirm("Удалить рассылку из истории?")) return;
+                    // Audit L-15 — ``confirmDialog`` prefers Telegram’s native
+                    // ``showConfirm``; falls back to ``window.confirm`` outside Telegram.
+                    if (!(await confirmDialog("Удалить рассылку из истории?"))) return;
                     try {
                       await del.mutateAsync(b.id);
                       toast.show({ kind: "info", title: "Удалено" });

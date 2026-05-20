@@ -62,7 +62,7 @@ async def _read_auth_frame(websocket: WebSocket) -> str | None:
     """
     try:
         raw = await asyncio.wait_for(websocket.receive_text(), timeout=WS_AUTH_TIMEOUT_SECONDS)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(
             "ws handshake: auth frame timeout",
             extra={

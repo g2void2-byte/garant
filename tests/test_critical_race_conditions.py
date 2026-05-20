@@ -591,7 +591,11 @@ async def test_concurrent_first_touch_creates_exactly_one_user(client):
         client.get("/api/categories", headers=headers),
     )
 
-    for label, resp in zip(("me", "balances", "notifications", "categories"), (r1, r2, r3, r4)):
+    for label, resp in zip(
+        ("me", "balances", "notifications", "categories"),
+        (r1, r2, r3, r4),
+        strict=True,
+    ):
         assert resp.status_code == 200, f"{label}: {resp.status_code} {resp.text}"
 
     async with async_session() as session:

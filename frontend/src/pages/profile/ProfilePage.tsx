@@ -28,6 +28,7 @@ import {
   useUpdateService,
 } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
+import { confirmDialog } from "@/lib/dialog";
 import { relativeTime } from "@/lib/format";
 
 export default function ProfilePage() {
@@ -142,8 +143,11 @@ export default function ProfilePage() {
                       type="button"
                       className="size-8 grid place-items-center rounded-full bg-panel-2 text-danger active:scale-95"
                       aria-label="Удалить"
-                      onClick={() => {
-                        if (window.confirm(`Удалить услугу «${s.title}»?`)) {
+                      onClick={async () => {
+                        // Audit L-15 — ``confirmDialog`` uses Telegram’s
+                        // native ``showConfirm`` when available and falls
+                        // back to ``window.confirm`` outside Telegram.
+                        if (await confirmDialog(`Удалить услугу «${s.title}»?`)) {
                           haptic("warning");
                           deleteService.mutate(s.id);
                         }

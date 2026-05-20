@@ -155,7 +155,7 @@ async def create_deal_endpoint(
             body.pay_comission,
         )
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     return _deal_out(deal, user.id)
 
 
@@ -165,7 +165,7 @@ async def accept_deal_endpoint(deal_id: int, user: PinUser, session: SessionDep)
     try:
         deal = await accept_deal(session, deal, user)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     return _deal_out(deal, user.id)
 
 
@@ -175,7 +175,7 @@ async def decline_deal_endpoint(deal_id: int, user: PinUser, session: SessionDep
     try:
         deal = await decline_deal(session, deal, user)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     return _deal_out(deal, user.id)
 
 
@@ -185,7 +185,7 @@ async def finish_deal_endpoint(deal_id: int, user: PinUser, session: SessionDep)
     try:
         deal = await finish_deal(session, deal, user)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     return _deal_out(deal, user.id)
 
 
@@ -200,7 +200,7 @@ async def cancel_request_endpoint(
     try:
         deal = await request_cancel(session, deal, user, body.reason)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     return _deal_out(deal, user.id)
 
 
@@ -210,7 +210,7 @@ async def cancel_revoke_endpoint(deal_id: int, user: PinUser, session: SessionDe
     try:
         deal = await revoke_cancel(session, deal, user)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     return _deal_out(deal, user.id)
 
 
@@ -220,7 +220,7 @@ async def cancel_accept_endpoint(deal_id: int, user: PinUser, session: SessionDe
     try:
         deal = await accept_cancel(session, deal, user)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     return _deal_out(deal, user.id)
 
 
@@ -235,7 +235,7 @@ async def debate_endpoint(
     try:
         deal = await start_arbitration(session, deal, user, body.reason)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     return _deal_out(deal, user.id)
 
 
@@ -250,5 +250,5 @@ async def resolve_endpoint(
     try:
         deal = await resolve_arbitration(session, deal, user, body.winner, body.note)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     return _deal_out(deal, user.id)

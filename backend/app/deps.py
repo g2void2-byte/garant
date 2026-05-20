@@ -111,7 +111,7 @@ async def get_current_user(
     try:
         tg_user = verify_init_data(init_data)
     except InitDataError as e:
-        raise HTTPException(401, str(e))
+        raise HTTPException(401, str(e)) from e
 
     tg_user_id = tg_user.get("id")
     if not tg_user_id:

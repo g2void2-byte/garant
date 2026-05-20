@@ -193,7 +193,11 @@ class ConnectionManager:
             )
             try:
                 await websocket.close(code=4008, reason="Too many connections")
-            except Exception:  # noqa: BLE001
+            except (OSError, RuntimeError):
+                # Audit L-8 — ``websocket.close`` only raises on a dead
+                # socket (``ConnectionClosed`` is an ``OSError`` subclass
+                # in starlette; ``RuntimeError`` covers the
+                # ``close-after-close`` race). Anything else propagates.
                 pass
             return
 
@@ -367,7 +371,7 @@ class ConnectionManager:
                             state.websocket.send_text(item),
                             timeout=WS_SEND_TIMEOUT_SECONDS,
                         )
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         # V11-L-15 — structured-logging fields so the
                         # JSON-logger downstream (Loki/Sentry) can
                         # pivot on event/user_id without regexing the
@@ -387,7 +391,10 @@ class ConnectionManager:
                                 code=WS_SLOW_CONSUMER_CLOSE_CODE,
                                 reason="Send timeout",
                             )
-                        except Exception:  # noqa: BLE001
+                        except (OSError, RuntimeError):
+                            # Audit L-8 — narrowed from ``Exception``;
+                            # ``websocket.close`` only raises socket-
+                            # state errors here.
                             logger.debug(
                                 "WS writer: close after timeout failed",
                                 exc_info=True,
@@ -424,7 +431,9 @@ class ConnectionManager:
                 state.wake.set()
             try:
                 await ws.close(code=WS_INVALIDATE_CLOSE_CODE, reason="Session revoked")
-            except Exception:  # noqa: BLE001
+            except (OSError, RuntimeError):
+                # Audit L-8 — narrowed from ``Exception``;
+                # ``websocket.close`` only raises socket-state errors.
                 # V11-L-15 — structured-logging fields so the JSON-
                 # logger downstream (Loki/Sentry) can pivot on event/
                 # user_id without regexing the message body.
@@ -541,7 +550,9 @@ class ConnectionManager:
             state.wake.set()
             try:
                 await state.websocket.close(code=WS_AGE_CLOSE_CODE, reason="Auth expired")
-            except Exception:  # noqa: BLE001
+            except (OSError, RuntimeError):
+                # Audit L-8 — narrowed from ``Exception``;
+                # ``websocket.close`` only raises socket-state errors.
                 logger.debug(
                     "WS age cap: close failed",
                     exc_info=True,

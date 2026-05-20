@@ -361,7 +361,7 @@ async def ws_server():
     server.should_exit = True
     try:
         await asyncio.wait_for(task, timeout=3.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         task.cancel()
 
 

@@ -21,6 +21,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from ... import notifier
 from ...admin_audit import log_admin_action
@@ -189,6 +190,15 @@ async def create_broadcast(
                     continue
             delivered += 1
         except Exception:  # noqa: BLE001
+            # Audit N-9 — deliberately broad. The per-recipient loop
+            # has many heterogeneous failure modes (SQL during
+            # ``stage_inapp``, ``OSError`` against Redis/Telegram,
+            # ``TelegramAPIError`` already swallowed inside
+            # ``send_dm``, ``asyncio.TimeoutError`` on the gather);
+            # crashing on an unanticipated exception type would
+            # silently abort an in-progress broadcast for every
+            # *subsequent* recipient. ``logger.exception`` below
+            # captures the type+stack so audit/oncall can react.
             # V11-L-15 — structured-logging fields so a partially-failed
             # broadcast is correlatable to specific recipients in
             # JSON-logger pipelines (Loki/Sentry) without regex.
@@ -263,7 +273,11 @@ async def create_broadcast(
     for notif, ws_payload in pending:
         try:
             await notifier.dispatch_after_commit(session, notif, ws_payload)
-        except Exception:
+        except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+            # Audit N-9 — narrowed from ``except Exception``. The
+            # commit already succeeded; only delivery-time errors
+            # (DB recipient lookup, WS/Redis publish, network) should
+            # be swallowed. Programming bugs still propagate.
             logger.exception(
                 "broadcast: post-commit dispatch failed for notif id=%s",
                 notif.id,
