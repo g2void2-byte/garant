@@ -2788,7 +2788,7 @@ export interface components {
          */
         AdminDealSplitIn: {
             /** Buyer Percent */
-            buyer_percent: number;
+            buyer_percent: number | string;
             /** Reason */
             reason?: string | null;
         };
@@ -2906,7 +2906,7 @@ export interface components {
             /** Deals Count */
             deals_count: number;
             /** Deposit */
-            deposit: number;
+            deposit: string;
             /** Description */
             description: string;
             /** Id */
@@ -2914,9 +2914,9 @@ export interface components {
             /** Owner Id */
             owner_id: number;
             /** Price */
-            price: number;
+            price: string;
             /** Rating Manual */
-            rating_manual: number | null;
+            rating_manual: string | null;
             /** Status */
             status: string;
             /** Title */
@@ -2944,13 +2944,13 @@ export interface components {
             /** Deals Count */
             deals_count?: number | null;
             /** Deposit */
-            deposit?: number | null;
+            deposit?: number | string | null;
             /** Description */
             description?: string | null;
             /** Price */
-            price?: number | null;
+            price?: number | string | null;
             /** Rating Manual */
-            rating_manual?: number | null;
+            rating_manual?: number | string | null;
             /** Status */
             status?: ("draft" | "active" | "paused" | "banned") | null;
             /** Title */
@@ -3014,7 +3014,7 @@ export interface components {
             /** Deals Total */
             deals_total?: number | null;
             /** Deposit Total */
-            deposit_total?: number | null;
+            deposit_total?: number | string | null;
             /** Good */
             good?: number | null;
         };
@@ -3023,13 +3023,13 @@ export interface components {
             /** Auto Withdraw Enabled */
             auto_withdraw_enabled: boolean;
             /** Deal Commission Percent */
-            deal_commission_percent: number;
+            deal_commission_percent: string;
             /** Inactivity Pending Cancellation Days */
             inactivity_pending_cancellation_days: number;
             /** Inactivity Pending Confirmation Days */
             inactivity_pending_confirmation_days: number;
             /** Invoice Commission Percent */
-            invoice_commission_percent: number;
+            invoice_commission_percent: string;
             /** Maintenance Enabled */
             maintenance_enabled: boolean;
             /** Maintenance Message */
@@ -3037,11 +3037,11 @@ export interface components {
             /** Max Active Services Per User */
             max_active_services_per_user: number;
             /** Min Deposit */
-            min_deposit: number;
+            min_deposit: string;
             /** Min Withdraw */
-            min_withdraw: number;
+            min_withdraw: string;
             /** Vip Commission Percent */
-            vip_commission_percent: number;
+            vip_commission_percent: string;
         };
         /**
          * AdminSettingsUpdateIn
@@ -3054,13 +3054,13 @@ export interface components {
             /** Auto Withdraw Enabled */
             auto_withdraw_enabled?: boolean | null;
             /** Deal Commission Percent */
-            deal_commission_percent?: number | null;
+            deal_commission_percent?: number | string | null;
             /** Inactivity Pending Cancellation Days */
             inactivity_pending_cancellation_days?: number | null;
             /** Inactivity Pending Confirmation Days */
             inactivity_pending_confirmation_days?: number | null;
             /** Invoice Commission Percent */
-            invoice_commission_percent?: number | null;
+            invoice_commission_percent?: number | string | null;
             /** Maintenance Enabled */
             maintenance_enabled?: boolean | null;
             /** Maintenance Message */
@@ -3068,11 +3068,11 @@ export interface components {
             /** Max Active Services Per User */
             max_active_services_per_user?: number | null;
             /** Min Deposit */
-            min_deposit?: number | null;
+            min_deposit?: number | string | null;
             /** Min Withdraw */
-            min_withdraw?: number | null;
+            min_withdraw?: number | string | null;
             /** Vip Commission Percent */
-            vip_commission_percent?: number | null;
+            vip_commission_percent?: number | string | null;
         };
         /** AdminSystemStatusOut */
         AdminSystemStatusOut: {
@@ -3164,7 +3164,7 @@ export interface components {
             /** Address */
             address: string;
             /** Amount */
-            amount: number;
+            amount: number | string;
             /**
              * Confirm
              * @default false
@@ -3259,7 +3259,7 @@ export interface components {
             /** Deals Total */
             deals_total: number;
             /** Deposit Total */
-            deposit_total: number;
+            deposit_total: string;
             /** Description */
             description: string;
             /** Display Name */
@@ -3295,11 +3295,11 @@ export interface components {
             /** Photo Url */
             photo_url: string | null;
             /** Rating Auto */
-            rating_auto: number;
+            rating_auto: string;
             /** Rating Effective */
-            rating_effective: number;
+            rating_effective: string;
             /** Rating Manual */
-            rating_manual: number | null;
+            rating_manual: string | null;
             /** Tg User Id */
             tg_user_id: number;
             /** Username */
@@ -3320,7 +3320,7 @@ export interface components {
             /** Deals Total */
             deals_total: number;
             /** Deposit Total */
-            deposit_total: number;
+            deposit_total: string;
             /** Display Name */
             display_name: string;
             /** Id */
@@ -3344,7 +3344,7 @@ export interface components {
             /** Prefix */
             prefix: string | null;
             /** Rating */
-            rating: number;
+            rating: string;
             /** Tg User Id */
             tg_user_id: number;
             /** Username */
@@ -3374,7 +3374,7 @@ export interface components {
          */
         AdminWalletAdjustIn: {
             /** Amount */
-            amount: number;
+            amount: number | string;
             /** Currency Code */
             currency_code: string;
             /** Reason */
@@ -3500,9 +3500,9 @@ export interface components {
             /** Id */
             id: number;
             /** Min Deposit */
-            min_deposit: number;
+            min_deposit: string;
             /** Min Withdraw */
-            min_withdraw: number;
+            min_withdraw: string;
             /** Name */
             name: string;
             /** Network */
@@ -3527,7 +3527,7 @@ export interface components {
         /** DealCreate */
         DealCreate: {
             /** Amount */
-            amount: number;
+            amount: number | string;
             /** Counterparty */
             counterparty: string;
             /**
@@ -3540,8 +3540,9 @@ export interface components {
              * @default
              */
             description: string;
+            pay_comission?: components["schemas"]["PayCommission"] | null;
             /** @default buyer */
-            pay_comission: components["schemas"]["PayCommission"];
+            pay_commission: components["schemas"]["PayCommission"];
             /** Role */
             role: string;
         };
@@ -3581,7 +3582,7 @@ export interface components {
         /** DealOut */
         DealOut: {
             /** Amount */
-            amount: number;
+            amount: string;
             /** Arbitration Initiator */
             arbitration_initiator?: string | null;
             /** Arbitration Reason */
@@ -3601,7 +3602,7 @@ export interface components {
             /** Cancellation Requested At */
             cancellation_requested_at?: string | null;
             /** Commission Amount */
-            commission_amount?: number | null;
+            commission_amount?: string | null;
             /** Completed At */
             completed_at?: string | null;
             /** Confirm Buyer */
@@ -3620,6 +3621,8 @@ export interface components {
             in_progress_at?: string | null;
             /** Pay Comission */
             pay_comission: string;
+            /** Pay Commission */
+            pay_commission: string;
             /** Role */
             role: string;
             /** Seller */
@@ -3846,7 +3849,7 @@ export interface components {
              * Price
              * @default 0
              */
-            price: number;
+            price: number | string;
             /** Title */
             title: string;
         };
@@ -3869,9 +3872,9 @@ export interface components {
             /** Photo Urls */
             photo_urls?: string[];
             /** Price */
-            price: number;
+            price: string;
             /** Rating Avg */
-            rating_avg: number | null;
+            rating_avg: string | null;
             /** Rating Count */
             rating_count: number;
             /** Status */
@@ -3905,7 +3908,7 @@ export interface components {
             /** Photo Urls */
             photo_urls?: string[];
             /** Price */
-            price: number;
+            price: string;
             /** Status */
             status: string;
             /** Title */
@@ -3933,7 +3936,7 @@ export interface components {
             /** Photo Url */
             photo_url: string | null;
             /** Rating */
-            rating: number;
+            rating: string;
             /** Username */
             username: string | null;
         };
@@ -3955,7 +3958,7 @@ export interface components {
             /** Photo Urls */
             photo_urls?: string[] | null;
             /** Price */
-            price?: number | null;
+            price?: number | string | null;
             /** Status */
             status?: string | null;
             /** Title */
@@ -4028,9 +4031,9 @@ export interface components {
             /** Deals Count */
             deals_count: number;
             /** Deals Sum */
-            deals_sum: number;
+            deals_sum: string;
             /** Deposit */
-            deposit: number;
+            deposit: string;
             /** Description */
             description: string;
             /** Display Name */
@@ -4092,7 +4095,7 @@ export interface components {
             /** Prefix */
             prefix: string | null;
             /** Rating */
-            rating: number;
+            rating: string;
             /** Reviews Count */
             reviews_count: number;
             /** User Id */
@@ -4126,9 +4129,9 @@ export interface components {
             /** Deals Count */
             deals_count: number;
             /** Deals Sum */
-            deals_sum: number;
+            deals_sum: string;
             /** Deposit */
-            deposit: number;
+            deposit: string;
             /** Description */
             description: string;
             /** Display Name */
@@ -4165,7 +4168,7 @@ export interface components {
             /** Prefix */
             prefix: string | null;
             /** Rating */
-            rating: number;
+            rating: string;
             /** Reviews Count */
             reviews_count: number;
             /** Username */
@@ -4212,19 +4215,19 @@ export interface components {
         /** WalletBalanceOut */
         WalletBalanceOut: {
             /** Amount */
-            amount: number;
+            amount: string;
             currency: components["schemas"]["CurrencyOut"];
             /** Locked */
-            locked: number;
+            locked: string;
             /** Total */
-            total: number;
+            total: string;
             /** Updated At */
             updated_at: string | null;
         };
         /** WalletDepositCreateReq */
         WalletDepositCreateReq: {
             /** Amount */
-            amount: number;
+            amount: number | string;
             /** Currency Code */
             currency_code: string;
             /**
@@ -4243,7 +4246,7 @@ export interface components {
         /** WalletDepositOut */
         WalletDepositOut: {
             /** Amount */
-            amount: number;
+            amount: string;
             /**
              * Created At
              * Format: date-time
@@ -4270,7 +4273,7 @@ export interface components {
             /** Address */
             address: string;
             /** Amount */
-            amount: number;
+            amount: number | string;
             /** Currency Code */
             currency_code: string;
         };
@@ -4281,7 +4284,7 @@ export interface components {
             /** Admin Note */
             admin_note: string;
             /** Amount */
-            amount: number;
+            amount: string;
             /**
              * Created At
              * Format: date-time
@@ -5807,6 +5810,8 @@ export interface operations {
             query?: {
                 status?: components["schemas"]["ServiceStatus"] | null;
                 q?: string | null;
+                offset?: number;
+                limit?: number;
             };
             header: {
                 authorization: string;
