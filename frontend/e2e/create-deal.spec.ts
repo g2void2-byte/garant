@@ -114,7 +114,10 @@ test.describe("Create-deal page", () => {
       page.getByRole("heading", { name: "Новая сделка" }),
     ).toBeVisible();
 
-    await page.getByLabel("Контрагент (username)").fill("alice");
+    // Audit C1 — the counterparty field is labelled "Продавец"
+    // (seller) now that every deal is buyer-initiated; pre-fix it
+    // was the generic "Контрагент" that flipped roles via a toggle.
+    await page.getByLabel("Продавец (username)").fill("alice");
     // ``Сумма (USDT)`` is the dynamic label driven by ``currencyCode``.
     await page.getByLabel(/^Сумма \(USDT\)/).fill("150");
     await page
