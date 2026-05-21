@@ -461,10 +461,18 @@ async def reset_pin(
 ) -> AdminUserDetailOut:
     """Force-clear the user's PIN hash and active reset codes.
 
-    The user is required to set a brand-new PIN on next launch. Active
-    PIN tokens issued before this call remain valid until their TTL —
-    use ``/invalidate-sessions`` if you also want to expire those
-    tokens immediately.
+    The user is required to set a brand-new PIN on next launch.
+
+    Audit H3 — bumping ``pin_session_epoch`` here means any PIN token
+    issued before the reset stops decoding to a valid ``(user, epoch)``
+    pair on the very next request (see ``deps.require_pin_session``).
+    Pre-fix the column was untouched, so a stolen device that had
+    captured a fresh PIN-JWT could keep operating against the user's
+    account for the rest of that token's TTL — exactly the scenario
+    an admin reaches for ``reset-pin`` to defuse. The TOTP epoch is
+    deliberately NOT bumped here (the PIN reset is a narrow contract;
+    use ``/invalidate-sessions`` when the device itself is suspect
+    and the TOTP-gated admin/arbiter session must also die).
     """
     target = await _get_user_or_404(session, user_id)
 
@@ -474,6 +482,7 @@ async def reset_pin(
         target.pin_locked_until = None
         target.pin_reset_code_hash = None
         target.pin_reset_expires = None
+        target.pin_session_epoch = (target.pin_session_epoch or 0) + 1
         await _audit_and_notify(
             session=session,
             request=request,
@@ -481,11 +490,23 @@ async def reset_pin(
             target=target,
             action="user.reset_pin",
             reason=body.reason,
-            payload=None,
+            payload={"pin_session_epoch": int(target.pin_session_epoch)},
             dm_title="PIN сброшен",
             dm_body=body.reason
             or "Администратор сбросил ваш PIN. Установите новый при следующем входе.",
         )
+        # Bumping ``pin_session_epoch`` revokes future REST calls on
+        # the next request, but a socket that completed first-message
+        # auth before the bump keeps streaming notifications. Closing
+        # here forces the now-untrusted device to reconnect and
+        # re-auth — mirroring ``invalidate_sessions`` above.
+        try:
+            await ws_manager.invalidate_user(target.id)
+        except (OSError, RuntimeError):
+            # Best-effort: the manager already swallows individual
+            # socket-close failures; only true socket-state errors
+            # are expected at this level.
+            pass
     return _to_detail(target, has_pin=await _has_pin(target))
 
 

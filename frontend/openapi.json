@@ -11547,7 +11547,7 @@
     },
     "/api/admin/users/{user_id}/reset-pin": {
       "post": {
-        "description": "Force-clear the user's PIN hash and active reset codes.\n\nThe user is required to set a brand-new PIN on next launch. Active\nPIN tokens issued before this call remain valid until their TTL \u2014\nuse ``/invalidate-sessions`` if you also want to expire those\ntokens immediately.",
+        "description": "Force-clear the user's PIN hash and active reset codes.\n\nThe user is required to set a brand-new PIN on next launch.\n\nAudit H3 \u2014 bumping ``pin_session_epoch`` here means any PIN token\nissued before the reset stops decoding to a valid ``(user, epoch)``\npair on the very next request (see ``deps.require_pin_session``).\nPre-fix the column was untouched, so a stolen device that had\ncaptured a fresh PIN-JWT could keep operating against the user's\naccount for the rest of that token's TTL \u2014 exactly the scenario\nan admin reaches for ``reset-pin`` to defuse. The TOTP epoch is\ndeliberately NOT bumped here (the PIN reset is a narrow contract;\nuse ``/invalidate-sessions`` when the device itself is suspect\nand the TOTP-gated admin/arbiter session must also die).",
         "operationId": "reset_pin_api_admin_users__user_id__reset_pin_post",
         "parameters": [
           {
