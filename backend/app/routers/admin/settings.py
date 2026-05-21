@@ -54,12 +54,22 @@ _EDITABLE_FIELDS: frozenset[str] = frozenset(
 
 
 def _to_out(row: AppSettings) -> AdminSettingsOut:
+    # ``AdminSettingsOut`` declares money columns as ``MoneyDecimal``
+    # (``Annotated[Decimal, PlainSerializer(lambda v: float(v), ...)``)
+    # which serialises to a JSON ``float`` on the wire but stores
+    # ``Decimal`` in-memory. Passing ``float(row.x)`` used to detour
+    # the value through ``float`` *before* Pydantic re-cast it back
+    # to ``Decimal``, dropping precision (e.g. ``Decimal('0.10')``
+    # → ``float`` 0.1 → ``Decimal('0.1000000000000000055511151231...')``)
+    # and producing a noisy wire payload for percentages that happen
+    # not to be exact in binary float. Hand the ``Decimal`` straight
+    # to Pydantic; ``PlainSerializer`` does the one (and only) cast.
     return AdminSettingsOut(
-        deal_commission_percent=float(row.deal_commission_percent),
-        invoice_commission_percent=float(row.invoice_commission_percent),
-        vip_commission_percent=float(row.vip_commission_percent),
-        min_deposit=float(row.min_deposit),
-        min_withdraw=float(row.min_withdraw),
+        deal_commission_percent=row.deal_commission_percent,
+        invoice_commission_percent=row.invoice_commission_percent,
+        vip_commission_percent=row.vip_commission_percent,
+        min_deposit=row.min_deposit,
+        min_withdraw=row.min_withdraw,
         inactivity_pending_confirmation_days=row.inactivity_pending_confirmation_days,
         inactivity_pending_cancellation_days=row.inactivity_pending_cancellation_days,
         max_active_services_per_user=row.max_active_services_per_user,
@@ -115,11 +125,25 @@ async def update_settings(
             # apart. Reject loudly rather than silently writing.
             raise HTTPException(400, f"Поле '{key}' не редактируется")
         old = getattr(row, key)
-        old_cmp = float(old) if isinstance(old, (int, float, Decimal)) else old
-        new_cmp = float(new) if isinstance(new, (int, float, Decimal)) else new
-        if old_cmp != new_cmp:
-            before[key] = old_cmp
-            after[key] = new_cmp
+        # Equality on money columns: compare as ``Decimal`` so the
+        # check doesn't round-trip through ``float`` (e.g.
+        # ``Decimal('7.5') == float(Decimal('7.5'))`` happens to hold,
+        # but ``Decimal('0.10') != float(Decimal('0.10'))`` in general
+        # because 0.1 has no exact binary repr). The audit-log payload
+        # still keeps the wire-friendly ``float`` shape so the existing
+        # admin-UI ``PayloadPreview`` renders numbers, not quoted
+        # strings, exactly as before.
+        if isinstance(old, Decimal) or isinstance(new, Decimal):
+            old_dec = old if isinstance(old, Decimal) else Decimal(str(old))
+            new_dec = new if isinstance(new, Decimal) else Decimal(str(new))
+            if old_dec != new_dec:
+                before[key] = float(old_dec)
+                after[key] = float(new_dec)
+                setattr(row, key, new)
+                changed = True
+        elif old != new:
+            before[key] = old
+            after[key] = new
             setattr(row, key, new)
             changed = True
 

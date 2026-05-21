@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Computed,
     DateTime,
     Enum,
@@ -165,6 +166,16 @@ class ServiceStatus(str, enum.Enum):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        # Mirrors the ``ck_users_country_iso_alpha2`` CHECK constraint
+        # added in migration ``t2b3c4d5e6f7`` — see that revision for
+        # the rationale. ``country`` is either ``NULL`` or an uppercase
+        # ISO-3166-1 alpha-2 code.
+        CheckConstraint(
+            "country IS NULL OR country ~ '^[A-Z]{2}$'",
+            name="ck_users_country_iso_alpha2",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tg_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
@@ -328,6 +339,16 @@ class Category(Base):
 
 class Service(Base):
     __tablename__ = "services"
+    __table_args__ = (
+        # Mirrors the ``ck_services_photo_urls_max_6`` CHECK constraint
+        # added in migration ``t2b3c4d5e6f7`` — see that revision for
+        # the rationale. The cap of 6 matches the application-layer
+        # ``MAX_SERVICE_PHOTOS`` in ``backend/app/schemas.py``.
+        CheckConstraint(
+            "jsonb_typeof(photo_urls) = 'array' AND jsonb_array_length(photo_urls) <= 6",
+            name="ck_services_photo_urls_max_6",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # M-13: CASCADE so deleting the owner also deletes their services.
@@ -715,6 +736,17 @@ class WalletDeposit(Base):
     """A CryptoBot invoice issued for a wallet top-up."""
 
     __tablename__ = "wallet_deposits"
+    __table_args__ = (
+        # Mirrors the ``ck_wallet_deposits_purpose_known`` CHECK
+        # constraint added in migration ``t2b3c4d5e6f7`` — see that
+        # revision for the rationale. The closed set matches the
+        # ``WalletDepositCreateReq.purpose`` ``Literal`` in
+        # ``backend/app/schemas.py``.
+        CheckConstraint(
+            "purpose IN ('wallet', 'trust')",
+            name="ck_wallet_deposits_purpose_known",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)

@@ -104,16 +104,43 @@ async def kpi(_admin: AdminUser, session: SessionDep):
     d7 = now - timedelta(days=7)
     d30 = now - timedelta(days=30)
 
-    async def _count(stmt) -> int:
-        return int((await session.execute(stmt)).scalar_one() or 0)
+    # Fold the user / deal counters into two single-row aggregate
+    # queries using ``COUNT(...) FILTER (WHERE ...)`` (rendered by
+    # SQLAlchemy's ``func.count(case(...))``) instead of 7 separate
+    # ``SELECT COUNT(*)`` statements. Mirrors the same idiom already
+    # used by ``admin/dashboard.py``. Wire payload is identical; the
+    # DB does 2 sequential scans + in-row predicate checks instead
+    # of 7 separate scans.
+    user_row = (
+        await session.execute(
+            select(
+                func.count(case((User.last_login_at >= h24, 1))).label("dau"),
+                func.count(case((User.last_login_at >= d7, 1))).label("wau"),
+                func.count(case((User.last_login_at >= d30, 1))).label("mau"),
+                func.count(case((User.created_at >= h24, 1))).label("new_24h"),
+                func.count(case((User.created_at >= d7, 1))).label("new_7d"),
+            ).select_from(User)
+        )
+    ).one()
+    dau = int(user_row.dau or 0)
+    wau = int(user_row.wau or 0)
+    mau = int(user_row.mau or 0)
+    new_24h = int(user_row.new_24h or 0)
+    new_7d = int(user_row.new_7d or 0)
 
-    dau = await _count(select(func.count()).select_from(User).where(User.last_login_at >= h24))
-    wau = await _count(select(func.count()).select_from(User).where(User.last_login_at >= d7))
-    mau = await _count(select(func.count()).select_from(User).where(User.last_login_at >= d30))
-    new_24h = await _count(select(func.count()).select_from(User).where(User.created_at >= h24))
-    new_7d = await _count(select(func.count()).select_from(User).where(User.created_at >= d7))
-    deals_24h = await _count(select(func.count()).select_from(Deal).where(Deal.created_at >= h24))
-    deals_7d = await _count(select(func.count()).select_from(Deal).where(Deal.created_at >= d7))
+    deal_row = (
+        await session.execute(
+            select(
+                func.count(case((Deal.created_at >= h24, 1))).label("deals_24h"),
+                func.count(case((Deal.created_at >= d7, 1))).label("deals_7d"),
+                func.count(case((Deal.status == DealStatus.arbitration, 1))).label("open_arb"),
+            ).select_from(Deal)
+        )
+    ).one()
+    deals_24h = int(deal_row.deals_24h or 0)
+    deals_7d = int(deal_row.deals_7d or 0)
+    open_arb = int(deal_row.open_arb or 0)
+
     primary_cur_id = await _primary_currency_id(session)
     if primary_cur_id is not None:
         volume_stmt = (
@@ -129,13 +156,15 @@ async def kpi(_admin: AdminUser, session: SessionDep):
         # force a zero scalar (the warning is already surfaced by
         # ``_primary_currency_id``).
         volume_30d = 0
-    open_arb = await _count(
-        select(func.count()).select_from(Deal).where(Deal.status == DealStatus.arbitration)
-    )
-    pending_wd = await _count(
-        select(func.count())
-        .select_from(WalletWithdrawal)
-        .where(WalletWithdrawal.status == WalletWithdrawStatus.pending)
+    pending_wd = int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(WalletWithdrawal)
+                .where(WalletWithdrawal.status == WalletWithdrawStatus.pending)
+            )
+        ).scalar_one()
+        or 0
     )
     return AdminAnalyticsKpiOut(
         dau=dau,
