@@ -155,10 +155,11 @@ describe("<CreateDealPage />", () => {
     expect(
       screen.getByRole("heading", { name: "Новая сделка" }),
     ).toBeInTheDocument();
-    // The counterparty value is wired into the ``UserPicker`` input.
-    expect(
-      screen.getByLabelText(/Контрагент \(username\)/),
-    ).toHaveValue("alice");
+    // Audit C1 — every deal is buyer-initiated, so the counterparty
+    // field is labelled "Продавец" (seller) rather than the previous
+    // generic "Контрагент" (counterparty) which had to support both
+    // sides under the now-deleted "I'm the seller" toggle.
+    expect(screen.getByLabelText(/Продавец \(username\)/)).toHaveValue("alice");
   });
 
   it("shows currency dropdown when currencies are loaded", () => {

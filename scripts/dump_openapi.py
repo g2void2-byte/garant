@@ -44,7 +44,16 @@ def main() -> None:
 
     schema = app.openapi()
     out_path = repo_root / "frontend" / "openapi.json"
-    out_path.write_text(json.dumps(schema, indent=2, sort_keys=True) + "\n")
+    # ``newline=""`` keeps the file LF-only on Windows too — the
+    # committed snapshot is the canonical contract used by CI's
+    # drift gate (which runs on Linux); writing CRLFs from a local
+    # dev box on Windows would otherwise flip every line of the file
+    # and look like a massive unrelated diff.
+    out_path.write_text(
+        json.dumps(schema, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="",
+    )
     print(f"Wrote {out_path.relative_to(repo_root)} ({len(json.dumps(schema))} bytes)")
 
 

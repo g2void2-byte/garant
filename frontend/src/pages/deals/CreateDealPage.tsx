@@ -20,7 +20,10 @@ export default function CreateDealPage() {
   const toast = useToast();
   const { data: currencies } = useCurrencies();
   const [counterparty, setCounterparty] = useState(params.get("to") ?? "");
-  const [role, setRole] = useState<"buyer" | "seller">("buyer");
+  // Audit C1 — deals can only be initiated by the buyer (the side
+  // whose balance gets locked into escrow). The "I'm the seller" tab
+  // was removed because it let the caller freeze a victim's balance
+  // for days. The role is fixed at ``buyer`` here and on the backend.
   const [sum, setSum] = useState("");
   const [description, setDescription] = useState("");
   const [comissionFrom, setComissionFrom] = useState<"buyer" | "seller">(
@@ -52,7 +55,7 @@ export default function CreateDealPage() {
     try {
       const deal = await create.mutateAsync({
         counterparty,
-        role,
+        role: "buyer",
         amount,
         description,
         pay_comission: comissionFrom,
@@ -79,16 +82,8 @@ export default function CreateDealPage() {
     <Page showBack>
       <Header title="Новая сделка" subtitle="Защита через гаранта" />
       <div className="px-4 space-y-3">
-        <ToggleTabs
-          value={role}
-          options={[
-            { value: "buyer", label: "Я покупатель" },
-            { value: "seller", label: "Я продавец" },
-          ]}
-          onChange={setRole}
-        />
         <UserPicker
-          label="Контрагент (username)"
+          label="Продавец (username)"
           placeholder="@username или ID"
           value={counterparty}
           onChange={setCounterparty}

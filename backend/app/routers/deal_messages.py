@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -27,6 +27,15 @@ from ..models import TERMINAL_DEAL_STATUSES, Deal, DealMessage, DealStatus, Medi
 from ..rate_limit import RLDealMessage
 from ..schemas import DealMessageCreate, DealMessageOut, MediaOut
 from ..ws import manager
+
+# Audit H2 — default page size and hard ceiling for the chat list.
+# Pre-fix the endpoint returned the entire history (no ``LIMIT``),
+# which for an arbitration that ran for months would routinely
+# serialise 10k+ messages × up to 10 attachments each. The default is
+# tuned for an initial chat-panel render; the frontend pages older
+# messages in via the ``before_id`` cursor.
+_DEFAULT_MESSAGE_PAGE = 50
+_MAX_MESSAGE_PAGE = 200
 
 router = APIRouter(prefix="/api/deals", tags=["deal-messages"])
 
@@ -54,36 +63,34 @@ def _media_out(m: Media) -> MediaOut:
     )
 
 
-async def _serialize(session, msg: DealMessage) -> DealMessageOut:
-    attachments: list[MediaOut] = []
-    if msg.attachments_json:
+def _parse_attachment_ids(attachments_json: str | None) -> list[int]:
+    if not attachments_json:
+        return []
+    try:
+        raw = json.loads(attachments_json)
+    except ValueError:
+        return []
+    if not isinstance(raw, list):
+        return []
+    ids: list[int] = []
+    for item in raw:
+        if isinstance(item, bool):
+            # ``bool`` is a subclass of ``int`` in Python — reject explicitly
+            # so a stored ``true`` cannot be reinterpreted as media id ``1``.
+            continue
         try:
-            ids = json.loads(msg.attachments_json)
-        except ValueError:
-            ids = []
-        if isinstance(ids, list) and ids:
-            rows = (
-                (
-                    await session.execute(
-                        select(Media).where(
-                            Media.id.in_(
-                                [int(i) for i in ids if isinstance(i, int) or str(i).isdigit()]
-                            )
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            by_id = {m.id: m for m in rows}
-            for raw in ids:
-                try:
-                    mid = int(raw)
-                except (TypeError, ValueError):
-                    continue
-                if mid in by_id:
-                    attachments.append(_media_out(by_id[mid]))
+            ids.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return ids
 
+
+def _serialize_one(msg: DealMessage, media_by_id: dict[int, Media]) -> DealMessageOut:
+    attachments: list[MediaOut] = []
+    for mid in _parse_attachment_ids(msg.attachments_json):
+        media = media_by_id.get(mid)
+        if media is not None:
+            attachments.append(_media_out(media))
     return DealMessageOut(
         id=msg.id,
         deal_id=msg.deal_id,
@@ -95,31 +102,83 @@ async def _serialize(session, msg: DealMessage) -> DealMessageOut:
     )
 
 
+async def _serialize(session, msg: DealMessage) -> DealMessageOut:
+    """Single-message serialiser — used by ``POST`` and WS fan-out.
+
+    The list endpoint uses ``_serialize_one`` directly against a
+    pre-fetched ``media_by_id`` map (Audit H2) so it issues exactly
+    one ``SELECT Media WHERE id IN (...)`` for the whole page instead
+    of one per message.
+    """
+    ids = _parse_attachment_ids(msg.attachments_json)
+    media_by_id: dict[int, Media] = {}
+    if ids:
+        rows = (await session.execute(select(Media).where(Media.id.in_(ids)))).scalars().all()
+        media_by_id = {m.id: m for m in rows}
+    return _serialize_one(msg, media_by_id)
+
+
 @router.get("/{deal_id}/messages", response_model=list[DealMessageOut])
 async def list_messages(
     deal_id: int,
     user: CurrentUser,
     session: SessionDep,
+    limit: int = Query(
+        _DEFAULT_MESSAGE_PAGE,
+        ge=1,
+        le=_MAX_MESSAGE_PAGE,
+        description="Maximum number of messages to return (newest within the window).",
+    ),
+    before_id: int | None = Query(
+        None,
+        ge=1,
+        description=(
+            "Cursor — return only messages with ``id`` strictly less than this. "
+            "Use the ``id`` of the oldest already-loaded message to fetch the "
+            "next older page."
+        ),
+    ),
 ) -> list[DealMessageOut]:
     await _load_deal_or_403(session, deal_id, user)
+    # Audit H2 — pre-fix this endpoint returned ``SELECT * FROM
+    # deal_messages WHERE deal_id = :id`` without ``LIMIT``. An
+    # arbitration that ran for weeks could accumulate 10k+ rows, and a
+    # bot polling the endpoint every few seconds (or even just an open
+    # browser tab) would hammer the DB and serialise multi-MB JSON
+    # responses. We now page by ``(created_at DESC, id DESC)`` with a
+    # cursor on ``id``, then re-sort the page ascending so the existing
+    # chat panel — which appends new messages at the bottom and pulls
+    # older ones at the top — can render the slice without resorting.
+    #
     # ``DealMessage.sender`` already declares ``lazy="selectin"`` on the
-    # model, so the senders are batched into a single follow-up SELECT
-    # — calling ``selectinload`` explicitly here is belt-and-braces:
-    # if the model's lazy strategy ever changes, the explicit option
-    # keeps this hot endpoint O(1) queries instead of O(messages).
-    rows = (
-        (
-            await session.execute(
-                select(DealMessage)
-                .where(DealMessage.deal_id == deal_id)
-                .options(selectinload(DealMessage.sender))
-                .order_by(DealMessage.created_at.asc(), DealMessage.id.asc())
-            )
-        )
-        .scalars()
-        .all()
+    # model, so the senders are batched into a single follow-up SELECT;
+    # calling ``selectinload`` explicitly here is belt-and-braces.
+    stmt = (
+        select(DealMessage)
+        .where(DealMessage.deal_id == deal_id)
+        .options(selectinload(DealMessage.sender))
+        .order_by(DealMessage.id.desc())
+        .limit(limit)
     )
-    return [await _serialize(session, m) for m in rows]
+    if before_id is not None:
+        stmt = stmt.where(DealMessage.id < before_id)
+    page = (await session.execute(stmt)).scalars().all()
+    rows = list(reversed(page))
+    # Audit H2 — batch the attachment ``Media`` rows for the whole page
+    # into a single ``SELECT ... WHERE id IN (...)`` instead of the
+    # previous O(messages) per-message subquery.
+    all_media_ids: set[int] = set()
+    for msg in rows:
+        all_media_ids.update(_parse_attachment_ids(msg.attachments_json))
+    media_by_id: dict[int, Media] = {}
+    if all_media_ids:
+        media_rows = (
+            (await session.execute(select(Media).where(Media.id.in_(all_media_ids))))
+            .scalars()
+            .all()
+        )
+        media_by_id = {m.id: m for m in media_rows}
+    return [_serialize_one(m, media_by_id) for m in rows]
 
 
 @router.post(

@@ -442,11 +442,17 @@ class ServiceCommentOut(BaseModel):
 
 class DealCreate(BaseModel):
     counterparty: str
-    # Audit L1 — ``Literal`` so a typo like ``"BUYER"`` / ``"sellr"``
-    # surfaces as a 422 from FastAPI instead of silently mapping to
-    # ``seller`` in the router's ``else`` branch (which would lock the
-    # counterparty's funds without explicit consent).
-    role: Literal["buyer", "seller"]
+    # Audit C1 — ``Literal["buyer"]`` so the caller of ``POST /api/deals``
+    # is always the buyer (the side whose balance gets debited into the
+    # escrow lock). Pre-fix ``role="seller"`` let any user freeze an
+    # arbitrary counterparty's balance for days: ``decline_deal`` /
+    # ``accept_deal`` are seller-only and the buyer had no reject path,
+    # so the victim's only recourse was waiting out
+    # ``inactivity_pending_confirmation_days``. Forcing the role at the
+    # schema layer means we reject ``role="seller"`` (and any typo) with
+    # a 422 before touching the DB.  Default is provided so legacy
+    # clients that omit the field continue to work.
+    role: Literal["buyer"] = "buyer"
     # L-1: ``gt=0`` matches the explicit ``if amt <= 0`` guard in
     # ``services_deals.create_deal``. The validator below additionally
     # rejects ``NaN``/``±inf`` JSON values that bypass the ``gt=0``

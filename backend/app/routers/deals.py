@@ -133,15 +133,24 @@ async def get_deal(deal_id: int, user: CurrentUser, session: SessionDep):
 async def create_deal_endpoint(
     body: DealCreate, user: PinUser, session: SessionDep, _rl: RLDealCreate
 ):
+    # Audit C1 — every deal is initiated by the buyer, i.e. the caller
+    # of this endpoint. The previous ``role="seller"`` branch let any
+    # user lock an arbitrary counterparty's balance into an escrow row
+    # they could not refuse: ``decline_deal`` / ``accept_deal`` are
+    # seller-only, and ``sweep_inactivity`` only releases the lock after
+    # ``inactivity_pending_confirmation_days``. The 10/min ``RLDealCreate``
+    # didn't help — one accepted ``POST`` is enough to freeze the
+    # victim's wallet for days. The schema-level ``Literal["buyer"]``
+    # gate already rejects ``role="seller"`` with a 422, but we keep an
+    # explicit defensive check here in case the schema is widened again.
+    if body.role != "buyer":  # pragma: no cover — schema rejects it first
+        raise HTTPException(400, "Создавать сделку может только покупатель")
     stmt = select(User).where(User.username == body.counterparty)
     result = await session.execute(stmt)
     counterparty = result.scalar_one_or_none()
     if not counterparty:
         raise HTTPException(404, "Пользователь не найден")
-    if body.role == "buyer":
-        buyer, seller = user, counterparty
-    else:
-        buyer, seller = counterparty, user
+    buyer, seller = user, counterparty
 
     try:
         deal = await create_deal(

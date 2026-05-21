@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Paperclip, Send, X } from "lucide-react";
 import {
+  DEAL_MESSAGE_PAGE_SIZE,
   useDealMessages,
+  useLoadOlderDealMessages,
   useMe,
   useSendDealMessage,
   useUploadMedia,
@@ -24,6 +26,7 @@ export function DealChatPanel({ dealId }: DealChatPanelProps) {
   const { data: me } = useMe();
   const { data: messages, isLoading } = useDealMessages(dealId);
   const sendMessage = useSendDealMessage(dealId);
+  const loadOlder = useLoadOlderDealMessages(dealId);
   const uploadMedia = useUploadMedia();
   const toast = useToast();
 
@@ -31,14 +34,60 @@ export function DealChatPanel({ dealId }: DealChatPanelProps) {
   const [pending, setPending] = useState<MediaDto[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Audit H2 — the backend now returns at most
+  // ``DEAL_MESSAGE_PAGE_SIZE`` messages. Once the user loads an older
+  // page that comes back short, there is nothing left to fetch and the
+  // "Load older" button hides itself.
+  const [reachedOldest, setReachedOldest] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // After a "load older" we anchor the scroll position to the previous
+  // top message so the user doesn't get teleported. ``stickToBottom``
+  // is the default for new messages / initial render.
+  const stickToBottomRef = useRef(true);
+  const prevScrollHeightRef = useRef<number | null>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    } else if (prevScrollHeightRef.current != null) {
+      // Preserve the user's visual position when older messages were
+      // prepended.
+      el.scrollTop = el.scrollHeight - prevScrollHeightRef.current;
+      prevScrollHeightRef.current = null;
+      stickToBottomRef.current = true;
+    }
   }, [messages]);
+
+  // Reset paging state if the user switches to a different deal.
+  useEffect(() => {
+    setReachedOldest(false);
+  }, [dealId]);
+
+  const onLoadOlder = async () => {
+    if (!messages || messages.length === 0 || loadOlder.isPending) return;
+    const oldest = messages[0];
+    const el = scrollRef.current;
+    prevScrollHeightRef.current = el ? el.scrollHeight : null;
+    stickToBottomRef.current = false;
+    try {
+      const page = await loadOlder.mutateAsync({ beforeId: oldest.id });
+      if (page.length < DEAL_MESSAGE_PAGE_SIZE) {
+        setReachedOldest(true);
+      }
+    } catch (err) {
+      stickToBottomRef.current = true;
+      prevScrollHeightRef.current = null;
+      const message = (err as Error)?.message || "Не удалось загрузить историю";
+      toast.show({ kind: "error", title: message });
+    }
+  };
+
+  const canLoadOlder =
+    !reachedOldest && (messages?.length ?? 0) >= DEAL_MESSAGE_PAGE_SIZE;
 
   const onPickFiles = () => fileInputRef.current?.click();
 
@@ -103,6 +152,20 @@ export function DealChatPanel({ dealId }: DealChatPanelProps) {
         className="max-h-80 overflow-y-auto space-y-2 pr-1"
       >
         {isLoading && <Skeleton className="h-16" />}
+        {!isLoading && canLoadOlder && (
+          <div className="flex justify-center pb-2">
+            <button
+              type="button"
+              onClick={onLoadOlder}
+              disabled={loadOlder.isPending}
+              className="text-xs text-text-muted hover:text-text disabled:opacity-50 underline-offset-2 hover:underline"
+            >
+              {loadOlder.isPending
+                ? "Загружаю…"
+                : "Показать более ранние"}
+            </button>
+          </div>
+        )}
         {!isLoading && (!messages || messages.length === 0) && (
           <div className="text-xs text-text-muted text-center py-6">
             Сообщений пока нет
