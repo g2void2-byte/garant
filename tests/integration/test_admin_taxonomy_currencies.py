@@ -12,10 +12,12 @@ test for symmetry.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlalchemy import select
 
 from backend.app.db import async_session
-from backend.app.models import AdminAuditLog, Currency, User
+from backend.app.models import AdminAuditLog, Currency, User, UserBalance
 from tests.helpers import auth_headers, signed_init_data, with_totp
 
 
@@ -209,3 +211,122 @@ async def test_currency_create_then_update_does_not_duplicate_row(client):
             (await session.execute(select(Currency).where(Currency.code == "JET5"))).scalars().all()
         )
     assert len(rows) == 1
+
+
+# ── DELETE /api/admin/currencies/{id} (audit §3.4) ─────
+
+
+async def test_currency_delete_removes_unreferenced_row(client):
+    """Audit §3.4 — the new DELETE endpoint hard-deletes a currency
+    that nothing references and writes a ``currency.delete`` audit
+    log entry."""
+    admin_init, admin_id = await _make_admin(client, tg=1)
+
+    resp = await client.put(
+        "/api/admin/currencies",
+        json={"code": "DEL1", "name": "Doomed", "decimals": 8},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    currency_id = resp.json()["id"]
+
+    resp = await client.delete(
+        f"/api/admin/currencies/{currency_id}",
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"ok": True}
+
+    async with async_session() as session:
+        row = (
+            await session.execute(select(Currency).where(Currency.id == currency_id))
+        ).scalar_one_or_none()
+        assert row is None
+
+        logs = (
+            (
+                await session.execute(
+                    select(AdminAuditLog)
+                    .where(AdminAuditLog.actor_id == admin_id)
+                    .where(AdminAuditLog.target_type == "currency")
+                    .where(AdminAuditLog.action == "currency.delete")
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert len(logs) == 1
+    assert logs[0].payload["code"] == "DEL1"
+
+
+async def test_currency_delete_missing_returns_404(client):
+    admin_init, _ = await _make_admin(client, tg=1)
+    resp = await client.delete(
+        "/api/admin/currencies/999999",
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 404
+
+
+async def test_currency_delete_blocked_when_referenced(client):
+    """Audit §3.4 — the DELETE endpoint must refuse to orphan a FK.
+    Seed a ``user_balances`` row pointing at the currency and assert
+    we get a 409 with a ``referenced_by`` list naming the blocker."""
+    admin_init, _ = await _make_admin(client, tg=1)
+    user_id = await _bootstrap(client, tg_user_id=42, username="hodler")
+
+    resp = await client.put(
+        "/api/admin/currencies",
+        json={"code": "REF1", "name": "Referenced"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    currency_id = resp.json()["id"]
+
+    async with async_session() as session:
+        session.add(
+            UserBalance(
+                user_id=user_id,
+                currency_id=currency_id,
+                amount=Decimal("1.0"),
+                locked=Decimal("0.0"),
+            )
+        )
+        await session.commit()
+
+    resp = await client.delete(
+        f"/api/admin/currencies/{currency_id}",
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 409, resp.text
+    detail = resp.json()["detail"]
+    assert detail["detail"] == "К валюте привязаны данные, удаление невозможно"
+    assert "user_balances" in detail["referenced_by"]
+
+    async with async_session() as session:
+        row = (
+            await session.execute(select(Currency).where(Currency.id == currency_id))
+        ).scalar_one_or_none()
+        assert row is not None
+
+
+async def test_currency_delete_requires_admin(client):
+    """A non-admin caller hitting the DELETE route must be rejected
+    by RBAC before any 2FA / state check runs."""
+    admin_init, _ = await _make_admin(client, tg=1)
+    init = signed_init_data(99, "regular")
+    await _bootstrap(client, tg_user_id=99, username="regular")
+
+    resp = await client.put(
+        "/api/admin/currencies",
+        json={"code": "RBAC", "name": "rbac"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200
+    currency_id = resp.json()["id"]
+
+    resp = await client.delete(
+        f"/api/admin/currencies/{currency_id}",
+        headers=auth_headers(init),
+    )
+    assert resp.status_code == 403

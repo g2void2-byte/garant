@@ -18,7 +18,16 @@ from sqlalchemy import select
 from ...admin_audit import log_admin_action, state_change_payload
 from ...admin_guard import TotpUser
 from ...deps import AdminUser, SessionDep
-from ...models import Category, Currency, Service
+from ...models import (
+    Category,
+    Currency,
+    Deal,
+    Service,
+    TreasuryWithdrawal,
+    UserBalance,
+    WalletDeposit,
+    WalletWithdrawal,
+)
 from ...rate_limit import rate_limit
 from ...schemas import (
     AdminCategoryOut,
@@ -249,3 +258,80 @@ async def upsert_currency(
     # RETURNING during ``flush``). Nothing reads a server-side
     # default column, so the post-commit ``refresh`` was redundant.
     return _cur_to_out(existing)
+
+
+# Audit §3.4 — guard tables we refuse to orphan when a currency is
+# dropped. Each entry is ``(model, column, label)``; the label is
+# surfaced in the 409 error so the admin knows which table still
+# references the row. Order matters only for the error message
+# (most user-visible first) — we check every table regardless so the
+# audit-log payload can capture the full reference count.
+_CURRENCY_REFERENCES: tuple[tuple[type, str, str], ...] = (
+    (Deal, "currency_id", "deals"),
+    (Service, "currency_id", "services"),
+    (UserBalance, "currency_id", "user_balances"),
+    (WalletDeposit, "currency_id", "wallet_deposits"),
+    (WalletWithdrawal, "currency_id", "wallet_withdrawals"),
+    (TreasuryWithdrawal, "currency_id", "treasury_withdrawals"),
+)
+
+
+@router.delete("/currencies/{currency_id}")
+async def delete_currency(
+    currency_id: int,
+    admin: TotpUser,
+    session: SessionDep,
+    request: Request,
+):
+    """Delete a currency that no other row references.
+
+    Audit §3.4 — closes the ``ПУСТЫШКА`` gap (no DELETE route existed
+    for currencies even though categories had one). The guard mirrors
+    ``delete_category``: any referencing row in deals / services /
+    balances / wallet deposits / wallet withdrawals / treasury
+    withdrawals turns the call into a 409 so we never orphan a FK.
+    """
+    c = await session.get(Currency, currency_id)
+    if c is None:
+        raise HTTPException(404, "Валюта не найдена")
+
+    blockers: dict[str, int] = {}
+    for model, column, label in _CURRENCY_REFERENCES:
+        col = model.__table__.columns[column]
+        exists = (
+            await session.execute(select(col).where(col == c.id).limit(1))
+        ).scalar_one_or_none()
+        if exists is not None:
+            blockers[label] = 1
+    if blockers:
+        # 409 keeps parity with the category delete path. The list of
+        # referencing tables is exposed so the admin UI can surface a
+        # specific message instead of a generic conflict.
+        raise HTTPException(
+            409,
+            {
+                "detail": "К валюте привязаны данные, удаление невозможно",
+                "referenced_by": sorted(blockers.keys()),
+            },
+        )
+
+    payload = {
+        "code": c.code,
+        "name": c.name,
+        "network": c.network,
+        "decimals": c.decimals,
+        "is_active": bool(c.is_active),
+        "sort_order": c.sort_order,
+    }
+    await session.delete(c)
+    await log_admin_action(
+        session,
+        actor=admin,
+        action="currency.delete",
+        target_type="currency",
+        target_id=currency_id,
+        payload=payload,
+        request=request,
+    )
+    await session.commit()
+    return {"ok": True}
