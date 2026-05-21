@@ -391,7 +391,9 @@ _STATUS_CHOICES = (
     "any",
     "cancelled",
     "pending_confirmation",
-    "pending_payment",
+    # Audit M3 — ``pending_payment`` is reserved in ``DealStatus`` but no
+    # transition writes it; dropped from the filter so the admin UI
+    # doesn't surface a permanently-empty status bucket.
     "in_progress",
     "completed",
     "arbitration",
@@ -576,10 +578,15 @@ async def _split_locked(
 
 
 def _is_active_for_money_movement(status: DealStatus) -> bool:
-    """A deal still has locked money iff it hasn't terminated yet."""
+    """A deal still has locked money iff it hasn't terminated yet.
+
+    Audit M3 — ``pending_payment`` is omitted because no transition
+    writes it; including it here was dead branch coverage that
+    confused readers into thinking a separate "awaiting payment"
+    state was wired up.
+    """
     return status in (
         DealStatus.pending_confirmation,
-        DealStatus.pending_payment,
         DealStatus.in_progress,
         DealStatus.pending_cancellation,
         DealStatus.arbitration,

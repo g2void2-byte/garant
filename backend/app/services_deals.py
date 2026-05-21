@@ -359,8 +359,15 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         await _refund_principal_keep_commission(
             session, deal.buyer_id, currency.id, amt + commission, amt
         )
+        commission_clause = "комиссия удержана"
     else:
         await _refund(session, deal.buyer_id, currency.id, amt)
+        # Audit M1 — seller-paid commission was never locked from the buyer
+        # in ``create_deal`` (it's deducted from the seller's payout on
+        # finish), so cancelling here does not retain anything on the
+        # platform side. Saying "commission retained" in the DM is
+        # factually wrong from the user's perspective.
+        commission_clause = "комиссия не взималась"
 
     deal.status = DealStatus.cancelled
     deal.completed_at = utcnow()
@@ -370,7 +377,7 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
         deal.buyer_id,
         NotificationType.deals,
         "Сделка отклонена",
-        f"Продавец отклонил сделку #{deal.id}. Сумма возвращена; комиссия удержана.",
+        f"Продавец отклонил сделку #{deal.id}. Сумма возвращена; {commission_clause}.",
         {"deal_id": deal.id},
     )
     await session.commit()
@@ -501,22 +508,40 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
         await _refund_principal_keep_commission(
             session, deal.buyer_id, currency.id, amt + commission, amt
         )
+        commission_clause = "комиссия удержана"
     else:
         await _refund(session, deal.buyer_id, currency.id, amt)
+        # Audit M1 — see ``decline_deal`` for the rationale; the
+        # seller-paid commission was never locked from the buyer at
+        # creation, so no retention happens on cancellation.
+        commission_clause = "комиссия не взималась"
 
     deal.status = DealStatus.cancelled
     deal.completed_at = utcnow()
-    # A9-M-2 — split-API: persist notification atomically, dispatch after commit.
-    notif, ws_payload = await notifier.insert(
-        session,
-        deal.cancellation_initiator_id or deal.buyer_id,
-        NotificationType.deals,
-        "Сделка отменена",
-        f"По сделке #{deal.id} отмена согласована. Сумма возвращена; комиссия удержана.",
-        {"deal_id": deal.id},
-    )
+    # A9-M-2 + Audit M2 — split-API: persist notifications atomically,
+    # dispatch after commit. Both buyer and seller receive the
+    # "deal cancelled" event so the accepter's notification feed mirrors
+    # the initiator's (pre-fix only ``cancellation_initiator_id`` got a
+    # row, which left the accepter without a badge / DM record of the
+    # final state).
+    body_text = f"По сделке #{deal.id} отмена согласована. Сумма возвращена; {commission_clause}."
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
+    seen: set[int] = set()
+    for recipient_id in (deal.buyer_id, deal.seller_id):
+        if recipient_id in seen:
+            continue
+        seen.add(recipient_id)
+        notif, ws_payload = await notifier.insert(
+            session,
+            recipient_id,
+            NotificationType.deals,
+            "Сделка отменена",
+            body_text,
+            {"deal_id": deal.id},
+        )
+        pending.append((notif, ws_payload))
     await session.commit()
-    await _safe_dispatch(session, [(notif, ws_payload)])
+    await _safe_dispatch(session, pending)
     return deal
 
 

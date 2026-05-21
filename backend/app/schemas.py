@@ -442,7 +442,11 @@ class ServiceCommentOut(BaseModel):
 
 class DealCreate(BaseModel):
     counterparty: str
-    role: str
+    # Audit L1 — ``Literal`` so a typo like ``"BUYER"`` / ``"sellr"``
+    # surfaces as a 422 from FastAPI instead of silently mapping to
+    # ``seller`` in the router's ``else`` branch (which would lock the
+    # counterparty's funds without explicit consent).
+    role: Literal["buyer", "seller"]
     # L-1: ``gt=0`` matches the explicit ``if amt <= 0`` guard in
     # ``services_deals.create_deal``. The validator below additionally
     # rejects ``NaN``/``±inf`` JSON values that bypass the ``gt=0``

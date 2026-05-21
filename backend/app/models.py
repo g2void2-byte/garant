@@ -36,7 +36,15 @@ class DealStatus(str, enum.Enum):
 
     cancelled = "cancelled"  # 0
     pending_confirmation = "pending_confirmation"  # 1
-    pending_payment = "pending_payment"  # 2 (reserved; not used today)
+    # Audit M3 — DEPRECATED. The value is preserved in the Postgres
+    # ENUM because there is no ``ALTER TYPE ... DROP VALUE`` in
+    # Postgres and rebuilding ``dealstatus`` via a shadow type would
+    # be disproportionate. No transition currently writes this status;
+    # admin filters / dashboard counters that used to include it have
+    # been dropped. Do NOT add new code that transitions deals into
+    # this state — the buyer/seller flows assume only the statuses
+    # below.
+    pending_payment = "pending_payment"  # 2 (DEPRECATED, see note)
     in_progress = "in_progress"  # 3
     completed = "completed"  # 4
     arbitration = "arbitration"  # 5

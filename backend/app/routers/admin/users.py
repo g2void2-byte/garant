@@ -562,10 +562,15 @@ async def set_role(
     target = await _get_user_or_404(session, user_id)
 
     will_change_admin = target.is_admin != body.is_admin
-    if will_change_admin and admin.id == target.id:
+    will_change_arbiter = target.is_arbiter != body.is_arbiter
+    will_change_vip = target.is_vip != body.is_vip
+    if admin.id == target.id and (will_change_admin or will_change_arbiter or will_change_vip):
         # Self-demotion is the only "self" action that is special-cased
-        # because it can lock the caller out.
-        raise HTTPException(400, "Запрещено менять собственную роль администратора")
+        # because it can lock the caller out. The arbiter / VIP self-flips
+        # are also blocked here so an admin cannot grant themselves
+        # commission discounts (VIP) or arbitration access without a
+        # second admin signing off.
+        raise HTTPException(400, "Запрещено менять собственные роли")
 
     if will_change_admin and not body.is_admin:
         await _ensure_not_last_admin(session, target)
