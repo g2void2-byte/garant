@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import case, func, or_, select, update
 
 from ..deps import CurrentUser, SessionDep
 from ..models import Notification, NotificationType
@@ -74,8 +75,6 @@ async def list_notifications(
         )
     if before_created_at is not None and before_id is not None:
         try:
-            from datetime import datetime
-
             cursor_ts = datetime.fromisoformat(before_created_at.replace("Z", "+00:00"))
         except ValueError:
             # V11-L-15 — cursor parse failures point at either a
@@ -111,43 +110,33 @@ async def list_notifications(
 
 @router.get("/counters", response_model=NotificationCountersOut)
 async def get_counters(user: CurrentUser, session: SessionDep):
-    base_filter = Notification.recipient_id == user.id
-    all_count = (
-        await session.execute(select(func.count(Notification.id)).where(base_filter))
-    ).scalar() or 0
-    unread = (
+    # Fold the 5 counters into one ``COUNT(...) FILTER (WHERE ...)``
+    # aggregate (rendered by SQLAlchemy's ``func.count(case(...))``) so
+    # the DB does a single index-scan on ``ix_notifications_recipient_id``
+    # instead of five. Mirrors the same idiom already used by
+    # ``admin/dashboard.py``. Wire payload is identical.
+    row = (
         await session.execute(
-            select(func.count(Notification.id)).where(base_filter, Notification.is_read.is_(False))
-        )
-    ).scalar() or 0
-    deals = (
-        await session.execute(
-            select(func.count(Notification.id)).where(
-                base_filter, Notification.type == NotificationType.deals
+            select(
+                func.count().label("all"),
+                func.count(case((Notification.is_read.is_(False), 1))).label("unread"),
+                func.count(case((Notification.type == NotificationType.deals, 1))).label("deals"),
+                func.count(case((Notification.type == NotificationType.deposits, 1))).label(
+                    "deposits"
+                ),
+                func.count(case((Notification.type == NotificationType.system, 1))).label("system"),
             )
+            .select_from(Notification)
+            .where(Notification.recipient_id == user.id)
         )
-    ).scalar() or 0
-    deposits = (
-        await session.execute(
-            select(func.count(Notification.id)).where(
-                base_filter, Notification.type == NotificationType.deposits
-            )
-        )
-    ).scalar() or 0
-    system = (
-        await session.execute(
-            select(func.count(Notification.id)).where(
-                base_filter, Notification.type == NotificationType.system
-            )
-        )
-    ).scalar() or 0
+    ).one()
 
     return NotificationCountersOut(
-        all=all_count,
-        deals=deals,
-        deposits=deposits,
-        system=system,
-        unread=unread,
+        all=int(row.all or 0),
+        deals=int(row.deals or 0),
+        deposits=int(row.deposits or 0),
+        system=int(row.system or 0),
+        unread=int(row.unread or 0),
     )
 
 

@@ -13,7 +13,7 @@ The number of simultaneously-active services per user is capped by
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select
@@ -73,13 +73,22 @@ def _owner_out(user: User | None) -> ServiceOwnerOut | None:
     good = int(user.good or 0)
     bad = int(user.bad or 0)
     total = good + bad
-    rating = (good / total) * 5 if total else 0.0
+    # ``ServiceOwnerOut.rating`` is a ``MoneyDecimal`` — keep the math
+    # in ``Decimal`` so we never round-trip through ``float`` and the
+    # 2dp ``ROUND_HALF_EVEN`` quantise matches the rest of the wallet
+    # surface.
+    if total:
+        rating = (Decimal(good) * 5 / Decimal(total)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_EVEN
+        )
+    else:
+        rating = Decimal("0.00")
     return ServiceOwnerOut(
         id=user.id,
         username=user.username,
         display_name=user.display_name or (user.username or ""),
         photo_url=user.photo_url,
-        rating=round(rating, 2),
+        rating=rating,
         deals_count=int(user.deals_total or 0),
         good=good,
         bad=bad,
@@ -191,10 +200,15 @@ async def list_services(
     # decodes ``ServiceDto[]``) keep working unchanged.
     total = (await session.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
 
+    # Add ``Service.id.desc()`` as the final tie-breaker so pages stay
+    # stable when two services share the same ``created_at`` (bulk
+    # inserts can produce identical timestamps) or the same FTS rank;
+    # without it, ``offset``/``limit`` could silently drop or duplicate
+    # rows across page transitions.
     if fts_rank is not None:
-        stmt = stmt.order_by(fts_rank.desc(), Service.created_at.desc())
+        stmt = stmt.order_by(fts_rank.desc(), Service.created_at.desc(), Service.id.desc())
     else:
-        stmt = stmt.order_by(Service.created_at.desc())
+        stmt = stmt.order_by(Service.created_at.desc(), Service.id.desc())
     stmt = stmt.offset(offset).limit(limit)
     result = await session.execute(stmt)
     response.headers["X-Total-Count"] = str(int(total))
@@ -546,9 +560,10 @@ async def admin_list_services(
         stmt = stmt.order_by(
             func.ts_rank(Service.search_vector, tsq).desc(),
             Service.created_at.desc(),
+            Service.id.desc(),
         )
     else:
-        stmt = stmt.order_by(Service.created_at.desc())
+        stmt = stmt.order_by(Service.created_at.desc(), Service.id.desc())
     # M-3: paginate instead of returning all rows.
     stmt = stmt.offset(offset).limit(limit)
     result = await session.execute(stmt)

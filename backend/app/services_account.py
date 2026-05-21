@@ -25,7 +25,7 @@ import secrets
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
@@ -170,16 +170,19 @@ async def _invalidate_active_for(session: AsyncSession, user_id: int) -> None:
     """Mark all live codes for a given source user as consumed.
 
     Called both before issuing a fresh one (so the old codes stop working
-    immediately) and on explicit user cancel.
+    immediately) and on explicit user cancel. Implemented as a single
+    bulk ``UPDATE`` so we don't materialise the ORM rows just to stamp
+    a timestamp — the audit recommended this after spotting the
+    ``select → loop → setattr`` pattern in the v12 audit.
     """
-    stmt = select(AccountTransferCode).where(
-        AccountTransferCode.source_user_id == user_id,
-        AccountTransferCode.consumed_at.is_(None),
+    await session.execute(
+        update(AccountTransferCode)
+        .where(
+            AccountTransferCode.source_user_id == user_id,
+            AccountTransferCode.consumed_at.is_(None),
+        )
+        .values(consumed_at=_now())
     )
-    result = await session.execute(stmt)
-    now = _now()
-    for row in result.scalars().all():
-        row.consumed_at = now
 
 
 async def get_active_code(session: AsyncSession, user_id: int) -> AccountTransferCode | None:
@@ -223,19 +226,21 @@ async def issue_code(session: AsyncSession, source: User) -> tuple[str, datetime
 async def cancel_active(session: AsyncSession, source: User) -> int:
     """Invalidate every live outgoing code for ``source``.
 
-    Returns the number of rows touched.
+    Returns the number of rows touched. Implemented as a single bulk
+    ``UPDATE`` so a user with N stale unconsumed codes (theoretically
+    one if ``issue_code`` always invalidates the previous batch first,
+    but defensive) doesn't fan out into N ``UPDATE`` round-trips.
     """
-    stmt = select(AccountTransferCode).where(
-        AccountTransferCode.source_user_id == source.id,
-        AccountTransferCode.consumed_at.is_(None),
+    result = await session.execute(
+        update(AccountTransferCode)
+        .where(
+            AccountTransferCode.source_user_id == source.id,
+            AccountTransferCode.consumed_at.is_(None),
+        )
+        .values(consumed_at=_now())
     )
-    result = await session.execute(stmt)
-    rows = result.scalars().all()
-    now = _now()
-    for row in rows:
-        row.consumed_at = now
     await session.commit()
-    return len(rows)
+    return int(result.rowcount or 0)
 
 
 async def _has_tradable_data(session: AsyncSession, user: User) -> bool:
