@@ -78,6 +78,17 @@ USER app
 
 EXPOSE 8080
 
+# Audit §16.1.2 — bake the same /health probe the compose stack uses
+# into the image itself so standalone runs (``docker run …``, plain
+# Kubernetes ``Deployment``s without an explicit liveness probe, ad-hoc
+# Helm charts) inherit a working healthcheck out of the box. The
+# compose ``backend.healthcheck`` block continues to override these
+# values with its own interval/timeout/retries; this stanza is purely
+# the fallback for non-compose consumers. ``curl`` is already installed
+# above for exactly this reason (V12-L2).
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=5 \
+    CMD curl -fsS http://localhost:8080/health || exit 1
+
 # Entrypoint: just uvicorn. Migrations are owned by the compose
 # ``migrate`` init-service (see ``docker-compose.yml``); the lifespan
 # (``RUN_MIGRATIONS_ON_STARTUP=false`` in compose) verifies the DB is

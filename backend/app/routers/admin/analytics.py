@@ -339,22 +339,29 @@ async def top(_admin: AdminUser, session: SessionDep):
         )
     ).all()
 
+    # Audit §4.3 — keep the SUM(Deal.amount) values as ``Decimal`` all
+    # the way to the wire. ``MoneyDecimal`` collapses to ``float`` only
+    # at JSON-serialisation time so the OpenAPI shape (``number``) is
+    # unchanged for the frontend, but interim Python math doesn't lose
+    # last-satoshi precision on large totals. The arbiter rows pass an
+    # ``int`` from ``COUNT(*)`` which Pydantic coerces to ``Decimal``
+    # without loss.
     return AdminAnalyticsTopListsOut(
         top_sellers=[
             AdminAnalyticsTopUserOut(
-                user_id=r.id, username=r.username, display_name=r.display_name, value=float(r.v)
+                user_id=r.id, username=r.username, display_name=r.display_name, value=r.v
             )
             for r in top_sellers_rows
         ],
         top_buyers=[
             AdminAnalyticsTopUserOut(
-                user_id=r.id, username=r.username, display_name=r.display_name, value=float(r.v)
+                user_id=r.id, username=r.username, display_name=r.display_name, value=r.v
             )
             for r in top_buyers_rows
         ],
         top_arbiters=[
             AdminAnalyticsTopUserOut(
-                user_id=r.id, username=r.username, display_name=r.display_name, value=float(r.v)
+                user_id=r.id, username=r.username, display_name=r.display_name, value=r.v
             )
             for r in top_arbiters_rows
         ],

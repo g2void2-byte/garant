@@ -129,9 +129,14 @@ async def list_wallets(
     items: list[AdminWalletListItem] = []
     for u in rows:
         per_currency = [_balance_row(u, c, by_user.get(u.id, {}).get(c.id)) for c in currencies]
-        # Very rough USD estimate: pretend 1:1 for stables, else multiply
-        # by 1.0 (we don't have rates wired up yet; the field is shown
-        # in the UI as an approximation only).
+        # Audit §5.4 — placeholder ``total_usd_estimate``. We don't have a
+        # rate oracle wired up, so this just sums every per-currency
+        # ``total`` (``amount + locked``) and treats each unit as 1 USD.
+        # That means a 1 BTC holding reports ``1``, not ~70 000 — the
+        # admin UI must label the column "(approx.)" and never feed it
+        # into accounting math. See ``schemas.AdminWalletListItem`` for
+        # the full caveat. The field is kept on the wire only because
+        # the admin list view shows a single sortable "total" column.
         usd = sum((b.total for b in per_currency), Decimal(0))
         items.append(
             AdminWalletListItem(

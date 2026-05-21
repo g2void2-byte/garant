@@ -455,8 +455,17 @@ async def update_service(
             wanted = ServiceStatus(body.status)
         except ValueError as exc:
             raise HTTPException(400, "Неизвестный статус услуги") from exc
-        if wanted == ServiceStatus.banned and not user.is_admin:
-            raise HTTPException(403, "Только администратор может банить услуги")
+        # Audit §4.21 — the user-facing PATCH does not carry ``ban_reason``,
+        # so an admin who banned a service through this endpoint left the
+        # ``ban_reason`` empty (or stale from a previous ban) without any
+        # way to attach context. Route the ban through the dedicated
+        # admin endpoint (``POST /api/admin/content/services/{id}``)
+        # which has ``ban_reason`` wired into the audit log.
+        if wanted == ServiceStatus.banned:
+            raise HTTPException(
+                400,
+                "Бан услуги — через админ-эндпойнт /api/admin/content/services/{id}",
+            )
         if (
             wanted == ServiceStatus.active
             and service.status != ServiceStatus.active

@@ -10,6 +10,8 @@ import-from-spec workflows where the natural key is stable.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 
@@ -126,6 +128,18 @@ async def delete_category(
 
 
 def _cur_to_out(c: Currency) -> AdminCurrencyOut:
+    # Audit §13.7.2 — pass ``Decimal`` straight through to the schema;
+    # ``AdminCurrencyOut.min_deposit`` / ``min_withdraw`` are
+    # ``MoneyDecimal`` so the JSON wire format stays ``number`` but
+    # internal arithmetic keeps the full ``Numeric(28, 8)`` precision.
+    # Audit §13.7.3 — surface ``address_regex`` so the admin UI can
+    # round-trip the value through the upsert endpoint.
+    # Cast through ``Decimal`` because the SQLAlchemy ``Mapped`` type on
+    # ``Currency.min_deposit`` / ``min_withdraw`` is declared as
+    # ``Mapped[float]`` (the column is ``Numeric(28, 8)``; the type-hint
+    # mismatch is a long-standing minor in the model). At runtime
+    # ``c.min_deposit`` is already a ``Decimal``, so this is a no-op
+    # call but it silences pyright on the ``MoneyDecimal`` field.
     return AdminCurrencyOut(
         id=c.id,
         code=c.code,
@@ -133,10 +147,11 @@ def _cur_to_out(c: Currency) -> AdminCurrencyOut:
         network=c.network,
         icon_url=c.icon_url,
         decimals=c.decimals,
-        min_deposit=float(c.min_deposit),
-        min_withdraw=float(c.min_withdraw),
+        min_deposit=Decimal(c.min_deposit),
+        min_withdraw=Decimal(c.min_withdraw),
         is_active=bool(c.is_active),
         sort_order=c.sort_order,
+        address_regex=c.address_regex or "",
     )
 
 
@@ -168,10 +183,17 @@ async def upsert_currency(
             network=body.network or "",
             icon_url=body.icon_url or "",
             decimals=body.decimals if body.decimals is not None else 2,
-            min_deposit=body.min_deposit if body.min_deposit is not None else 1.0,
-            min_withdraw=body.min_withdraw if body.min_withdraw is not None else 1.0,
+            # Audit §13.7.2 — ``Decimal`` straight into the
+            # ``Numeric(28, 8)`` column; no float round-trip.
+            min_deposit=body.min_deposit if body.min_deposit is not None else Decimal("1"),
+            min_withdraw=body.min_withdraw if body.min_withdraw is not None else Decimal("1"),
             is_active=body.is_active if body.is_active is not None else True,
             sort_order=body.sort_order if body.sort_order is not None else 0,
+            # Audit §13.7.3 — accept ``address_regex`` on create. ``None``
+            # falls back to the column server_default (``""`` = validation
+            # disabled), preserving back-compat with admins who haven't
+            # filled the field in yet.
+            address_regex=body.address_regex if body.address_regex is not None else "",
         )
         session.add(existing)
         await session.flush()
@@ -186,6 +208,7 @@ async def upsert_currency(
             "min_withdraw": float(existing.min_withdraw),
             "is_active": bool(existing.is_active),
             "sort_order": existing.sort_order,
+            "address_regex": existing.address_regex or "",
         }
         if body.name is not None:
             existing.name = body.name
@@ -203,6 +226,8 @@ async def upsert_currency(
             existing.is_active = body.is_active
         if body.sort_order is not None:
             existing.sort_order = body.sort_order
+        if body.address_regex is not None:
+            existing.address_regex = body.address_regex
         action = "currency.update"
 
     await log_admin_action(
