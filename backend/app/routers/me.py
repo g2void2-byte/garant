@@ -42,10 +42,32 @@ async def update_me(body: UserUpdate, user: CurrentUser, session: SessionDep):
         user.photo_url = body.photo_url or None
         touched.append("photo_url")
     if body.forums is not None:
+        # Audit M5 — diff against existing rows instead of
+        # delete-all/insert-all so:
+        #   * unchanged forums keep their ``Forum.id`` (clients may
+        #     cache ids; pre-fix every PATCH rotated them);
+        #   * write amplification drops from O(N) DELETE + O(N) INSERT
+        #     per PATCH to only the actual changes.
+        # The match key is ``(name, url)`` because we treat a renamed
+        # forum or a moved URL as a new entry (same as the pre-fix
+        # behaviour), keeping the diff intuitive for the user.
+        desired = [(fd.name, fd.url) for fd in body.forums]
+        desired_set = set(desired)
+        kept: set[tuple[str, str]] = set()
         for f in list(user.forums):
-            await session.delete(f)
-        for fd in body.forums:
-            session.add(Forum(owner_id=user.id, name=fd.name, url=fd.url))
+            key = (f.name, f.url)
+            if key in desired_set and key not in kept:
+                kept.add(key)
+            else:
+                await session.delete(f)
+        for key in desired:
+            if key not in kept:
+                session.add(Forum(owner_id=user.id, name=key[0], url=key[1]))
+                # Mark the slot as filled so a duplicate ``(name, url)``
+                # inside ``body.forums`` produces a single row rather
+                # than two identical entries (which the pre-fix
+                # delete-all/insert-all path would happily create).
+                kept.add(key)
         touched.append("forums")
     if body.dm_deals is not None:
         user.dm_deals = body.dm_deals

@@ -55,7 +55,6 @@ const WalletWithdrawPage = lazyWithRetry(() => import("@/pages/wallet/WalletWith
 const WalletCurrencyPage = lazyWithRetry(() => import("@/pages/wallet/WalletCurrencyPage"), "WalletCurrencyPage");
 const ServiceDetailPage = lazyWithRetry(() => import("@/pages/search/ServiceDetailPage"), "ServiceDetailPage");
 const ArbitrationPage = lazyWithRetry(() => import("@/pages/arbitration/ArbitrationPage"), "ArbitrationPage");
-const DealPaymentPage = lazyWithRetry(() => import("@/pages/deals/DealPaymentPage"), "DealPaymentPage");
 const PinResetPage = lazyWithRetry(() => import("@/pages/pin/PinResetPage"), "PinResetPage");
 const AdminDashboardPage = lazyWithRetry(() => import("@/pages/admin/AdminDashboardPage"), "AdminDashboardPage");
 const AdminUsersPage = lazyWithRetry(() => import("@/pages/admin/AdminUsersPage"), "AdminUsersPage");
@@ -185,7 +184,6 @@ export function App() {
                     <Route path="/deals/new" element={<CreateDealPage />} />
                     <Route path="/create-deal/:username" element={<CreateDealPage />} />
                     <Route path="/deals/:id" element={<DealDetailPage />} />
-                    <Route path="/deals/:id/payment" element={<DealPaymentPage />} />
                     <Route path="/support" element={<SupportPage />} />
                     <Route path="/notifications" element={<NotificationsPage />} />
                     <Route path="/notifications/:id" element={<NotificationDetailPage />} />

@@ -3824,6 +3824,10 @@
             "default": "buyer"
           },
           "role": {
+            "enum": [
+              "buyer",
+              "seller"
+            ],
             "title": "Role",
             "type": "string"
           }

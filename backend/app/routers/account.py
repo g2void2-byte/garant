@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from ..bot.notify import send_dm
 from ..deps import CurrentUser, PinUser, SessionDep
-from ..rate_limit import RLPin
+from ..rate_limit import RLAccountTransferStart, RLPin
 from ..services_account import (
     cancel_active,
     confirm_transfer,
@@ -57,7 +57,11 @@ async def transfer_status(user: CurrentUser, session: SessionDep) -> TransferSta
 
 
 @router.post("/start", response_model=TransferStartOut)
-async def transfer_start(user: PinUser, session: SessionDep) -> TransferStartOut:
+async def transfer_start(
+    user: PinUser,
+    session: SessionDep,
+    _rl: RLAccountTransferStart,
+) -> TransferStartOut:
     code, expires = await issue_code(session, user)
     # 5.4 (MED) — ``send_dm`` ships ``text`` with ``parse_mode=HTML``
     # (see ``bot/notify.py::get_bot``). Every interpolated value

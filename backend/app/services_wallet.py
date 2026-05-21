@@ -770,8 +770,16 @@ _cryptopay_configured = is_cryptopay_configured
 
 
 async def create_withdrawal(
-    session: AsyncSession, user: User, currency_code: str, amount: float, address: str
+    session: AsyncSession, user: User, currency_code: str, amount: Decimal, address: str
 ) -> WalletWithdrawal:
+    # Audit L2 — ``amount`` is a ``Decimal`` at the wire layer
+    # (``WalletWithdrawCreateReq.amount: Decimal``). The previous
+    # ``float`` annotation was misleading: the runtime value was
+    # already a ``Decimal`` and the ``< currency.min_withdraw``
+    # comparison only worked because the column is also ``Decimal``.
+    # Switching the annotation removes any temptation to ``float()``
+    # the value at the call site (which would lose precision at the
+    # 10^10 scale).
     currency = await get_currency_by_code(session, currency_code)
     if amount < currency.min_withdraw:
         raise HTTPException(
@@ -1006,6 +1014,26 @@ async def create_withdrawal(
                         "notif_id": notif.id,
                     },
                 )
+    else:
+        # Audit L4 — manual mode with no admins in the system means
+        # this row will sit in ``pending`` indefinitely with the user's
+        # balance trapped in ``locked``. We can't refuse the
+        # withdrawal here (Phase 1 has already committed the
+        # ``amount → locked`` debit; rolling back would require its
+        # own three-phase dance), so we log loudly instead. Operators
+        # should monitor this event in their observability stack and
+        # either provision an admin or process the row manually.
+        logger.error(
+            "create_withdrawal #%s queued in manual mode but no admins exist",
+            withdrawal.id,
+            extra={
+                "event": "create_withdrawal.manual.no_admins",
+                "withdrawal_id": withdrawal.id,
+                "user_id": user.id,
+                "currency": currency.code,
+                "amount": str(amount),
+            },
+        )
 
     return withdrawal
 

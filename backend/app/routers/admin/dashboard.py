@@ -66,10 +66,13 @@ async def dashboard(_admin: AdminUser, session: SessionDep) -> AdminDashboardOut
                 func.count(
                     case(
                         (
+                            # Audit M3 — ``pending_payment`` is reserved
+                            # in ``DealStatus`` but no transition writes
+                            # it, so counting it here was dead branch
+                            # coverage that misled the dashboard.
                             Deal.status.in_(
                                 [
                                     DealStatus.pending_confirmation,
-                                    DealStatus.pending_payment,
                                     DealStatus.in_progress,
                                 ]
                             ),

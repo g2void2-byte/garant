@@ -132,11 +132,15 @@ async def _deals_stats(session: AsyncSession, user_id: int) -> dict[str, Any]:
         )
     ).scalar_one()
 
+    # Audit M3 — ``pending_payment`` is reserved in ``DealStatus`` but
+    # no transition writes it; counting it alongside
+    # ``pending_confirmation`` was always zero on top of the
+    # confirmation count and confused readers.
     pending_payment_count = (
         await session.execute(
             select(func.count(Deal.id)).where(
                 or_(Deal.buyer_id == user_id, Deal.seller_id == user_id),
-                Deal.status.in_((DealStatus.pending_confirmation, DealStatus.pending_payment)),
+                Deal.status == DealStatus.pending_confirmation,
             )
         )
     ).scalar_one()

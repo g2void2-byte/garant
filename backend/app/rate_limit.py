@@ -279,6 +279,19 @@ RLWalletPoll = Annotated[None, Depends(rate_limit("wallet-poll", limit=2, window
 # rate-limit counters before it can DoS the integration.
 RLDeposit = Annotated[None, Depends(rate_limit("deposit", limit=3, window=60))]
 
+# Audit L5 — ``POST /api/account/transfer/start`` issues a 6-digit
+# transfer code and pushes a Telegram DM to the calling user. The
+# endpoint sits behind the PIN gate but, post-PIN, the caller could
+# spam it to generate noisy DMs (each call rotates the active code,
+# so this is purely an annoyance — not a brute-force vector — but
+# the DMs are still real notifications to a real Telegram chat).
+# 5/min is generous for legitimate flows (the UI does a single start
+# per attempt) and tight enough that an attacker who has captured a
+# PIN session cannot fan out a flood of "🔁 Перенос аккаунта" DMs.
+RLAccountTransferStart = Annotated[
+    None, Depends(rate_limit("account-transfer-start", limit=5, window=60))
+]
+
 
 __all__ = [
     "User",
@@ -299,4 +312,5 @@ __all__ = [
     "RLMarkAllRead",
     "RLWalletPoll",
     "RLDeposit",
+    "RLAccountTransferStart",
 ]
