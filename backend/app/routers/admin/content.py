@@ -55,9 +55,40 @@ router = APIRouter(
 
 # --------------------------------------------------------------------- helpers
 
+# Audit 3.6 — the list endpoints below previously did per-row
+# ``await session.get(User, ...)`` lookups inside ``_review_to_out`` /
+# ``_comment_to_out`` / ``_service_to_out``, i.e. 1-2 extra SELECTs per
+# returned row.  Batching the referenced rows into a single ``WHERE id
+# IN (...)`` query and passing the resulting dict down to the
+# serializer kills the N+1.  The single-row paths
+# (create / update / delete) still pass ``None`` and fall back to the
+# old ``session.get`` lookup — one extra round-trip there is cheap.
 
-async def _service_to_out(session: AsyncSession, service: Service) -> AdminServiceItemOut:
-    category = await session.get(Category, service.category_id)
+
+async def _users_by_id(session: AsyncSession, ids: set[int]) -> dict[int, User]:
+    if not ids:
+        return {}
+    rows = (await session.execute(select(User).where(User.id.in_(ids)))).scalars().all()
+    return {u.id: u for u in rows}
+
+
+async def _categories_by_id(session: AsyncSession, ids: set[int]) -> dict[int, Category]:
+    if not ids:
+        return {}
+    rows = (await session.execute(select(Category).where(Category.id.in_(ids)))).scalars().all()
+    return {c.id: c for c in rows}
+
+
+async def _service_to_out(
+    session: AsyncSession,
+    service: Service,
+    *,
+    categories_by_id: dict[int, Category] | None = None,
+) -> AdminServiceItemOut:
+    if categories_by_id is not None:
+        category = categories_by_id.get(service.category_id)
+    else:
+        category = await session.get(Category, service.category_id)
     return AdminServiceItemOut(
         id=service.id,
         owner_id=service.owner_id,
@@ -76,9 +107,18 @@ async def _service_to_out(session: AsyncSession, service: Service) -> AdminServi
     )
 
 
-async def _review_to_out(session: AsyncSession, review: Review) -> AdminReviewItemOut:
-    author = await session.get(User, review.author_id)
-    target = await session.get(User, review.target_id)
+async def _review_to_out(
+    session: AsyncSession,
+    review: Review,
+    *,
+    users_by_id: dict[int, User] | None = None,
+) -> AdminReviewItemOut:
+    if users_by_id is not None:
+        author = users_by_id.get(review.author_id)
+        target = users_by_id.get(review.target_id)
+    else:
+        author = await session.get(User, review.author_id)
+        target = await session.get(User, review.target_id)
     return AdminReviewItemOut(
         id=review.id,
         deal_id=review.deal_id,
@@ -92,8 +132,16 @@ async def _review_to_out(session: AsyncSession, review: Review) -> AdminReviewIt
     )
 
 
-async def _comment_to_out(session: AsyncSession, comment: ServiceComment) -> AdminCommentItemOut:
-    author = await session.get(User, comment.author_id)
+async def _comment_to_out(
+    session: AsyncSession,
+    comment: ServiceComment,
+    *,
+    users_by_id: dict[int, User] | None = None,
+) -> AdminCommentItemOut:
+    if users_by_id is not None:
+        author = users_by_id.get(comment.author_id)
+    else:
+        author = await session.get(User, comment.author_id)
     return AdminCommentItemOut(
         id=comment.id,
         service_id=comment.service_id,
@@ -128,7 +176,10 @@ async def list_user_services(
         .scalars()
         .all()
     )
-    return [await _service_to_out(session, s) for s in rows]
+    # Audit 3.6 — batch-load the referenced categories so we don't
+    # ``await session.get(Category, ...)`` once per service row.
+    categories_by_id = await _categories_by_id(session, {s.category_id for s in rows})
+    return [await _service_to_out(session, s, categories_by_id=categories_by_id) for s in rows]
 
 
 @router.post("/services/{service_id}", response_model=AdminServiceItemOut)
@@ -154,11 +205,18 @@ async def update_service(
         before["description"] = service.description
         after["description"] = body.description
         service.description = body.description
-    if body.price is not None and float(body.price) != float(service.price):
+    # Audit 3.7 — compare ``Decimal`` values directly. The previous
+    # ``float(body.price) != float(service.price)`` could collapse
+    # last-satoshi differences for amounts > 1e15, surfacing a
+    # false-positive "no change" or a spurious change. The audit-log
+    # ``before`` / ``after`` dicts still serialise as float to match the
+    # wire format used elsewhere (``MoneyDecimal`` → float), but the
+    # *change-detection* now happens on the lossless Decimal value.
+    if body.price is not None and body.price != service.price:
         before["price"] = float(service.price)
         after["price"] = float(body.price)
         service.price = body.price
-    if body.deposit is not None and float(body.deposit) != float(service.deposit):
+    if body.deposit is not None and body.deposit != service.deposit:
         before["deposit"] = float(service.deposit)
         after["deposit"] = float(body.deposit)
         service.deposit = body.deposit
@@ -176,10 +234,13 @@ async def update_service(
             after["rating_manual"] = None
             service.rating_manual = None
     elif body.rating_manual is not None:
-        current = float(service.rating_manual) if service.rating_manual is not None else None
-        if current != body.rating_manual:
-            before["rating_manual"] = current
-            after["rating_manual"] = body.rating_manual
+        # Audit 3.7 — Decimal-vs-Decimal compare; only convert to
+        # float for the audit payload (which is the wire format).
+        if service.rating_manual != body.rating_manual:
+            before["rating_manual"] = (
+                float(service.rating_manual) if service.rating_manual is not None else None
+            )
+            after["rating_manual"] = float(body.rating_manual)
             service.rating_manual = body.rating_manual
     if body.status is not None:
         try:
@@ -311,7 +372,15 @@ async def list_user_reviews(
     else:
         stmt = select(Review).where(Review.target_id == user_id)
     rows = (await session.execute(stmt.order_by(Review.created_at.desc()))).scalars().all()
-    return [await _review_to_out(session, r) for r in rows]
+    # Audit 3.6 — batch-load referenced users (author + target) so
+    # the per-row ``session.get`` in ``_review_to_out`` collapses to
+    # a single ``WHERE id IN (...)`` SELECT.
+    user_ids: set[int] = set()
+    for r in rows:
+        user_ids.add(r.author_id)
+        user_ids.add(r.target_id)
+    users_by_id = await _users_by_id(session, user_ids)
+    return [await _review_to_out(session, r, users_by_id=users_by_id) for r in rows]
 
 
 @router.post("/reviews", response_model=AdminReviewItemOut, status_code=201)
@@ -491,7 +560,10 @@ async def list_user_comments(
         .scalars()
         .all()
     )
-    return [await _comment_to_out(session, c) for c in rows]
+    # Audit 3.6 — batch-load referenced authors; same one-SELECT-per
+    # response shape as ``list_user_reviews`` above.
+    users_by_id = await _users_by_id(session, {c.author_id for c in rows})
+    return [await _comment_to_out(session, c, users_by_id=users_by_id) for c in rows]
 
 
 @router.get("/services/{service_id}/comments", response_model=list[AdminCommentItemOut])
@@ -514,7 +586,10 @@ async def list_service_comments(
         .scalars()
         .all()
     )
-    return [await _comment_to_out(session, c) for c in rows]
+    # Audit 3.6 — batch-load referenced authors so per-row
+    # ``session.get(User, ...)`` collapses to a single SELECT.
+    users_by_id = await _users_by_id(session, {c.author_id for c in rows})
+    return [await _comment_to_out(session, c, users_by_id=users_by_id) for c in rows]
 
 
 @router.post("/comments/{comment_id}", response_model=AdminCommentItemOut)

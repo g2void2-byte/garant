@@ -15,13 +15,18 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 
 
 # Continental's "Рейтинг" radio buckets. Mapping the bucket key -> (min, max).
-# Values are 0-5 floats inclusive; ``None`` means "no bound on this side".
+# Intervals are HALF-OPEN: ``[lo, hi)`` so adjacent buckets join cleanly
+# without leaving holes for fractional ratings (e.g. 4.95, 3.4999, …).
+# ``rating`` is computed in SQL as ``5 * good / (good + bad)``, which is
+# an arbitrary real number; before the half-open switch a user with
+# rating 4.95 fell into no bucket at all (not ``>= 5.0``, not ``<= 4.9``).
+# ``None`` means "no bound on this side".
 _RATING_BUCKETS: dict[str, tuple[float | None, float | None]] = {
     "5.0": (5.0, None),
-    "4.5-4.9": (4.5, 4.9),
-    "4.0-4.4": (4.0, 4.4),
-    "3.5-3.9": (3.5, 3.9),
-    "lt3.5": (None, 3.4999),
+    "4.5-4.9": (4.5, 5.0),
+    "4.0-4.4": (4.0, 4.5),
+    "3.5-3.9": (3.5, 4.0),
+    "lt3.5": (None, 3.5),
 }
 
 # Continental's "Количество сделок" radio buckets.
@@ -99,7 +104,10 @@ async def list_users(
         if lo is not None:
             stmt = stmt.where(rating_expr >= lo)
         if hi is not None:
-            stmt = stmt.where(rating_expr <= hi)
+            # Half-open upper bound so a rating of e.g. 4.95 lands in
+            # the ``4.5-4.9`` bucket (``4.5 <= r < 5.0``) instead of
+            # falling through to no bucket at all.
+            stmt = stmt.where(rating_expr < hi)
 
     if deals is not None:
         if deals not in _DEALS_BUCKETS:

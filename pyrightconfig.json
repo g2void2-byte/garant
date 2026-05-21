@@ -14,7 +14,7 @@
   "reportMissingImports": "error",
   "reportUndefinedVariable": "error",
   "reportInvalidTypeForm": "error",
-  "reportArgumentType": "none",
+  "reportArgumentType": "warning",
   "reportAttributeAccessIssue": "none",
   "reportCallIssue": "warning",
   "reportGeneralTypeIssues": "warning",
