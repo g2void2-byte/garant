@@ -493,9 +493,23 @@ class DealCreate(BaseModel):
 class DealCancelRequest(BaseModel):
     reason: str = ""
 
+    @field_validator("reason")
+    @classmethod
+    def _reason_ok(cls, v: str) -> str:
+        # Match the existing ``description`` cap so free-form deal
+        # text on the wire is bounded everywhere. Without this, the
+        # ``Text``-typed columns ``cancellation_reason`` / ``arbitration_reason``
+        # / ``arbitration_note`` would happily accept multi-MB strings.
+        return _validate_description(v) or ""
+
 
 class DealArbitrationRequest(BaseModel):
     reason: str = ""
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_ok(cls, v: str) -> str:
+        return _validate_description(v) or ""
 
 
 class DealResolveRequest(BaseModel):
@@ -508,6 +522,11 @@ class DealResolveRequest(BaseModel):
         if v not in ("buyer", "seller"):
             raise ValueError("winner должен быть 'buyer' или 'seller'")
         return v
+
+    @field_validator("note")
+    @classmethod
+    def _note_ok(cls, v: str) -> str:
+        return _validate_description(v) or ""
 
 
 class DealOut(BaseModel):
