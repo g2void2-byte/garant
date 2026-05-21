@@ -2548,6 +2548,11 @@ export interface components {
         };
         /** AdminCurrencyOut */
         AdminCurrencyOut: {
+            /**
+             * Address Regex
+             * @default
+             */
+            address_regex: string;
             /** Code */
             code: string;
             /** Decimals */
@@ -2571,6 +2576,8 @@ export interface components {
         };
         /** AdminCurrencyUpsertIn */
         AdminCurrencyUpsertIn: {
+            /** Address Regex */
+            address_regex?: string | null;
             /** Code */
             code: string;
             /** Decimals */
@@ -2580,9 +2587,9 @@ export interface components {
             /** Is Active */
             is_active?: boolean | null;
             /** Min Deposit */
-            min_deposit?: number | null;
+            min_deposit?: number | string | null;
             /** Min Withdraw */
-            min_withdraw?: number | null;
+            min_withdraw?: number | string | null;
             /** Name */
             name?: string | null;
             /** Network */
@@ -6216,6 +6223,7 @@ export interface operations {
             query?: {
                 page?: number;
                 page_size?: number;
+                status?: ("pending" | "sent" | "failed") | null;
             };
             header: {
                 authorization: string;
