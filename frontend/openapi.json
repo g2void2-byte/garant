@@ -1038,6 +1038,11 @@
       },
       "AdminCurrencyOut": {
         "properties": {
+          "address_regex": {
+            "default": "",
+            "title": "Address Regex",
+            "type": "string"
+          },
           "code": {
             "title": "Code",
             "type": "string"
@@ -1096,6 +1101,17 @@
       },
       "AdminCurrencyUpsertIn": {
         "properties": {
+          "address_regex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Regex"
+          },
           "code": {
             "title": "Code",
             "type": "string"
@@ -1139,6 +1155,10 @@
                 "type": "number"
               },
               {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -1148,6 +1168,10 @@
             "anyOf": [
               {
                 "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -10663,6 +10687,27 @@
               "minimum": 1,
               "title": "Page Size",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "sent",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
             }
           },
           {
