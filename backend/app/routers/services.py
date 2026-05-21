@@ -113,18 +113,35 @@ def _comment_out(c: ServiceComment) -> ServiceCommentOut:
     )
 
 
-async def _get_max_active(session) -> int:
-    settings = (await session.execute(select(AppSettings).limit(1))).scalar_one_or_none()
-    if not settings:
-        return 10
-    return int(settings.max_active_services_per_user or 10)
-
-
-async def _count_active(session, owner_id: int) -> int:
-    stmt = select(func.count(Service.id)).where(
-        Service.owner_id == owner_id, Service.status == ServiceStatus.active
+# Audit §4.8 — the quota check used to be two awaits + one extra
+# scalar-only round-trip (``_get_max_active`` SELECT against
+# ``app_settings`` + ``_count_active`` ``SELECT count(*)`` against
+# ``services``). Both are independent of each other so we fold them
+# into a single ``SELECT`` with a correlated count subquery; the
+# planner returns one row and two scalars in one round-trip instead
+# of two sequential round-trips. ``LEFT JOIN`` (via the scalar
+# subquery on the count side) keeps the row materialised even when
+# the owner has zero active services, so we never have to special-
+# case ``COUNT(*) = 0``.
+async def _quota_snapshot(session, owner_id: int) -> tuple[int, int]:
+    """Return ``(active_count, max_active)`` in a single SQL round-trip."""
+    count_stmt = (
+        select(func.count(Service.id))
+        .where(Service.owner_id == owner_id, Service.status == ServiceStatus.active)
+        .scalar_subquery()
     )
-    return int((await session.execute(stmt)).scalar_one())
+    stmt = select(
+        func.coalesce(AppSettings.max_active_services_per_user, 10).label("max_active"),
+        count_stmt.label("active_count"),
+    ).limit(1)
+    row = (await session.execute(stmt)).one_or_none()
+    if row is None:
+        # ``app_settings`` singleton missing (fresh deployment that
+        # skipped seeding): fall back to the pre-fix default and run a
+        # standalone count so the per-user cap still applies.
+        fallback_count = (await session.execute(select(count_stmt))).scalar_one()
+        return int(fallback_count), 10
+    return int(row.active_count), int(row.max_active or 10)
 
 
 @router.get("", response_model=list[ServiceOut])
@@ -249,8 +266,7 @@ async def create_service(
     # to whoever lands that requirement.
     await session.execute(select(User.id).where(User.id == user.id).with_for_update())
 
-    active_now = await _count_active(session, user.id)
-    max_active = await _get_max_active(session)
+    active_now, max_active = await _quota_snapshot(session, user.id)
     if active_now >= max_active:
         raise HTTPException(
             400,
@@ -479,8 +495,7 @@ async def update_service(
             await session.execute(
                 select(User.id).where(User.id == service.owner_id).with_for_update()
             )
-            active_now = await _count_active(session, service.owner_id)
-            max_active = await _get_max_active(session)
+            active_now, max_active = await _quota_snapshot(session, service.owner_id)
             if active_now >= max_active:
                 raise HTTPException(
                     400,
