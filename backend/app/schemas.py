@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -1397,6 +1398,12 @@ class AdminWalletListItem(BaseModel):
     is_banned: bool
     is_frozen: bool
     balances: list[AdminUserBalanceOut]
+    # Audit §5.4 — this is **not** a real USD valuation. The field is a
+    # naive sum of every per-currency ``total`` (``amount + locked``)
+    # treating each unit as 1 USD, because the admin panel doesn't have
+    # a price oracle wired up. Holding 1 BTC therefore reports
+    # ``total_usd_estimate=1``, not ~70 000. The admin UI must label
+    # the column as an approximation; do NOT use it for accounting.
     # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
     total_usd_estimate: Decimal
 
@@ -1805,10 +1812,21 @@ class AdminCurrencyOut(BaseModel):
     network: str
     icon_url: str
     decimals: int
-    min_deposit: float
-    min_withdraw: float
+    # Audit §13.7.2 — surface ``min_deposit`` / ``min_withdraw`` as
+    # ``MoneyDecimal`` so the value is computed/compared as ``Decimal``
+    # internally and only collapsed to ``float`` at the JSON boundary
+    # (same trade-off documented on ``MoneyDecimal`` itself). The
+    # underlying column is ``Numeric(28, 8)``; reading it back through
+    # ``float`` truncated the last few digits on currencies like SHIB.
+    min_deposit: MoneyDecimal
+    min_withdraw: MoneyDecimal
     is_active: bool
     sort_order: int
+    # Audit §13.7.3 — per-currency anchored regex applied to user-
+    # supplied payout addresses in ``services_wallet.create_withdrawal``.
+    # Echoed back here so the admin UI can round-trip the value through
+    # the upsert endpoint without losing it.
+    address_regex: str = ""
 
 
 class AdminCurrencyUpsertIn(BaseModel):
@@ -1817,10 +1835,26 @@ class AdminCurrencyUpsertIn(BaseModel):
     network: str | None = None
     icon_url: str | None = None
     decimals: int | None = None
-    min_deposit: float | None = None
-    min_withdraw: float | None = None
+    # Audit §13.7.2 — ``Decimal`` end-to-end so an admin who enters
+    # ``0.123456789012345678`` doesn't silently lose precision through
+    # a float64 round-trip on the way into the ``Numeric(28, 8)`` DB
+    # column. ``MoneyDecimal`` would also work but the wire shape on
+    # the *input* side is already ``Decimal`` (pydantic v2 coerces JSON
+    # numbers natively); ``Decimal | None`` keeps the contract symmetric
+    # with ``ServiceUpdate.price``.
+    min_deposit: Decimal | None = None
+    min_withdraw: Decimal | None = None
     is_active: bool | None = None
     sort_order: int | None = None
+    # Audit §13.7.3 — allow the admin to set the per-currency address
+    # regex through the upsert endpoint instead of relying on the
+    # ``d9f1c3a8e205_currencies_address_regex`` back-fill migration +
+    # ``seed.CURRENCY_ADDRESS_REGEX`` for new currencies. Empty string
+    # / ``None`` keep the deliberate "validation disabled" fallback
+    # documented in ``services_wallet.create_withdrawal``; any non-empty
+    # value is compiled below to reject malformed patterns at the API
+    # boundary instead of crashing at withdrawal time.
+    address_regex: str | None = None
 
     @field_validator("code")
     @classmethod
@@ -1841,11 +1875,32 @@ class AdminCurrencyUpsertIn(BaseModel):
 
     @field_validator("min_deposit", "min_withdraw")
     @classmethod
-    def _min_ok(cls, v: float | None) -> float | None:
+    def _min_ok(cls, v: Decimal | float | int | None) -> Decimal | None:
+        # Audit §13.7.2 — share the finiteness + non-negative guard with
+        # every other money field instead of comparing the raw float.
+        result = _reject_non_finite_money(v)
+        if result is not None and result < 0:
+            raise ValueError("Значение не может быть отрицательным")
+        return result
+
+    @field_validator("address_regex")
+    @classmethod
+    def _address_regex_ok(cls, v: str | None) -> str | None:
+        # Audit §13.7.3 — sanity-check the regex compiles. ``None`` /
+        # empty string mean "don't change" / "validation disabled";
+        # any other value must be a valid Python regex so the
+        # ``re.fullmatch`` call in ``services_wallet.create_withdrawal``
+        # cannot crash at withdrawal time.
         if v is None:
             return v
-        if v < 0:
-            raise ValueError("Значение не может быть отрицательным")
+        if v == "":
+            return v
+        if len(v) > 1024:
+            raise ValueError("address_regex слишком длинный (≤1024)")
+        try:
+            re.compile(v)
+        except re.error as exc:
+            raise ValueError(f"Невалидный address_regex: {exc}") from exc
         return v
 
 
@@ -2037,7 +2092,13 @@ class AdminAnalyticsTopUserOut(BaseModel):
     user_id: int
     username: str | None
     display_name: str
-    value: float
+    # Audit §4.3 — top sellers/buyers aggregate ``Deal.amount`` (a
+    # ``Numeric(28, 8)`` column) so the lossless wire shape is
+    # ``MoneyDecimal`` (Decimal internally, float on JSON to keep the
+    # frontend contract identical to the rest of the API). Top
+    # arbiters use the same field for a row count, which Pydantic
+    # coerces from ``int`` to ``Decimal`` without loss.
+    value: MoneyDecimal
 
 
 class AdminAnalyticsTopListsOut(BaseModel):

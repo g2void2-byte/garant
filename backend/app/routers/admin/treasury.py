@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select, text
@@ -220,12 +221,24 @@ async def list_treasury_withdrawals(
     session: SessionDep,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    # Audit §5.11 — optional status filter so the admin panel can
+    # surface "pending payouts" / "failed retries" without paginating
+    # through the full history. Whitelisted against the closed set
+    # the writer side actually emits (``treasury_withdraw`` sets
+    # ``pending`` on insert and either ``sent`` on Phase 3 success
+    # or ``failed`` on Phase 2 error; ``treasury_mark_sent`` flips
+    # ``pending`` → ``sent``) so an unknown value 400s instead of
+    # silently returning everything.
+    status: Literal["pending", "sent", "failed"] | None = Query(None),
 ):
+    stmt = select(TreasuryWithdrawal, Currency).join(
+        Currency, Currency.id == TreasuryWithdrawal.currency_id
+    )
+    if status is not None:
+        stmt = stmt.where(TreasuryWithdrawal.status == status)
     rows = (
         await session.execute(
-            select(TreasuryWithdrawal, Currency)
-            .join(Currency, Currency.id == TreasuryWithdrawal.currency_id)
-            .order_by(TreasuryWithdrawal.created_at.desc())
+            stmt.order_by(TreasuryWithdrawal.created_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )

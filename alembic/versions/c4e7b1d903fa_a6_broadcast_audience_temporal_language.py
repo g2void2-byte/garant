@@ -40,6 +40,14 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Audit §15.9 — ``add_column`` of a NULLable column without a
+    # default is a *metadata-only* change in Postgres (no table rewrite,
+    # no full ACCESS EXCLUSIVE on the data pages). That's why it's safe
+    # to follow up with ``CREATE INDEX CONCURRENTLY`` on the same
+    # ``users`` table in the same migration: the prior add_column does
+    # not hold a long-lived exclusive lock, and the autocommit_block
+    # below explicitly drops the transaction so the concurrent build
+    # runs against a hot table without serialising writers.
     op.add_column(
         "users",
         sa.Column("language_code", sa.String(length=16), nullable=True),

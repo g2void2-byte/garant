@@ -493,3 +493,18 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_categories_slug"), table_name="categories")
     op.drop_table("categories")
     op.drop_table("app_settings")
+    # Audit §15.2 — Postgres ENUM types created inline by
+    # ``sa.Enum(..., name=...)`` are *not* dropped automatically when
+    # the owning table goes away. Without these the next
+    # ``alembic upgrade head`` after a full downgrade fails with
+    # ``type already exists``. ``IF EXISTS`` keeps the downgrade
+    # idempotent across legacy / Postgres-newer revisions that may
+    # have already pruned a name.
+    op.execute("DROP TYPE IF EXISTS paycommission")
+    op.execute("DROP TYPE IF EXISTS dealstatus")
+    op.execute("DROP TYPE IF EXISTS invoiceprovider")
+    op.execute("DROP TYPE IF EXISTS invoicestatus")
+    op.execute("DROP TYPE IF EXISTS notificationtype")
+    op.execute("DROP TYPE IF EXISTS servicestatus")
+    op.execute("DROP TYPE IF EXISTS walletdepositstatus")
+    op.execute("DROP TYPE IF EXISTS walletwithdrawstatus")
