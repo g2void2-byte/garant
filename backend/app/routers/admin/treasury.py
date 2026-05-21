@@ -26,14 +26,14 @@ import logging
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 
 from ...admin_audit import log_admin_action
 from ...admin_guard import TotpUser
 from ...config import settings as app_settings_env
 from ...cryptopay import CryptoPay, CryptoPayError
 from ...deps import AdminUser, SessionDep
-from ...models import Currency, Deal, DealStatus, TreasuryWithdrawal
+from ...models import Currency, Deal, DealStatus, PayCommission, TreasuryWithdrawal
 from ...money import quantize_money
 from ...rate_limit import rate_limit
 from ...schemas import (
@@ -54,12 +54,13 @@ router = APIRouter(
 )
 
 
-# Statuses where the platform commission has actually been collected.
-# Per spec, commission is charged on every terminal deal (including
-# refunds / cancellations / inactivity sweeps), so all terminal
-# statuses contribute. Only the explicit admin "delete" path returns
-# the full locked pot to the buyer — and a deleted deal is removed
-# from this query because the row no longer exists.
+# Terminal deal statuses considered when summing accrued commission.
+# Per spec, commission is charged once a deal reaches a terminal
+# status — but only in the paths where money actually changed hands
+# on the commission line (see ``_accrued_by_currency``). Only the
+# explicit admin "delete" path returns the full locked pot to the
+# buyer — and a deleted deal is removed from this query because the
+# row no longer exists.
 _DONE_STATUSES = (
     DealStatus.completed,
     DealStatus.cancelled,
@@ -68,13 +69,47 @@ _DONE_STATUSES = (
     DealStatus.resolved_for_seller,
 )
 
+# Statuses where the seller actually received the payout — i.e. the
+# commission was deducted from that payout regardless of who agreed
+# to pay it. See Audit H1 below for the ``pay_commission`` interplay.
+_SELLER_PAID_STATUSES = (
+    DealStatus.completed,
+    DealStatus.resolved_for_seller,
+)
+
 
 async def _accrued_by_currency(session) -> dict[int, Decimal]:
-    """Sum commission collected on every terminal deal."""
+    """Sum commission *actually collected* on every terminal deal.
+
+    Audit H1 — a deal where ``pay_commission == seller`` only locks
+    ``amount`` (not ``amount + commission``) from the buyer; the
+    commission is taken from the seller's payout at
+    ``finish_deal`` / ``resolved_for_seller`` time. When such a deal
+    finishes *not* in the seller's favour (cancellation, inactivity
+    sweep, arbitration ruled for the buyer) the buyer is refunded the
+    full locked ``amount`` and the seller never pays anything — so
+    no real commission was collected, even though ``Deal.commission_amount``
+    is still a non-zero theoretical figure on the row.
+
+    The previous ``SUM(commission_amount) WHERE status IN _DONE_STATUSES``
+    rolled those phantom amounts into ``accrued`` anyway, which let an
+    admin ``POST /api/admin/treasury/withdraw`` move funds out of the
+    treasury that never landed there — a direct accounting deficit
+    against the real per-user wallet balances. The fix filters the
+    commission so it counts only when (a) the seller was paid (any
+    ``pay_commission`` setting) or (b) the buyer paid the commission
+    upfront and it stayed with the platform on refund.
+    """
     rows = (
         await session.execute(
             select(Deal.currency_id, func.coalesce(func.sum(Deal.commission_amount), 0))
-            .where(Deal.status.in_(_DONE_STATUSES))
+            .where(
+                Deal.status.in_(_DONE_STATUSES),
+                or_(
+                    Deal.status.in_(_SELLER_PAID_STATUSES),
+                    Deal.pay_commission == PayCommission.buyer,
+                ),
+            )
             .group_by(Deal.currency_id)
         )
     ).all()

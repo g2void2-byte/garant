@@ -278,12 +278,52 @@ export interface DealMessageDto {
   created_at: string;
 }
 
+// Audit H2 — backend paginates ``GET /api/deals/{id}/messages`` with a
+// ``limit`` (default 50, max 200) and a ``before_id`` cursor. The
+// initial query fetches the newest page; ``useLoadOlderDealMessages``
+// prepends the next older page to the same cache entry. Keeping a
+// flat ``DealMessageDto[]`` cache (instead of paged ``InfiniteQuery``)
+// preserves the existing append-on-WS / append-on-POST contract used
+// by ``useLiveNotifications`` and ``useSendDealMessage``.
+export const DEAL_MESSAGE_PAGE_SIZE = 50;
+
 export function useDealMessages(dealId: number | undefined) {
   return useQuery<DealMessageDto[]>({
     queryKey: qk.deal.messages(dealId),
-    queryFn: () => api.get(`api/deals/${dealId}/messages`).json(),
+    queryFn: () =>
+      api
+        .get(`api/deals/${dealId}/messages`, {
+          searchParams: { limit: DEAL_MESSAGE_PAGE_SIZE },
+        })
+        .json(),
     enabled: !!dealId,
     staleTime: 10_000,
+  });
+}
+
+export function useLoadOlderDealMessages(dealId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { beforeId: number; limit?: number }) => {
+      const page = await api
+        .get(`api/deals/${dealId}/messages`, {
+          searchParams: {
+            before_id: params.beforeId,
+            limit: params.limit ?? DEAL_MESSAGE_PAGE_SIZE,
+          },
+        })
+        .json<DealMessageDto[]>();
+      qc.setQueryData<DealMessageDto[] | undefined>(
+        qk.deal.messages(dealId),
+        (prev) => {
+          if (!prev) return page;
+          const seen = new Set(prev.map((m) => m.id));
+          const older = page.filter((m) => !seen.has(m.id));
+          return [...older, ...prev];
+        },
+      );
+      return page;
+    },
   });
 }
 
@@ -329,9 +369,13 @@ export function useDealAction(action: DealActionPath) {
 export function useCreateDeal() {
   const qc = useQueryClient();
   return useMutation({
+    // Audit C1 — ``role`` is fixed to ``buyer`` server-side; we still
+    // type it as a literal here so any call site that omits / mistypes
+    // it is caught at compile time. The previous ``"buyer" | "seller"``
+    // union allowed the legacy "I'm the seller" flow which is gone.
     mutationFn: (body: {
       counterparty: string;
-      role: "buyer" | "seller";
+      role: "buyer";
       amount: number;
       description: string;
       pay_comission: "buyer" | "seller";

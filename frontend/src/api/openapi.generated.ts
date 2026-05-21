@@ -3553,9 +3553,10 @@ export interface components {
             pay_commission: components["schemas"]["PayCommission"];
             /**
              * Role
-             * @enum {string}
+             * @default buyer
+             * @constant
              */
-            role: "buyer" | "seller";
+            role: "buyer";
         };
         /** DealMessageCreate */
         DealMessageCreate: {
@@ -7441,7 +7442,12 @@ export interface operations {
     };
     list_messages_api_deals__deal_id__messages_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Maximum number of messages to return (newest within the window). */
+                limit?: number;
+                /** @description Cursor — return only messages with ``id`` strictly less than this. Use the ``id`` of the oldest already-loaded message to fetch the next older page. */
+                before_id?: number | null;
+            };
             header: {
                 authorization: string;
             };

@@ -3824,17 +3824,14 @@
             "default": "buyer"
           },
           "role": {
-            "enum": [
-              "buyer",
-              "seller"
-            ],
+            "const": "buyer",
+            "default": "buyer",
             "title": "Role",
             "type": "string"
           }
         },
         "required": [
           "counterparty",
-          "role",
           "amount"
         ],
         "title": "DealCreate",
@@ -13538,6 +13535,39 @@
             "schema": {
               "title": "Deal Id",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum number of messages to return (newest within the window).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Maximum number of messages to return (newest within the window).",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Cursor \u2014 return only messages with ``id`` strictly less than this. Use the ``id`` of the oldest already-loaded message to fetch the next older page.",
+            "in": "query",
+            "name": "before_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor \u2014 return only messages with ``id`` strictly less than this. Use the ``id`` of the oldest already-loaded message to fetch the next older page.",
+              "title": "Before Id"
             }
           },
           {
