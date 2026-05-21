@@ -419,6 +419,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/currencies/{currency_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Currency
+         * @description Delete a currency that no other row references.
+         *
+         *     Audit §3.4 — closes the ``ПУСТЫШКА`` gap (no DELETE route existed
+         *     for currencies even though categories had one). The guard mirrors
+         *     ``delete_category``: any referencing row in deals / services /
+         *     balances / wallet deposits / wallet withdrawals / treasury
+         *     withdrawals turns the call into a 409 so we never orphan a FK.
+         */
+        delete: operations["delete_currency_api_admin_currencies__currency_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/dashboard": {
         parameters: {
             query?: never;
@@ -5231,6 +5257,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminCurrencyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_currency_api_admin_currencies__currency_id__delete: {
+        parameters: {
+            query?: never;
+            header: {
+                authorization: string;
+                "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
+            };
+            path: {
+                currency_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
