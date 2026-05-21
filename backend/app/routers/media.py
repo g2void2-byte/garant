@@ -127,6 +127,54 @@ def _safe_extension(content_type: str) -> str | None:
     return _ALLOWED_IMAGE_TYPES.get(content_type)
 
 
+# ``Media.name`` mirrors what the client claimed the file was called,
+# purely as a UX hint for the gallery / admin viewer.  The raw value is
+# attacker-controlled (``multipart/form-data`` ``Content-Disposition``)
+# and was previously written into ``media.name`` unchanged.  That string
+# round-trips back to the frontend as ``MediaOut.name`` and (depending
+# on logging) can surface in admin views, so we strip the obvious
+# foot-guns before it ever lands in the DB:
+#
+# * NUL / CR / LF / other ASCII control bytes — log-injection / CRLF
+#   header-smuggling if the value is ever echoed into a header or a
+#   logger that doesn't escape its message.
+# * Path separators ``/`` and ``\\`` and the ``..`` traversal token —
+#   not actually used in the filesystem write (the on-disk name is
+#   server-generated), but a defence-in-depth strip keeps anything
+#   downstream from accidentally treating the stored ``name`` as a
+#   path component.
+#
+# The on-disk extension and URL are always the server-generated
+# ``name`` variable — this sanitisation only affects the display
+# string stored on ``media.name``.
+_FILENAME_BAD_CHARS = "".join(chr(c) for c in range(0x20)) + "\x7f"
+_FILENAME_BAD_TRANS = str.maketrans({c: "_" for c in _FILENAME_BAD_CHARS})
+
+
+def _sanitise_display_name(raw: str | None, *, fallback: str) -> str:
+    """Sanitise an attacker-controlled filename for the ``media.name`` column.
+
+    Returns ``fallback`` when ``raw`` is empty / pure-whitespace after
+    cleaning so the column always contains a non-empty value (mirrors the
+    existing ``file.filename or name`` fallback).  The result is capped at
+    255 bytes so it always fits the ``String(256)`` column even after the
+    SQLAlchemy / asyncpg encoding round-trip.
+    """
+    if not raw:
+        return fallback
+    s = raw.translate(_FILENAME_BAD_TRANS).replace("\\", "_").replace("/", "_")
+    # Collapse traversal tokens (``..``) and surrounding whitespace; the
+    # on-disk filename never sees this string, but downstream consumers
+    # might treat it as a path component, so strip the obvious markers.
+    s = s.replace("..", "_").strip()
+    if not s:
+        return fallback
+    # 255 chars stays comfortably under the ``String(256)`` cap even for
+    # multibyte UTF-8 inputs (Postgres counts characters, not bytes, for
+    # ``varchar`` length).
+    return s[:255]
+
+
 async def _stream_capped(file: UploadFile, cap: int) -> bytes:
     """Drain the upload in fixed-size chunks, aborting the moment the
     accumulated size exceeds ``cap``.
@@ -144,12 +192,16 @@ async def _stream_capped(file: UploadFile, cap: int) -> bytes:
         chunk = await file.read(_UPLOAD_CHUNK_BYTES)
         if not chunk:
             break
-        buf.extend(chunk)
-        if len(buf) > cap:
+        # Audit 5.1 — pre-check the would-be size before extending so
+        # we never over-allocate by up to ``_UPLOAD_CHUNK_BYTES`` past
+        # the cap on the final chunk.  Keeps peak memory bounded by
+        # ``cap`` exactly instead of ``cap + chunk_size``.
+        if len(buf) + len(chunk) > cap:
             raise HTTPException(
                 413,
                 f"Файл слишком большой (>{cap // 1024} КБ)",
             )
+        buf.extend(chunk)
     return bytes(buf)
 
 
@@ -283,7 +335,12 @@ async def upload_media(
         owner_id=user.id,
         kind=kind,
         url=url,
-        name=file.filename or name,
+        # ``file.filename`` is attacker-controlled (set by the
+        # multipart ``Content-Disposition`` header), so strip control
+        # bytes / path separators before it lands in the DB.  The
+        # server-generated ``name`` is the safe fallback when the
+        # client supplied an empty / unusable string.
+        name=_sanitise_display_name(file.filename, fallback=name),
         size=len(sanitised),
         content_type=content_type,
     )

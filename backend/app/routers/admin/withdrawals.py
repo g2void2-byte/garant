@@ -372,6 +372,27 @@ async def decide_withdrawal(
             # CryptoBot token configured). Stays a single transaction
             # because no network call is made — the row lock is only
             # held for local DB work.
+            if auto and not is_cryptopay_configured(app_settings_env.cryptobot_token):
+                # Audit 3.9 — silent degradation guard. ``auto_withdraw_enabled``
+                # is on but the CryptoBot token is missing/blank, so the
+                # auto-send branch above is unreachable and the approval
+                # silently falls back to manual. Surface this as a
+                # structured warning so ops can spot a misconfigured
+                # token (e.g. dropped after a settings edit) rather
+                # than only noticing when users complain about a
+                # pending queue.
+                logger.warning(
+                    "withdrawal.approve: auto_withdraw_enabled but CryptoBot token missing"
+                    " — falling back to manual",
+                    extra={
+                        "event": "withdrawal.auto_disabled.missing_token",
+                        "withdrawal_id": w.id,
+                        "user_id": w.user_id,
+                        "currency": currency.code if currency else None,
+                        "amount": str(w.amount),
+                        "actor_id": admin.id,
+                    },
+                )
             w.status = WalletWithdrawStatus.approved
             w.admin_note = body.note or ""
             await log_admin_action(

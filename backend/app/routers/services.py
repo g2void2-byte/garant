@@ -16,7 +16,7 @@ from __future__ import annotations
 from decimal import ROUND_HALF_EVEN, Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from ..admin_audit import log_admin_action
 from ..admin_guard import TotpUser
@@ -462,6 +462,14 @@ async def update_service(
             and service.status != ServiceStatus.active
             and not user.is_admin
         ):
+            # Audit 4.22 — lock the owner row before counting active
+            # services so two concurrent PATCH ``paused → active``
+            # requests can't both pass the ``active < max`` check and
+            # leave the user with ``max + 1`` active services. Mirrors
+            # the M-22 ``FOR UPDATE`` lock in ``create_service`` above.
+            await session.execute(
+                select(User.id).where(User.id == service.owner_id).with_for_update()
+            )
             active_now = await _count_active(session, service.owner_id)
             max_active = await _get_max_active(session)
             if active_now >= max_active:
@@ -524,6 +532,17 @@ async def delete_service(
             },
             request=request,
         )
+    # Audit 4.11 — explicitly delete child ``service_comments`` rows
+    # so this user-facing endpoint matches ``admin/content.delete_service``
+    # instead of relying on the model-level ``ondelete="CASCADE"``. The
+    # ORM ``ondelete`` is only emitted in DDL when the FK is *(re)created*
+    # by a migration, and per audit §15.1 no existing migration applied
+    # those cascades — so the production DB FK is still
+    # ``ON DELETE NO ACTION`` and the unguarded ``session.delete(service)``
+    # would fail / orphan rows depending on the DB. Doing the delete
+    # explicitly here makes the path safe under both old (no CASCADE)
+    # and future (CASCADE applied) schemas.
+    await session.execute(delete(ServiceComment).where(ServiceComment.service_id == service.id))
     await session.delete(service)
     await session.commit()
     return {"ok": True}

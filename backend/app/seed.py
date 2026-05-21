@@ -59,12 +59,25 @@ CATEGORIES = [
 
 
 async def seed_categories(session: AsyncSession) -> None:
+    # Audit 14.1 — race on parallel cold-start.  Two backend workers
+    # waking up at the same millisecond would both see an empty
+    # ``categories`` table, both ``session.add()`` the same 15 rows,
+    # and the loser of the commit race would explode on the
+    # ``ix_categories_slug`` unique index — restart-looping the pod
+    # until one worker happened to win.  Mirror the
+    # ``seed_settings`` remedy below: a single ``INSERT ... ON CONFLICT
+    # DO NOTHING`` so the loser commits a no-op against the row-level
+    # uniqueness violation.  The fast-path ``SELECT`` is retained as a
+    # cheap early-exit on warm boots.
     result = await session.execute(select(Category).limit(1))
     if result.scalar_one_or_none() is not None:
         return
 
-    for slug, name, icon in CATEGORIES:
-        session.add(Category(slug=slug, name=name, icon=icon))
+    await session.execute(
+        pg_insert(Category)
+        .values([{"slug": slug, "name": name, "icon": icon} for slug, name, icon in CATEGORIES])
+        .on_conflict_do_nothing(index_elements=["slug"])
+    )
     await session.commit()
 
 
@@ -99,24 +112,41 @@ async def seed_settings(session: AsyncSession) -> None:
 
 
 async def seed_currencies(session: AsyncSession) -> None:
+    # Audit 14.1 — same race as ``seed_categories`` above; same fix.
+    # The ``ix_currencies_code`` unique index would explode the
+    # losing worker's commit on parallel cold-start.
     result = await session.execute(select(Currency).limit(1))
     if result.scalar_one_or_none() is not None:
         return
 
-    for code, name, network, decimals, min_deposit, min_withdraw, sort_order in CURRENCIES:
-        session.add(
-            Currency(
-                code=code,
-                name=name,
-                network=network,
-                decimals=decimals,
-                min_deposit=min_deposit,
-                min_withdraw=min_withdraw,
-                sort_order=sort_order,
-                is_active=True,
-                address_regex=CURRENCY_ADDRESS_REGEX.get(code, ""),
-            )
+    await session.execute(
+        pg_insert(Currency)
+        .values(
+            [
+                {
+                    "code": code,
+                    "name": name,
+                    "network": network,
+                    "decimals": decimals,
+                    "min_deposit": min_deposit,
+                    "min_withdraw": min_withdraw,
+                    "sort_order": sort_order,
+                    "is_active": True,
+                    "address_regex": CURRENCY_ADDRESS_REGEX.get(code, ""),
+                }
+                for (
+                    code,
+                    name,
+                    network,
+                    decimals,
+                    min_deposit,
+                    min_withdraw,
+                    sort_order,
+                ) in CURRENCIES
+            ]
         )
+        .on_conflict_do_nothing(index_elements=["code"])
+    )
     await session.commit()
 
 

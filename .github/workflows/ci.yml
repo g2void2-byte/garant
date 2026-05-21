@@ -87,9 +87,10 @@ jobs:
 
       # CI-3 — backend type-checking gate. ``pyrightconfig.json`` at
       # the repo root pins the rule set we currently pass; tightening
-      # is incremental (the SQLAlchemy 2 ``Decimal`` vs ``float`` rule
-      # families are intentionally silenced for now, see the config).
-      # The package is installed as part of the ``[dev]`` extras above
+      # is incremental — ``reportArgumentType`` is at ``warning`` so
+      # the SQLAlchemy 2 ``Decimal`` vs ``float`` families surface in
+      # the log without failing the build (audit §16.3.1).  The
+      # package is installed as part of the ``[dev]`` extras above
       # so this step doesn't shell out to ``npm`` or pull a separate
       # toolchain.
       - name: Type-check (pyright)

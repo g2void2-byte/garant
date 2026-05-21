@@ -225,6 +225,20 @@ async def enable(
         secret = body.secret or pending
         if not secret:
             raise HTTPException(400, "TOTP секрет не найден. Повторите /setup.")
+        # Audit 3.3 — reject "rotation to identical secret with identical
+        # code".  Without this guard a caller can submit
+        # ``secret == admin.totp_secret`` and ``code == current_code``,
+        # which is a no-op security-wise (no rotation actually happened)
+        # but still passes both ``verify_totp_and_counter`` checks and
+        # bumps ``totp_session_epoch`` as if a real rotation occurred.
+        # Requiring the new secret OR the new code to differ from the
+        # current one forces the caller to actually demonstrate fresh
+        # state, which is the whole point of the rotation flow.
+        if secret == admin.totp_secret and body.code == body.current_code:
+            raise HTTPException(
+                400,
+                "Ротация требует новый секрет либо новый код",
+            )
     else:
         # First enrolment — the secret MUST equal the one ``/setup``
         # stashed; an attacker without a valid ``/setup`` round-trip

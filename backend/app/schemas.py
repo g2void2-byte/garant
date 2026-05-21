@@ -297,7 +297,13 @@ def _validate_service_photos(v: list[str] | None) -> list[str] | None:
         return v
     if len(v) > MAX_SERVICE_PHOTOS:
         raise ValueError(f"Слишком много фотографий (≤{MAX_SERVICE_PHOTOS})")
+    # Audit 3.8 — drop duplicates while preserving the caller's order.
+    # The DB column is ``photo_urls JSONB`` with a length cap (≤6) but
+    # no uniqueness constraint, so without this filter a client could
+    # render the same image six times in the gallery (typically a UI
+    # bug, occasionally a quota-evasion attempt).
     cleaned: list[str] = []
+    seen: set[str] = set()
     for entry in v:
         s = (entry or "").strip()
         if not s:
@@ -307,6 +313,9 @@ def _validate_service_photos(v: list[str] | None) -> list[str] | None:
         low = s.lower()
         if not (low.startswith("https://") or low.startswith("/media/")):
             raise ValueError("Фото должно быть https:// или /media/... ссылкой")
+        if s in seen:
+            continue
+        seen.add(s)
         cleaned.append(s)
     return cleaned
 
