@@ -53,7 +53,9 @@ def _balance_row(user: User, currency: Currency, bal: UserBalance | None) -> Adm
     # quantised to the currency's own ``decimals`` so the wire format
     # never shows trailing satoshi noise the underlying row doesn't
     # actually carry. ``quantize_money`` uses ``ROUND_HALF_EVEN`` —
-    # see ``backend/app/money.py``.
+    # see ``backend/app/money.py``. The sum of two ``Decimal`` values
+    # already quantised to the same scale stays at that scale, so we
+    # skip the redundant re-quantise on ``total``.
     amount = quantize_money(bal.amount if bal else 0, currency.decimals)
     locked = quantize_money(bal.locked if bal else 0, currency.decimals)
     return AdminUserBalanceOut(
@@ -66,7 +68,7 @@ def _balance_row(user: User, currency: Currency, bal: UserBalance | None) -> Adm
         decimals=currency.decimals,
         amount=amount,
         locked=locked,
-        total=quantize_money(amount + locked, currency.decimals),
+        total=amount + locked,
         updated_at=bal.updated_at if bal else None,
     )
 

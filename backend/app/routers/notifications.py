@@ -63,6 +63,15 @@ async def list_notifications(
                     "filter_type": type,
                 },
             )
+    if (before_created_at is None) != (before_id is None):
+        # Keyset cursor must arrive as a ``(created_at, id)`` pair so
+        # the ``OR``-form below stays strict; silently dropping the
+        # half-specified case (the previous behaviour) hid frontend
+        # encoding bugs by serving an unpaginated first page.
+        raise HTTPException(
+            400,
+            "before_created_at и before_id должны передаваться вместе",
+        )
     if before_created_at is not None and before_id is not None:
         try:
             from datetime import datetime

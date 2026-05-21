@@ -18,7 +18,9 @@ from collections.abc import Awaitable
 from typing import cast
 
 from fastapi import APIRouter, Depends, Request
+from redis.exceptions import RedisError
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from ... import version as app_version
 from ...admin_audit import log_admin_action
@@ -49,7 +51,11 @@ async def status(_admin: AdminUser, session: SessionDep):
         t0 = time.perf_counter()
         await session.execute(text("SELECT 1"))
         db_latency = (time.perf_counter() - t0) * 1000.0
-    except Exception:
+    except (SQLAlchemyError, OSError, TimeoutError):
+        # Health probe deliberately narrows the catch so it keeps
+        # surfacing fatal interpreter errors (``KeyboardInterrupt``,
+        # ``MemoryError`` etc.) instead of hiding them behind a
+        # green/red lamp.
         db_ok = False
 
     redis_ok = False
@@ -68,7 +74,12 @@ async def status(_admin: AdminUser, session: SessionDep):
             await cast("Awaitable[bool]", r.ping())
             redis_latency = (time.perf_counter() - t0) * 1000.0
             redis_ok = True
-    except Exception:
+    except (RedisError, OSError, TimeoutError):
+        # Same narrowing rationale as the DB probe above: ``redis-py``
+        # raises ``ConnectionError`` / ``TimeoutError`` (both subclasses
+        # of ``RedisError``) on network failure; ``OSError`` covers
+        # socket-level failures before the redis layer wraps them.
+        # Anything else is a bug we want to bubble up.
         redis_ok = False
 
     return AdminSystemStatusOut(

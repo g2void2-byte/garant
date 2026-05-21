@@ -115,17 +115,20 @@ async def kpi(_admin: AdminUser, session: SessionDep):
     deals_24h = await _count(select(func.count()).select_from(Deal).where(Deal.created_at >= h24))
     deals_7d = await _count(select(func.count()).select_from(Deal).where(Deal.created_at >= d7))
     primary_cur_id = await _primary_currency_id(session)
-    volume_stmt = (
-        select(func.coalesce(func.sum(Deal.amount), 0))
-        .where(Deal.status.in_(_DONE_STATUSES))
-        .where(Deal.completed_at >= d30)
-        .where(Deal.currency_id == primary_cur_id)
-        if primary_cur_id is not None
-        else select(func.coalesce(func.sum(Deal.amount), 0)).where(
-            Deal.id.is_(None)  # noqa: E711 — force zero result when no primary currency seeded
+    if primary_cur_id is not None:
+        volume_stmt = (
+            select(func.coalesce(func.sum(Deal.amount), 0))
+            .where(Deal.status.in_(_DONE_STATUSES))
+            .where(Deal.completed_at >= d30)
+            .where(Deal.currency_id == primary_cur_id)
         )
-    )
-    volume_30d = (await session.execute(volume_stmt)).scalar_one() or 0
+        volume_30d = (await session.execute(volume_stmt)).scalar_one() or 0
+    else:
+        # No primary currency seeded — short-circuit in Python instead
+        # of emitting a ``WHERE Deal.id IS NULL`` no-op query just to
+        # force a zero scalar (the warning is already surfaced by
+        # ``_primary_currency_id``).
+        volume_30d = 0
     open_arb = await _count(
         select(func.count()).select_from(Deal).where(Deal.status == DealStatus.arbitration)
     )
