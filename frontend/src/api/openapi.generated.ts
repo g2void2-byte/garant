@@ -3543,8 +3543,11 @@ export interface components {
             pay_comission?: components["schemas"]["PayCommission"] | null;
             /** @default buyer */
             pay_commission: components["schemas"]["PayCommission"];
-            /** Role */
-            role: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "buyer" | "seller";
         };
         /** DealMessageCreate */
         DealMessageCreate: {
