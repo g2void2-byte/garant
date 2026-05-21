@@ -8142,6 +8142,88 @@
         ]
       }
     },
+    "/api/admin/currencies/{currency_id}": {
+      "delete": {
+        "description": "Delete a currency that no other row references.\n\nAudit \u00a73.4 \u2014 closes the ``\u041f\u0423\u0421\u0422\u042b\u0428\u041a\u0410`` gap (no DELETE route existed\nfor currencies even though categories had one). The guard mirrors\n``delete_category``: any referencing row in deals / services /\nbalances / wallet deposits / wallet withdrawals / treasury\nwithdrawals turns the call into a 409 so we never orphan a FK.",
+        "operationId": "delete_currency_api_admin_currencies__currency_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "currency_id",
+            "required": true,
+            "schema": {
+              "title": "Currency Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": true,
+            "schema": {
+              "title": "Authorization",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Currency",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/dashboard": {
       "get": {
         "description": "Return aggregate counters for the admin home screen.\n\nThe 14 counters used to issue 14 separate ``SELECT COUNT(*)``\nstatements. We now fold them into 3 single-row aggregate queries\n(users / deals / services) using ``COUNT(...) FILTER (WHERE ...)``\n(rendered by SQLAlchemy's ``func.count(case(...))``). The wire\npayload is identical; the DB does ~3 sequential scans + 11 in-row\npredicate checks instead of 14 separate scans.",

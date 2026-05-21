@@ -14,6 +14,7 @@ sub-second; we don't fan out to ``len(users)`` row-by-row.
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 from datetime import timedelta
@@ -39,6 +40,20 @@ from ...schemas import (
 from ...time_utils import utcnow
 
 logger = logging.getLogger(__name__)
+
+# Audit §3.2 — chunk size for streaming the recipient set through the
+# database. The notification insert per recipient is cheap, but holding
+# 50K objects in one transaction (and committing them in a single
+# statement) is what the audit flagged as an OOM hazard. 500 keeps
+# each commit small and aligns with the ``H-4`` comment further down.
+_CHUNK_SIZE = 500
+
+# Audit §3.2 — bound the per-chunk Telegram DM fan-out. Telegram
+# allows ~30 messages/second platform-wide; 16 in-flight calls keeps
+# us comfortably under that ceiling while still parallelising what
+# used to be a one-at-a-time ``await bot_send_dm`` loop (worst-case
+# ~3 minutes of HTTP latency for a 5K-recipient broadcast).
+_DM_CONCURRENCY = 16
 
 router = APIRouter(
     prefix="/api/admin/broadcasts",
@@ -140,9 +155,15 @@ async def create_broadcast(
         count_stmt = count_stmt.where(clause)
     total_recipients = int((await session.execute(count_stmt)).scalar_one())
 
-    # H-4: stream recipients in chunks to avoid loading the entire
-    # user table into memory for large audiences.
-    _CHUNK_SIZE = 500
+    # H-4 / audit §3.2: stream recipients in chunks. Audit §3.2 also
+    # adds:
+    # * a per-chunk ``session.commit()`` so the inserted notification
+    #   rows never accumulate into one giant transaction (the previous
+    #   shape kept all rows + their JSONB payloads in memory until the
+    #   final commit, OOM-hazardous on 50K-recipient broadcasts);
+    # * an ``asyncio.gather`` + semaphore for the Telegram DM fan-out
+    #   inside each chunk, so 500 DMs go out in parallel instead of
+    #   sequentially (worst-case shrinks from minutes to ~seconds).
     user_id_stmt = select(User.id)
     if clause is not None:
         user_id_stmt = user_id_stmt.where(clause)
@@ -151,12 +172,16 @@ async def create_broadcast(
 
     delivered = 0
     failed = 0
-    pending: list[tuple[Notification, dict[str, Any] | None]] = []
 
     for chunk_start in range(0, len(all_user_ids), _CHUNK_SIZE):
         chunk_ids = all_user_ids[chunk_start : chunk_start + _CHUNK_SIZE]
         chunk_stmt = select(User).where(User.id.in_(chunk_ids))
         chunk_users = (await session.execute(chunk_stmt)).scalars().all()
+
+        # Per-chunk buffers; nothing crosses the loop boundary.
+        chunk_pending: list[tuple[Notification, dict[str, Any] | None]] = []
+        chunk_dm_targets: list[tuple[User, str]] = []
+        chunk_inapp_only = 0
 
         for u in chunk_users:
             try:
@@ -169,7 +194,7 @@ async def create_broadcast(
                         body.body,
                         {"deeplink": body.deeplink} if body.deeplink else None,
                     )
-                    pending.append((notif, ws_payload))
+                    chunk_pending.append((notif, ws_payload))
                 if body.dispatch_dm and u.tg_user_id:
                     title = body.title or "Сообщение от администрации"
                     dm_text = f"<b>{html.escape(title)}</b>\n\n{html.escape(body.body)}"
@@ -177,11 +202,12 @@ async def create_broadcast(
                         href = html.escape(body.deeplink, quote=True)
                         text_part = html.escape(body.deeplink)
                         dm_text += f'\n\n<a href="{href}">{text_part}</a>'
-                    ok = await bot_send_dm(u.tg_user_id, dm_text)
-                    if not ok:
-                        failed += 1
-                        continue
-                delivered += 1
+                    chunk_dm_targets.append((u, dm_text))
+                else:
+                    # Either DM dispatch is off, or the user has no
+                    # Telegram id — count as delivered via the inapp
+                    # leg (matches the prior single-pass semantics).
+                    chunk_inapp_only += 1
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "broadcast: delivery failed for user_id=%s",
@@ -196,6 +222,70 @@ async def create_broadcast(
                     },
                 )
                 failed += 1
+
+        # Audit §3.2 — commit the chunk's notification inserts before
+        # the WS publish + Telegram fan-out. WS / Redis / Telegram
+        # latency must never hold a transaction open.
+        await session.commit()
+
+        for notif, ws_payload in chunk_pending:
+            try:
+                await notifier.dispatch_after_commit(session, notif, ws_payload)
+            except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+                # Audit N-9 — narrowed from ``except Exception``. The
+                # commit already succeeded; only delivery-time errors
+                # (DB recipient lookup, WS/Redis publish, network)
+                # should be swallowed. Programming bugs still propagate.
+                logger.exception(
+                    "broadcast: post-commit dispatch failed for notif id=%s",
+                    notif.id,
+                    extra={
+                        "event": "broadcast.dispatch.failed",
+                        "notif_id": notif.id,
+                    },
+                )
+
+        delivered += chunk_inapp_only
+
+        if chunk_dm_targets:
+            sem = asyncio.Semaphore(_DM_CONCURRENCY)
+            actor_id = admin.id
+
+            async def _send_dm(
+                target_user: User,
+                text: str,
+                *,
+                _sem: asyncio.Semaphore = sem,
+                _actor_id: int = actor_id,
+            ) -> bool:
+                async with _sem:
+                    try:
+                        return bool(await bot_send_dm(target_user.tg_user_id, text))
+                    except Exception:  # noqa: BLE001
+                        # ``bot_send_dm`` already swallows the common
+                        # ``TelegramAPIError`` cases and returns False,
+                        # but a network-level failure still surfaces
+                        # here; treat it the same as ``ok=False`` so
+                        # the gather never raises and the chunk
+                        # accounting stays consistent.
+                        logger.exception(
+                            "broadcast: DM dispatch failed for user_id=%s",
+                            target_user.id,
+                            extra={
+                                "event": "broadcast.dm.failed",
+                                "actor_id": _actor_id,
+                                "recipient_user_id": target_user.id,
+                                "recipient_tg_user_id": target_user.tg_user_id,
+                            },
+                        )
+                        return False
+
+            results = await asyncio.gather(*(_send_dm(u, t) for u, t in chunk_dm_targets))
+            for ok in results:
+                if ok:
+                    delivered += 1
+                else:
+                    failed += 1
 
     bcast = Broadcast(
         actor_id=admin.id,
@@ -251,22 +341,9 @@ async def create_broadcast(
         request=request,
     )
     await session.commit()
-    for notif, ws_payload in pending:
-        try:
-            await notifier.dispatch_after_commit(session, notif, ws_payload)
-        except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
-            # Audit N-9 — narrowed from ``except Exception``. The
-            # commit already succeeded; only delivery-time errors
-            # (DB recipient lookup, WS/Redis publish, network) should
-            # be swallowed. Programming bugs still propagate.
-            logger.exception(
-                "broadcast: post-commit dispatch failed for notif id=%s",
-                notif.id,
-                extra={
-                    "event": "broadcast.dispatch.failed",
-                    "notif_id": notif.id,
-                },
-            )
+    # Audit §3.2 — WS dispatch already happened per-chunk above; the
+    # broadcast row + audit log entry are the only writes in this
+    # final transaction, so there is nothing left to fan out here.
     return _to_out(bcast, admin)
 
 
