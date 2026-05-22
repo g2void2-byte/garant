@@ -11,6 +11,7 @@ TMA + bot can poll the banner without an admin session.
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from typing import Any
 
@@ -24,6 +25,9 @@ from ...maintenance import invalidate_cache as invalidate_maintenance_cache
 from ...models import AppSettings
 from ...rate_limit import rate_limit
 from ...schemas import AdminSettingsOut, AdminSettingsUpdateIn
+from ...services_wallet import is_cryptopay_configured
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/admin",
@@ -114,6 +118,30 @@ async def update_settings(
     fields = body.model_dump(exclude_unset=True)
     if not fields:
         raise HTTPException(400, "Нет изменений")
+
+    # Audit §6.4 — emit a structured WARNING when ``auto_withdraw_enabled``
+    # is being flipped on while the CryptoBot token is missing /
+    # placeholder. ``admin/withdrawals.py`` already logs at warn-level
+    # on the *approval* path when both conditions hold, but the admin
+    # who toggled the flag never saw a direct signal — they only
+    # discovered the misconfiguration when the payout queue stopped
+    # draining hours later. Surfacing the warning at PATCH time too
+    # means the broken state is visible in logs at the exact moment
+    # the flag is set, which is what operators are actually watching.
+    # Soft-warn (rather than a hard 400) so an operator can pre-stage
+    # the flag for a token they're about to configure in the same
+    # deploy.
+    if fields.get("auto_withdraw_enabled") is True and not is_cryptopay_configured():
+        logger.warning(
+            "admin.settings.update: auto_withdraw_enabled flipped on "
+            "while cryptobot_token is unset/placeholder — payout queue "
+            "will silently fall back to manual until CRYPTOBOT_TOKEN "
+            "is configured.",
+            extra={
+                "event": "admin.settings.auto_withdraw.missing_token",
+                "actor_id": admin.id,
+            },
+        )
 
     before: dict[str, Any] = {}
     after: dict[str, Any] = {}

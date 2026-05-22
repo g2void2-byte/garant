@@ -55,8 +55,18 @@ async def start_polling() -> None:
     # NOT in ``extra`` (token literal) — only the configured/
     # placeholder shape is captured.
     if not settings.bot_token or settings.bot_token.startswith("0000"):
-        logger.warning(
-            "BOT_TOKEN not configured, skipping bot polling",
+        # Audit §16.2.2 — RUN_BOT=1 with a missing / docker-compose-default
+        # ("0000...") BOT_TOKEN is a deployment-misconfiguration smoke
+        # signal: the operator explicitly asked the runtime to start
+        # polling Telegram but did not supply real credentials, so the
+        # bot will sit silent and nobody can DM the production instance.
+        # Log at ERROR (was WARNING) so dashboards / alerting pipelines
+        # that filter on ``level=ERROR`` light up immediately instead
+        # of letting this slip into the steady-state noise.
+        logger.error(
+            "BOT_TOKEN missing or placeholder while RUN_BOT=1 — bot polling "
+            "skipped. The deployment is misconfigured: Telegram DMs from "
+            "the bot will not work until BOT_TOKEN is set to a real value.",
             extra={"event": "bot.polling.unconfigured"},
         )
         return

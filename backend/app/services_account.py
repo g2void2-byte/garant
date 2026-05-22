@@ -360,6 +360,20 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     # ``session.delete(target)`` below). Lock order is sorted by
     # ``user.id`` ascending to keep deadlock geometry deterministic
     # if two transfers ever race against each other.
+    #
+    # Audit §4.13 — the user row's ``FOR UPDATE`` *also* gates concurrent
+    # inserts into the child tables ``_has_tradable_data`` queries
+    # (Deal / Service / Review / WalletDeposit / WalletWithdrawal /
+    # UserBalance), even though we don't lock those tables explicitly.
+    # PostgreSQL takes ``FOR KEY SHARE`` on every parent row a new child
+    # row references to validate the FK; ``FOR UPDATE`` conflicts with
+    # ``FOR KEY SHARE`` on the same row, so any tx that tries to
+    # ``INSERT INTO wallet_deposits (user_id=target.id, ...)`` while we
+    # hold the lock blocks on the parent row until we commit. The
+    # window between ``_has_tradable_data`` returning ``False`` and the
+    # ``session.delete(target)`` below is therefore not actually
+    # observable to another tx — the audit's "potential race" reading
+    # is precluded by PG's FK-validation lock matrix.
     locked_ids = sorted({row.source_user_id, target.id})
     locked_rows = (
         (

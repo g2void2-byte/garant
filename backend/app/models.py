@@ -376,6 +376,19 @@ class Service(Base):
     # the same reason as ``Service.price``: the deposit threshold is a
     # per-currency money figure that must survive 8-decimal asset
     # round-trips intact.
+    #
+    # Audit §5.7 / §6.3 — this column is currently *admin-curated
+    # catalog metadata* (editable from ``admin/content`` + rendered on
+    # the service detail card), not a runtime gate for the deal flow
+    # itself. The deal pipeline keys off ``Deal.amount`` /
+    # ``Deal.currency_id`` and per-user ``UserBalance`` rows; nothing
+    # in ``services_deals.py`` or ``services_wallet.py`` reads this
+    # field today. Kept on the model rather than dropped via a
+    # destructive migration so service rows that already store a value
+    # don't have to be backfilled, and so a future "minimum-deposit
+    # to-open-a-deal" gate can be enabled by referencing this column
+    # without a new migration. If you decide to repurpose it, document
+    # the new semantics here and remove this paragraph.
     deposit: Mapped[float] = mapped_column(Numeric(28, 8), default=0, server_default="0")
     rating_manual: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
     # V12-UI — gallery of attachments uploaded for the service. Stored as

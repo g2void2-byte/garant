@@ -134,18 +134,42 @@ async def _store_pending(user_id: int, secret: str) -> None:
 
 
 async def _pop_pending(user_id: int) -> str | None:
-    """Retrieve and delete the pending secret."""
+    """Retrieve and delete the pending secret.
+
+    Audit §4.6 — ``redis-py`` returns ``str`` when the client was built
+    with ``decode_responses=True`` and ``bytes`` otherwise. The project
+    configures the client with ``decode_responses=True`` (see
+    ``redis_client.get_redis``) so we expect ``str`` on success — but
+    we still handle the ``bytes`` case defensively so this helper stays
+    correct if a future ``override_for_tests`` injects a raw-bytes
+    fakeredis or the production config ever flips. Anything else from
+    the upstream library is unexpected and surfaces as a log line +
+    fallback miss instead of a silent ``TypeError`` deeper in the
+    enrolment flow.
+    """
     r = await get_redis()
     if r is not None:
         try:
-            val = await r.getdel(f"totp:pending:{user_id}")
-            if val is not None:
-                return val if isinstance(val, str) else val.decode()
+            val: object = await r.getdel(f"totp:pending:{user_id}")
         except Exception:  # noqa: BLE001
             logger.exception(
                 "Redis getdel failed for pending TOTP; using fallback",
                 extra={"event": "totp.pending.redis_getdel_failed", "user_id": user_id},
             )
+        else:
+            if isinstance(val, str):
+                return val
+            if isinstance(val, (bytes, bytearray)):
+                return bytes(val).decode("utf-8")
+            if val is not None:
+                logger.warning(
+                    "Unexpected pending TOTP value type from Redis; ignoring",
+                    extra={
+                        "event": "totp.pending.unexpected_type",
+                        "user_id": user_id,
+                        "value_type": type(val).__name__,
+                    },
+                )
     entry = _pending_secrets.pop(user_id, None)
     if entry is None:
         return None
@@ -264,6 +288,23 @@ async def enable(
     new_counter = verify_totp_and_counter(secret, body.code)
     if new_counter is None:
         raise HTTPException(401, "Неверный код")
+
+    # Audit §4.7 — when rotation does not change the secret (admin keeps
+    # the same TOTP seed but bumps the session epoch / proves liveness),
+    # ``totp_last_counter`` is still meaningful against the very same
+    # secret. Without a strict-monotonic gate here, the rotation flow
+    # would accept ``new_counter <= admin.totp_last_counter`` — that is,
+    # a code from the previous (or 30s-earlier) window — and would
+    # silently rewind the replay-protection cursor. Subsequent
+    # treasury / admin TOTP-gated actions could then reuse the
+    # already-burned 6-digit value during the rest of its 30s window
+    # because the cursor was rolled back. When the secret *does*
+    # change, the new secret's counter space is independent of the
+    # old one so the previous cursor doesn't apply and the check is
+    # skipped.
+    if rotated and secret == admin.totp_secret:
+        if new_counter <= (admin.totp_last_counter or -1):
+            raise HTTPException(401, "Код 2FA уже использован — введите новый")
 
     # Both codes verified — write the row. ``new_counter`` is the
     # counter of the *new* secret, which is what gates future replay
