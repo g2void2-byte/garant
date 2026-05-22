@@ -30,6 +30,8 @@ from __future__ import annotations
 
 from typing import Sequence
 
+import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "411cbe508b97"
@@ -60,6 +62,30 @@ _LEGACY_VALUES = (
 
 
 def upgrade() -> None:
+    # Audit §15.8 — pre-flight check. The bare ``ALTER TYPE ... USING
+    # status::text::dealstatus_new`` below dies with the unhelpful
+    # ``invalid input value for enum dealstatus_new: "<legacy>"`` if
+    # any row still holds a pre-P3.3 legacy value. Surface a friendly
+    # error with the offending count up front so the operator (who is
+    # almost certainly running this against a restored legacy snapshot)
+    # knows whether to purge-and-retry or restore from a post-cutover
+    # backup, instead of having to decode PG's enum-cast error.
+    conn = op.get_bind()
+    legacy_count = conn.execute(
+        sa.text("SELECT count(*) FROM deals WHERE status::text = ANY(:legacy)"),
+        {"legacy": list(_LEGACY_VALUES)},
+    ).scalar_one()
+    if legacy_count:
+        raise RuntimeError(
+            f"Refusing to drop legacy DealStatus values: {legacy_count} row(s) "
+            f"in deals.status still use a legacy enum value "
+            f"({', '.join(_LEGACY_VALUES)}). These values were considered "
+            f"garbage at the P3.3 SQLite→Postgres cutover; either DELETE "
+            f"or UPDATE the offending rows and re-run this migration, or "
+            f"restore from a post-cutover backup. See this revision's "
+            f"docstring for the irreversible-downgrade note."
+        )
+
     new_values = ", ".join(f"'{v}'" for v in _CURRENT_VALUES)
     op.execute(f"CREATE TYPE dealstatus_new AS ENUM ({new_values})")
     op.execute(

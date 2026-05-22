@@ -115,6 +115,15 @@ services:
       # Empty REDIS_URL = in-process broadcast + rate-limit; set to
       # redis://redis:6379/0 to exercise the P3.5 multi-replica path.
       REDIS_URL: ${REDIS_URL:-}
+      # Audit §4.5 — propagate the require-Redis-for-2FA flag from
+      # ``.env`` so a scale-out deploy can opt into fail-loud
+      # enrolment instead of the per-process fallback.
+      REQUIRE_REDIS_FOR_2FA: ${REQUIRE_REDIS_FOR_2FA:-0}
+      # Audit §16.2.2 — the ``0000000000:FAKE`` placeholder is a
+      # dev-only convenience so ``docker compose up`` works without
+      # ``.env``. ``backend/app/bot/runner.py`` logs at ERROR if
+      # ``RUN_BOT=1`` is set with this placeholder still in place, so
+      # the misconfiguration can't reach Telegram and fail mid-DM.
       BOT_TOKEN: ${BOT_TOKEN:-0000000000:FAKE}
       CRYPTOBOT_TOKEN: ${CRYPTOBOT_TOKEN:-000000:FAKE}
       WEBAPP_URL: ${WEBAPP_URL:-http://localhost:5173}
