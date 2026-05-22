@@ -19,6 +19,10 @@ vi.mock("@/api/hooks", () => ({
   useReviews: () => reviewsState,
   useUpdateService: () => ({ mutate: updateMutate }),
   useDeleteService: () => ({ mutate: deleteMutate }),
+  // Item 13 — ProfileFiatBalanceCard reads fiat balances. The test
+  // doesn't care about the values, but the mock has to exist so the
+  // component renders without throwing.
+  useWalletBalances: () => ({ data: [], isLoading: false }),
 }));
 
 vi.mock("@/lib/tg", () => ({

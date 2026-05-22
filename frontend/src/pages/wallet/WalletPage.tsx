@@ -30,7 +30,13 @@ import type { WalletBalanceDto } from "@/api/types";
  */
 export default function WalletPage() {
   const navigate = useNavigate();
-  const { data, isLoading } = useWalletBalances();
+  // Item 15 — fetch only fiat balances. The backend filter keeps
+  // crypto rows off the wire entirely; the client-side
+  // ``b.currency.kind === 'fiat'`` guard below stays as a defensive
+  // fallback for any in-flight cache entries written by an older
+  // build (the cache key changed so this branch is mostly dead, but
+  // cheap to keep).
+  const { data, isLoading } = useWalletBalances({ kind: "fiat" });
   // ``UserCardDto.deposit`` is the **trust** deposit balance after
   // the country-deposit-filter refactor (see
   // ``backend/app/serializers.py:_common_user_fields``). It's a

@@ -55,6 +55,10 @@ const mockState = vi.hoisted(() => ({
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
   },
+  setTrustDeposit: {
+    mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
+    isPending: false,
+  },
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
@@ -68,6 +72,7 @@ vi.mock("@/api/admin/hooks", () => ({
   useAdminSetRole: () => mockState.setRole,
   useAdminSetRating: () => mockState.setRating,
   useAdminSetStats: () => mockState.setStats,
+  useAdminSetTrustDeposit: () => mockState.setTrustDeposit,
   useAdminUserWallet: () => ({ data: [] }),
   useAdminCurrencies: () => ({ data: [] }),
   useAdminAdjustBalance: () => ({
@@ -130,6 +135,7 @@ function makeUser(
     banner_url: null,
     description: "",
     deposit_total: 50,
+    trust_deposit_balance: 100,
     rating_auto: 4.8,
     rating_manual: null,
     rating_effective: 4.8,

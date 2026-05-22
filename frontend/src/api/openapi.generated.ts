@@ -1304,6 +1304,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/users/{user_id}/trust-deposit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Trust Deposit
+         * @description Set the user's trust-deposit balance (absolute value).
+         *
+         *     Item 12 — the public profile's ``deposit`` field is sourced from
+         *     :attr:`User.trust_deposit_balance`, *not* from
+         *     :attr:`User.deposit_total` (which the legacy ``set_stats``
+         *     endpoint writes). Pre-fix admin edits to the lifetime aggregate
+         *     silently failed to propagate to the user-visible profile; this
+         *     endpoint targets the right column.
+         *
+         *     The body is an *absolute* amount — admin types the new total in
+         *     the form, not a delta. Negative values are rejected at the schema
+         *     layer (the trust balance has no spend / withdraw path so a
+         *     negative state is structurally impossible).
+         */
+        post: operations["set_trust_deposit_api_admin_users__user_id__trust_deposit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users/{user_id}/unban": {
         parameters: {
             query?: never;
@@ -2157,7 +2189,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Balances */
+        /**
+         * Get Balances
+         * @description Return active-currency balances for the requester.
+         *
+         *     ``kind`` filters the response to currencies with a matching
+         *     ``Currency.kind`` (Item 15). The user-facing wallet page calls
+         *     this with ``kind=fiat`` so crypto rows are filtered out at the
+         *     source instead of post-fetch on the client.
+         */
         get: operations["get_balances_api_wallet_balances_get"];
         put?: never;
         post?: never;
@@ -2174,7 +2214,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Currencies */
+        /**
+         * List Currencies
+         * @description List active currencies, optionally filtered by ``kind``.
+         *
+         *     Item 15 — the user-facing wallet flow passes ``kind=fiat`` to
+         *     surface only UAH/RUB/USD; the historical crypto rows stay in the
+         *     table (deals / treasury still reference them) but are hidden from
+         *     the user dropdowns. Omitting ``kind`` keeps backwards
+         *     compatibility with the admin panel and any tooling that walks the
+         *     full catalogue.
+         */
         get: operations["list_currencies_api_wallet_currencies_get"];
         put?: never;
         post?: never;
@@ -3120,6 +3170,27 @@ export interface components {
             /** Good */
             good?: number | null;
         };
+        /**
+         * AdminSetTrustDepositIn
+         * @description Body for ``POST /admin/users/:id/trust-deposit``.
+         *
+         *     Sets the user's :attr:`~backend.app.models.User.trust_deposit_balance`
+         *     — the column rendered as ``deposit`` on the public
+         *     ``UserOut`` / ``UserPublicOut`` DTOs. Distinct from
+         *     ``AdminSetStatsIn.deposit_total`` which edits the admin-only
+         *     lifetime aggregate.
+         *
+         *     The value is *absolute* (the admin types the new total, not a
+         *     delta); negative values are rejected because the trust deposit
+         *     has no spend / withdraw path so a negative balance is
+         *     structurally impossible.
+         */
+        AdminSetTrustDepositIn: {
+            /** Amount */
+            amount: number | string;
+            /** Reason */
+            reason?: string | null;
+        };
         /** AdminSettingsOut */
         AdminSettingsOut: {
             /** Auto Withdraw Enabled */
@@ -3442,6 +3513,8 @@ export interface components {
             rating_manual: number | null;
             /** Tg User Id */
             tg_user_id: number;
+            /** Trust Deposit Balance */
+            trust_deposit_balance: number;
             /** Username */
             username: string | null;
         };
@@ -3487,6 +3560,8 @@ export interface components {
             rating: number;
             /** Tg User Id */
             tg_user_id: number;
+            /** Trust Deposit Balance */
+            trust_deposit_balance: number;
             /** Username */
             username: string | null;
         };
@@ -4202,6 +4277,8 @@ export interface components {
             deposit: number;
             /** Description */
             description: string;
+            /** Display Currency Code */
+            display_currency_code?: string | null;
             /** Display Name */
             display_name: string;
             /**
@@ -4354,6 +4431,8 @@ export interface components {
             country?: string | null;
             /** Description */
             description?: string | null;
+            /** Display Currency Code */
+            display_currency_code?: string | null;
             /** Display Name */
             display_name?: string | null;
             /** Dm Deals */
@@ -6977,6 +7056,45 @@ export interface operations {
             };
         };
     };
+    set_trust_deposit_api_admin_users__user_id__trust_deposit_post: {
+        parameters: {
+            query?: never;
+            header: {
+                authorization: string;
+                "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
+            };
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminSetTrustDepositIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     unban_user_api_admin_users__user_id__unban_post: {
         parameters: {
             query?: never;
@@ -8810,7 +8928,9 @@ export interface operations {
     };
     get_balances_api_wallet_balances_get: {
         parameters: {
-            query?: never;
+            query?: {
+                kind?: ("fiat" | "crypto") | null;
+            };
             header: {
                 authorization: string;
             };
@@ -8841,7 +8961,9 @@ export interface operations {
     };
     list_currencies_api_wallet_currencies_get: {
         parameters: {
-            query?: never;
+            query?: {
+                kind?: ("fiat" | "crypto") | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8855,6 +8977,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CurrencyOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

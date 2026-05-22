@@ -96,6 +96,10 @@ export interface UserCardDto {
   // ``null`` means "user hasn't picked a country yet" — UI hides the
   // flag chip in that case rather than rendering a placeholder.
   country?: string | null;
+  // Items 13/15 — fiat currency code the user picked as their
+  // "main" balance shown on the ProfilePage fiat-balance card.
+  // ``null`` means "not picked" — UI falls back to USD.
+  display_currency_code?: string | null;
 }
 
 export type DealStatus =
@@ -317,6 +321,10 @@ export interface AdminUserListItemDto {
   is_banned: boolean;
   is_frozen: boolean;
   deposit_total: number;
+  // Item 12 — the trust-deposit balance is what the public profile
+  // surfaces as ``deposit``; rendered next to ``deposit_total`` so
+  // admins can disambiguate the two columns.
+  trust_deposit_balance: number;
   rating: number;
   deals_total: number;
   deals_success: number;
@@ -341,6 +349,8 @@ export interface AdminUserDetailDto {
   banner_url: string | null;
   description: string;
   deposit_total: number;
+  // Item 12 — see ``AdminUserListItemDto.trust_deposit_balance``.
+  trust_deposit_balance: number;
   rating_auto: number;
   rating_manual: number | null;
   rating_effective: number;

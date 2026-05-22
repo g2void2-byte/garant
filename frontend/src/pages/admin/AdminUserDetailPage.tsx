@@ -32,6 +32,7 @@ import {
   useAdminSetRating,
   useAdminSetRole,
   useAdminSetStats,
+  useAdminSetTrustDeposit,
   useAdminUnbanUser,
   useAdminUnfreezeUser,
   useAdminUser,
@@ -94,6 +95,7 @@ export default function AdminUserDetailPage() {
           <RolesSection user={user} isSelf={user.id === me?.id} />
           <RatingSection user={user} />
           <StatsSection user={user} />
+          <TrustDepositSection user={user} />
           <BalanceSection user={user} />
           <ServicesSection userId={user.id} />
           <ReviewsSection userId={user.id} />
@@ -130,7 +132,11 @@ function IdentityCard({ user }: { user: AdminUserDetailDto }) {
         <Detail label="Последний вход" value={user.last_login_at ? shortDate(user.last_login_at) : "—"} />
         <Detail label="IP" value={user.last_ip ?? "—"} mono />
         <Detail label="Входов всего" value={String(user.login_count)} />
-        <Detail label="Депозит" value={`$${user.deposit_total.toFixed(2)}`} />
+        <Detail label="Лайфтайм-депозит" value={`$${user.deposit_total.toFixed(2)}`} />
+        <Detail
+          label="Трастовый депозит"
+          value={`$${user.trust_deposit_balance.toFixed(2)}`}
+        />
         <Detail label="Рейтинг" value={user.rating_effective.toFixed(1)} />
         <Detail label="PIN" value={user.has_pin ? "Установлен" : "Нет"} />
       </dl>
@@ -483,7 +489,7 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
     { key: "deals_arbitrage", label: "В арбитраже", type: "int" },
     { key: "good", label: "Положительных оценок", type: "int" },
     { key: "bad", label: "Отрицательных оценок", type: "int" },
-    { key: "deposit_total", label: "Депозит всего ($)", type: "float" },
+    { key: "deposit_total", label: "Лайфтайм-депозит ($)", type: "float" },
   ];
 
   const apply = async () => {
@@ -532,6 +538,83 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
         onClick={apply}
       >
         Сохранить статистику
+      </Button>
+    </section>
+  );
+}
+
+// ── Trust deposit ───────────────────────────────────────────────────
+
+/**
+ * Item 12 — the public profile renders ``trust_deposit_balance`` as
+ * its ``deposit`` field. ``StatsSection`` above edits the legacy
+ * ``deposit_total`` aggregate (lifetime credit) — that column is
+ * still useful for admin reporting but is *not* what users see, so
+ * a separate section is needed to mutate the trust column directly.
+ */
+function TrustDepositSection({ user }: { user: AdminUserDetailDto }) {
+  const toast = useToast();
+  const setTrust = useAdminSetTrustDeposit();
+  const [amount, setAmount] = useState(String(user.trust_deposit_balance));
+  const [reason, setReason] = useState("");
+
+  const apply = async () => {
+    const n = Number(amount.replace(",", "."));
+    if (!Number.isFinite(n) || n < 0) {
+      toast.show({
+        kind: "error",
+        title: "Введите неотрицательное число",
+      });
+      return;
+    }
+    try {
+      await setTrust.mutateAsync({
+        userId: user.id,
+        body: { amount: n, reason: reason.trim() || null },
+      });
+      haptic("success");
+      toast.show({
+        kind: "success",
+        title: "Трастовый депозит обновлён",
+        body: `${user.username ?? user.tg_user_id} ← $${n.toFixed(2)}`,
+      });
+      setReason("");
+    } catch (e) {
+      haptic("error");
+      toast.show({ kind: "error", title: (e as Error).message || "Не удалось" });
+    }
+  };
+
+  return (
+    <section className="bg-panel rounded-card p-4 space-y-3">
+      <h3 className="font-semibold text-sm flex items-center gap-2">
+        <ShieldCheck size={14} />
+        Трастовый депозит
+      </h3>
+      <p className="text-xs text-text-muted">
+        Видим пользователю в профиле как «Депозит». Лайфтайм-депозит
+        выше — отдельная админская метрика и пользователю не
+        показывается.
+      </p>
+      <Input
+        label="Новое значение ($)"
+        type="number"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+      />
+      <Input
+        label="Причина (опционально)"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+      />
+      <Button
+        variant="primary"
+        size="sm"
+        fullWidth
+        disabled={setTrust.isPending}
+        onClick={apply}
+      >
+        Сохранить трастовый депозит
       </Button>
     </section>
   );

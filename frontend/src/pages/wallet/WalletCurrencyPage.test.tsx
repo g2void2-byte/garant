@@ -96,6 +96,11 @@ function makeCurrency(over: Partial<CurrencyDto> = {}): CurrencyDto {
     decimals: 2,
     min_deposit: 5,
     min_withdraw: 5,
+    // Item 15 — keep the test fixtures on the fiat branch so the
+    // page renders deposit/withdraw forms; the crypto branch is the
+    // one we redirect to ``/wallet`` and is covered by its own
+    // dedicated case below.
+    kind: "fiat",
     ...over,
   };
 }
@@ -151,6 +156,16 @@ describe("<WalletCurrencyPage />", () => {
     mockState.currencies = [makeCurrency({ code: "USDT" })];
     renderPage("DOGE");
     expect(screen.getByText("Валюта не поддерживается.")).toBeInTheDocument();
+  });
+
+  it("redirects crypto currencies to /wallet (Item 15)", () => {
+    mockState.currencies = [makeCurrency({ code: "USDT", kind: "crypto" })];
+    renderPage("USDT");
+    // The Navigate replaces the route; rendered output should be
+    // empty (no header, no balance copy).
+    expect(
+      screen.queryByRole("heading", { name: "Tether" }),
+    ).not.toBeInTheDocument();
   });
 
   it("submits a deposit from the deposit tab", async () => {

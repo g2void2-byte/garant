@@ -137,6 +137,10 @@ def user_to_out(
         dm_deals=bool(user.dm_deals),
         dm_deposits=bool(user.dm_deposits),
         dm_system=bool(user.dm_system),
+        # Items 13/15 — surface the user's "main" fiat currency
+        # preference on ``/api/me`` only; the public DTO doesn't carry
+        # it (other users have no reason to see this private setting).
+        display_currency_code=user.display_currency_code,
     )
 
 

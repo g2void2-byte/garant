@@ -165,18 +165,20 @@ async def lock_user_balance(session: AsyncSession, user_id: int, currency_id: in
 
 
 async def list_balances(
-    session: AsyncSession, user_id: int
+    session: AsyncSession, user_id: int, *, kind: str | None = None
 ) -> list[tuple[Currency, UserBalance | None]]:
-    """Return every active currency with the user's balance row (or None)."""
-    currencies = (
-        (
-            await session.execute(
-                select(Currency).where(Currency.is_active.is_(True)).order_by(Currency.sort_order)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    """Return every active currency with the user's balance row (or None).
+
+    Item 15 — when ``kind`` is provided the query is filtered to the
+    matching ``Currency.kind`` (``"fiat"`` / ``"crypto"``). The
+    user-facing wallet flow restricts itself to ``kind="fiat"`` so the
+    UI only surfaces UAH/RUB/USD; the historical crypto rows stay in
+    the ledger for any deal-state-machine flows that still touch them.
+    """
+    stmt = select(Currency).where(Currency.is_active.is_(True))
+    if kind is not None:
+        stmt = stmt.where(Currency.kind == kind)
+    currencies = (await session.execute(stmt.order_by(Currency.sort_order))).scalars().all()
     balances = (
         (await session.execute(select(UserBalance).where(UserBalance.user_id == user_id)))
         .scalars()

@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Switch } from "@/components/ui/Switch";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
-import { useMe, useUpdateMe, useUploadMedia } from "@/api/hooks";
+import { useCurrencies, useMe, useUpdateMe, useUploadMedia } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
 import { COUNTRIES, countryFromCode } from "@/lib/countries";
 
@@ -35,6 +35,8 @@ export default function SettingsPage() {
   const updateMe = useUpdateMe();
   const uploadMedia = useUploadMedia();
   const toast = useToast();
+  // Item 13 — fiat-only dropdown for the display currency selector.
+  const { data: fiatCurrencies } = useCurrencies({ kind: "fiat" });
   // V12-UI — avatar is sourced exclusively from Telegram
   // (``initDataUnsafe.user.photo_url``); the manual avatar uploader was
   // removed per UX request. Banner is still a manual upload because
@@ -229,6 +231,37 @@ export default function SettingsPage() {
                 </span>
               )}
             </div>
+          </label>
+          <label className="block">
+            <span className="block text-sm text-text-muted mb-1 px-1">
+              Валюта баланса в профиле
+            </span>
+            <select
+              value={me.display_currency_code || ""}
+              onChange={async (e) => {
+                try {
+                  await updateMe.mutateAsync({
+                    display_currency_code: e.target.value || null,
+                  });
+                  haptic("success");
+                  toast.show({
+                    kind: "success",
+                    title: "Валюта обновлена",
+                  });
+                } catch (err) {
+                  haptic("error");
+                  toast.show({ kind: "error", title: await extractApiError(err) });
+                }
+              }}
+              className="w-full appearance-none rounded-button bg-panel border border-border px-3 py-2 text-base focus:outline-none focus:border-accent"
+            >
+              <option value="">По умолчанию (USD)</option>
+              {(fiatCurrencies ?? []).map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.name} · {c.code}
+                </option>
+              ))}
+            </select>
           </label>
           {profileError && (
             <div className="text-sm text-danger whitespace-pre-line">{profileError}</div>

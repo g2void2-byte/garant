@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ArrowUpFromLine, CreditCard, Wallet, X } from "lucide-react";
 import {
   useAdmins,
@@ -35,10 +36,16 @@ type WithdrawMethod = "crypto" | "card";
  *     that deep-links to the first admin's Telegram chat.
  */
 export default function WalletWithdrawPage() {
-  const balances = useWalletBalances();
+  // Item 15 — filter the source list to fiat balances; the
+  // user-facing withdraw flow no longer offers crypto codes.
+  const balances = useWalletBalances({ kind: "fiat" });
   const create = useCreateWalletWithdrawal();
   const toast = useToast();
   const { data: admins } = useAdmins();
+  // Item 13 — ProfilePage's "Вывести" CTA can hint at a preferred
+  // currency code via ``?currency=USD``; we honour it on first paint.
+  const [searchParams] = useSearchParams();
+  const initialCode = (searchParams.get("currency") ?? "").toUpperCase();
 
   const [method, setMethod] = useState<WithdrawMethod>("crypto");
   const [cardOpen, setCardOpen] = useState(false);
@@ -58,9 +65,12 @@ export default function WalletWithdrawPage() {
 
   useEffect(() => {
     if (!code && eligible.length) {
-      setCode(eligible[0].currency.code);
+      const fromUrl = initialCode
+        ? eligible.find((b) => b.currency.code === initialCode)
+        : undefined;
+      setCode((fromUrl ?? eligible[0]).currency.code);
     }
-  }, [code, eligible]);
+  }, [code, eligible, initialCode]);
 
   if (balances.isLoading) {
     return (

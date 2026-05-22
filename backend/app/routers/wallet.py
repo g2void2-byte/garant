@@ -8,8 +8,9 @@ are admin-processed (see ``services_wallet``).
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 
 from ..deps import CurrentUser, PinUser, SessionDep
@@ -83,16 +84,23 @@ def _withdrawal_dto(w: WalletWithdrawal, c: Currency) -> WalletWithdrawalOut:
 
 
 @router.get("/currencies", response_model=list[CurrencyOut])
-async def list_currencies(session: SessionDep):
-    rows = (
-        (
-            await session.execute(
-                select(Currency).where(Currency.is_active.is_(True)).order_by(Currency.sort_order)
-            )
-        )
-        .scalars()
-        .all()
-    )
+async def list_currencies(
+    session: SessionDep,
+    kind: Literal["fiat", "crypto"] | None = Query(None),
+):
+    """List active currencies, optionally filtered by ``kind``.
+
+    Item 15 — the user-facing wallet flow passes ``kind=fiat`` to
+    surface only UAH/RUB/USD; the historical crypto rows stay in the
+    table (deals / treasury still reference them) but are hidden from
+    the user dropdowns. Omitting ``kind`` keeps backwards
+    compatibility with the admin panel and any tooling that walks the
+    full catalogue.
+    """
+    stmt = select(Currency).where(Currency.is_active.is_(True))
+    if kind is not None:
+        stmt = stmt.where(Currency.kind == kind)
+    rows = (await session.execute(stmt.order_by(Currency.sort_order))).scalars().all()
     return [_currency_dto(c) for c in rows]
 
 
@@ -100,8 +108,19 @@ async def list_currencies(session: SessionDep):
 
 
 @router.get("/balances", response_model=list[WalletBalanceOut])
-async def get_balances(user: CurrentUser, session: SessionDep):
-    rows = await list_balances(session, user.id)
+async def get_balances(
+    user: CurrentUser,
+    session: SessionDep,
+    kind: Literal["fiat", "crypto"] | None = Query(None),
+):
+    """Return active-currency balances for the requester.
+
+    ``kind`` filters the response to currencies with a matching
+    ``Currency.kind`` (Item 15). The user-facing wallet page calls
+    this with ``kind=fiat`` so crypto rows are filtered out at the
+    source instead of post-fetch on the client.
+    """
+    rows = await list_balances(session, user.id, kind=kind)
     return [
         WalletBalanceOut(
             currency=_currency_dto(c),
