@@ -228,6 +228,39 @@ class CryptoPay:
         result = await self._call("transfer", data)
         return Transfer.from_api(result)
 
+    async def get_transfers(
+        self,
+        *,
+        asset: str | None = None,
+        transfer_ids: list[int] | None = None,
+        spend_id: str | None = None,
+        offset: int | None = None,
+        count: int | None = None,
+    ) -> list[Transfer]:
+        """List transfers created by this app, optionally filtered.
+
+        Audit §4.19 — the treasury reconcile endpoint queries this by
+        ``spend_id`` (``treas:{withdrawal_id}``) to verify whether a
+        ``pending`` row's ``transfer`` call landed on Crypto Pay's
+        side after a Phase 2 → Phase 3 crash. The Crypto Pay docs
+        document the response shape under ``getTransfers``; ``items``
+        is an array of transfer objects we wrap in :class:`Transfer`.
+        """
+        data: dict[str, Any] = {}
+        if asset is not None:
+            data["asset"] = asset
+        if transfer_ids:
+            data["transfer_ids"] = ",".join(str(i) for i in transfer_ids)
+        if spend_id is not None:
+            data["spend_id"] = spend_id
+        if offset is not None:
+            data["offset"] = offset
+        if count is not None:
+            data["count"] = count
+        result = await self._call("getTransfers", data)
+        items = result.get("items") if isinstance(result, dict) else result
+        return [Transfer.from_api(item) for item in (items or [])]
+
     async def get_balance(self) -> list[dict[str, Any]]:
         result = await self._call("getBalance")
         return list(result or [])

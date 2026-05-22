@@ -224,13 +224,16 @@ def _reencode_image(data: bytes, content_type: str) -> bytes:
     ``load()`` so a bomb header never allocates the underlying
     buffer.
 
-    Animation is intentionally not preserved — animated GIF / WebP
-    payloads are re-saved as their first frame.  The decode path for
-    multi-frame containers is materially larger than the single-frame
-    path and is the same surface that has yielded most of the
-    image-library CVE traffic over the years; for the avatar /
-    deal-attachment use case a static representation is the right
-    trade-off.
+    Audit §4.15 — animated GIF / WebP payloads are now rejected
+    outright with HTTP 415.  Pre-fix the re-encode pass silently
+    flattened them to the first frame, which (a) violated user
+    intent without surfacing an error and (b) kept the multi-frame
+    Pillow decode surface — historically the source of most
+    image-library CVE traffic — reachable from anonymous upload.
+    The avatar / deal-attachment use case does not need animation,
+    so detecting ``is_animated`` / ``n_frames > 1`` and refusing
+    the upload is both stricter on the parser surface and honest
+    about the displayed result.
     """
     fmt = _PILLOW_FORMATS[content_type]
     out = io.BytesIO()
@@ -241,6 +244,17 @@ def _reencode_image(data: bytes, content_type: str) -> bytes:
                 raise HTTPException(
                     415,
                     "Изображение слишком большое (превышен лимит пикселей)",
+                )
+            # Audit §4.15 — fail closed on multi-frame containers.
+            # ``Image.is_animated`` is the canonical Pillow flag; some
+            # plugins expose ``n_frames`` instead, and the boolean
+            # short-circuits when only one is set.  Both are read
+            # before ``load()`` so we never decode beyond the first
+            # frame for the rejected case.
+            if getattr(img, "is_animated", False) or getattr(img, "n_frames", 1) > 1:
+                raise HTTPException(
+                    415,
+                    "Анимированные изображения не поддерживаются",
                 )
             save_kwargs: dict[str, Any] = {}
             if fmt == "JPEG":

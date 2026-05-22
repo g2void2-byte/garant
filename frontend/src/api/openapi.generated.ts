@@ -999,6 +999,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/treasury/{withdrawal_id}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Treasury Reconcile
+         * @description Reconcile a stuck ``pending`` treasury row against CryptoBot.
+         *
+         *     Audit §4.19 — recovery path for the Phase 2 → Phase 3 gap that
+         *     does NOT rely on operator hearsay. ``treasury_mark_sent`` takes
+         *     the operator's word that the transfer succeeded; this endpoint
+         *     queries CryptoBot's ``getTransfers`` API by the row's
+         *     ``spend_id`` (``treas:{withdrawal_id}``) and updates the row
+         *     from the authoritative source:
+         *
+         *       * **Transfer present on CryptoBot side** — flip the row to
+         *         ``status="sent"`` and record the returned ``transfer_id``,
+         *         matching what ``treasury_withdraw``'s Phase 3 would have
+         *         written. Idempotent — re-running just returns the row.
+         *       * **No matching transfer** — return 404 *without* mutating
+         *         the row, so the operator can decide whether to retry
+         *         (issue a fresh withdrawal — the ``pending`` row already
+         *         counts against ``available``, so a retry needs the operator
+         *         to either delete the row or wait for the audit log to
+         *         explain it) or close it out manually with ``mark_sent``
+         *         based on out-of-band evidence.
+         *
+         *     Guards:
+         *       * 2FA via ``X-Totp-Code`` header (same surface as
+         *         ``mark_sent`` — the action moves money on the ledger).
+         *       * ``confirm=true`` — explicit second click.
+         *       * Row must be in ``pending``; ``sent`` rows return the
+         *         existing payload (idempotent no-op), ``failed`` rows 409
+         *         (the operator already saw the failure and should issue a
+         *         fresh withdrawal instead of resurrecting a failed one).
+         *
+         *     Pre-fix this hole was an explicit accepted trade-off (audit
+         *     §4.19): the only recovery was operator-driven ``mark_sent``,
+         *     which silently trusted the operator. Now there is a code path
+         *     that closes the row from the same source of truth that
+         *     ``treasury_withdraw`` would have used had Phase 3 not crashed.
+         */
+        post: operations["treasury_reconcile_api_admin_treasury__withdrawal_id__reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users": {
         parameters: {
             query?: never;
@@ -3193,6 +3247,44 @@ export interface components {
             balances: components["schemas"]["AdminTreasuryBalanceOut"][];
             /** Total Withdrawals */
             total_withdrawals: number;
+        };
+        /**
+         * AdminTreasuryReconcileIn
+         * @description Body for ``POST /api/admin/treasury/{withdrawal_id}/reconcile``.
+         *
+         *     Audit §4.19 — automated reconciliation path for ``pending`` rows
+         *     stuck after a Phase 2 → Phase 3 crash. Unlike ``mark_sent`` (which
+         *     trusts the operator's claim that CryptoBot processed the
+         *     transfer), this endpoint queries CryptoBot's ``getTransfers``
+         *     API by the row's ``spend_id`` and updates the status from the
+         *     authoritative source — flipping to ``sent`` if the transfer
+         *     landed and surfacing a 404 (without mutating the row) if it
+         *     didn't, so the operator can choose whether to retry by issuing
+         *     a fresh withdrawal or close the row out manually.
+         */
+        AdminTreasuryReconcileIn: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * AdminTreasuryReconcileOut
+         * @description Response for the treasury reconcile endpoint.
+         *
+         *     ``status`` mirrors the row's new value (always ``sent`` on the
+         *     success path; the endpoint 404s instead of returning ``failed``
+         *     so a missing CryptoBot transfer never silently buries the row).
+         *     ``withdrawal`` carries the canonical ``TreasuryWithdrawal`` shape
+         *     so the admin UI can refresh from the same payload.
+         */
+        AdminTreasuryReconcileOut: {
+            /** Cryptobot Transfer Id */
+            cryptobot_transfer_id: string | null;
+            withdrawal: components["schemas"]["AdminTreasuryWithdrawOut"];
         };
         /**
          * AdminTreasuryWithdrawIn
@@ -6342,6 +6434,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminTreasuryWithdrawOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    treasury_reconcile_api_admin_treasury__withdrawal_id__reconcile_post: {
+        parameters: {
+            query?: never;
+            header: {
+                authorization: string;
+                "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
+            };
+            path: {
+                withdrawal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminTreasuryReconcileIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTreasuryReconcileOut"];
                 };
             };
             /** @description Validation Error */

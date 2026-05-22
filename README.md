@@ -15,13 +15,14 @@ One command brings up the full stack (Postgres + Redis + a one-shot
 
 ```bash
 git clone https://github.com/g2void2-byte/garant.git && cd garant
-cp .env.compose.example .env          # optional: fill in BOT_TOKEN / CRYPTOBOT_TOKEN for live bot tests
+cp .env.compose.example .env                                  # fill in BOT_TOKEN / CRYPTOBOT_TOKEN for live bot tests
+echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)" >> .env      # required (audit §16.2.1)
 docker compose up
 ```
 
 - Backend: <http://localhost:8080> (uvicorn `--reload`)
 - Frontend: <http://localhost:5173> (vite hot-reload)
-- Postgres: `localhost:5432` (user/pass/db = `garant`)
+- Postgres: `localhost:5432` (user/db = `garant`; password from `POSTGRES_PASSWORD` in `.env`)
 - Redis: `localhost:6379` (set `REDIS_URL=redis://redis:6379/0` in `.env` to enable the P3.5 path)
 
 `alembic upgrade head` runs in the dedicated `migrate` service (which

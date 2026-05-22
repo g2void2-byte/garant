@@ -10,15 +10,27 @@
 # CRYPTOBOT_TOKEN before `docker compose up`.
 
 # V12-M10 — Postgres credentials are sourced from ``.env`` (or the
-# ambient shell). The defaults below match ``.env.compose.example`` so
-# ``docker compose up`` still works out of the box, but a rotated
-# password set in ``.env`` propagates to every consumer (postgres init,
-# migrate-service DSN, backend DSN, healthcheck) without touching the
-# compose file. Pre-fix the literal ``garant`` was hard-coded in three
-# places and the documentation in ``.env.compose.example`` was inert.
+# ambient shell). A rotated password set in ``.env`` propagates to
+# every consumer (postgres init, migrate-service DSN, backend DSN,
+# healthcheck) without touching the compose file. Pre-fix the literal
+# ``garant`` was hard-coded in three places and the documentation in
+# ``.env.compose.example`` was inert.
+#
+# Audit §16.2.1 — ``POSTGRES_PASSWORD`` no longer has a default. The
+# previous ``${POSTGRES_PASSWORD:-garant}`` baked the literal ``garant``
+# into the running stack whenever someone forgot to copy
+# ``.env.compose.example`` → ``.env`` (or left the placeholder value
+# in place), which is fine on a laptop but a real footgun the day
+# compose is run on a server with the Postgres port exposed. The
+# ``${POSTGRES_PASSWORD:?...}`` syntax aborts ``docker compose up``
+# with a readable error pointing the operator at
+# ``.env.compose.example`` instead, so the misconfiguration surfaces
+# at boot rather than as a weak-credential surprise later. ``USER`` /
+# ``DB`` still default to ``garant`` because those aren't secrets and
+# every other DSN in the stack hard-codes the same names.
 x-postgres-env: &postgres-env
   POSTGRES_USER: ${POSTGRES_USER:-garant}
-  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-garant}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.compose.example) before running docker compose up}
   POSTGRES_DB: ${POSTGRES_DB:-garant}
 
 services:
@@ -84,10 +96,11 @@ services:
     environment:
       # V12-M10 — DSN is built from the shared ``POSTGRES_*`` env so a
       # rotated password in ``.env`` propagates without editing the
-      # compose file. Defaults match the hard-coded values pre-fix so
-      # an out-of-the-box ``docker compose up`` (no ``.env``) keeps
-      # working.
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-garant}:${POSTGRES_PASSWORD:-garant}@postgres:5432/${POSTGRES_DB:-garant}
+      # compose file. Audit §16.2.1 — ``POSTGRES_PASSWORD`` is now
+      # required (no default); the missing-var error fires before this
+      # line is reached, so the operator sees a single readable
+      # message instead of a misleading auth failure on first connect.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-garant}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.compose.example)}@postgres:5432/${POSTGRES_DB:-garant}
     volumes:
       - ./backend:/app/backend
       - ./alembic:/app/alembic
@@ -110,8 +123,9 @@ services:
     environment:
       # V12-M10 — same shared DSN as the ``migrate`` service so a
       # rotated ``POSTGRES_PASSWORD`` in ``.env`` is honoured by every
-      # consumer in the stack.
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-garant}:${POSTGRES_PASSWORD:-garant}@postgres:5432/${POSTGRES_DB:-garant}
+      # consumer in the stack. Audit §16.2.1 — ``POSTGRES_PASSWORD`` is
+      # required; the missing-var error fires at parse time.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-garant}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.compose.example)}@postgres:5432/${POSTGRES_DB:-garant}
       # Empty REDIS_URL = in-process broadcast + rate-limit; set to
       # redis://redis:6379/0 to exercise the P3.5 multi-replica path.
       REDIS_URL: ${REDIS_URL:-}

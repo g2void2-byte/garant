@@ -25,6 +25,7 @@ could silently swap the secret to one the attacker controls.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -81,12 +82,48 @@ async def status(admin: AdminUser):
     return Admin2faStatusOut(enabled=bool(admin.totp_enabled and admin.totp_secret))
 
 
-# Audit section 8 — one-shot guard for the fallback warning. We log
-# at WARNING the first time the process writes to the in-process
-# fallback (so a scale-out deployment without Redis emits a visible
-# signal in the very first 2FA setup attempt) and at DEBUG for
-# subsequent occurrences so steady-state logs don't drown in repeats.
-_fallback_warned: bool = False
+# Audit §5.5 / section 8 — one-shot guard for the fallback warning,
+# guarded by a ``threading.Lock``. We log at WARNING the first time the
+# process writes to the in-process fallback (so a scale-out deployment
+# without Redis emits a visible signal in the very first 2FA setup
+# attempt) and at DEBUG for subsequent occurrences so steady-state
+# logs don't drown in repeats.
+#
+# Pre-fix this was a bare ``_fallback_warned: bool`` with read-then-set
+# semantics from any worker thread / asyncio task; under load two
+# callers could both observe ``False`` and both emit the WARNING
+# version of the log line. ``threading.Lock`` collapses the
+# read-modify-write to a single critical section so exactly one
+# WARNING is emitted per process lifetime even under contention. The
+# lock is held only across the boolean flip (no I/O inside) so it
+# can't deadlock with the calling code.
+class _FallbackWarnState:
+    """Thread-safe one-shot guard for the in-process fallback warning."""
+
+    __slots__ = ("_lock", "warned")
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.warned: bool = False
+
+    def consume_first_observation(self) -> bool:
+        """Return ``True`` the first time it is called; ``False`` after.
+
+        The flip is atomic so concurrent callers see exactly one
+        ``True`` return across the process.
+        """
+        with self._lock:
+            if self.warned:
+                return False
+            self.warned = True
+            return True
+
+    def reset(self) -> None:
+        with self._lock:
+            self.warned = False
+
+
+_fallback_warn_state = _FallbackWarnState()
 
 
 def _warn_fallback_once(event: str, user_id: int) -> None:
@@ -96,9 +133,13 @@ def _warn_fallback_once(event: str, user_id: int) -> None:
     this on the very first 2FA enrolment and can configure Redis
     before users hit "TOTP секрет не найден". Single-replica
     dev / test runs still get one line of visibility too.
+
+    Audit §5.5 — the one-shot bit is held by a ``threading.Lock``–
+    protected state object so concurrent fallback writers / readers
+    can't both observe ``not warned`` and both emit at WARNING.
     """
-    global _fallback_warned
-    level = logging.WARNING if not _fallback_warned else logging.DEBUG
+    first = _fallback_warn_state.consume_first_observation()
+    level = logging.WARNING if first else logging.DEBUG
     logger.log(
         level,
         "admin 2fa: Redis unavailable, using in-process pending-secret store. "
@@ -107,10 +148,9 @@ def _warn_fallback_once(event: str, user_id: int) -> None:
         extra={
             "event": event,
             "user_id": user_id,
-            "first_observation": not _fallback_warned,
+            "first_observation": first,
         },
     )
-    _fallback_warned = True
 
 
 async def _store_pending(user_id: int, secret: str) -> None:
@@ -199,8 +239,7 @@ async def _pop_pending(user_id: int) -> str | None:
 
 def _reset_fallback_warn_for_tests() -> None:
     """Reset the one-shot fallback guard. Test-only hook."""
-    global _fallback_warned
-    _fallback_warned = False
+    _fallback_warn_state.reset()
 
 
 @router.post("/setup", response_model=Admin2faSetupOut)

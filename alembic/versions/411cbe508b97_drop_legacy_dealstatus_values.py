@@ -99,6 +99,24 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Audit §15.8 — emit an explicit warning at run time so an
+    # operator who triggers the downgrade is reminded that re-adding
+    # the legacy enum values does NOT recover any pre-P3.3 row that
+    # the original ``upgrade()`` dropped at the SQLite→Postgres
+    # cutover. The docstring at the top of this file has carried
+    # this caveat since V5-E-1 but downgrades are usually run from
+    # CI or a runbook where the docstring isn't in front of the
+    # operator; surfacing it via ``alembic``'s logger keeps the
+    # warning in the same stream as the migration progress.
+    import logging as _logging
+
+    _logging.getLogger("alembic.runtime.migration").warning(
+        "downgrade 411cbe508b97: re-adding legacy DealStatus enum values "
+        "(%s). This does NOT recover pre-P3.3 rows dropped at the original "
+        "upgrade — restore from a pre-cutover backup if you need the data "
+        "back. See this revision's docstring (V5-E-1) for details.",
+        ", ".join(_LEGACY_VALUES),
+    )
     all_values = ", ".join(f"'{v}'" for v in (*_CURRENT_VALUES, *_LEGACY_VALUES))
     op.execute(f"CREATE TYPE dealstatus_new AS ENUM ({all_values})")
     op.execute(
