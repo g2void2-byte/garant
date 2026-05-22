@@ -1063,6 +1063,11 @@
             "title": "Is Active",
             "type": "boolean"
           },
+          "kind": {
+            "default": "crypto",
+            "title": "Kind",
+            "type": "string"
+          },
           "min_deposit": {
             "title": "Min Deposit",
             "type": "number"
@@ -1148,6 +1153,21 @@
               }
             ],
             "title": "Is Active"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "crypto",
+                  "fiat"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
           },
           "min_deposit": {
             "anyOf": [
@@ -3800,6 +3820,11 @@
             "title": "Id",
             "type": "integer"
           },
+          "kind": {
+            "default": "crypto",
+            "title": "Kind",
+            "type": "string"
+          },
           "min_deposit": {
             "title": "Min Deposit",
             "type": "number"
@@ -3894,6 +3919,15 @@
           "pay_commission": {
             "$ref": "#/components/schemas/PayCommission",
             "default": "buyer"
+          },
+          "payment_provider": {
+            "default": "cryptobot",
+            "enum": [
+              "cryptobot",
+              "crystalpay"
+            ],
+            "title": "Payment Provider",
+            "type": "string"
           },
           "role": {
             "const": "buyer",
@@ -4169,6 +4203,11 @@
           },
           "pay_commission": {
             "title": "Pay Commission",
+            "type": "string"
+          },
+          "payment_provider": {
+            "default": "cryptobot",
+            "title": "Payment Provider",
             "type": "string"
           },
           "role": {

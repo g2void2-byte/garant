@@ -14,7 +14,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet";
@@ -97,7 +97,7 @@ export default function AdminDealDetailPage() {
   if (!Number.isFinite(dealId)) {
     return (
       <Page showBack onBack={() => navigate("/admin/deals")}>
-        <Header title="Сделка" />
+        <AdminHeader title="Сделка" />
         <p className="px-4 text-sm text-text-muted">Неверный ID.</p>
       </Page>
     );
@@ -105,7 +105,7 @@ export default function AdminDealDetailPage() {
 
   return (
     <Page showBack onBack={() => navigate(-1)}>
-      <Header
+      <AdminHeader
         title={deal ? `Сделка #${deal.id}` : "Сделка"}
         subtitle={deal ? STATUS_LABEL[deal.status] ?? deal.status : undefined}
       />

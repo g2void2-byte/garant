@@ -16,7 +16,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -72,7 +72,7 @@ export default function AdminUserDetailPage() {
   if (!Number.isFinite(userId)) {
     return (
       <Page showBack onBack={() => navigate("/admin/users")}>
-        <Header title="Пользователь" />
+        <AdminHeader title="Пользователь" />
         <p className="px-4 text-sm text-text-muted">Неверный ID.</p>
       </Page>
     );
@@ -80,7 +80,7 @@ export default function AdminUserDetailPage() {
 
   return (
     <Page showBack onBack={() => navigate("/admin/users")}>
-      <Header title="Пользователь" />
+      <AdminHeader title="Пользователь" />
       {isLoading || !user ? (
         <div className="px-4 space-y-3">
           <Skeleton className="h-24" />

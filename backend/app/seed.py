@@ -38,6 +38,18 @@ CURRENCIES: list[tuple[str, str, str, int, float, float, int]] = [
     ("SOL", "Solana", "SOL", 4, 0.05, 0.05, 100),
 ]
 
+# Fiat currencies surfaced on the deposit dropdown. Kept in lockstep
+# with ``alembic/versions/w5c6d7e8f9a0_*`` which back-fills the same
+# rows on existing installs. ``kind='fiat'`` is what
+# :func:`services_wallet._create_cryptobot_deposit` keys on to route
+# to CryptoBot's ``currency_type="fiat"`` invoice path.
+FIAT_CURRENCIES: list[tuple[str, str, int, float, float, int]] = [
+    # (code, name, decimals, min_deposit, min_withdraw, sort_order)
+    ("USD", "US Dollar", 2, 1.0, 1.0, 200),
+    ("UAH", "Українська гривня", 2, 50.0, 50.0, 210),
+    ("RUB", "Российский рубль", 2, 100.0, 100.0, 220),
+]
+
 
 CATEGORIES = [
     ("avia-i-oteli", "Авиа и отели", "plane"),
@@ -115,9 +127,47 @@ async def seed_currencies(session: AsyncSession) -> None:
     # Audit 14.1 — same race as ``seed_categories`` above; same fix.
     # The ``ix_currencies_code`` unique index would explode the
     # losing worker's commit on parallel cold-start.
+    #
+    # Fiat rows are also inserted unconditionally (with
+    # ``ON CONFLICT DO NOTHING``) so existing installs whose
+    # ``currencies`` table predates the fiat-deposit plan item still
+    # get UAH/RUB/USD back-filled on next boot. Skipping the
+    # fast-exit for them keeps the seeder idempotent rather than
+    # silently leaving the deposit dropdown empty for everyone whose
+    # DB was provisioned before the migration that added them.
     result = await session.execute(select(Currency).limit(1))
-    if result.scalar_one_or_none() is not None:
-        return
+    has_existing = result.scalar_one_or_none() is not None
+
+    if not has_existing:
+        await session.execute(
+            pg_insert(Currency)
+            .values(
+                [
+                    {
+                        "code": code,
+                        "name": name,
+                        "network": network,
+                        "decimals": decimals,
+                        "min_deposit": min_deposit,
+                        "min_withdraw": min_withdraw,
+                        "sort_order": sort_order,
+                        "is_active": True,
+                        "address_regex": CURRENCY_ADDRESS_REGEX.get(code, ""),
+                        "kind": "crypto",
+                    }
+                    for (
+                        code,
+                        name,
+                        network,
+                        decimals,
+                        min_deposit,
+                        min_withdraw,
+                        sort_order,
+                    ) in CURRENCIES
+                ]
+            )
+            .on_conflict_do_nothing(index_elements=["code"])
+        )
 
     await session.execute(
         pg_insert(Currency)
@@ -126,23 +176,23 @@ async def seed_currencies(session: AsyncSession) -> None:
                 {
                     "code": code,
                     "name": name,
-                    "network": network,
+                    "network": "",
                     "decimals": decimals,
                     "min_deposit": min_deposit,
                     "min_withdraw": min_withdraw,
                     "sort_order": sort_order,
                     "is_active": True,
-                    "address_regex": CURRENCY_ADDRESS_REGEX.get(code, ""),
+                    "address_regex": "",
+                    "kind": "fiat",
                 }
                 for (
                     code,
                     name,
-                    network,
                     decimals,
                     min_deposit,
                     min_withdraw,
                     sort_order,
-                ) in CURRENCIES
+                ) in FIAT_CURRENCIES
             ]
         )
         .on_conflict_do_nothing(index_elements=["code"])

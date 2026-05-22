@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Vault, ShieldCheck } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
@@ -37,7 +37,7 @@ export default function AdminTreasuryPage() {
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>
-      <Header
+      <AdminHeader
         title="Treasury"
         subtitle="Аккумулированная комиссия"
         right={

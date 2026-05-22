@@ -127,6 +127,10 @@ export interface DealDto {
   arbitration_resolved_by: string | null;
   arbitration_resolution: "buyer" | "seller" | null;
   arbitration_resolved_at: string | null;
+  // Upstream invoice provider chosen by the buyer at deal-create
+  // time. ``"cryptobot"`` (default) keeps legacy rows backwards-
+  // compatible.
+  payment_provider?: "cryptobot" | "crystalpay" | string;
 }
 
 export interface ReviewDto {
@@ -213,6 +217,10 @@ export interface CurrencyDto {
   decimals: number;
   min_deposit: number;
   min_withdraw: number;
+  // Distinguishes fiat invoices (``"fiat"`` — UAH/RUB/USD) from
+  // crypto invoices (``"crypto"`` — USDT/TON/...). Surfaced so the
+  // deposit page can filter the dropdown to fiat-only options.
+  kind?: "crypto" | "fiat" | string;
 }
 
 export interface WalletBalanceDto {
@@ -730,6 +738,8 @@ export interface AdminCurrencyDto {
   min_withdraw: number;
   is_active: boolean;
   sort_order: number;
+  address_regex?: string;
+  kind?: "crypto" | "fiat" | string;
 }
 
 export interface AdminCurrencyUpsertBody {
@@ -742,6 +752,8 @@ export interface AdminCurrencyUpsertBody {
   min_withdraw?: number;
   is_active?: boolean;
   sort_order?: number;
+  address_regex?: string;
+  kind?: "crypto" | "fiat";
 }
 
 export interface AdminBroadcastDto {

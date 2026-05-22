@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Check, X, Send, Copy } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
@@ -38,7 +38,7 @@ export default function AdminWithdrawalsPage() {
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>
-      <Header title="Выводы" subtitle="Заявки на вывод" />
+      <AdminHeader title="Выводы" subtitle="Заявки на вывод" />
       <div className="px-4 mb-3 flex gap-1.5 overflow-x-auto">
         {STATUSES.map((s) => (
           <button

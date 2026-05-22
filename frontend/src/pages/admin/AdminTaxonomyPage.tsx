@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Coins, Tags, Plus, Pencil } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
@@ -30,7 +30,7 @@ export default function AdminTaxonomyPage() {
   if (!__guard.shouldRender) return null;
   return (
     <Page showBack onBack={() => navigate("/admin")}>
-      <Header title="Таксономия" />
+      <AdminHeader title="Таксономия" />
       <div className="px-4 mb-3 flex gap-1.5">
         <button
           type="button"

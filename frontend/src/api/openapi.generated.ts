@@ -2643,6 +2643,11 @@ export interface components {
             id: number;
             /** Is Active */
             is_active: boolean;
+            /**
+             * Kind
+             * @default crypto
+             */
+            kind: string;
             /** Min Deposit */
             min_deposit: number;
             /** Min Withdraw */
@@ -2666,6 +2671,8 @@ export interface components {
             icon_url?: string | null;
             /** Is Active */
             is_active?: boolean | null;
+            /** Kind */
+            kind?: ("crypto" | "fiat") | null;
             /** Min Deposit */
             min_deposit?: number | string | null;
             /** Min Withdraw */
@@ -3632,6 +3639,11 @@ export interface components {
             icon_url: string;
             /** Id */
             id: number;
+            /**
+             * Kind
+             * @default crypto
+             */
+            kind: string;
             /** Min Deposit */
             min_deposit: number;
             /** Min Withdraw */
@@ -3676,6 +3688,12 @@ export interface components {
             pay_comission?: components["schemas"]["PayCommission"] | null;
             /** @default buyer */
             pay_commission: components["schemas"]["PayCommission"];
+            /**
+             * Payment Provider
+             * @default cryptobot
+             * @enum {string}
+             */
+            payment_provider: "cryptobot" | "crystalpay";
             /**
              * Role
              * @default buyer
@@ -3760,6 +3778,11 @@ export interface components {
             pay_comission: string;
             /** Pay Commission */
             pay_commission: string;
+            /**
+             * Payment Provider
+             * @default cryptobot
+             */
+            payment_provider: string;
             /** Role */
             role: string;
             /** Seller */

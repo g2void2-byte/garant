@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Save, Lock, AlertTriangle } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -37,7 +37,7 @@ export default function AdminSettingsPage() {
   if (isLoading || !form) {
     return (
       <Page showBack onBack={() => navigate("/admin")}>
-        <Header title="Настройки" />
+        <AdminHeader title="Настройки" />
         <div className="px-4 space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-16 rounded-card" />
@@ -57,7 +57,7 @@ export default function AdminSettingsPage() {
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>
-      <Header title="Настройки" subtitle={dirty ? "Несохранённые изменения" : undefined} />
+      <AdminHeader title="Настройки" subtitle={dirty ? "Несохранённые изменения" : undefined} />
       <div className="px-4 space-y-4 pb-24">
         <Section title="Комиссии (%)">
           <Row label="Обычная комиссия (сделки)">

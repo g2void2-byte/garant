@@ -1,24 +1,14 @@
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
-  Bell,
   Briefcase,
-  Coins,
   Crown,
   Gavel,
-  History,
-  LineChart,
-  Settings as SettingsIcon,
   ShieldCheck,
-  Tags,
   Users,
-  Vault,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Server,
 } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useAdminDashboard } from "@/api/admin/hooks";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
@@ -40,7 +30,7 @@ export default function AdminDashboardPage() {
 
   return (
     <Page showBack onBack={() => navigate("/profile")}>
-      <Header title="Админ-панель" subtitle="Управление платформой" />
+      <AdminHeader title="Админ-панель" subtitle="Управление платформой" />
 
       {isLoading ? (
         <DashboardSkeleton />
@@ -148,49 +138,9 @@ export default function AdminDashboardPage() {
             />
           </Section>
 
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">
-              Разделы
-            </h2>
-            <div className="grid grid-cols-2 gap-2">
-              <NavTile icon={<ArrowDownToLine size={18} />} label="Депозиты" to="/admin/deposits" />
-              <NavTile icon={<ArrowUpFromLine size={18} />} label="Выводы" to="/admin/withdrawals" />
-              <NavTile icon={<Vault size={18} />} label="Treasury" to="/admin/treasury" />
-              <NavTile icon={<Bell size={18} />} label="Рассылки" to="/admin/broadcasts" />
-              <NavTile icon={<LineChart size={18} />} label="Аналитика" to="/admin/analytics" />
-              <NavTile icon={<Tags size={18} />} label="Таксономия" to="/admin/taxonomy" />
-              <NavTile icon={<Coins size={18} />} label="Валюты" to="/admin/taxonomy" />
-              <NavTile icon={<SettingsIcon size={18} />} label="Настройки" to="/admin/settings" />
-              <NavTile icon={<Server size={18} />} label="Система" to="/admin/system" />
-              <NavTile icon={<History size={18} />} label="Аудит" to="/admin/audit" />
-              <NavTile icon={<ShieldCheck size={18} />} label="2FA" to="/admin/2fa" />
-            </div>
-          </section>
         </div>
       ) : null}
     </Page>
-  );
-}
-
-function NavTile({
-  icon,
-  label,
-  to,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  to: string;
-}) {
-  const navigate = useNavigate();
-  return (
-    <button
-      type="button"
-      onClick={() => navigate(to)}
-      className="flex items-center gap-2 rounded-lg p-3 bg-panel text-left transition active:scale-[0.98] hover:bg-panel-2"
-    >
-      <span className="text-accent">{icon}</span>
-      <span className="text-sm font-medium">{label}</span>
-    </button>
   );
 }
 

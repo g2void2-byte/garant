@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronRight, Gavel, Inbox, CheckCheck, type LucideIcon } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
@@ -63,7 +63,7 @@ export default function AdminArbitrationPage() {
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>
-      <Header title="Арбитраж" subtitle="Очередь споров" />
+      <AdminHeader title="Арбитраж" subtitle="Очередь споров" />
 
       <div className="px-4 grid grid-cols-3 gap-2 mb-3">
         {QUEUE_TABS.map((t) => {

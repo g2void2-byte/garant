@@ -46,9 +46,18 @@ export default function WalletDepositPage() {
   const [amount, setAmount] = useState<string>("");
   const [provider, setProvider] = useState<DepositProvider>("cryptobot");
 
+  // Per the deposit-flow plan, only fiat options surface to the user
+  // — both CryptoBot (``currency_type="fiat"`` invoice) and
+  // Crystalpay accept any fiat code on the wire. Crypto currencies
+  // stay in the DB for the historical wallet ledger but are hidden
+  // from the dropdown so users only top up in UAH/RUB/USD.
+  const fiatCurrencies = useMemo(
+    () => (currencies.data ?? []).filter((c) => (c.kind ?? "crypto") === "fiat"),
+    [currencies.data],
+  );
   const current = useMemo(
-    () => currencies.data?.find((c) => c.code === code),
-    [currencies.data, code],
+    () => fiatCurrencies.find((c) => c.code === code),
+    [fiatCurrencies, code],
   );
   const balance = useMemo(
     () => balances.data?.find((b) => b.currency.code === code),
@@ -56,10 +65,13 @@ export default function WalletDepositPage() {
   );
 
   useEffect(() => {
-    if (!code && currencies.data?.length) {
-      setCode(currencies.data[0].code);
+    if (!code && fiatCurrencies.length) {
+      // Default to USD when available; otherwise pick the first
+      // fiat option. Keeps the dropdown deterministic across reloads.
+      const usd = fiatCurrencies.find((c) => c.code === "USD");
+      setCode((usd ?? fiatCurrencies[0]).code);
     }
-  }, [code, currencies.data]);
+  }, [code, fiatCurrencies]);
 
   useEffect(() => {
     if (current && !amount) {
@@ -110,9 +122,13 @@ export default function WalletDepositPage() {
     }
   }
 
-  const currencyOptions = (currencies.data ?? []).map((c) => ({
+  const currencyOptions = fiatCurrencies.map((c) => ({
     value: c.code,
-    label: `${c.name} (${c.network || c.code})`,
+    // Fiat rows have no ``network`` (it's a crypto concept); render
+    // the code alongside the name so the dropdown reads e.g.
+    // "Українська гривня · UAH" rather than the awkward
+    // "Українська гривня ()".
+    label: `${c.name} · ${c.code}`,
   }));
 
   return (

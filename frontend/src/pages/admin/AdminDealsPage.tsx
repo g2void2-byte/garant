@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Filter, ChevronLeft, ChevronRight, AlertTriangle, Gavel, Search } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Sheet } from "@/components/ui/Sheet";
@@ -93,7 +93,7 @@ export default function AdminDealsPage() {
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>
-      <Header
+      <AdminHeader
         title="Сделки"
         subtitle={data ? `${total} всего` : undefined}
         right={

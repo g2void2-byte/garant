@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Search, Filter, ChevronLeft, ChevronRight } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { BadgePrefix } from "@/components/ui/BadgePrefix";
 import { useAdminUsers } from "@/api/admin/hooks";
@@ -84,7 +84,7 @@ export default function AdminUsersPage() {
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>
-      <Header
+      <AdminHeader
         title="Пользователи"
         subtitle={data ? `${data.total} всего` : undefined}
         right={

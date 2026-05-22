@@ -380,6 +380,12 @@ export function useCreateDeal() {
       description: string;
       pay_comission: "buyer" | "seller";
       currency_code: string;
+      // Optional on the wire; the backend defaults to
+      // ``"cryptobot"`` when omitted. ``"crystalpay"`` switches the
+      // upstream invoice provider the buyer originally picked at
+      // deal-create time — persisted on the Deal row but does not
+      // affect today's pre-deposited escrow funding path.
+      payment_provider?: "cryptobot" | "crystalpay";
     }) => api.post("api/deals", { json: body }).json<DealDto>(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.deals.all() });

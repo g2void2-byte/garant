@@ -501,6 +501,19 @@ class Deal(Base):
     arbitration_resolution: Mapped[str | None] = mapped_column(String(16), nullable=True)
     arbitration_resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Buyer's chosen invoice provider, captured at deal-create time.
+    # Mirrors :class:`WalletDepositProvider` on the wire but stored
+    # as a plain ``String(16)`` (default ``"cryptobot"``) so the
+    # closed set can grow without an ``ALTER TYPE`` migration —
+    # ``DealCreate.payment_provider`` enforces the literal on input.
+    # Today the deal is funded from the buyer's pre-deposited
+    # ``UserBalance``; the field is preserved so a future
+    # invoice-driven escrow flow knows which provider the user
+    # originally picked.
+    payment_provider: Mapped[str] = mapped_column(
+        String(16), default="cryptobot", server_default="cryptobot"
+    )
+
     buyer: Mapped[User] = relationship(foreign_keys=[buyer_id], lazy="selectin")
     seller: Mapped[User] = relationship(foreign_keys=[seller_id], lazy="selectin")
     currency: Mapped[Currency | None] = relationship(foreign_keys=[currency_id], lazy="selectin")
@@ -708,6 +721,19 @@ class Currency(Base):
     # cryptographic; CryptoBot's ``transfer`` API does the checksum
     # validation at payout time.
     address_regex: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # Distinguishes fiat invoices (``"fiat"`` — UAH/RUB/USD) from
+    # crypto invoices (``"crypto"`` — USDT/TON/...). Used by the
+    # deposit page to filter the dropdown and by
+    # :func:`services_wallet._create_cryptobot_deposit` to switch
+    # between ``createInvoice`` ``currency_type="crypto"`` (the
+    # legacy ``asset`` path) and ``currency_type="fiat"`` (with
+    # ``fiat=<code>`` and a derived ``accepted_assets`` list).
+    # Plain ``String`` rather than an enum so a third kind can be
+    # added without ``ALTER TYPE`` ceremony — the closed set is
+    # enforced by the admin upsert pydantic schema.
+    kind: Mapped[str] = mapped_column(
+        String(8), default="crypto", server_default="crypto"
+    )
 
 
 class UserBalance(Base):

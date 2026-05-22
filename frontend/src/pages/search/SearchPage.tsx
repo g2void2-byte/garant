@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Star } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
 import { SearchInput } from "@/components/ui/SearchInput";
@@ -8,7 +9,9 @@ import { Select } from "@/components/ui/Select";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { UserCard } from "@/components/domain/UserCard";
+import { Avatar } from "@/components/ui/Avatar";
+import { BadgePrefix } from "@/components/ui/BadgePrefix";
+import { OnlineDot } from "@/components/ui/OnlineDot";
 import { DesignationsHelp } from "@/components/domain/DesignationsHelp";
 import {
   SearchFilterSheet,
@@ -17,6 +20,11 @@ import {
 import { ActiveFilterChips } from "@/components/domain/ActiveFilterChips";
 import { useUI } from "@/stores/ui";
 import { useUsers } from "@/api/hooks";
+import { staggerDelay } from "@/lib/animate";
+import { dealsLabel, formatMoney } from "@/lib/format";
+import { countryFromCode } from "@/lib/countries";
+import { cn } from "@/lib/cn";
+import type { UserCardDto } from "@/api/types";
 import { Search as SearchIcon, SlidersHorizontal } from "lucide-react";
 
 const FILTER_OPTIONS = [
@@ -36,9 +44,18 @@ export default function SearchPage() {
   const [filters, setFilters] = useState<SearchFilters>({});
   const [sheetOpen, setSheetOpen] = useState(false);
 
+  // Live-search debounce: avoid hitting ``/api/users?q=…`` on every
+  // keystroke. 250 ms mirrors :class:`UserPicker` which the plan
+  // uses as the visual reference for this dropdown UX.
+  const [debouncedQ, setDebouncedQ] = useState("");
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQ(q.trim()), 250);
+    return () => clearTimeout(id);
+  }, [q]);
+
   const queryParams = useMemo(
     () => ({
-      q,
+      q: debouncedQ,
       filter,
       rating: filters.rating,
       deals: filters.deals,
@@ -47,7 +64,7 @@ export default function SearchPage() {
       reg_from: filters.reg_from,
       reg_to: filters.reg_to,
     }),
-    [q, filter, filters],
+    [debouncedQ, filter, filters],
   );
   const { data: users, isLoading } = useUsers(queryParams);
 
@@ -116,13 +133,25 @@ export default function SearchPage() {
                 description="Попробуйте другой запрос или фильтр"
               />
             ) : (
-              <ul className="space-y-2">
-                {users.map((u, i) => (
-                  <li key={u.id}>
-                    <UserCard user={u} index={i} />
-                  </li>
-                ))}
-              </ul>
+              <div
+                role="listbox"
+                aria-label="Результаты поиска пользователей"
+                className={cn(
+                  "rounded-card bg-panel border border-border shadow-pop overflow-hidden",
+                  "animate-fade-in-down",
+                )}
+              >
+                <ul className="py-1.5">
+                  {users.map((u, i) => (
+                    <SearchUserRow
+                      key={u.id}
+                      user={u}
+                      index={i}
+                      onPick={() => navigate(`/users/${u.username}`)}
+                    />
+                  ))}
+                </ul>
+              </div>
             )}
           </>
         )}
@@ -144,5 +173,80 @@ export default function SearchPage() {
         onApply={setFilters}
       />
     </Page>
+  );
+}
+
+/**
+ * Dropdown-style row for the live user search.
+ *
+ * Mirrors :class:`UserPicker`'s row layout (avatar + name + meta on
+ * the right) so the two surfaces feel like the same component
+ * specialised for different callers. ``role="option"`` lets screen
+ * readers announce the row as part of the parent listbox.
+ */
+function SearchUserRow({
+  user,
+  index,
+  onPick,
+}: {
+  user: UserCardDto;
+  index: number;
+  onPick: () => void;
+}) {
+  const country = countryFromCode(user.country);
+  const ratingLabel = user.reviews_count ? user.rating.toFixed(1) : "0.0";
+  return (
+    <li
+      style={staggerDelay(index, 35, 280)}
+      className="animate-fade-in-down"
+    >
+      <button
+        type="button"
+        role="option"
+        aria-selected={false}
+        onClick={onPick}
+        data-testid={`search-user-${user.username}`}
+        className={cn(
+          "w-full flex items-center gap-3 px-3 py-2 text-left",
+          "hover:bg-secondary/60 active:bg-secondary transition-colors",
+        )}
+      >
+        <div className="relative shrink-0">
+          <Avatar name={user.username} src={user.photo_url} size={44} />
+          <span className="absolute -bottom-0.5 -right-0.5 ring-2 ring-panel rounded-full">
+            <OnlineDot online={user.online} />
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <BadgePrefix prefix={user.prefix} />
+            <span className="font-medium text-[15px] truncate">
+              {user.display_name?.trim() || user.username}
+            </span>
+            {country && (
+              <span
+                aria-label={country.name}
+                title={country.name}
+                className="shrink-0 text-sm leading-none"
+              >
+                {country.flag}
+              </span>
+            )}
+          </div>
+          <div className="text-[12px] text-text-muted truncate">
+            @{user.username} · {dealsLabel(user.deals_count)}
+          </div>
+        </div>
+        <div className="flex flex-col items-end shrink-0 gap-0.5">
+          <span className="inline-flex items-center gap-1 text-accent text-sm font-semibold">
+            <Star className="size-3.5" strokeWidth={2.5} />
+            {ratingLabel}
+          </span>
+          <span className="text-accent text-xs font-semibold tabular-nums">
+            {formatMoney(user.deposit)}
+          </span>
+        </div>
+      </button>
+    </li>
   );
 }

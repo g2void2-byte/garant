@@ -29,15 +29,27 @@ export default function CreateDealPage() {
   const [comissionFrom, setComissionFrom] = useState<"buyer" | "seller">(
     "buyer",
   );
-  const [currencyCode, setCurrencyCode] = useState("USDT");
+  const [currencyCode, setCurrencyCode] = useState("USD");
+  // V13 — buyer's preferred upstream invoice provider, persisted
+  // on the deal row (``Deal.payment_provider``). Defaults to
+  // ``"cryptobot"`` to match the wallet deposit flow.
+  const [paymentProvider, setPaymentProvider] = useState<
+    "cryptobot" | "crystalpay"
+  >("cryptobot");
   const [pinOpen, setPinOpen] = useState(false);
 
+  // Per the deposit-flow plan, deals are funded from the buyer's
+  // fiat balance — the dropdown therefore surfaces only fiat
+  // currencies (UAH/RUB/USD). Crypto rows stay in the DB for the
+  // historical ledger but are hidden from the create-deal picker.
   const currencyOptions = useMemo(
     () =>
-      (currencies ?? []).map((c) => ({
-        value: c.code,
-        label: `${c.code} — ${c.name}`,
-      })),
+      (currencies ?? [])
+        .filter((c) => (c.kind ?? "crypto") === "fiat")
+        .map((c) => ({
+          value: c.code,
+          label: `${c.code} — ${c.name}`,
+        })),
     [currencies],
   );
 
@@ -60,6 +72,7 @@ export default function CreateDealPage() {
         description,
         pay_comission: comissionFrom,
         currency_code: currencyCode,
+        payment_provider: paymentProvider,
       });
       haptic("success");
       navigate(`/deals/${deal.id}`);
@@ -120,6 +133,39 @@ export default function CreateDealPage() {
           ]}
           onChange={setComissionFrom}
         />
+        <div>
+          <div className="mb-1 text-[14px] font-medium">Платёжная система</div>
+          <div
+            className="grid grid-cols-2 gap-2"
+            role="radiogroup"
+            aria-label="Платёжная система"
+          >
+            {[
+              { value: "cryptobot" as const, label: "CryptoBot" },
+              { value: "crystalpay" as const, label: "Crystalpay" },
+            ].map((opt) => {
+              const selected = paymentProvider === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  data-testid={`provider-${opt.value}`}
+                  onClick={() => setPaymentProvider(opt.value)}
+                  className={
+                    "rounded-button border px-4 py-2 text-sm font-medium transition " +
+                    (selected
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-border text-text-muted hover:text-text")
+                  }
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <Button fullWidth onClick={requestSubmit} disabled={create.isPending}>
           {create.isPending ? "Создаю..." : "Создать сделку"}
         </Button>

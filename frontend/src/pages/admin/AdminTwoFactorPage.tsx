@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ShieldCheck, ShieldOff, KeyRound, Copy } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
@@ -44,7 +44,7 @@ export default function AdminTwoFactorPage() {
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>
-      <Header
+      <AdminHeader
         title="2FA"
         subtitle={enabled ? "Включена" : "Не настроена"}
       />

@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Database, Activity, Bot, ShieldAlert, RotateCcw } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
@@ -27,7 +27,7 @@ export default function AdminSystemPage() {
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>
-      <Header title="Система" subtitle="Сервисы и инфраструктура" />
+      <AdminHeader title="Система" subtitle="Сервисы и инфраструктура" />
       <div className="px-4 space-y-2 pb-24">
         {isLoading ? (
           Array.from({ length: 4 }).map((_, i) => (
