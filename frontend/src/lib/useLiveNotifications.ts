@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { connectNotifications, type WsEvent } from "@/lib/ws";
 import { haptic } from "@/lib/tg";
+import { clearPinToken } from "@/lib/pin";
 import { useToast } from "@/components/ui/Toast";
 import { qk } from "@/api/queryKeys";
 import type { NotificationDto } from "@/api/types";
@@ -34,6 +35,17 @@ export function useLiveNotifications() {
             },
           );
           haptic("light");
+          return;
+        }
+        if (event.event === "pin.reset") {
+          // Item 8 — admin pressed "reset PIN" on this user. Drop the
+          // locally cached PIN token (the ``garant:pin-token-changed``
+          // event flips ``PinGate`` out of the authenticated tree) and
+          // refetch ``pin/status`` so the gate sees ``has_pin=false``
+          // and routes the user into the "set new PIN" flow rather
+          // than the "enter PIN" one.
+          clearPinToken();
+          qc.invalidateQueries({ queryKey: qk.pin.all() });
           return;
         }
         if (event.event !== "notification" || !event.data) return;

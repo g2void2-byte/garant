@@ -495,11 +495,28 @@ async def reset_pin(
             dm_body=body.reason
             or "Администратор сбросил ваш PIN. Установите новый при следующем входе.",
         )
-        # Bumping ``pin_session_epoch`` revokes future REST calls on
-        # the next request, but a socket that completed first-message
-        # auth before the bump keeps streaming notifications. Closing
-        # here forces the now-untrusted device to reconnect and
-        # re-auth — mirroring ``invalidate_sessions`` above.
+        # Item 8 — bumping ``pin_session_epoch`` revokes future REST
+        # calls on the next request, but the client side has no way to
+        # know that until something it owns ASKs for a PIN-gated
+        # endpoint. The TMA's first request after launch is
+        # ``GET /api/me`` (unprotected), so the local PIN-token TTL
+        # silently keeps the user in the authenticated tree until the
+        # next sensitive call — exactly the scenario the user
+        # reported. Push a typed ``pin.reset`` event over WS so the
+        # frontend listener (``useLivePinReset``) can drop the local
+        # token + invalidate the ``pin/status`` query immediately;
+        # ``invalidate_user`` still closes the socket afterwards so a
+        # now-untrusted device has to re-auth its WS connection.
+        try:
+            await ws_manager.publish(
+                target.id,
+                {"event": "pin.reset", "data": {}},
+            )
+        except (OSError, RuntimeError):
+            # Best-effort: the in-memory enqueue can only fail if the
+            # socket state object is mid-close; the focus-refetch
+            # fallback in ``usePinStatus`` covers the dropped event.
+            pass
         try:
             await ws_manager.invalidate_user(target.id)
         except (OSError, RuntimeError):
