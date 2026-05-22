@@ -3825,6 +3825,8 @@ export interface components {
             arbitration_resolved_by?: string | null;
             /** Buyer */
             buyer: string | null;
+            /** Buyer Photo Url */
+            buyer_photo_url?: string | null;
             /** Cancellation Initiator */
             cancellation_initiator?: string | null;
             /** Cancellation Reason */
@@ -3862,6 +3864,8 @@ export interface components {
             role: string;
             /** Seller */
             seller: string | null;
+            /** Seller Photo Url */
+            seller_photo_url?: string | null;
             /** Status */
             status: string;
         };
