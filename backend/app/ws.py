@@ -116,6 +116,34 @@ WS_AGE_CHECK_INTERVAL_SECONDS = settings.ws_age_check_interval_seconds
 # OOM every subscriber.
 _WS_MAX_ENVELOPE_BYTES = 64 * 1024
 
+# Audit §5.9 — the pub/sub listener used to be a single ``asyncio.create_task``
+# that died silently on the first ``redis-py`` exception (network blip,
+# server restart, ``RESET`` from a noisy neighbour). After the task
+# died this backend instance went deaf to fan-out events until the
+# process was restarted — visible to users as "this tab stopped
+# getting notifications" with no logged signal that anything was
+# wrong (other than a one-shot ``listen_loop_crashed`` traceback that
+# nobody alerts on).
+#
+# We now wrap the listener in :meth:`_listen_supervisor`, which:
+#
+# * Catches every non-cancellation exception from a single
+#   ``pubsub.listen()`` session, logs it at ``error`` level with
+#   ``event="ws.subscriber.listen_loop_restart"`` plus the
+#   consecutive-failure count, and re-subscribes after a bounded
+#   exponential backoff.
+# * Resets the backoff counter the moment a fresh subscribe succeeds
+#   (so a transient blip doesn't permanently slow the recovery clock).
+# * Honours ``asyncio.CancelledError`` immediately so
+#   :meth:`stop_subscriber` still tears the loop down cleanly on
+#   application shutdown.
+#
+# ``_WS_LISTEN_BACKOFF_BASE`` / ``_WS_LISTEN_BACKOFF_CAP`` are module-
+# level so tests can monkey-patch them down to ~zero and walk the
+# supervisor through a few restart cycles in milliseconds.
+_WS_LISTEN_BACKOFF_BASE = 0.5
+_WS_LISTEN_BACKOFF_CAP = 30.0
+
 
 @dataclass
 class _RecvRateState:
@@ -467,6 +495,13 @@ class ConnectionManager:
         r = await get_redis()
         if r is None:
             return
+        # Audit §5.9 — first-subscribe attempt is still inline so a
+        # *configuration* failure (e.g. ``r.pubsub()`` raising synchronously
+        # because of a broken client object) surfaces immediately as a
+        # ``subscribe_failed`` log line instead of silently spinning the
+        # supervisor at the backoff floor forever. Once we hand a valid
+        # pubsub object to ``_listen_supervisor``, subsequent failures
+        # become transient (network blips) and get the retry loop.
         try:
             ps = r.pubsub()
             await ps.subscribe(WS_CHANNEL, WS_INVALIDATE_CHANNEL)
@@ -480,7 +515,7 @@ class ConnectionManager:
             )
             return
         self._pubsub = ps
-        self._pubsub_task = asyncio.create_task(self._listen(ps))
+        self._pubsub_task = asyncio.create_task(self._listen_supervisor(ps))
 
     async def stop_subscriber(self) -> None:
         task = self._pubsub_task
@@ -590,100 +625,197 @@ class ConnectionManager:
         except asyncio.CancelledError:
             raise
 
+    async def _listen_supervisor(self, ps: Any) -> None:
+        """Run ``_listen`` in a restart loop with bounded backoff.
+
+        Audit §5.9 — see the module-level constants block for the full
+        rationale. In short: a single ``redis-py`` exception used to
+        kill the listener task for the lifetime of the backend
+        process, silently dropping every fan-out event. We now:
+
+        1. Run one ``_listen`` session against the current pubsub
+           object. If it returns cleanly (``ps.listen()`` exited
+           because Redis closed the connection without raising) or
+           raises a transient exception, increment the consecutive-
+           failure counter and sleep ``min(cap, base * 2**(n-1))``.
+        2. Try to re-establish the subscription. On success the
+           failure counter resets to 0 — a one-off blip should not
+           penalise the next outage's recovery clock.
+        3. ``asyncio.CancelledError`` from anywhere immediately tears
+           the supervisor down (so ``stop_subscriber`` is unchanged).
+
+        The initial ``ps`` is passed in from ``start_subscriber`` so
+        the *first* iteration uses the already-subscribed object the
+        caller validated; subsequent iterations subscribe fresh.
+        """
+        consecutive_failures = 0
+        active_ps: Any = ps
+        while True:
+            try:
+                await self._listen(active_ps)
+                consecutive_failures += 1
+                logger.warning(
+                    "WS subscriber: listen loop exited without exception; restarting",
+                    extra={
+                        "event": "ws.subscriber.listen_loop_exit",
+                        "consecutive_failures": consecutive_failures,
+                    },
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001
+                consecutive_failures += 1
+                logger.error(
+                    "WS subscriber: listen loop crashed; will restart",
+                    exc_info=True,
+                    extra={
+                        "event": "ws.subscriber.listen_loop_restart",
+                        "consecutive_failures": consecutive_failures,
+                    },
+                )
+
+            # Detach the old pubsub before sleeping so a wedged socket
+            # doesn't keep file descriptors open across the backoff.
+            old_ps = active_ps
+            active_ps = None
+            self._pubsub = None
+            try:
+                await old_ps.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+
+            delay = min(
+                _WS_LISTEN_BACKOFF_CAP,
+                _WS_LISTEN_BACKOFF_BASE * (2 ** (consecutive_failures - 1)),
+            )
+            await asyncio.sleep(delay)
+
+            r = await get_redis()
+            if r is None:
+                # Redis went away entirely (e.g. config reload dropped
+                # it). Keep retrying — the redis client's own
+                # connection-pool will reconnect when Redis is back.
+                continue
+            try:
+                new_ps = r.pubsub()
+                await new_ps.subscribe(WS_CHANNEL, WS_INVALIDATE_CHANNEL)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "WS subscriber: resubscribe failed; will retry",
+                    extra={
+                        "event": "ws.subscriber.resubscribe_failed",
+                        "consecutive_failures": consecutive_failures,
+                    },
+                )
+                continue
+
+            active_ps = new_ps
+            self._pubsub = new_ps
+            logger.info(
+                "WS subscriber: resubscribed after %d consecutive failures",
+                consecutive_failures,
+                extra={
+                    "event": "ws.subscriber.resubscribed",
+                    "consecutive_failures": consecutive_failures,
+                },
+            )
+            consecutive_failures = 0
+
     async def _listen(self, ps: Any) -> None:
-        try:
-            async for message in ps.listen():
-                if message is None or message.get("type") != "message":
-                    continue
-                # V11-L-14 — size sanity-check on the envelope before
-                # ``json.loads``. Redis pub/sub doesn't enforce a max
-                # message size, but the WS notification envelopes we
-                # send through this channel are always small (a JSON
-                # blob with a couple of IDs + a payload). A malformed
-                # or hostile publisher dumping a multi-MB string would
-                # otherwise allocate the entire string in Python on
-                # every backend instance before we even check it. The
-                # cap below is well above legitimate traffic (the
-                # largest notification payload is ~4 KB, capped by
-                # audit-log encoding) but small enough to bound the
-                # blast radius.
-                raw = message.get("data")
-                if isinstance(raw, (str, bytes)) and len(raw) > _WS_MAX_ENVELOPE_BYTES:
-                    # V11-L-15 — structured-logging fields so the
-                    # JSON-logger downstream (Loki/Sentry) can pivot
-                    # on event/size without regexing the message
-                    # body.
-                    logger.warning(
-                        "WS subscriber: oversized envelope (%d bytes) dropped",
-                        len(raw),
-                        extra={
-                            "event": "ws.subscriber.oversized_envelope",
-                            "envelope_bytes": len(raw),
-                            "cap_bytes": _WS_MAX_ENVELOPE_BYTES,
-                        },
-                    )
-                    continue
-                channel = message.get("channel")
-                if channel == WS_INVALIDATE_CHANNEL:
-                    try:
-                        envelope = json.loads(raw)
-                        user_id = int(envelope["user_id"])
-                    except (KeyError, ValueError, TypeError):
-                        # V11-L-15 — structured-logging fields so the
-                        # JSON-logger downstream (Loki/Sentry) can
-                        # pivot on event without regexing the
-                        # message body. ``raw`` is deliberately NOT
-                        # in ``extra`` — it would explode log cardi‐
-                        # nality on a hostile publisher.
-                        logger.warning(
-                            "WS subscriber: malformed invalidate envelope %r",
-                            raw,
-                            extra={
-                                "event": "ws.subscriber.malformed_invalidate",
-                            },
-                        )
-                        continue
-                    try:
-                        await self._close_local(user_id)
-                    except Exception:  # noqa: BLE001
-                        logger.exception(
-                            "WS subscriber: local invalidate failed",
-                            extra={
-                                "event": "ws.subscriber.local_invalidate_failed",
-                                "user_id": user_id,
-                            },
-                        )
-                    continue
+        # Audit §5.9 — exceptions from ``ps.listen()`` (network blip,
+        # ``RESET``, Redis restart) now propagate to
+        # :meth:`_listen_supervisor` instead of being swallowed at the
+        # bottom of this function. Only ``asyncio.CancelledError`` is
+        # re-raised by name; every other exception escapes naturally
+        # so the supervisor can log + retry. Per-message handlers
+        # (oversized envelope, malformed JSON, local dispatch error)
+        # still catch + ``continue`` inside the loop because those
+        # are *expected* drop cases, not transport failures.
+        async for message in ps.listen():
+            if message is None or message.get("type") != "message":
+                continue
+            # V11-L-14 — size sanity-check on the envelope before
+            # ``json.loads``. Redis pub/sub doesn't enforce a max
+            # message size, but the WS notification envelopes we
+            # send through this channel are always small (a JSON
+            # blob with a couple of IDs + a payload). A malformed
+            # or hostile publisher dumping a multi-MB string would
+            # otherwise allocate the entire string in Python on
+            # every backend instance before we even check it. The
+            # cap below is well above legitimate traffic (the
+            # largest notification payload is ~4 KB, capped by
+            # audit-log encoding) but small enough to bound the
+            # blast radius.
+            raw = message.get("data")
+            if isinstance(raw, (str, bytes)) and len(raw) > _WS_MAX_ENVELOPE_BYTES:
+                # V11-L-15 — structured-logging fields so the
+                # JSON-logger downstream (Loki/Sentry) can pivot
+                # on event/size without regexing the message
+                # body.
+                logger.warning(
+                    "WS subscriber: oversized envelope (%d bytes) dropped",
+                    len(raw),
+                    extra={
+                        "event": "ws.subscriber.oversized_envelope",
+                        "envelope_bytes": len(raw),
+                        "cap_bytes": _WS_MAX_ENVELOPE_BYTES,
+                    },
+                )
+                continue
+            channel = message.get("channel")
+            if channel == WS_INVALIDATE_CHANNEL:
                 try:
                     envelope = json.loads(raw)
                     user_id = int(envelope["user_id"])
-                    data = envelope["data"]
                 except (KeyError, ValueError, TypeError):
-                    # V11-L-15 — same rationale as the invalidate
-                    # branch above: ``raw`` stays out of ``extra``.
+                    # V11-L-15 — structured-logging fields so the
+                    # JSON-logger downstream (Loki/Sentry) can
+                    # pivot on event without regexing the
+                    # message body. ``raw`` is deliberately NOT
+                    # in ``extra`` — it would explode log cardi‐
+                    # nality on a hostile publisher.
                     logger.warning(
-                        "WS subscriber: malformed envelope %r",
+                        "WS subscriber: malformed invalidate envelope %r",
                         raw,
-                        extra={"event": "ws.subscriber.malformed_envelope"},
+                        extra={
+                            "event": "ws.subscriber.malformed_invalidate",
+                        },
                     )
                     continue
                 try:
-                    await self._send_local(user_id, data)
+                    await self._close_local(user_id)
                 except Exception:  # noqa: BLE001
                     logger.exception(
-                        "WS subscriber: local dispatch failed",
+                        "WS subscriber: local invalidate failed",
                         extra={
-                            "event": "ws.subscriber.local_dispatch_failed",
+                            "event": "ws.subscriber.local_invalidate_failed",
                             "user_id": user_id,
                         },
                     )
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "WS subscriber: listen loop crashed",
-                extra={"event": "ws.subscriber.listen_loop_crashed"},
-            )
+                continue
+            try:
+                envelope = json.loads(raw)
+                user_id = int(envelope["user_id"])
+                data = envelope["data"]
+            except (KeyError, ValueError, TypeError):
+                # V11-L-15 — same rationale as the invalidate
+                # branch above: ``raw`` stays out of ``extra``.
+                logger.warning(
+                    "WS subscriber: malformed envelope %r",
+                    raw,
+                    extra={"event": "ws.subscriber.malformed_envelope"},
+                )
+                continue
+            try:
+                await self._send_local(user_id, data)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "WS subscriber: local dispatch failed",
+                    extra={
+                        "event": "ws.subscriber.local_dispatch_failed",
+                        "user_id": user_id,
+                    },
+                )
 
     def check_recv_rate(self, websocket: WebSocket) -> bool:
         """Return True if the inbound rate is within limits."""

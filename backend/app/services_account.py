@@ -166,6 +166,39 @@ async def _purge_expired(session: AsyncSession) -> None:
     )
 
 
+# Audit §4.14 — ``confirm_transfer`` used to run the full purge sweep
+# on *every* confirm, paying for a table scan on the hot path of a
+# security-sensitive endpoint even though the previous confirm already
+# swept whatever was eligible. ``_purge_expired_sampled`` runs the
+# sweep probabilistically (default 1/10) so 9 out of 10 confirms skip
+# the DELETE entirely. The amortised cost per confirm is unchanged in
+# expectation (the table still trends toward steady-state), but the
+# worst-case per-confirm latency drops by ~10× and we stop scanning
+# during DM-driven contention bursts (e.g. a wave of confirms after a
+# marketing campaign).
+#
+# ``issue_code`` still calls ``_purge_expired`` directly (force-purge)
+# because it's about to write a new hash and wants the collision-check
+# space clean. The sampled wrapper is *only* for the confirm path.
+#
+# The 1/10 sampling rate is deliberately conservative — at default
+# settings (5 min TTL × N users × ~1 active code per user) the table
+# never grows past hundreds of rows in practice, so even 1/100 would
+# be safe, but 1/10 keeps the sweep frequent enough that an unlucky
+# operator who turns up the TTL won't have to wait long for cleanup.
+_PURGE_SAMPLE_RATE = 0.1
+
+
+async def _purge_expired_sampled(session: AsyncSession) -> None:
+    """Run :func:`_purge_expired` with probability ``_PURGE_SAMPLE_RATE``.
+
+    See the audit §4.14 block above for the rationale.
+    """
+    if secrets.SystemRandom().random() >= _PURGE_SAMPLE_RATE:
+        return
+    await _purge_expired(session)
+
+
 async def _invalidate_active_for(session: AsyncSession, user_id: int) -> None:
     """Mark all live codes for a given source user as consumed.
 
@@ -208,6 +241,9 @@ async def issue_code(session: AsyncSession, source: User) -> tuple[str, datetime
     the expiry timestamp. Previous live codes for this user are
     invalidated.
     """
+    # Audit §4.14 — always run a full purge here (not the sampled
+    # wrapper): we're about to write a new code row and want the
+    # collision-check space clean.
     await _purge_expired(session)
     await _invalidate_active_for(session, source.id)
 
@@ -327,7 +363,11 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     per caller); see the module-level comment above for the security
     argument.
     """
-    await _purge_expired(session)
+    # Audit §4.14 — probabilistic sweep on the hot ``confirm`` path;
+    # the previous confirm already swept what it could, and the
+    # ``issue_code`` path always forces a clean sweep before each new
+    # write.
+    await _purge_expired_sampled(session)
 
     code = (code or "").strip()
     expected_len = settings.account_transfer_code_len

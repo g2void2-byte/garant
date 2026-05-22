@@ -27,7 +27,18 @@ repos:
     hooks:
       - id: eslint-frontend
         name: eslint frontend
-        entry: bash -c 'cd frontend && npm run lint'
+        # Audit §16.4.1 — pre-fix this just ran ``cd frontend && npm run
+        # lint``, which on a fresh clone (no ``frontend/node_modules``
+        # yet) hard-failed with ``eslint: command not found`` and gave
+        # the developer no guidance. We now check for the install
+        # artefact up-front: if it's there we run the linter as
+        # before, and if it isn't we print a single actionable hint
+        # ("run ``cd frontend && npm install``") and skip the hook
+        # with exit 0. This matches how ruff-pre-commit handles
+        # missing Python deps (skip rather than fail-the-commit) so a
+        # fresh-clone ``git commit`` doesn't get blocked on
+        # frontend-only setup the developer might not need yet.
+        entry: bash -c 'if [ -d frontend/node_modules ]; then cd frontend && npm run lint; else echo "[eslint-frontend] frontend/node_modules missing — skipping. Run \"cd frontend && npm install\" to enable this hook." >&2; fi'
         language: system
         files: ^frontend/src/.*\.(ts|tsx)$
         pass_filenames: false
