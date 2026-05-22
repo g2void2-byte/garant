@@ -41,10 +41,15 @@ describe("useAdminRedirect", () => {
     navigateSpy.mockClear();
   });
 
-  it("returns shouldRender=true while ``me`` is still loading", () => {
+  it("returns shouldRender=false while ``me`` is still loading", () => {
+    // Audit M-6 — closing the "flash before me arrives" window means
+    // the hook reports ``false`` until ``me`` resolves. The redirect
+    // still doesn't fire on the loading branch (the effect's ``if``
+    // requires ``me`` to be truthy), so callers must render nothing
+    // until the role check has actually run.
     meState.data = undefined;
     const { result } = renderHook(() => useAdminRedirect(), { wrapper });
-    expect(result.current.shouldRender).toBe(true);
+    expect(result.current.shouldRender).toBe(false);
     expect(navigateSpy).not.toHaveBeenCalled();
   });
 

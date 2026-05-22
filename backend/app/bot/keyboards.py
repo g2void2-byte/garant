@@ -137,14 +137,23 @@ def _webapp_button(text: str, url_path: str) -> InlineKeyboardButton:
         return InlineKeyboardButton(text=text, web_app=_webapp(url_path))
     # Telegram caps ``callback_data`` at 64 bytes; the webapp paths used
     # in this repo are short (longest known is ``/search/categories``,
-    # 18 bytes) but truncate defensively so a future longer path can
-    # never push us over the limit and trigger aiogram's keyboard
-    # validation error at construction time.
+    # 18 bytes) so we never hit the limit in practice. Audit L-11 — the
+    # previous ``encoded[:64].decode(errors='ignore')`` slice could
+    # silently truncate a future longer path AND drop the trailing
+    # bytes of a multibyte character, leaving two distinct TMA paths
+    # collapsing onto the same ``cb_data``. Treat this as a build-time
+    # invariant instead: fail loudly here so a new long path is caught
+    # by ``pytest`` / startup rather than producing a user-facing
+    # button that doesn't do what its label promises.
     suffix = url_path if url_path.startswith("/") else "/" + url_path
     cb_data = CB_TMA_UNAVAILABLE_PREFIX + suffix
     encoded = cb_data.encode("utf-8")
     if len(encoded) > 64:
-        cb_data = encoded[:64].decode("utf-8", errors="ignore")
+        raise ValueError(
+            f"callback_data exceeds Telegram's 64-byte cap "
+            f"(path={url_path!r}, encoded={len(encoded)}B). "
+            f"Shorten the path or pick a shorter prefix."
+        )
     return InlineKeyboardButton(text=text, callback_data=cb_data)
 
 

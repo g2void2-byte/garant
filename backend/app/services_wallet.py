@@ -46,6 +46,41 @@ from .time_utils import utcnow
 logger = logging.getLogger(__name__)
 
 
+# Audit L-8 — width cap + control-byte blacklist for the
+# user-supplied withdrawal address. Anchored to the ``Numeric(255)``-
+# ish column width with headroom: the longest seed currency address
+# format is the Solana 44-base58 string at 44 chars, then EVM 42-hex,
+# TON 48-base64 — 256 leaves room for future formats while preventing
+# a malicious user from POSTing a megabyte payload. Control bytes
+# (``\x00``-``\x1f``, ``\x7f``) plus CR/LF / backslash are stripped
+# because they have no place in any on-chain address format and the
+# admin panel renders the value in HTML tables / DM templates where
+# a stray ``\n`` or ``\r`` would corrupt the message layout. The
+# regex check that follows still rejects anything that isn't a valid
+# address for the chosen currency — this is a belt-and-braces
+# normalisation before that check runs.
+_WITHDRAW_ADDRESS_MAX_LEN = 256
+_WITHDRAW_ADDRESS_FORBIDDEN_CHARS = frozenset(chr(b) for b in [*range(0, 32), 0x7F]) | frozenset(
+    ["\\"]
+)
+
+
+def _sanitise_withdraw_address(raw: str) -> str:
+    """Strip control bytes, backslashes and trailing whitespace.
+
+    Returns the sanitised string clipped to
+    :data:`_WITHDRAW_ADDRESS_MAX_LEN` characters. Pure helper — no
+    validation against ``currency.address_regex`` happens here; that
+    stays at the caller so the per-currency error message remains
+    accurate.
+    """
+    if not isinstance(raw, str):
+        return ""
+    cleaned = "".join(c for c in raw if c not in _WITHDRAW_ADDRESS_FORBIDDEN_CHARS)
+    cleaned = cleaned.strip()
+    return cleaned[:_WITHDRAW_ADDRESS_MAX_LEN]
+
+
 async def get_currency_by_code(session: AsyncSession, code: str) -> Currency:
     result = await session.execute(
         select(Currency).where(Currency.code == code.upper(), Currency.is_active.is_(True))
@@ -811,6 +846,16 @@ async def create_withdrawal(
             400, f"Минимальная сумма вывода: {currency.min_withdraw} {currency.code}"
         )
 
+    # Audit L-8 — strip control bytes / CR-LF / backslashes and clip
+    # to a sane width BEFORE the per-currency regex match. The
+    # ``WalletWithdrawal.address`` value ends up in admin DM
+    # templates, audit logs and email subjects; a smuggled ``\n``
+    # would split the message and a multi-megabyte input would
+    # bloat the DB row. The regex check below still gates whatever
+    # survives sanitisation, so a malformed-but-clean string fails
+    # the same way it used to.
+    address = _sanitise_withdraw_address(address)
+
     # per-currency anchored regex check. Anchored on both
     # ends because ``re.fullmatch`` already requires the whole string
     # to match; the ``^...$`` markers in the seed are defensive against
@@ -902,10 +947,17 @@ async def create_withdrawal(
                     comment=f"Garant withdrawal #{withdrawal.id}",
                 )
         except CryptoPayError as e:
+            # Audit L-13 — emit the full traceback alongside the
+            # structured fields so operators have the failing
+            # CryptoBot status code / error type without having to
+            # reproduce the request. The withdrawal stays in
+            # ``pending`` for admin review, which is the same UX as
+            # before — only the log line gains a stack frame.
             logger.warning(
                 "auto-withdraw #%s CryptoBot transfer failed: %s — leaving pending",
                 withdrawal.id,
                 e,
+                exc_info=True,
                 extra={
                     "event": "cryptobot.auto_withdraw.failed",
                     "withdrawal_id": withdrawal.id,

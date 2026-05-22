@@ -181,13 +181,25 @@ async def _ensure_not_last_admin(session: AsyncSession, target: User) -> None:
 
     Used by every action that would result in ``is_admin=False`` on a
     user who currently has ``is_admin=True``.
+
+    Audit L-2 — lock every row with ``is_admin=True`` so two parallel
+    demote requests can't both observe ``count >= 2`` against the
+    same pre-demote snapshot and end up dropping the admin count to
+    zero. ``SELECT ... FOR UPDATE`` against the same set serialises
+    the demote-second request behind the first one's commit; the
+    losing transaction then re-reads the count post-commit and the
+    "last admin" check fires correctly. We materialise the rows
+    (``.all()``) before measuring length so the lock is taken before
+    the count comparison runs.
     """
     if not target.is_admin:
         return
-    count = await session.scalar(
-        select(func.count()).select_from(User).where(User.is_admin.is_(True))
+    locked_admin_ids = (
+        (await session.execute(select(User.id).where(User.is_admin.is_(True)).with_for_update()))
+        .scalars()
+        .all()
     )
-    if (count or 0) <= 1:
+    if len(locked_admin_ids) <= 1:
         raise HTTPException(400, "Нельзя оставить систему без администраторов")
 
 
@@ -625,21 +637,29 @@ async def set_role(
     if will_change_admin and not body.is_admin:
         await _ensure_not_last_admin(session, target)
 
+    # Audit M-2 — compare before/after BEFORE touching ``target`` so a
+    # future ``await session.commit()`` slipped between the mutation
+    # and this guard can't silently land the role flips without an
+    # audit row. The previous order (mutate → snapshot → compare →
+    # return) only worked because nothing on the no-op path committed,
+    # which is a fragile invariant to rely on. This matches the
+    # ``set_rating`` shape directly below, which checks first then
+    # writes.
     before = {
         "is_admin": target.is_admin,
         "is_arbiter": target.is_arbiter,
         "is_vip": target.is_vip,
     }
-    target.is_admin = body.is_admin
-    target.is_arbiter = body.is_arbiter
-    target.is_vip = body.is_vip
     after = {
-        "is_admin": target.is_admin,
-        "is_arbiter": target.is_arbiter,
-        "is_vip": target.is_vip,
+        "is_admin": body.is_admin,
+        "is_arbiter": body.is_arbiter,
+        "is_vip": body.is_vip,
     }
     if before == after:
         return _to_detail(target, has_pin=await _has_pin(target))
+    target.is_admin = body.is_admin
+    target.is_arbiter = body.is_arbiter
+    target.is_vip = body.is_vip
 
     await _audit_and_notify(
         session=session,

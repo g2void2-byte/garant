@@ -152,12 +152,27 @@ def verify_totp_and_counter(secret: str, code: str, *, at: float | None = None) 
         at = time.time()
     counter = int(at) // _PERIOD
     key = _b32decode_padded(secret)
+    # Audit M-5 — exhaust the full ``2 * _DRIFT_WINDOWS + 1`` range
+    # before returning. ``hmac.compare_digest`` itself is constant-time
+    # per comparison, but a ``for ... if compare_digest(...): return``
+    # loop leaks *which* window matched through wall-clock timing on
+    # the server response (an attacker who can observe response time
+    # and predict ``_PERIOD`` can binary-search the drift offset).
+    # The risk is small at ``_DRIFT_WINDOWS == 1`` but the pattern is
+    # an anti-pattern for crypto verification, so we always do every
+    # comparison and only remember the first match.
+    matched_counter: int | None = None
     for delta in range(-_DRIFT_WINDOWS, _DRIFT_WINDOWS + 1):
         candidate_counter = counter + delta
         candidate = _hotp(key, candidate_counter)
-        if hmac.compare_digest(candidate, code):
-            return candidate_counter
-    return None
+        # Always invoke ``compare_digest`` so we walk the full window
+        # before returning; reorder the boolean so the
+        # ``matched_counter is None`` short-circuit can't skip the
+        # comparison itself.
+        matched_now = hmac.compare_digest(candidate, code)
+        if matched_now and matched_counter is None:
+            matched_counter = candidate_counter
+    return matched_counter
 
 
 def otpauth_url(secret: str, *, account: str, issuer: str = "Garant") -> str:

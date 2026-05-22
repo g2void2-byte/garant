@@ -251,6 +251,16 @@ export function openExternalLink(url: string) {
   // /tor URLs entered by the user on the AddForumPage) open in the
   // Telegram in-app browser. Falls back to ``window.open`` when the TMA
   // is being inspected outside of Telegram (e.g. desktop preview).
+  //
+  // Audit H-1 — gate every call through ``isSafeLink`` so a hostile or
+  // mis-validated server value (``WalletDeposit.pay_url``, forum mirror
+  // URL, support DM link) can't smuggle ``javascript:`` / ``data:`` /
+  // ``vbscript:`` / ``file:`` schemes into ``tg.openLink`` and execute
+  // attacker JS inside the Mini App context. ``openTelegramLink`` had
+  // the same guard since L-13; ``openExternalLink`` did not, which left
+  // every non-Telegram URL surface (forum links, pay URLs, support
+  // references) unprotected.
+  if (!isSafeLink(url)) return;
   if (tg && tg.openLink) {
     tg.openLink(url);
     return;
@@ -258,13 +268,14 @@ export function openExternalLink(url: string) {
   if (typeof window !== "undefined") window.open(url, "_blank", "noopener,noreferrer");
 }
 
-// Audit L-13 — schemes we allow to flow through ``openTelegramLink`` /
-// ``openExternalLink``. Anything else (``javascript:``, ``data:``,
-// ``vbscript:``, ``file:`` …) is refused before it can reach
-// ``tg.openTelegramLink`` or ``window.open`` so an attacker who manages
-// to inject a hostile URL into a server-controlled field (e.g.
-// ``WalletDeposit.pay_url``, a username, a forum mirror) can't escalate
-// to in-context script execution against the TMA.
+// Audit L-13 / H-1 — schemes we allow to flow through
+// ``openTelegramLink`` / ``openExternalLink``. Anything else
+// (``javascript:``, ``data:``, ``vbscript:``, ``file:`` …) is refused
+// before it can reach ``tg.openTelegramLink`` / ``tg.openLink`` /
+// ``window.open`` so an attacker who manages to inject a hostile URL
+// into a server-controlled field (e.g. ``WalletDeposit.pay_url``, a
+// username, a forum mirror) can't escalate to in-context script
+// execution against the TMA.
 const _SAFE_LINK_SCHEMES = new Set(["http:", "https:"]);
 
 function isSafeLink(url: string): boolean {

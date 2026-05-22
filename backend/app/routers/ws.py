@@ -211,6 +211,28 @@ async def websocket_endpoint(websocket: WebSocket):
                     "tg_user_id": tg_user_id,
                 },
             )
+        # Audit H-3 — refuse the socket for banned / frozen accounts.
+        # REST endpoints already raise 403 via ``_build_lockout_exception``,
+        # but the WS channel used to stay open and continue delivering
+        # ``deal.updated`` / ``notification`` events to the locked-out
+        # user until an admin manually invalidated their sessions.
+        # Close with 4003 (custom WS code; the client's reconnect
+        # logic treats 4003 as terminal). Don't bother with the rich
+        # JSON detail the REST path returns — the client surfaces
+        # the real reason on the next REST call.
+        if user.is_banned or user.is_frozen:
+            logger.warning(
+                "ws handshake: refused for locked-out account",
+                extra={
+                    "event": "ws.handshake.lockout",
+                    "user_id": user.id,
+                    "tg_user_id": tg_user_id,
+                    "is_banned": bool(user.is_banned),
+                    "is_frozen": bool(user.is_frozen),
+                },
+            )
+            await websocket.close(code=4003, reason="Account is locked out")
+            return
         user_id = user.id
 
     # ACK so the client knows the channel is live and can flip its UI

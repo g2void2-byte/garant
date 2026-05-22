@@ -19,6 +19,7 @@ import asyncio
 import html
 import json
 import logging
+from collections.abc import Coroutine
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +37,23 @@ logger = logging.getLogger(__name__)
 # spreads further). 4 KB is enough room for the structured deal/wallet
 # events we actually emit; anything larger is almost certainly a bug.
 NOTIFICATION_PAYLOAD_MAX_BYTES = 4096
+
+
+# Audit M-3 — strong references for fire-and-forget DM tasks.
+# ``asyncio.create_task`` only holds a weak reference to the wrapped
+# coroutine; if no caller keeps the returned ``Task`` alive the GC can
+# collect it mid-await and the DM is silently lost (Python emits a
+# "Task was destroyed but it is pending!" warning at runtime). The set
+# is module-level so every notifier dispatch shares the same anchor,
+# and ``Task.add_done_callback(_discard)`` evicts the entry once the
+# DM completes so the set doesn't grow unbounded.
+_dm_dispatch_tasks: set[asyncio.Task[None]] = set()
+
+
+def _spawn_dm_task(coro: Coroutine[Any, Any, None]) -> None:
+    task = asyncio.create_task(coro)
+    _dm_dispatch_tasks.add(task)
+    task.add_done_callback(_dm_dispatch_tasks.discard)
 
 
 def _payload_within_cap(payload: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -189,7 +207,12 @@ async def dispatch_after_commit(
     )
     recipient = await session.get(User, notif.recipient_id)
     if recipient is not None and _dm_enabled(recipient, notif.type):
-        asyncio.create_task(
+        # Audit M-3 — route through ``_spawn_dm_task`` so the returned
+        # task is anchored in a module-level set until it finishes.
+        # Bare ``asyncio.create_task(...)`` drops the only strong
+        # reference at the end of the expression, letting the GC reap
+        # the task mid-await and silently lose the DM.
+        _spawn_dm_task(
             _safe_send_dm(
                 recipient.tg_user_id,
                 _format_dm(notif.title, notif.body),

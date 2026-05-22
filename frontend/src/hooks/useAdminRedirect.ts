@@ -42,13 +42,14 @@ interface UseAdminRedirectOptions {
 
 interface AdminRedirectResult {
   /**
-   * ``true`` while ``me`` is loading; ``true`` if the visitor is
-   * allowed; ``false`` if a redirect was scheduled. Callers should
-   * ``return null`` (or render nothing) when this is ``false`` so the
-   * admin scaffolding doesn't flash before the navigation runs.
-   *
-   * ``null`` is never returned — the loading state is collapsed into
-   * ``true`` so most pages can keep their existing skeleton loaders.
+   * ``false`` while ``me`` is still loading (audit M-6: collapsing the
+   * loading state into ``true`` flashed the entire admin scaffolding
+   * to non-admins on slow networks). ``true`` once ``me`` resolves
+   * and the visitor passes the role check; ``false`` once the
+   * visitor fails the check (a redirect is scheduled in the same
+   * effect). Callers should ``return null`` (or render nothing) when
+   * this is ``false`` so the admin chrome doesn't render before
+   * ``me`` arrives or before the navigation runs.
    */
   shouldRender: boolean;
 }
@@ -58,7 +59,14 @@ export function useAdminRedirect(opts: UseAdminRedirectOptions = {}): AdminRedir
   const navigate = useNavigate();
   const { data: me } = useMe();
 
-  const allowed: boolean = me ? Boolean(me.is_admin || (allowArbiter && me.is_arbiter)) : true;
+  // Audit M-6 — treat "``me`` not loaded yet" as "do not render". The
+  // backend already blocks the admin REST surface for non-admins
+  // (``require_admin`` → 403) so no protected data leaks during the
+  // flash, but the admin **navigation map** (page titles, side panel
+  // entries, table column headers) used to render for ~1 RTT to every
+  // signed-in user on the route while ``useMe()`` was in-flight. The
+  // ``me ? (...) : false`` default closes that window cleanly.
+  const allowed: boolean = me ? Boolean(me.is_admin || (allowArbiter && me.is_arbiter)) : false;
 
   useEffect(() => {
     if (me && !me.is_admin && !(allowArbiter && me.is_arbiter)) {

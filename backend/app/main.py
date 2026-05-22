@@ -234,6 +234,34 @@ async def lifespan(app: FastAPI):
             "client spoof users.last_ip and any IP-based rate limiter."
         )
 
+    # Audit L-7 — surface mis-paired Crystalpay credentials at startup
+    # instead of silently rejecting every webhook with a 400. The
+    # webhook handler calls ``verify_crystalpay_webhook_signature(
+    # secret, ...)`` which returns ``False`` when ``secret`` is
+    # empty, so a deploy with ``CRYSTALPAY_LOGIN`` set but
+    # ``CRYSTALPAY_SECRET`` unset (or vice versa) accepts NO deposits
+    # at all. Log a single WARNING so operators see this in stdout /
+    # Loki on the very first boot rather than only after the first
+    # user complains about a missing deposit. CryptoBot uses the
+    # same value for both the API client and the webhook HMAC
+    # (``settings.cryptobot_token`` flows through
+    # ``webhook_secret()``) so its pairing is consistent by
+    # construction and doesn't need a separate guard here.
+    if settings.crystalpay_login and not settings.crystalpay_secret:
+        logger.warning(
+            "CRYSTALPAY_LOGIN is set but CRYSTALPAY_SECRET is empty — "
+            "Crystalpay webhooks will be rejected with 400 and no deposits "
+            "will be credited.",
+            extra={"event": "lifespan.crystalpay.secret_missing"},
+        )
+    elif settings.crystalpay_secret and not settings.crystalpay_login:
+        logger.warning(
+            "CRYSTALPAY_SECRET is set but CRYSTALPAY_LOGIN is empty — "
+            "the Crystalpay API client cannot authenticate, so invoices "
+            "cannot be created and webhooks will arrive against nothing.",
+            extra={"event": "lifespan.crystalpay.login_missing"},
+        )
+
     # V12-H3 — by default run migrations in-process so single-node
     # deploys (manual ``uvicorn``, the test suite) keep working. With
     # ``RUN_MIGRATIONS_ON_STARTUP=false`` (the compose default — see
