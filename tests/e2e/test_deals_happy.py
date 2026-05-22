@@ -156,4 +156,14 @@ async def test_insufficient_balance_rejected(client):
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
     )
     assert resp.status_code == 400
-    assert "Недостаточно" in resp.json()["detail"]
+    detail = resp.json()["detail"]
+    # Item 18 — ``detail`` is now a structured payload so the frontend
+    # can render a precise "не хватает X" hint.
+    assert detail["code"] == "insufficient_funds"
+    assert "Недостаточно" in detail["message"]
+    assert detail["currency_code"] == "USDT"
+    # Required = amount (1) + 5% commission = 1.05 when buyer pays;
+    # balance is 0 so deficit equals required.
+    assert float(detail["required"]) == 1.05
+    assert float(detail["balance"]) == 0.0
+    assert float(detail["deficit"]) == 1.05

@@ -14,6 +14,7 @@ from ..schemas import (
     DealResolveRequest,
 )
 from ..services_deals import (
+    InsufficientFundsError,
     accept_cancel,
     accept_deal,
     create_deal,
@@ -36,6 +37,8 @@ def _deal_out(deal: Deal, user_id: int) -> DealOut:
         id=deal.id,
         buyer=deal.buyer.username if deal.buyer else None,
         seller=deal.seller.username if deal.seller else None,
+        buyer_photo_url=deal.buyer.photo_url if deal.buyer else None,
+        seller_photo_url=deal.seller.photo_url if deal.seller else None,
         description=deal.description,
         pay_commission=deal.pay_commission.value,
         pay_comission=deal.pay_commission.value,
@@ -164,6 +167,23 @@ async def create_deal_endpoint(
             body.pay_commission,
             payment_provider=body.payment_provider,
         )
+    except InsufficientFundsError as e:
+        # Item 18 — structured payload so the frontend can render a
+        # precise "не хватает X" hint instead of a generic toast. The
+        # ``message`` field keeps the legacy human-readable string so
+        # any client still treating ``detail`` as a string degrades
+        # gracefully.
+        raise HTTPException(
+            400,
+            detail={
+                "code": "insufficient_funds",
+                "message": str(e),
+                "required": str(e.required),
+                "balance": str(e.balance),
+                "deficit": str(e.deficit),
+                "currency_code": e.currency_code,
+            },
+        ) from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     return _deal_out(deal, user.id)

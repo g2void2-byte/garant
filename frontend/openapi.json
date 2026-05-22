@@ -4132,6 +4132,17 @@
             ],
             "title": "Buyer"
           },
+          "buyer_photo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buyer Photo Url"
+          },
           "cancellation_initiator": {
             "anyOf": [
               {
@@ -4267,6 +4278,17 @@
               }
             ],
             "title": "Seller"
+          },
+          "seller_photo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seller Photo Url"
           },
           "status": {
             "title": "Status",

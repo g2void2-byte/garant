@@ -47,7 +47,13 @@ describe("<DealRow />", () => {
 
   it("links to the deal detail page", () => {
     renderRow();
-    expect(screen.getByRole("link")).toHaveAttribute("href", "/deals/17");
+    // After item 21 the row also renders a "Профиль" deep-link, so
+    // ``getByRole('link')`` returns two matches; pick the row-wrapper
+    // (the deal-detail link) by its ``href`` instead of relying on
+    // there being a single link in the document.
+    const links = screen.getAllByRole("link");
+    const detailLink = links.find((l) => l.getAttribute("href") === "/deals/17");
+    expect(detailLink).toBeDefined();
   });
 
   it("renders the in-progress status label", () => {
@@ -76,5 +82,24 @@ describe("<DealRow />", () => {
     renderRow({ amount: 250, currency_code: "USDT" });
     expect(screen.getByText("250")).toBeInTheDocument();
     expect(screen.getAllByText("USDT").length).toBeGreaterThan(0);
+  });
+
+  it("links the 'Профиль' button to the counterparty profile", () => {
+    renderRow({ role: "buyer", seller: "bob" });
+    const links = screen.getAllByRole("link");
+    const profileLink = links.find((l) => l.getAttribute("href") === "/users/bob");
+    expect(profileLink).toBeDefined();
+    expect(profileLink).toHaveTextContent("Профиль");
+  });
+
+  it("renders the counterparty avatar with the seller's photo for a buyer-side row", () => {
+    renderRow({
+      role: "buyer",
+      seller: "bob",
+      seller_photo_url: "https://example.com/bob.jpg",
+    });
+    const img = screen.getByAltText("bob") as HTMLImageElement;
+    expect(img).toBeInTheDocument();
+    expect(img.src).toBe("https://example.com/bob.jpg");
   });
 });

@@ -1,6 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { DealDto } from "@/api/types";
+import { Avatar } from "@/components/ui/Avatar";
 import { formatAmount, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { staggerDelay } from "@/lib/animate";
@@ -40,13 +41,26 @@ const STATUS_LABEL: Record<string, { text: string; cls: string; icon: string }> 
 
 export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) {
   const status = STATUS_LABEL[deal.status] ?? { text: deal.status, cls: "bg-panel-2 text-text-muted", icon: "•" };
+  // Item 21 — show the counterparty (i.e. the other side of the deal)
+  // avatar + a "Профиль" deep-link. The seller's row in the buyer's
+  // list and vice-versa.
+  const counterpartyUsername = deal.role === "buyer" ? deal.seller : deal.buyer;
+  const counterpartyPhotoUrl =
+    deal.role === "buyer" ? deal.seller_photo_url : deal.buyer_photo_url;
+  const counterpartyLabel = deal.role === "buyer" ? "Продавец" : "Покупатель";
   return (
     <div
       className="animate-fadein"
       style={staggerDelay(index, 25, 250)}
     >
       <Link to={`/deals/${deal.id}`} className="block bg-panel border border-border rounded-card p-3 active:scale-[.99] transition-transform">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <Avatar
+            name={counterpartyUsername}
+            src={counterpartyPhotoUrl}
+            size={40}
+            className="mt-0.5"
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold", status.cls)}>
@@ -57,7 +71,7 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
             </div>
             <div className="mt-2 font-semibold line-clamp-1">{deal.description}</div>
             <div className="mt-1 flex items-center gap-2 text-xs text-text-muted">
-              <span>{deal.role === "buyer" ? `Продавец: @${deal.seller}` : `Покупатель: @${deal.buyer}`}</span>
+              <span className="truncate">{counterpartyLabel}: @{counterpartyUsername}</span>
               {deal.created_at && (
                 <>
                   <span>·</span>
@@ -65,6 +79,17 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
                 </>
               )}
             </div>
+            {counterpartyUsername && (
+              <div className="mt-2">
+                <Link
+                  to={`/users/${counterpartyUsername}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-button bg-panel-2 border border-border text-[11px] text-text hover:bg-secondary active:scale-95 transition"
+                >
+                  Профиль
+                </Link>
+              </div>
+            )}
           </div>
           <div className="text-right shrink-0">
             <div className="text-accent font-bold">

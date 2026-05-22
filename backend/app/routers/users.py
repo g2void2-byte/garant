@@ -73,8 +73,18 @@ async def list_users(
     1:1 to the bottom-sheet sections in Continental's TMA bundle.
     """
     stmt = select(User).where(User.is_hidden_profile.is_(False))
-    ts_q = build_prefix_tsquery(q) if q else None
-    if ts_q:
+    q_trimmed = (q or "").strip()
+    if q_trimmed:
+        # Item 19 — pre-fix, a non-empty query that sanitised to zero
+        # tokens (e.g. pure punctuation like ``"``) would fall through
+        # to the no-``q`` branch and return the global top-by-deals
+        # ranking, which from the user's perspective looked like
+        # "search shows random users". Now we explicitly return an
+        # empty list for that case — the picker UI surfaces a
+        # "nothing found" state.
+        ts_q = build_prefix_tsquery(q_trimmed)
+        if ts_q is None:
+            return []
         tsq = func.to_tsquery("simple", ts_q)
         stmt = stmt.where(User.search_vector.op("@@")(tsq))
         # ``ts_rank`` orders by relevance; ties fall back to deals_total.

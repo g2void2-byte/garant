@@ -593,6 +593,10 @@ class DealOut(BaseModel):
     id: int
     buyer: str | None
     seller: str | None
+    # Item 21 — counterparty avatar URL on the deal card / detail page.
+    # Optional so existing clients ignoring the field keep working.
+    buyer_photo_url: str | None = None
+    seller_photo_url: str | None = None
     description: str
     # H-2: both spellings emitted for backward compat; canonical is
     # ``pay_commission``.

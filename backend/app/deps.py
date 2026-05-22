@@ -105,6 +105,62 @@ async def get_session():
 _LAST_LOGIN_DEBOUNCE = timedelta(minutes=5)
 
 
+# Item 24 — backwards-compatible structured lockout payload. Pre-fix
+# the 403 carried only a Russian string ("Аккаунт заблокирован"); the
+# frontend had no way to distinguish ban-vs-frozen, no reason text and
+# no admin contact, so the TMA just showed a generic error and the
+# user had no path to appeal. Now the payload carries:
+#
+# * ``code`` — ``"banned"`` / ``"frozen"`` so the frontend can route to
+#   the right gate screen.
+# * ``reason`` — admin-supplied ``ban_reason`` / ``freeze_reason``.
+# * ``admin_username`` — first available admin's Telegram username,
+#   used by the gate's "Связаться с админом" button to deep-link to
+#   ``https://t.me/<admin>``. ``None`` if the admins haven't set a
+#   username yet (rare; the gate falls back to a plain text message).
+#
+# The ``message`` field keeps the legacy Russian string so any older
+# client that still treats ``detail`` as a plain string degrades to
+# the same toast it used to show.
+async def _first_admin_username(session: AsyncSession) -> str | None:
+    """Resolve the first admin Telegram ``username`` for ban-gate deep-links.
+
+    Picks the lowest-id admin with a non-NULL username so the choice is
+    deterministic across sessions. Returns ``None`` if no admin has a
+    username configured.
+    """
+
+    stmt = (
+        select(User.username)
+        .where(User.is_admin.is_(True), User.username.isnot(None))
+        .order_by(User.id.asc())
+        .limit(1)
+    )
+    row = (await session.execute(stmt)).scalar_one_or_none()
+    return row
+
+
+async def _build_lockout_exception(session: AsyncSession, user: User) -> HTTPException:
+    admin = await _first_admin_username(session)
+    if user.is_banned:
+        code = "banned"
+        message = "Аккаунт заблокирован"
+        reason = user.ban_reason
+    else:
+        code = "frozen"
+        message = "Аккаунт заморожен"
+        reason = user.freeze_reason
+    return HTTPException(
+        status_code=403,
+        detail={
+            "code": code,
+            "message": message,
+            "reason": reason,
+            "admin_username": admin,
+        },
+    )
+
+
 async def get_current_user(
     request: Request,
     authorization: Annotated[str, Header()],
@@ -183,10 +239,8 @@ async def get_current_user(
         # to show that a *blocked* user was just active. Cheap
         # role gate first; the DB-write side effects only run for
         # callers who would actually get past the 403.
-        if user.is_banned:
-            raise HTTPException(403, "Аккаунт заблокирован")
-        if user.is_frozen:
-            raise HTTPException(403, "Аккаунт заморожен")
+        if user.is_banned or user.is_frozen:
+            raise await _build_lockout_exception(session, user)
 
         dirty = False
         if tg_user.get("username") and user.username != tg_user["username"]:
@@ -233,10 +287,8 @@ async def get_current_user(
     # so the gate above is a no-op for first-touch callers — but we
     # still keep a belt-and-braces check here in case a future
     # migration starts seeding banned rows.
-    if user.is_banned:
-        raise HTTPException(403, "Аккаунт заблокирован")
-    if user.is_frozen:
-        raise HTTPException(403, "Аккаунт заморожен")
+    if user.is_banned or user.is_frozen:
+        raise await _build_lockout_exception(session, user)
 
     return user
 
