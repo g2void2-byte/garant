@@ -37,6 +37,19 @@ export function useLiveNotifications() {
           haptic("light");
           return;
         }
+        if (event.event === "deal.updated") {
+          // Item 22 — transient cache-invalidation signal. Sent by the
+          // backend after every state-changing deal op so every party
+          // (initiator + counterparty + arbiter) re-pulls the deal
+          // without waiting for the next focus / poll refetch.
+          const data = event.data as { deal_id?: number } | undefined;
+          if (data?.deal_id) {
+            qc.invalidateQueries({ queryKey: qk.deal.detail(data.deal_id) });
+          }
+          qc.invalidateQueries({ queryKey: qk.deals.all() });
+          qc.invalidateQueries({ queryKey: qk.deal.all() });
+          return;
+        }
         if (event.event === "pin.reset") {
           // Item 8 — admin pressed "reset PIN" on this user. Drop the
           // locally cached PIN token (the ``garant:pin-token-changed``

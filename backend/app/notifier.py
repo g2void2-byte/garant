@@ -199,6 +199,53 @@ async def dispatch_after_commit(
         )
 
 
+async def publish_deal_update(
+    deal_id: int,
+    recipient_ids: list[int] | tuple[int, ...],
+    *,
+    status: str | None = None,
+) -> None:
+    """Broadcast a transient ``deal.updated`` cache-invalidation signal.
+
+    Item 22 — the existing ``notification`` event only reaches the
+    *recipient* of a stored ``Notification`` row, so the initiator of
+    a state-changing op (and any other participant we never wrote a
+    notification for) keeps a stale React Query cache until the next
+    poll / focus refetch. ``deal.updated`` fans out to every party
+    that should re-pull the deal (typically buyer + seller, plus the
+    arbiter on arbitration ops) without inserting a DB row — it's a
+    pure WS-level cache-bust.
+
+    Failures are swallowed and logged: a missing socket or a Redis
+    publish error must never bubble up and surface a 500 on an
+    otherwise successful deal op.
+    """
+    seen: set[int] = set()
+    payload: dict[str, Any] = {"deal_id": deal_id}
+    if status is not None:
+        payload["status"] = status
+    for recipient_id in recipient_ids:
+        if recipient_id in seen:
+            continue
+        seen.add(recipient_id)
+        try:
+            await manager.publish(
+                recipient_id,
+                {"event": "deal.updated", "data": payload},
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "deal.updated publish failed for recipient_id=%s deal_id=%s",
+                recipient_id,
+                deal_id,
+                extra={
+                    "event": "notifier.deal_updated.publish.failed",
+                    "recipient_id": recipient_id,
+                    "deal_id": deal_id,
+                },
+            )
+
+
 async def push(
     session: AsyncSession,
     recipient_id: int,

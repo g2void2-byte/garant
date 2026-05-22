@@ -21,7 +21,9 @@ describe("queryClient", () => {
     expect(defaults).toBeDefined();
     expect(defaults?.staleTime).toBe(30_000);
     expect(defaults?.gcTime).toBe(5 * 60_000);
-    expect(defaults?.refetchOnWindowFocus).toBe(false);
+    // Item 22 — focus refetch is the fallback that catches WS frames
+    // we missed while the TMA was backgrounded.
+    expect(defaults?.refetchOnWindowFocus).toBe(true);
     expect(defaults?.retry).toBe(1);
   });
 

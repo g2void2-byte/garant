@@ -174,6 +174,44 @@ describe("useLiveNotifications", () => {
     expect(hapticSpy).not.toHaveBeenCalled();
   });
 
+  it("invalidates the deal + deals caches on deal.updated (item 22)", () => {
+    // The backend emits ``deal.updated`` to every participant after a
+    // state-changing op so the initiator's React Query cache is busted
+    // even though they never received a stored ``notification`` row.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "deal.updated",
+      data: { deal_id: 77, status: "completed" },
+    });
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deal", 77] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deals"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deal"] });
+    // No toast / haptic — this is a silent cache-bust, not a user
+    // event. The companion ``notification`` event (when the user is
+    // also a recipient of a stored notification row) is what fires
+    // the toast.
+    expect(toastSpy).not.toHaveBeenCalled();
+    expect(hapticSpy).not.toHaveBeenCalled();
+  });
+
+  it("invalidates list caches even when deal.updated lacks a deal_id", () => {
+    // Defensive — a malformed frame still busts the list cache so the
+    // next render eventually catches the new status.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({ event: "deal.updated", data: {} });
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deals"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deal"] });
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["deal", undefined] });
+  });
+
   it("drops the local PIN token and invalidates pin status on pin.reset (item 8)", () => {
     // Admin pressed ``reset-pin`` on this user. The backend publishes
     // ``{event: 'pin.reset'}`` over the WS channel; the hook must:

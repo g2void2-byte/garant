@@ -9,7 +9,13 @@ export const queryClient = new QueryClient({
     queries: {
       staleTime: 30_000,
       gcTime: 5 * 60_000,
-      refetchOnWindowFocus: false,
+      // Item 22 — pull a fresh snapshot whenever the TMA / browser tab
+      // returns to the foreground. Telegram backgrounds the WebView
+      // aggressively and the notifications WS may have missed a frame
+      // while we were suspended; refetching on focus closes the
+      // "swiped away → came back to a stale deal" gap that the WS
+      // alone can't cover.
+      refetchOnWindowFocus: true,
       retry: 1,
     },
   },

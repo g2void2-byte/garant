@@ -314,6 +314,9 @@ async def create_deal(
     )
     await session.commit()
     await _safe_dispatch(session, [(notif, ws_payload)])
+    await notifier.publish_deal_update(
+        deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+    )
     # L-19 — eager-load the ``buyer`` / ``seller`` / ``currency``
     # relationships so the caller's response serialiser
     # (``_deal_out`` / ``_to_detail``) can render
@@ -367,6 +370,9 @@ async def accept_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     )
     await session.commit()
     await _safe_dispatch(session, [(notif, ws_payload)])
+    await notifier.publish_deal_update(
+        deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+    )
     return deal
 
 
@@ -418,6 +424,9 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     )
     await session.commit()
     await _safe_dispatch(session, [(notif, ws_payload)])
+    await notifier.publish_deal_update(
+        deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+    )
     return deal
 
 
@@ -465,6 +474,9 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     )
     await session.commit()
     await _safe_dispatch(session, [(notif, ws_payload)])
+    await notifier.publish_deal_update(
+        deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+    )
     return deal
 
 
@@ -493,6 +505,9 @@ async def request_cancel(session: AsyncSession, deal: Deal, user: User, reason: 
     )
     await session.commit()
     await _safe_dispatch(session, [(notif, ws_payload)])
+    await notifier.publish_deal_update(
+        deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+    )
     return deal
 
 
@@ -518,6 +533,9 @@ async def revoke_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
     )
     await session.commit()
     await _safe_dispatch(session, [(notif, ws_payload)])
+    await notifier.publish_deal_update(
+        deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+    )
     return deal
 
 
@@ -578,6 +596,9 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
         pending.append((notif, ws_payload))
     await session.commit()
     await _safe_dispatch(session, pending)
+    await notifier.publish_deal_update(
+        deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+    )
     return deal
 
 
@@ -618,10 +639,12 @@ async def start_arbitration(session: AsyncSession, deal: Deal, user: User, reaso
     # state transition, dispatch WS/DM after commit so a rollback can
     # never leak events.
     pending: list[tuple[Notification, dict[str, Any] | None]] = []
+    arbiter_ids: list[int] = []
     for recipient in [*arbiters, *admins]:
         if recipient.id in seen:
             continue
         seen.add(recipient.id)
+        arbiter_ids.append(recipient.id)
         notif, ws_payload = await notifier.insert(
             session,
             recipient.id,
@@ -633,6 +656,11 @@ async def start_arbitration(session: AsyncSession, deal: Deal, user: User, reaso
         pending.append((notif, ws_payload))
     await session.commit()
     await _safe_dispatch(session, pending)
+    await notifier.publish_deal_update(
+        deal.id,
+        [deal.buyer_id, deal.seller_id, *arbiter_ids],
+        status=deal.status.value,
+    )
     return deal
 
 
@@ -727,6 +755,11 @@ async def resolve_arbitration(
     pending.append((loser_notif, loser_ws))
     await session.commit()
     await _safe_dispatch(session, pending)
+    await notifier.publish_deal_update(
+        deal.id,
+        [deal.buyer_id, deal.seller_id, admin.id],
+        status=deal.status.value,
+    )
     return deal
 
 
@@ -813,4 +846,8 @@ async def sweep_inactivity(session: AsyncSession) -> int:
     await session.commit()
 
     await _safe_dispatch(session, pending_dispatch, event="sweep_inactivity.dispatch.failed")
+    for deal in rows:
+        await notifier.publish_deal_update(
+            deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+        )
     return affected
