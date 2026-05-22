@@ -213,9 +213,11 @@ async def get_current_user(
         # of them see no row, both call ``session.add(User(...))``,
         # the second commit explodes with an IntegrityError on
         # ``users.tg_user_id``. We instead emit an
-        # ``INSERT ... ON CONFLICT (tg_user_id) DO NOTHING`` so the
-        # loser of the race commits a no-op, then re-SELECT to load
-        # whichever row actually persisted. The ON CONFLICT path is
+        # ``INSERT ... ON CONFLICT (tg_user_id) DO UPDATE`` (was
+        # ``DO NOTHING`` pre-audit L-1) so the loser of the race
+        # still bumps ``login_count`` / refreshes ``last_login_at``
+        # via a single atomic statement, then re-SELECT to load
+        # whichever row persisted. The ON CONFLICT path is
         # idempotent and safe to retry — and required, because every
         # downstream endpoint depends on ``current_user`` being
         # populated.
@@ -226,19 +228,38 @@ async def get_current_user(
         # can't OOM the admin broadcast filter, and tolerate clients
         # that omit the field entirely (legacy Telegram desktop builds).
         language_code = _normalise_language_code(tg_user.get("language_code"))
-        ins = (
-            pg_insert(User)
-            .values(
-                tg_user_id=tg_user_id,
-                username=tg_user.get("username"),
-                display_name=tg_user.get("first_name", ""),
-                photo_url=tg_user.get("photo_url"),
-                language_code=language_code,
-                last_ip=ip,
-                last_login_at=now,
-                login_count=1,
-            )
-            .on_conflict_do_nothing(index_elements=["tg_user_id"])
+        # Audit L-1 — ``ON CONFLICT DO UPDATE`` instead of
+        # ``DO NOTHING``. The loser-transaction of the first-touch
+        # race (two parallel ``/api/me`` from a brand-new client)
+        # used to commit a no-op, so ``login_count`` ended up at 1
+        # after two concurrent first-touches instead of 2. We now
+        # bump ``login_count`` and refresh ``last_login_at`` /
+        # ``last_ip`` atomically in the same statement, mirroring
+        # what the existing-user branch below does for every
+        # post-debounce session ping. Identity columns
+        # (``username`` / ``display_name`` / ``photo_url`` /
+        # ``language_code``) are intentionally left to the winning
+        # insert — the loser is by definition the same TG user with
+        # the same payload, so re-asserting them would be a no-op
+        # at best and would race with the existing-user branch's
+        # dirty-track at worst.
+        ins_stmt = pg_insert(User).values(
+            tg_user_id=tg_user_id,
+            username=tg_user.get("username"),
+            display_name=tg_user.get("first_name", ""),
+            photo_url=tg_user.get("photo_url"),
+            language_code=language_code,
+            last_ip=ip,
+            last_login_at=now,
+            login_count=1,
+        )
+        ins = ins_stmt.on_conflict_do_update(
+            index_elements=["tg_user_id"],
+            set_={
+                "login_count": User.__table__.c.login_count + 1,
+                "last_login_at": ins_stmt.excluded.last_login_at,
+                "last_ip": ins_stmt.excluded.last_ip,
+            },
         )
         await session.execute(ins)
         await session.commit()
