@@ -18,6 +18,12 @@ Endpoints:
   operator verified the CryptoBot transfer succeeded out-of-band
   (Phase 2 OK, Phase 3 crashed). Mirrors the ``mark_sent`` action on
   ``/api/admin/withdrawals``.
+* ``POST /api/admin/treasury/{withdrawal_id}/reconcile`` — audit
+  §4.19 — automated reconciliation: query CryptoBot ``getTransfers``
+  by the row's deterministic ``spend_id`` and flip ``pending`` →
+  ``sent`` when the transfer is confirmed on the CryptoBot side.
+  Unlike ``mark_sent``, this never trusts operator hearsay; on a
+  missing transfer it 404s without mutating the row.
 """
 
 from __future__ import annotations
@@ -41,6 +47,8 @@ from ...schemas import (
     AdminTreasuryBalanceOut,
     AdminTreasuryMarkSentIn,
     AdminTreasuryOverviewOut,
+    AdminTreasuryReconcileIn,
+    AdminTreasuryReconcileOut,
     AdminTreasuryWithdrawIn,
     AdminTreasuryWithdrawOut,
 )
@@ -507,3 +515,165 @@ async def treasury_mark_sent(
     await session.commit()
 
     return _withdrawal_to_out(row, currency)
+
+
+@router.post("/{withdrawal_id}/reconcile", response_model=AdminTreasuryReconcileOut)
+async def treasury_reconcile(
+    withdrawal_id: int,
+    body: AdminTreasuryReconcileIn,
+    admin: TotpUser,
+    request: Request,
+    session: SessionDep,
+):
+    """Reconcile a stuck ``pending`` treasury row against CryptoBot.
+
+    Audit §4.19 — recovery path for the Phase 2 → Phase 3 gap that
+    does NOT rely on operator hearsay. ``treasury_mark_sent`` takes
+    the operator's word that the transfer succeeded; this endpoint
+    queries CryptoBot's ``getTransfers`` API by the row's
+    ``spend_id`` (``treas:{withdrawal_id}``) and updates the row
+    from the authoritative source:
+
+      * **Transfer present on CryptoBot side** — flip the row to
+        ``status="sent"`` and record the returned ``transfer_id``,
+        matching what ``treasury_withdraw``'s Phase 3 would have
+        written. Idempotent — re-running just returns the row.
+      * **No matching transfer** — return 404 *without* mutating
+        the row, so the operator can decide whether to retry
+        (issue a fresh withdrawal — the ``pending`` row already
+        counts against ``available``, so a retry needs the operator
+        to either delete the row or wait for the audit log to
+        explain it) or close it out manually with ``mark_sent``
+        based on out-of-band evidence.
+
+    Guards:
+      * 2FA via ``X-Totp-Code`` header (same surface as
+        ``mark_sent`` — the action moves money on the ledger).
+      * ``confirm=true`` — explicit second click.
+      * Row must be in ``pending``; ``sent`` rows return the
+        existing payload (idempotent no-op), ``failed`` rows 409
+        (the operator already saw the failure and should issue a
+        fresh withdrawal instead of resurrecting a failed one).
+
+    Pre-fix this hole was an explicit accepted trade-off (audit
+    §4.19): the only recovery was operator-driven ``mark_sent``,
+    which silently trusted the operator. Now there is a code path
+    that closes the row from the same source of truth that
+    ``treasury_withdraw`` would have used had Phase 3 not crashed.
+    """
+    if not body.confirm:
+        raise HTTPException(400, "Подтверждение не получено (confirm=false)")
+
+    if not is_cryptopay_configured(app_settings_env.cryptobot_token):
+        raise HTTPException(503, "CryptoBot не настроен: сверка казны недоступна")
+
+    row = (
+        await session.execute(
+            select(TreasuryWithdrawal)
+            .where(TreasuryWithdrawal.id == withdrawal_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(404, "Запись о выводе казны не найдена")
+
+    currency = await session.get(Currency, row.currency_id)
+    currency_code = currency.code if currency else ""
+
+    if row.status == "sent":
+        # Idempotent — caller can re-run reconcile freely without
+        # double-logging an audit row. Returning the existing payload
+        # makes the admin UI's "click again to refresh" workflow
+        # cheap.
+        return AdminTreasuryReconcileOut(
+            withdrawal=_withdrawal_to_out(row, currency),
+            cryptobot_transfer_id=row.cryptobot_transfer_id,
+        )
+    if row.status == "failed":
+        raise HTTPException(
+            409,
+            "Сверять можно только pending-запись (failed терминальный — создайте новую)",
+        )
+
+    # ─── Query CryptoBot for the transfer with our deterministic
+    #     ``spend_id``. The row's ``spend_id`` is
+    #     ``treas:{withdrawal_id}`` by contract — see
+    #     ``treasury_withdraw``'s Phase 2.
+    spend_id = f"treas:{row.id}"
+    try:
+        async with CryptoPay(
+            app_settings_env.cryptobot_token,
+            testnet=app_settings_env.cryptobot_testnet,
+        ) as cp:
+            transfers = await cp.get_transfers(spend_id=spend_id)
+    except CryptoPayError as e:
+        logger.error(
+            "treasury reconcile failed: %s",
+            e,
+            extra={
+                "event": "cryptobot.treasury_reconcile.api_error",
+                "treasury_withdrawal_id": row.id,
+                "actor_id": admin.id,
+                "currency": currency_code,
+                "spend_id": spend_id,
+            },
+        )
+        raise HTTPException(502, f"Ошибка CryptoBot: {e}") from e
+
+    if not transfers:
+        logger.info(
+            "treasury reconcile: no matching transfer on CryptoBot side",
+            extra={
+                "event": "cryptobot.treasury_reconcile.no_match",
+                "treasury_withdrawal_id": row.id,
+                "actor_id": admin.id,
+                "currency": currency_code,
+                "spend_id": spend_id,
+            },
+        )
+        # Don't mutate the row: the operator may want to retry
+        # ``treasury_withdraw`` (which would issue a fresh
+        # ``spend_id`` against a new row id) or close this one out
+        # manually after off-band investigation.
+        raise HTTPException(
+            404,
+            "На стороне CryptoBot нет перевода с этим spend_id — "
+            "запись оставлена pending для ручного разбирательства",
+        )
+
+    # CryptoBot's ``spend_id`` is per-app unique, so at most one
+    # match is expected; if more come back (shouldn't happen) we
+    # prefer the first ``completed`` one and fall back to the
+    # first item.
+    matched = next((t for t in transfers if t.status == "completed"), transfers[0])
+
+    row.status = "sent"
+    row.cryptobot_transfer_id = str(matched.transfer_id)
+    if body.note:
+        row.note = (row.note + "\n" if row.note else "") + f"reconcile: {body.note}"
+    else:
+        row.note = (row.note + "\n" if row.note else "") + "reconcile: auto-marked via getTransfers"
+
+    await log_admin_action(
+        session,
+        actor=admin,
+        action="treasury.reconcile",
+        target_type="treasury",
+        target_id=row.id,
+        reason=body.note,
+        payload={
+            "currency": currency_code,
+            "amount": str(row.amount),
+            "address": row.address,
+            "cryptobot_transfer_id": str(matched.transfer_id),
+            "cryptobot_status": matched.status,
+            "spend_id": spend_id,
+        },
+        request=request,
+    )
+    await session.commit()
+
+    return AdminTreasuryReconcileOut(
+        withdrawal=_withdrawal_to_out(row, currency),
+        cryptobot_transfer_id=str(matched.transfer_id),
+    )

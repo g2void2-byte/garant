@@ -1669,6 +1669,38 @@ class AdminTreasuryMarkSentIn(BaseModel):
         return v
 
 
+class AdminTreasuryReconcileIn(BaseModel):
+    """Body for ``POST /api/admin/treasury/{withdrawal_id}/reconcile``.
+
+    Audit §4.19 — automated reconciliation path for ``pending`` rows
+    stuck after a Phase 2 → Phase 3 crash. Unlike ``mark_sent`` (which
+    trusts the operator's claim that CryptoBot processed the
+    transfer), this endpoint queries CryptoBot's ``getTransfers``
+    API by the row's ``spend_id`` and updates the status from the
+    authoritative source — flipping to ``sent`` if the transfer
+    landed and surfacing a 404 (without mutating the row) if it
+    didn't, so the operator can choose whether to retry by issuing
+    a fresh withdrawal or close the row out manually.
+    """
+
+    confirm: bool = False
+    note: str | None = None
+
+
+class AdminTreasuryReconcileOut(BaseModel):
+    """Response for the treasury reconcile endpoint.
+
+    ``status`` mirrors the row's new value (always ``sent`` on the
+    success path; the endpoint 404s instead of returning ``failed``
+    so a missing CryptoBot transfer never silently buries the row).
+    ``withdrawal`` carries the canonical ``TreasuryWithdrawal`` shape
+    so the admin UI can refresh from the same payload.
+    """
+
+    withdrawal: AdminTreasuryWithdrawOut
+    cryptobot_transfer_id: str | None
+
+
 # ── Admin: settings (PR-CDE) ───────────────────────────
 
 
