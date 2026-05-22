@@ -70,3 +70,22 @@ def test_notification_keyboard_falls_back_to_callback_data_when_not_https(monkey
     assert first.web_app is None
     assert first.callback_data is not None
     assert first.callback_data.startswith(CB_TMA_UNAVAILABLE_PREFIX)
+
+
+def test_webapp_button_raises_on_overlong_callback_data(monkeypatch):
+    """Audit L-11 — ``_webapp_button`` must refuse to silently truncate
+    ``callback_data`` past Telegram's 64-byte cap. The previous slice
+    + ``decode(errors='ignore')`` could collapse two distinct TMA
+    paths onto the same cb_data when the path crossed the limit on
+    a multibyte boundary; we now raise instead so a regression is
+    caught in pytest rather than in production.
+    """
+    import pytest
+
+    from backend.app import config
+    from backend.app.bot.keyboards import _webapp_button
+
+    monkeypatch.setattr(config.settings, "webapp_url", "http://example.local")
+    long_path = "/" + ("x" * 80)
+    with pytest.raises(ValueError, match="callback_data exceeds"):
+        _webapp_button("label", long_path)

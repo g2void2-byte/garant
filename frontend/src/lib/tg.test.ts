@@ -234,6 +234,55 @@ describe("getTelegramUser", () => {
   });
 });
 
+describe("openExternalLink", () => {
+  it("delegates to Telegram.WebApp.openLink when available", async () => {
+    const { fake, mod } = await importTgWithFake("ios");
+    mod.openExternalLink("https://example.com");
+    expect(fake.openLink).toHaveBeenCalledWith("https://example.com");
+  });
+
+  it("falls back to window.open with noopener,noreferrer when Telegram is unavailable", async () => {
+    (window as unknown as { Telegram?: unknown }).Telegram = undefined;
+    vi.resetModules();
+    const mod = await import("./tg");
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    mod.openExternalLink("https://example.com");
+    expect(openSpy).toHaveBeenCalledWith("https://example.com", "_blank", "noopener,noreferrer");
+    openSpy.mockRestore();
+  });
+
+  it.each([
+    ["javascript:alert(1)"],
+    ["JavaScript:alert(1)"],
+    ["data:text/html,<script>alert(1)</script>"],
+    ["vbscript:msgbox"],
+    ["file:///etc/passwd"],
+    ["not-a-url"],
+    [""],
+  ])("refuses to open unsafe URL %s", async (badUrl) => {
+    // Audit H-1 — only ``http(s):`` URLs are allowed through. The
+    // forum / pay-URL surface used to flow into ``tg.openLink``
+    // without the scheme check that ``openTelegramLink`` already
+    // had, leaving a script-execution gap inside the Mini App.
+    const { fake, mod } = await importTgWithFake("ios");
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    mod.openExternalLink(badUrl);
+    expect(fake.openLink).not.toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalled();
+    openSpy.mockRestore();
+  });
+
+  it("refuses unsafe URLs in the no-Telegram fallback too", async () => {
+    (window as unknown as { Telegram?: unknown }).Telegram = undefined;
+    vi.resetModules();
+    const mod = await import("./tg");
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    mod.openExternalLink("javascript:alert(1)");
+    expect(openSpy).not.toHaveBeenCalled();
+    openSpy.mockRestore();
+  });
+});
+
 describe("openTelegramLink", () => {
   it("delegates to Telegram.WebApp.openTelegramLink when available", async () => {
     const { fake, mod } = await importTgWithFake("ios");

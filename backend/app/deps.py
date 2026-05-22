@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
+import logging
 from datetime import timedelta
 from typing import Annotated
 
@@ -15,6 +16,8 @@ from .models import User
 from .pin import decode_session_token
 from .security import InitDataError, verify_init_data
 from .time_utils import utcnow
+
+logger = logging.getLogger(__name__)
 
 _trusted_networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] | None = None
 
@@ -39,7 +42,24 @@ def _normalise_language_code(raw: str | None) -> str | None:
     code = raw.strip().lower()
     if not code:
         return None
-    return code[:_LANGUAGE_CODE_MAX_LEN]
+    # Audit L-6 — log a single line when truncation actually drops
+    # characters so broadcast-filter triage (e.g. "why does ``zh-hans``
+    # match but ``zh-hans-cn`` not?") doesn't require reproducing the
+    # input. Structured fields keep the message body fixed-cardinality
+    # so the JSON-logger downstream can pivot without regex parsing.
+    if len(code) > _LANGUAGE_CODE_MAX_LEN:
+        truncated = code[:_LANGUAGE_CODE_MAX_LEN]
+        logger.warning(
+            "language_code truncated to %d chars",
+            _LANGUAGE_CODE_MAX_LEN,
+            extra={
+                "event": "deps.language_code.truncated",
+                "original_len": len(code),
+                "stored_value": truncated,
+            },
+        )
+        return truncated
+    return code
 
 
 def _get_trusted_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:

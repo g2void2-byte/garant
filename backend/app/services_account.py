@@ -469,6 +469,20 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
     if new_display_name and not source.display_name:
         source.display_name = new_display_name
 
+    # Audit L-10 — bump both PIN- and TOTP-session epochs on the
+    # source row. The TG identity attached to this row just changed,
+    # so any JWT issued under the previous ``tg_user_id`` (which is
+    # still ``valid`` cryptographically until ``exp``) must be
+    # invalidated server-side. Without this an attacker who somehow
+    # recovered the previous source's TG-account post-transfer
+    # (Telegram-side account restoration, SIM-recovery race, replay
+    # of a captured PIN token) keeps a working PIN/TOTP session.
+    # ``admin.users.invalidate_sessions`` already does the same
+    # epoch-bump pair on demand; mirroring it here keeps the
+    # invariant "row identity changed ⇒ tokens revoked" globally.
+    source.pin_session_epoch = int(source.pin_session_epoch or 0) + 1
+    source.totp_session_epoch = int(source.totp_session_epoch or 0) + 1
+
     row.consumed_at = _now()
     row.target_tg_user_id = new_tg_user_id
 
