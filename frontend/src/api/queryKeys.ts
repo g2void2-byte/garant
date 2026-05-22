@@ -168,7 +168,13 @@ export const qk = {
   wallet: {
     all: () => ["wallet"] as const,
     currencies: () => ["wallet", "currencies"] as const,
+    // Item 15 — separate cache slot per kind filter so a
+    // ``?kind=fiat`` and a no-filter call don't clobber each other.
+    currenciesByKind: (kind: "fiat" | "crypto") =>
+      ["wallet", "currencies", kind] as const,
     balances: () => ["wallet", "balances"] as const,
+    balancesByKind: (kind: "fiat" | "crypto") =>
+      ["wallet", "balances", kind] as const,
     deposits: () => ["wallet", "deposits"] as const,
     deposit: (id: number | undefined) =>
       ["wallet", "deposit", id] as const,

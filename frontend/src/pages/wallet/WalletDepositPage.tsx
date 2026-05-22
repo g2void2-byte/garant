@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ArrowDownToLine } from "lucide-react";
 import {
   useCreateWalletDeposit,
@@ -37,20 +38,23 @@ const PROVIDER_LABELS: Record<DepositProvider, string> = {
  *   - Helper text below: "Пополните баланс через выбранную сеть и валюту".
  */
 export default function WalletDepositPage() {
-  const currencies = useCurrencies();
-  const balances = useWalletBalances();
+  // Item 15 — fetch only fiat options server-side; the in-page
+  // ``filter(kind === 'fiat')`` below stays as a defensive guard so a
+  // partial response from a stale cache doesn't surface crypto rows.
+  const currencies = useCurrencies({ kind: "fiat" });
+  const balances = useWalletBalances({ kind: "fiat" });
   const create = useCreateWalletDeposit();
   const toast = useToast();
+  // Item 13 — ProfilePage's "Пополнить" CTA navigates here with
+  // ``?currency=USD``; honour the URL hint so the dropdown lands on
+  // the user's preferred fiat code without a manual click.
+  const [searchParams] = useSearchParams();
+  const initialCode = (searchParams.get("currency") ?? "").toUpperCase();
 
   const [code, setCode] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
   const [provider, setProvider] = useState<DepositProvider>("cryptobot");
 
-  // Per the deposit-flow plan, only fiat options surface to the user
-  // — both CryptoBot (``currency_type="fiat"`` invoice) and
-  // Crystalpay accept any fiat code on the wire. Crypto currencies
-  // stay in the DB for the historical wallet ledger but are hidden
-  // from the dropdown so users only top up in UAH/RUB/USD.
   const fiatCurrencies = useMemo(
     () => (currencies.data ?? []).filter((c) => (c.kind ?? "crypto") === "fiat"),
     [currencies.data],
@@ -66,12 +70,17 @@ export default function WalletDepositPage() {
 
   useEffect(() => {
     if (!code && fiatCurrencies.length) {
-      // Default to USD when available; otherwise pick the first
-      // fiat option. Keeps the dropdown deterministic across reloads.
+      // Order of preference: URL hint (``?currency=USD``) → USD seed →
+      // first available fiat row. Keeps the dropdown deterministic
+      // across reloads and survives a fiat catalogue trimmed on the
+      // backend.
+      const fromUrl = initialCode
+        ? fiatCurrencies.find((c) => c.code === initialCode)
+        : undefined;
       const usd = fiatCurrencies.find((c) => c.code === "USD");
-      setCode((usd ?? fiatCurrencies[0]).code);
+      setCode((fromUrl ?? usd ?? fiatCurrencies[0]).code);
     }
-  }, [code, fiatCurrencies]);
+  }, [code, fiatCurrencies, initialCode]);
 
   useEffect(() => {
     if (current && !amount) {

@@ -71,6 +71,10 @@ export function useUpdateMe() {
         // ISO-3166-1 alpha-2 code (uppercase). ``null`` explicitly
         // clears the column; omitting the key is a no-op.
         country: string | null;
+        // Items 13/15 — fiat currency code (``"USD"``, ``"UAH"``,
+        // ``"RUB"``) for the new ProfilePage fiat-balance card.
+        // ``null`` clears the column (UI falls back to USD).
+        display_currency_code: string | null;
       }>,
     ) => api.patch("api/me", { json: body }).json<UserCardDto>(),
     onSuccess: (data) => {
@@ -582,18 +586,29 @@ export function useConfirmAccountTransfer() {
 
 // ── Wallet ──────────────────────────────────────────────
 
-export function useCurrencies() {
+export function useCurrencies(opts: { kind?: "fiat" | "crypto" } = {}) {
+  // Item 15 — the user-facing dropdowns pass ``kind="fiat"`` so
+  // crypto rows never reach the wire. Cache key includes ``kind`` so
+  // a fiat call and a no-filter call don't trample each other.
   return useQuery<CurrencyDto[]>({
-    queryKey: qk.wallet.currencies(),
-    queryFn: () => api.get("api/wallet/currencies").json(),
+    queryKey: opts.kind ? qk.wallet.currenciesByKind(opts.kind) : qk.wallet.currencies(),
+    queryFn: () => {
+      const sp = opts.kind ? { searchParams: { kind: opts.kind } } : undefined;
+      return api.get("api/wallet/currencies", sp).json();
+    },
     staleTime: 60 * 60_000,
   });
 }
 
-export function useWalletBalances() {
+export function useWalletBalances(opts: { kind?: "fiat" | "crypto" } = {}) {
+  // Item 15 — same filter logic as ``useCurrencies``; the user-side
+  // wallet/profile views pass ``kind="fiat"``.
   return useQuery<WalletBalanceDto[]>({
-    queryKey: qk.wallet.balances(),
-    queryFn: () => api.get("api/wallet/balances").json(),
+    queryKey: opts.kind ? qk.wallet.balancesByKind(opts.kind) : qk.wallet.balances(),
+    queryFn: () => {
+      const sp = opts.kind ? { searchParams: { kind: opts.kind } } : undefined;
+      return api.get("api/wallet/balances", sp).json();
+    },
     staleTime: 15_000,
   });
 }

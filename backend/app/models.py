@@ -276,6 +276,15 @@ class User(Base):
     # are computed client-side from a static list in
     # ``frontend/src/lib/countries.ts``.
     country: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    # Fiat currency code (``"USD"``, ``"UAH"``, ``"RUB"``, …) the user
+    # picked in ``/profile/settings`` as their "main" balance shown on
+    # the ``ProfilePage`` fiat-balance card. ``None`` means "not picked
+    # yet" — the UI falls back to USD in that case. The selector is
+    # restricted to ``Currency.kind == 'fiat'`` rows on the wire; the
+    # column is a plain ``String(8)`` rather than a FK to keep the
+    # admin-side currency-deactivation path symmetric (a deactivated
+    # row stays valid for users who already selected it).
+    display_currency_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
     # Admin PR-A — optional override of the *computed* rating (see
     # services.py:recompute_user_rating). When non-null this value
     # takes precedence in profile responses; setting to null restores

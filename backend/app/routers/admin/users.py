@@ -50,6 +50,7 @@ from ...schemas import (
     AdminSetRatingIn,
     AdminSetRoleIn,
     AdminSetStatsIn,
+    AdminSetTrustDepositIn,
     AdminUserDetailOut,
     AdminUserListItem,
     AdminUserListOut,
@@ -97,6 +98,13 @@ def _to_detail(user: User, *, has_pin: bool) -> AdminUserDetailOut:
         banner_url=user.banner_url,
         description=user.description,
         deposit_total=user.deposit_total,
+        # Item 12 — "trust deposit" (the public profile's ``deposit``
+        # field) is a separate column from the admin-editable
+        # lifetime aggregate ``deposit_total``. Defensive ``or 0``
+        # mirrors the serializer pattern: in-memory ``User(...)``
+        # rows that tests build without flushing read the attribute
+        # as ``None`` until SA applies the column default.
+        trust_deposit_balance=Decimal(str(user.trust_deposit_balance or 0)),
         rating_auto=auto,
         rating_manual=manual,
         rating_effective=effective,
@@ -137,6 +145,10 @@ def _to_list_item(user: User) -> AdminUserListItem:
         is_banned=user.is_banned,
         is_frozen=user.is_frozen,
         deposit_total=user.deposit_total,
+        # See ``_to_detail`` for the rationale; the public ``deposit``
+        # field is sourced from ``trust_deposit_balance``, not
+        # ``deposit_total``.
+        trust_deposit_balance=Decimal(str(user.trust_deposit_balance or 0)),
         rating=(
             _rating_auto(user) if user.rating_manual is None else Decimal(str(user.rating_manual))
         ),
@@ -759,5 +771,51 @@ async def set_stats(
         payload=state_change_payload(before=before, after=after),
         dm_title=None,
         dm_body=None,
+    )
+    return _to_detail(target, has_pin=await _has_pin(target))
+
+
+@router.post("/{user_id}/trust-deposit", response_model=AdminUserDetailOut)
+async def set_trust_deposit(
+    user_id: int,
+    body: AdminSetTrustDepositIn,
+    admin: TotpUser,
+    session: SessionDep,
+    request: Request,
+) -> AdminUserDetailOut:
+    """Set the user's trust-deposit balance (absolute value).
+
+    Item 12 — the public profile's ``deposit`` field is sourced from
+    :attr:`User.trust_deposit_balance`, *not* from
+    :attr:`User.deposit_total` (which the legacy ``set_stats``
+    endpoint writes). Pre-fix admin edits to the lifetime aggregate
+    silently failed to propagate to the user-visible profile; this
+    endpoint targets the right column.
+
+    The body is an *absolute* amount — admin types the new total in
+    the form, not a delta. Negative values are rejected at the schema
+    layer (the trust balance has no spend / withdraw path so a
+    negative state is structurally impossible).
+    """
+    target = await _get_user_or_404(session, user_id)
+    new_value = Decimal(body.amount)
+    before = Decimal(str(target.trust_deposit_balance or 0))
+    if before == new_value:
+        return _to_detail(target, has_pin=await _has_pin(target))
+    target.trust_deposit_balance = new_value
+
+    await _audit_and_notify(
+        session=session,
+        request=request,
+        admin=admin,
+        target=target,
+        action="user.set_trust_deposit",
+        reason=body.reason,
+        payload=state_change_payload(
+            before={"trust_deposit_balance": str(before)},
+            after={"trust_deposit_balance": str(new_value)},
+        ),
+        dm_title="Трастовый депозит обновлён",
+        dm_body=f"Новое значение: {new_value} USD",
     )
     return _to_detail(target, has_pin=await _has_pin(target))

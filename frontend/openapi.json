@@ -2448,6 +2448,39 @@
         "title": "AdminSetStatsIn",
         "type": "object"
       },
+      "AdminSetTrustDepositIn": {
+        "description": "Body for ``POST /admin/users/:id/trust-deposit``.\n\nSets the user's :attr:`~backend.app.models.User.trust_deposit_balance`\n\u2014 the column rendered as ``deposit`` on the public\n``UserOut`` / ``UserPublicOut`` DTOs. Distinct from\n``AdminSetStatsIn.deposit_total`` which edits the admin-only\nlifetime aggregate.\n\nThe value is *absolute* (the admin types the new total, not a\ndelta); negative values are rejected because the trust deposit\nhas no spend / withdraw path so a negative balance is\nstructurally impossible.",
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "amount"
+        ],
+        "title": "AdminSetTrustDepositIn",
+        "type": "object"
+      },
       "AdminSettingsOut": {
         "properties": {
           "auto_withdraw_enabled": {
@@ -3250,6 +3283,10 @@
             "title": "Tg User Id",
             "type": "integer"
           },
+          "trust_deposit_balance": {
+            "title": "Trust Deposit Balance",
+            "type": "number"
+          },
           "username": {
             "anyOf": [
               {
@@ -3271,6 +3308,7 @@
           "banner_url",
           "description",
           "deposit_total",
+          "trust_deposit_balance",
           "rating_auto",
           "rating_manual",
           "rating_effective",
@@ -3399,6 +3437,10 @@
             "title": "Tg User Id",
             "type": "integer"
           },
+          "trust_deposit_balance": {
+            "title": "Trust Deposit Balance",
+            "type": "number"
+          },
           "username": {
             "anyOf": [
               {
@@ -3424,6 +3466,7 @@
           "is_banned",
           "is_frozen",
           "deposit_total",
+          "trust_deposit_balance",
           "rating",
           "deals_total",
           "deals_success",
@@ -5374,6 +5417,17 @@
             "title": "Description",
             "type": "string"
           },
+          "display_currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Currency Code"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -5729,6 +5783,17 @@
               }
             ],
             "title": "Description"
+          },
+          "display_currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Currency Code"
           },
           "display_name": {
             "anyOf": [
@@ -12347,6 +12412,100 @@
         ]
       }
     },
+    "/api/admin/users/{user_id}/trust-deposit": {
+      "post": {
+        "description": "Set the user's trust-deposit balance (absolute value).\n\nItem 12 \u2014 the public profile's ``deposit`` field is sourced from\n:attr:`User.trust_deposit_balance`, *not* from\n:attr:`User.deposit_total` (which the legacy ``set_stats``\nendpoint writes). Pre-fix admin edits to the lifetime aggregate\nsilently failed to propagate to the user-visible profile; this\nendpoint targets the right column.\n\nThe body is an *absolute* amount \u2014 admin types the new total in\nthe form, not a delta. Negative values are rejected at the schema\nlayer (the trust balance has no spend / withdraw path so a\nnegative state is structurally impossible).",
+        "operationId": "set_trust_deposit_api_admin_users__user_id__trust_deposit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": true,
+            "schema": {
+              "title": "Authorization",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSetTrustDepositIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Trust Deposit",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/users/{user_id}/unban": {
       "post": {
         "operationId": "unban_user_api_admin_users__user_id__unban_post",
@@ -15845,8 +16004,29 @@
     },
     "/api/wallet/balances": {
       "get": {
+        "description": "Return active-currency balances for the requester.\n\n``kind`` filters the response to currencies with a matching\n``Currency.kind`` (Item 15). The user-facing wallet page calls\nthis with ``kind=fiat`` so crypto rows are filtered out at the\nsource instead of post-fetch on the client.",
         "operationId": "get_balances_api_wallet_balances_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "fiat",
+                    "crypto"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
           {
             "in": "header",
             "name": "authorization",
@@ -15891,7 +16071,30 @@
     },
     "/api/wallet/currencies": {
       "get": {
+        "description": "List active currencies, optionally filtered by ``kind``.\n\nItem 15 \u2014 the user-facing wallet flow passes ``kind=fiat`` to\nsurface only UAH/RUB/USD; the historical crypto rows stay in the\ntable (deals / treasury still reference them) but are hidden from\nthe user dropdowns. Omitting ``kind`` keeps backwards\ncompatibility with the admin panel and any tooling that walks the\nfull catalogue.",
         "operationId": "list_currencies_api_wallet_currencies_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "fiat",
+                    "crypto"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -15906,6 +16109,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Currencies",

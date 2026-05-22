@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ProfileHeader } from "@/components/domain/ProfileHeader";
 import { ProfileStatsGrid } from "@/components/domain/ProfileStatsGrid";
 import { ProfileForumsCard } from "@/components/domain/ProfileForumsCard";
+import { ProfileFiatBalanceCard } from "@/components/domain/ProfileFiatBalanceCard";
 import { ServiceCard } from "@/components/domain/ServiceCard";
 import {
   useDeleteService,
@@ -96,6 +97,8 @@ export default function ProfilePage() {
         </div>
 
         <ProfileStatsGrid user={me} onDepositClick={() => navigate("/wallet")} />
+
+        <ProfileFiatBalanceCard user={me} />
 
         <ProfileForumsCard user={me} />
 

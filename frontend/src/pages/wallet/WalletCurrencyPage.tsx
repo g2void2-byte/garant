@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
 import { ArrowDownToLine, ArrowUpFromLine, History } from "lucide-react";
 import {
   useCreateWalletDeposit,
@@ -83,6 +83,15 @@ export default function WalletCurrencyPage() {
         <div className="px-4 text-text-muted text-sm">Валюта не поддерживается.</div>
       </Page>
     );
+  }
+
+  // Item 15 — the user-facing wallet flow no longer surfaces crypto
+  // codes; routes like ``/wallet/USDT`` deep-linked from bookmarks /
+  // old DMs should bounce back to the wallet landing page instead of
+  // rendering a crypto-only sub-page that the rest of the UI can't
+  // reach.
+  if ((currency.kind ?? "crypto") !== "fiat") {
+    return <Navigate to="/wallet" replace />;
   }
 
   return (

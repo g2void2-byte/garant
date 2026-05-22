@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import select
 
 from ..deps import CurrentUser, SessionDep
-from ..models import Forum
+from ..models import Currency, Forum
 from ..schemas import UserOut, UserUpdate
 from ..serializers import user_to_out
 
@@ -90,6 +91,33 @@ async def update_me(body: UserUpdate, user: CurrentUser, session: SessionDep):
         # the validator returned. ``None`` clears the stored country.
         user.country = body.country
         touched.append("country")
+    if body.display_currency_code is not None:
+        # Items 13/15 — the validator already normalised the string
+        # (uppercased, ASCII, ≤8 chars). Enforce the closed set of
+        # *active fiat* currencies here so a malformed wire value or
+        # a stale frontend that still ships a crypto code can't strand
+        # the user with an unrenderable preference. ``""`` already
+        # mapped to ``None`` via the schema validator, which clears the
+        # column (UI falls back to USD).
+        if body.display_currency_code == "":  # pragma: no cover - validator normalises
+            user.display_currency_code = None
+        else:
+            row = (
+                await session.execute(
+                    select(Currency).where(
+                        Currency.code == body.display_currency_code,
+                        Currency.is_active.is_(True),
+                        Currency.kind == "fiat",
+                    )
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                raise HTTPException(
+                    400,
+                    f"Валюта {body.display_currency_code} недоступна",
+                )
+            user.display_currency_code = row.code
+        touched.append("display_currency_code")
     await session.commit()
     logger.info(
         "me update: user_id=%d fields=%s",

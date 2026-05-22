@@ -97,6 +97,13 @@ class UserOut(BaseModel):
     is_anonymous_deals: bool = False
     is_hidden_profile: bool = False
     country: str | None = None
+    # Items 13/15 — fiat currency code the user picked as their
+    # "main" balance shown on the new ``ProfilePage`` fiat-balance
+    # card. ``None`` ⇒ "not picked"; the UI defaults to USD. Restricted
+    # to ``Currency.kind == 'fiat'`` rows via the PATCH ``/api/me``
+    # validator; surfaced only on ``UserOut`` (the requester's own
+    # profile) — other users have no reason to see it.
+    display_currency_code: str | None = None
 
 
 class UserPublicOut(BaseModel):
@@ -160,6 +167,13 @@ class UserUpdate(BaseModel):
     # live in ``frontend/src/lib/countries.ts`` so the backend never
     # ships an ISO list (no ``pycountry`` dep, no seed data).
     country: str | None = None
+    # Items 13/15 — fiat currency code the user picked as the "main"
+    # balance shown on the ``ProfilePage`` fiat-balance card. Empty
+    # string clears the column (renders as the USD fallback); the
+    # validator below uppercases and length-checks the value, and the
+    # PATCH ``/api/me`` handler verifies the code points at an active
+    # ``Currency`` row with ``kind == 'fiat'``.
+    display_currency_code: str | None = None
 
     @field_validator("photo_url")
     @classmethod
@@ -238,6 +252,24 @@ class UserUpdate(BaseModel):
         v = v.strip()
         if len(v) != 2 or not v.isalpha() or not v.isascii():
             raise ValueError("Код страны должен быть ISO-3166-1 alpha-2 (2 буквы)")
+        return v.upper()
+
+    @field_validator("display_currency_code")
+    @classmethod
+    def _display_currency_code_ok(cls, v: str | None) -> str | None:
+        # Shape-only validation here (the closed set of *active*
+        # currency codes is enforced by the PATCH ``/api/me`` handler
+        # against the live ``currencies`` table — keeping that check
+        # off the pydantic layer means schema validation stays a pure
+        # function, no DB round-trip). Empty string normalises to
+        # ``None`` (clears the column → UI falls back to USD).
+        if v is None or v == "":
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if len(v) > 8 or not v.isalnum() or not v.isascii():
+            raise ValueError("Код валюты должен быть до 8 ASCII-символов")
         return v.upper()
 
 
@@ -871,6 +903,15 @@ class AdminUserListItem(BaseModel):
     is_banned: bool
     is_frozen: bool
     deposit_total: MoneyDecimal
+    # Item 12 — surface the *trust* deposit balance alongside
+    # ``deposit_total`` (the admin-editable lifetime aggregate) so
+    # the admin list can disambiguate "how much trust capital this
+    # user has locked in" from "how much they have ever deposited".
+    # The two columns are independent and the new
+    # ``POST /api/admin/users/:id/trust-deposit`` endpoint writes
+    # this one; the legacy ``POST /api/admin/users/:id/stats`` keeps
+    # writing ``deposit_total``.
+    trust_deposit_balance: MoneyDecimal
     rating: MoneyDecimal
     deals_total: int
     deals_success: int
@@ -901,6 +942,12 @@ class AdminUserDetailOut(BaseModel):
     banner_url: str | None
     description: str
     deposit_total: MoneyDecimal
+    # Item 12 — the trust-deposit balance is the column the public
+    # profile reads as ``deposit`` (see
+    # ``serializers._common_user_fields``). Surfaced here so the
+    # admin panel can show both numbers side-by-side and write the
+    # right one via the new ``trust-deposit`` endpoint.
+    trust_deposit_balance: MoneyDecimal
     rating_auto: MoneyDecimal
     rating_manual: MoneyDecimal | None
     rating_effective: MoneyDecimal
@@ -1024,6 +1071,47 @@ class AdminSetStatsIn(BaseModel):
         if d is not None and d < 0:
             raise ValueError("Значение не может быть отрицательным")
         return d
+
+
+class AdminSetTrustDepositIn(BaseModel):
+    """Body for ``POST /admin/users/:id/trust-deposit``.
+
+    Sets the user's :attr:`~backend.app.models.User.trust_deposit_balance`
+    — the column rendered as ``deposit`` on the public
+    ``UserOut`` / ``UserPublicOut`` DTOs. Distinct from
+    ``AdminSetStatsIn.deposit_total`` which edits the admin-only
+    lifetime aggregate.
+
+    The value is *absolute* (the admin types the new total, not a
+    delta); negative values are rejected because the trust deposit
+    has no spend / withdraw path so a negative balance is
+    structurally impossible.
+    """
+
+    amount: Decimal
+    reason: str | None = None
+
+    @field_validator("amount")
+    @classmethod
+    def _amount_ok(cls, v: Decimal | float) -> Decimal:
+        d = _reject_non_finite_money(v)
+        if d is None:
+            raise ValueError("Сумма обязательна")
+        if d < 0:
+            raise ValueError("Значение не может быть отрицательным")
+        return d
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if len(v) > 500:
+            raise ValueError("Причина слишком длинная (≤500)")
+        return v
 
 
 class AdminAuditLogOut(BaseModel):
