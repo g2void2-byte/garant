@@ -67,9 +67,10 @@ ALLOWED_ORIGINS=http://localhost:5173,http://localhost:8080
 DATABASE_URL=postgresql+asyncpg://garant:garant@localhost:5432/garant
 RUN_BOT=0
 ALLOW_UNSIGNED_INIT_DATA=1
-ADMIN_TOTP_BYPASS=localtestbypass
 EOF
 ```
+
+Note: `ADMIN_TOTP_BYPASS` is NOT a `Settings` field — it's read directly from `os.environ` in `backend/app/auth_2fa.py`. If you `set -a; source .env; set +a` and `.env` contains `ADMIN_TOTP_BYPASS=...`, the pydantic `Settings` constructor rejects the extra and uvicorn exits with `Extra inputs are not permitted`. Export it inline instead: `ADMIN_TOTP_BYPASS=localtestbypass uvicorn ...`.
 
 #### 3. Start backend
 
@@ -176,3 +177,110 @@ localStorage.setItem('dev_init_data', 'user=%7B%22id%22%3A111%2C%22first_name%22
 ```
 
 Then refresh the page. Without this, API calls from the frontend might return 422 (missing Authorization header).
+
+## PIN setup over HTTP
+
+`/api/pin/login` does NOT exist on the router. The endpoints in `backend/app/routers/pin.py` are `/setup` (first time only, 4xx on a user that already has a PIN), `/check` (verify existing PIN — the right path for subsequent sessions), `/change`, `/reset/request`, `/reset/confirm`, `/status`. All return `{ token: "<jwt>" }` which goes in the `X-Pin-Token` header for PIN-gated endpoints. `STRONG_TEST_PIN` is `3741` (the production blacklist in `backend.app.pin.COMMON_PINS` rejects 1234/1111/0000/etc).
+
+```bash
+# first time:
+BPIN=$(curl -sS -H "Authorization: tma $BUYER" -H "Content-Type: application/json" \
+  -d '{"pin":"3741"}' http://localhost:8080/api/pin/setup \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+# subsequent sessions (user already has a PIN):
+BPIN=$(curl -sS -H "Authorization: tma $BUYER" -H "Content-Type: application/json" \
+  -d '{"pin":"3741"}' http://localhost:8080/api/pin/check \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+```
+
+## Funding a buyer's wallet for deal tests
+
+The seeded currencies are `USD`, `UAH`, `RUB` (no `USDT` unless you migrate). Either pick one of the three for the test deal, or `INSERT INTO currencies`. Cheapest path to give the buyer spendable balance is direct SQL — mirrors `services_wallet.get_or_create_balance` — because the production deposit flow requires a CryptoBot callback:
+
+```bash
+docker exec garant-pg psql -U garant -d garant -c \
+  "INSERT INTO user_balances (user_id, currency_id, amount, locked) \
+   VALUES (1, 1, 100, 0) \
+   ON CONFLICT (user_id, currency_id) DO UPDATE SET amount=100;"
+```
+
+## Creating a deal via the API
+
+`POST /api/deals` schema is `DealCreate` in `backend/app/schemas.py` — the field is `counterparty` (not `counterparty_username`), `description` (not `conditions`), and `role` is `Literal["buyer"]` (the caller is always the buyer; the seller can't open a deal). Common 422 hits when porting from older docs:
+
+```bash
+curl -sS -X POST -H "Authorization: tma $BUYER" -H "X-Pin-Token: $BPIN" \
+  -H "Content-Type: application/json" \
+  -d '{"counterparty":"testseller","amount":10,"currency_code":"USD",
+       "description":"e2e","role":"buyer","pay_commission":"buyer"}' \
+  http://localhost:8080/api/deals
+```
+
+## Testing real-time / WebSocket-driven UI updates (item 22 pattern)
+
+When the thing under test is a *passive* UI flip (the other party's tab updates without a reload), the cleanest setup is **one visible window as the OBSERVER + `curl` as the ACTOR**. This:
+
+- removes the client-side mutation as a confound — the only thing that can flip the visible page is the backend's WS frame,
+- avoids juggling two Chrome windows on a 1024×768 desktop,
+- works even when Chrome's CDP endpoint can't see the incognito context.
+
+### Recipe
+
+1. **Boot backend + frontend** (Option A or B above). Note the Chrome devtools endpoint at `http://localhost:29229` — Playwright connects there over CDP.
+2. **Seed both users** via `/api/me` + `/api/pin/setup` (or `/check`) and cache the PIN tokens to `/tmp/bpin` and `/tmp/spin`.
+3. **Create the deal via curl** and stash the id. Drive it to the precondition state (e.g. seller `/accept` so it's `in_progress`) via curl too. This is *setup* — don't record it.
+4. **Put the visible Chrome window into the OBSERVER role** by swapping `localStorage.dev_init_data` and clearing `garant.pin_token`/`garant.pin_token_expires` via Playwright-over-CDP:
+
+   ```js
+   // setObserver.mjs
+   import { chromium } from "playwright";
+   const browser = await chromium.connectOverCDP("http://localhost:29229");
+   const page = browser.contexts()[0].pages()
+     .find(p => p.url().startsWith("http://localhost:5173"));
+   await page.evaluate((init) => {
+     localStorage.setItem("dev_init_data", init);
+     localStorage.removeItem("garant.pin_token");
+     localStorage.removeItem("garant.pin_token_expires");
+   }, OBSERVER_INIT);
+   await page.goto("http://localhost:5173/deals/<id>");
+   process.exit(0);  // do NOT call browser.close() — it sometimes hangs the
+                     // attached CDP session forever.
+   ```
+
+   Then enter the PIN through the GUI (the page-load triggers a re-PIN prompt because we just cleared the token). The OBSERVER window is now sitting on `/deals/<id>` and rendering the precondition state.
+
+5. **Start the recording** and annotate `setup`.
+6. **Fire the ACTOR's mutation via curl** while the OBSERVER window stays visible. Take a screenshot immediately after. The WS round-trip is sub-second; the page-age counter at the bottom of `DealDetailPage` keeps running across the flip — that's the no-reload proof.
+
+### Adversarial framing
+
+The item-22 fix introduced a 10-second `useDeal` `refetchInterval` for non-terminal statuses. Any assertion you write should ideally fire under ≈3 s of the ACTOR's curl so a passing test rules out the poll path and proves the WS path. If your screenshot lands at 4–9 s post-curl, the poll could be what flipped it — redo with a tighter window.
+
+### Why not two Chrome windows side-by-side
+
+Two Chrome windows works in principle (normal + incognito = separate `localStorage` namespaces) but:
+
+- Chrome's remote-debugging endpoint at port 29229 does NOT expose incognito contexts — `browser.contexts()` over CDP returns only the regular one. So you can't drive the incognito window through Playwright; you'd have to fall back to the GUI for it.
+- A `browser.newContext()` call over CDP creates a non-visible context (headless within the attached browser). That's fine for backend-style scripting but invisible to your screen recording.
+- On a 1024×768 desktop, two side-by-side windows are cramped and the recording is hard to read.
+
+If you genuinely need both perspectives visible at once (e.g. concurrent typing in two chat windows), use one window for one side and a second `playwright.launch()` browser (NOT CDP-attached) for the other — but for *any* test where only one side is the passive observer, the single-window pattern above is strictly simpler and just as decisive.
+
+## Status labels used in assertions
+
+`frontend/src/pages/deals/DealDetailPage.tsx` is the source of truth for the human-readable status badge:
+
+| backend status | UI text | CSS class |
+| --- | --- | --- |
+| `pending_confirmation` | Ожидает подтверждения | text-accent |
+| `pending_payment` | Ожидает оплаты | text-accent |
+| `in_progress` | В работе | text-success |
+| `pending_cancellation` | Запрошена отмена | text-accent |
+| `arbitration` | В арбитраже | text-accent |
+| `completed` | Завершена | text-success |
+| `cancelled` | Отменена | text-danger |
+| `cancelled_for_inactivity` | Отменена за неактивность | text-danger |
+| `resolved_for_buyer` | Решено в пользу покупателя | text-success |
+| `resolved_for_seller` | Решено в пользу продавца | text-success |
+
+`in_progress` and `completed` share `text-success`, so a colour-only assertion is insufficient between them — always assert on the visible text.
