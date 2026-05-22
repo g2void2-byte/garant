@@ -254,11 +254,31 @@ export function useDeals(params: { role?: string; status?: string } = {}) {
   });
 }
 
+// Item 22 — once a deal lands in one of these statuses no further
+// server-side state change is possible, so we stop the polling fallback
+// to keep idle TMA sessions quiet.
+const TERMINAL_DEAL_STATUSES = new Set([
+  "completed",
+  "cancelled",
+  "cancelled_for_inactivity",
+  "resolved_for_buyer",
+  "resolved_for_seller",
+]);
+
 export function useDeal(id: number | undefined) {
   return useQuery<DealDto>({
     queryKey: qk.deal.detail(id),
     queryFn: () => api.get(`api/deals/${id}`).json(),
     enabled: !!id,
+    // Item 22 — fallback poll for active deals so the UI eventually
+    // catches a missed ``deal.updated`` WS frame (Telegram WebView
+    // suspended, transient socket close, etc.). Terminal deals stop
+    // polling so closed sessions don't generate background traffic.
+    refetchInterval: (query) => {
+      const data = query.state.data as DealDto | undefined;
+      if (!data) return false;
+      return TERMINAL_DEAL_STATUSES.has(data.status) ? false : 10_000;
+    },
   });
 }
 

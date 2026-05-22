@@ -120,7 +120,16 @@ export function connectNotifications(handlers: WsHandlers): () => void {
         handlers.onEvent(parsed);
       }
     });
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (ev) => {
+      // Item 22 — dev-only diagnostics for the "real-time stopped
+      // updating" class of reports. Production builds stay silent so
+      // we don't leak noise into Telegram's WebView console.
+      if (import.meta.env.DEV) {
+        console.warn(
+          "[ws] notifications socket closed",
+          { code: ev.code, reason: ev.reason, wasClean: ev.wasClean },
+        );
+      }
       handlers.onClose?.();
       scheduleReconnect();
     });

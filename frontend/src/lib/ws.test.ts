@@ -16,10 +16,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  *      stops the reconnect loop.
  */
 
+interface FakeCloseEvent {
+  code: number;
+  reason: string;
+  wasClean: boolean;
+}
+
 interface FakeSocketHandlers {
   open?: () => void;
   message?: (msg: { data: string }) => void;
-  close?: () => void;
+  close?: (ev: FakeCloseEvent) => void;
   error?: () => void;
 }
 
@@ -49,7 +55,7 @@ class FakeSocket {
   close() {
     if (this.closed) return;
     this.closed = true;
-    this.handlers.close?.();
+    this.handlers.close?.({ code: 1000, reason: "", wasClean: true });
   }
 
   // Test helpers — drive the socket lifecycle from outside.
