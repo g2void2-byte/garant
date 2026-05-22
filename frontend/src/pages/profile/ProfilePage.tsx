@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import {
+  ArrowUpFromLine,
   Pause,
   Play,
   Plus,
@@ -65,6 +66,17 @@ export default function ProfilePage() {
           <Button variant="primary" onClick={() => navigate("/wallet")}>
             <Wallet className="size-4" /> Депозит
           </Button>
+          {/* Item 23 — surface the withdraw flow next to deposit so
+              the user has a direct entry point from the profile.
+              Pre-fix the only "Вывести" button lived on the (deeply
+              nested) ``ProfileFiatBalanceCard``, and users complained
+              they couldn't find a withdraw action at all. */}
+          <Button
+            variant="secondary"
+            onClick={() => navigate("/wallet/withdraw")}
+          >
+            <ArrowUpFromLine className="size-4" /> Вывести
+          </Button>
           <Button
             variant="secondary"
             onClick={() => navigate("/profile/settings")}
@@ -74,6 +86,7 @@ export default function ProfilePage() {
           <Button
             variant="secondary"
             onClick={() => navigate("/profile/add-forum")}
+            className="col-span-2"
           >
             <Link2 className="size-4" /> Добавить форумы
           </Button>

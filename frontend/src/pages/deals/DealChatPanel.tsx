@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Paperclip, Send, X } from "lucide-react";
+import { ImageOff, Paperclip, Send, X } from "lucide-react";
 import {
   DEAL_MESSAGE_PAGE_SIZE,
   useDealMessages,
@@ -236,6 +236,50 @@ export function DealChatPanel({ dealId }: DealChatPanelProps) {
   );
 }
 
+// Item 20 — robust image preview. Pre-fix a 404 / CORS / expired URL
+// rendered a blank box with the filename leaking through as alt-text
+// (see user screenshot). ``ChatAttachmentImage`` swaps in a clear
+// "битый файл" placeholder via ``onError`` so the user understands
+// the preview failed and can still tap the file link.
+function ChatAttachmentImage({
+  src,
+  name,
+  className,
+}: {
+  src: string;
+  name: string;
+  className: string;
+}) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => {
+    setBroken(false);
+  }, [src]);
+  if (broken) {
+    return (
+      <div
+        className={cn(
+          className,
+          "flex flex-col items-center justify-center gap-1 bg-panel-2 text-text-muted text-[10px] text-center px-1",
+        )}
+        role="img"
+        aria-label={`${name} (превью недоступно)`}
+      >
+        <ImageOff className="size-4" />
+        <span className="truncate w-full">{name}</span>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={name}
+      className={className}
+      loading="lazy"
+      onError={() => setBroken(true)}
+    />
+  );
+}
+
 function MessageBubble({
   msg,
   isMine,
@@ -269,11 +313,10 @@ function MessageBubble({
                 rel="noreferrer"
                 className="block overflow-hidden rounded-md bg-panel"
               >
-                <img
+                <ChatAttachmentImage
                   src={m.url}
-                  alt={m.name}
+                  name={m.name}
                   className="w-full h-24 object-cover"
-                  loading="lazy"
                 />
               </a>
             ))}
@@ -296,9 +339,9 @@ function AttachmentChip({
 }) {
   return (
     <div className="relative">
-      <img
+      <ChatAttachmentImage
         src={media.url}
-        alt={media.name}
+        name={media.name}
         className="size-16 object-cover rounded-md border border-border"
       />
       <button

@@ -37,6 +37,27 @@ const TOTP_NOT_CONFIGURED_DETAIL = "2FA не настроен — пройдит
 export const TOTP_REQUIRED_EVENT = "garant:totp-required";
 export const TOTP_NOT_CONFIGURED_EVENT = "garant:totp-not-configured";
 
+// Item 24 — global lockout event. The backend now responds with a
+// structured 403 payload (``code = "banned" | "frozen"``) for any
+// authenticated endpoint when the user's account is locked. The TMA
+// listens for this on the root ``App`` shell and replaces the whole
+// app with the dedicated ``BannedPage`` so the user can't keep
+// hitting (and being rejected by) downstream endpoints.
+export const LOCKOUT_EVENT = "garant:lockout";
+
+export interface LockoutDetail {
+  code: "banned" | "frozen";
+  message: string;
+  reason: string | null;
+  admin_username: string | null;
+}
+
+function isLockoutDetail(value: unknown): value is LockoutDetail {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return v.code === "banned" || v.code === "frozen";
+}
+
 export interface TotpRequiredDetail {
   /** Server-supplied detail string we used to flip into the gate. */
   detail: string;
@@ -141,6 +162,20 @@ export const api = ky.create({
             window.dispatchEvent(new Event(TOTP_NOT_CONFIGURED_EVENT));
           } catch {
             /* noop */
+          }
+        }
+        // Item 24 — fan out a lockout event so the root app can swap
+        // to the dedicated ban gate. We dispatch regardless of which
+        // endpoint tripped the 403; the gate listens once and the
+        // event is idempotent.
+        if (err.response.status === 403 && isLockoutDetail(detail)) {
+          try {
+            const evt = new CustomEvent<LockoutDetail>(LOCKOUT_EVENT, {
+              detail,
+            });
+            window.dispatchEvent(evt);
+          } catch {
+            /* DOM unavailable */
           }
         }
         return err;

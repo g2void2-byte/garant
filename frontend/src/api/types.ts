@@ -118,6 +118,9 @@ export interface DealDto {
   id: number;
   buyer: string;
   seller: string;
+  // Item 21 — counterparty avatar URLs surfaced for deal list + detail.
+  buyer_photo_url?: string | null;
+  seller_photo_url?: string | null;
   description: string;
   pay_comission: string;
   pay_commission?: string;

@@ -8,6 +8,7 @@ import {
   useLocation,
   useParams,
 } from "react-router-dom";
+import { BannedGate } from "@/components/BannedGate";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { MaintenanceBanner } from "@/components/MaintenanceBanner";
 import { MinimizeButton } from "@/components/MinimizeButton";
@@ -159,6 +160,7 @@ export function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
+          <BannedGate>
           <PinGate>
             <TelegramAvatarSync />
             <MaintenanceBanner />
@@ -245,6 +247,7 @@ export function App() {
               </div>
             </BrowserRouter>
           </PinGate>
+          </BannedGate>
         </ToastProvider>
       </QueryClientProvider>
     </ErrorBoundary>

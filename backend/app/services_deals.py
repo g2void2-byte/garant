@@ -117,6 +117,29 @@ def _commission(amount: Decimal, percent: Decimal | float, decimals: int) -> Dec
 # ── Balance helpers ────────────────────────────────────
 
 
+class InsufficientFundsError(ValueError):
+    """Item 18 — buyer's balance < required deal lock.
+
+    Carries the numbers the frontend needs to render a precise
+    "не хватает X" hint (required, balance, deficit, currency code).
+    The base ``ValueError`` message stays "Недостаточно средств" so
+    existing log lines / tests asserting on it keep working.
+    """
+
+    def __init__(
+        self,
+        *,
+        required: Decimal,
+        balance: Decimal,
+        currency_code: str | None,
+    ) -> None:
+        super().__init__("Недостаточно средств")
+        self.required = required
+        self.balance = balance
+        self.deficit = required - balance
+        self.currency_code = currency_code
+
+
 async def _debit(
     session: AsyncSession, user_id: int, currency_id: int, amount: Decimal
 ) -> UserBalance:
@@ -125,7 +148,12 @@ async def _debit(
     bal = await lock_user_balance(session, user_id, currency_id)
     current = Decimal(str(bal.amount))
     if current < amount:
-        raise ValueError("Недостаточно средств")
+        currency = await session.get(Currency, currency_id)
+        raise InsufficientFundsError(
+            required=amount,
+            balance=current,
+            currency_code=currency.code if currency is not None else None,
+        )
     # Persist as Decimal so SQLAlchemy's ``Numeric(28,8)`` keeps the
     # full 8-fractional-digit precision. Round-tripping through
     # ``float()`` here was the M5 finding — for crypto amounts at the

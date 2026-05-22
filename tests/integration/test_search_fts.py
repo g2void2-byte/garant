@@ -312,3 +312,27 @@ async def test_users_search_empty_keeps_deals_total_ordering(client):
     usernames = [row["username"] for row in resp.json()]
     # Busy first (deals_total=99), then quiet (deals_total=2).
     assert usernames[:2] == ["busy", "quiet"]
+
+
+@pytest.mark.asyncio
+async def test_users_search_punct_only_query_returns_empty(client):
+    """Item 19 — a non-empty query that sanitises to zero tokens (e.g.
+    pure punctuation like ``"``) must return an empty list, not the
+    global top-by-deals ranking.
+    """
+    async with async_session() as session:
+        a = User(tg_user_id=3201, username="popular", display_name="Pop", deals_total=999)
+        b = User(tg_user_id=3202, username="alsopop", display_name="Pop2", deals_total=500)
+        session.add_all([a, b])
+        await session.commit()
+
+    init = signed_init_data(3999, "searcher")
+    # A whitespace-only ``q`` sanitises to the empty string and falls
+    # through to the global top-by-deals listing (the user is browsing,
+    # not searching). The buggy pre-fix shape was the **punctuation-
+    # only** branch — a non-empty ``q`` that ``build_prefix_tsquery``
+    # returned ``None`` for. Those must now return ``[]``.
+    for bad_q in ('"', "!!!", "?!.,", "(())"):
+        resp = await client.get("/api/users", params={"q": bad_q}, headers=auth_headers(init))
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == [], f"q={bad_q!r} should return []"

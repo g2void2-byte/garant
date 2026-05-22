@@ -13,6 +13,33 @@ import { UserPicker } from "@/components/domain/UserPicker";
 import { useCreateDeal, useCurrencies } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
 
+// Item 18 — backend can return a structured ``insufficient_funds``
+// payload on the create-deal 400. The ky ``beforeError`` hook
+// JSON-stringifies that payload into ``err.message`` so we re-parse
+// it here to render an inline "не хватает X" hint.
+interface InsufficientFundsDetail {
+  code: "insufficient_funds";
+  message: string;
+  required: string;
+  balance: string;
+  deficit: string;
+  currency_code: string | null;
+}
+
+function parseInsufficientFunds(err: unknown): InsufficientFundsDetail | null {
+  const raw = (err as Error | undefined)?.message;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<InsufficientFundsDetail>;
+    if (parsed && parsed.code === "insufficient_funds") {
+      return parsed as InsufficientFundsDetail;
+    }
+  } catch {
+    /* not JSON — fall through to generic error path */
+  }
+  return null;
+}
+
 export default function CreateDealPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -37,6 +64,7 @@ export default function CreateDealPage() {
     "cryptobot" | "crystalpay"
   >("cryptobot");
   const [pinOpen, setPinOpen] = useState(false);
+  const [insufficient, setInsufficient] = useState<InsufficientFundsDetail | null>(null);
 
   // Per the deposit-flow plan, deals are funded from the buyer's
   // fiat balance — the dropdown therefore surfaces only fiat
@@ -64,6 +92,7 @@ export default function CreateDealPage() {
 
   async function submitDeal() {
     const amount = parseFloat(sum);
+    setInsufficient(null);
     try {
       const deal = await create.mutateAsync({
         counterparty,
@@ -78,6 +107,15 @@ export default function CreateDealPage() {
       navigate(`/deals/${deal.id}`);
     } catch (e: unknown) {
       haptic("error");
+      const lowFunds = parseInsufficientFunds(e);
+      if (lowFunds) {
+        setInsufficient(lowFunds);
+        toast.show({
+          kind: "error",
+          title: `Не хватает ${lowFunds.deficit} ${lowFunds.currency_code ?? ""}`.trim(),
+        });
+        return;
+      }
       toast.show({
         kind: "error",
         title: (e as Error)?.message || "Не удалось создать сделку",
@@ -117,8 +155,37 @@ export default function CreateDealPage() {
           min={0.01}
           step={0.01}
           value={sum}
-          onChange={(e) => setSum(e.target.value)}
+          onChange={(e) => {
+            setSum(e.target.value);
+            if (insufficient) setInsufficient(null);
+          }}
         />
+        {/* Item 18 — make it explicit that the buyer-pays-commission
+            mode locks more than the deal amount. Pre-fix the toggle
+            label was the only hint and users hit "Недостаточно средств"
+            with a balance exactly equal to the typed amount. */}
+        {comissionFrom === "buyer" && (
+          <div className="rounded-card border border-border bg-panel-2 px-3 py-2 text-[12px] text-text-muted leading-snug">
+            Покупатель платит сумму + комиссию платформы (~5%, для VIP ниже).
+            Убедитесь, что на балансе хватает на сумму вместе с комиссией.
+          </div>
+        )}
+        {insufficient && (
+          <div
+            role="alert"
+            className="rounded-card border border-danger/50 bg-danger/10 px-3 py-2 text-[12px] text-danger leading-snug"
+          >
+            <div className="font-semibold mb-0.5">Недостаточно средств</div>
+            <div>
+              Нужно: {insufficient.required} {insufficient.currency_code ?? ""}.
+              На балансе: {insufficient.balance} {insufficient.currency_code ?? ""}.
+              Не хватает {insufficient.deficit} {insufficient.currency_code ?? ""}.
+            </div>
+            <div className="mt-1">
+              Уменьшите сумму или переключите комиссию на продавца.
+            </div>
+          </div>
+        )}
         <Textarea
           label="Описание сделки"
           placeholder="Что покупаете/продаёте, условия"

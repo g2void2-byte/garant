@@ -59,7 +59,15 @@ async def test_banned_user_blocked_on_authenticated_endpoint(client):
 
     resp = await client.get("/api/me", headers=auth_headers(init))
     assert resp.status_code == 403, resp.text
-    assert "заблокирован" in resp.json().get("detail", "")
+    # Item 24 — the 403 now carries a structured payload so the
+    # frontend can route to the dedicated ban gate.
+    detail = resp.json()["detail"]
+    assert detail["code"] == "banned"
+    assert "заблокирован" in detail["message"]
+    assert detail["reason"] == "test"
+    # ``admin_username`` falls through when no admin has a username yet
+    # (test environment has none) — just assert the key is present.
+    assert "admin_username" in detail
 
 
 async def test_frozen_user_blocked_on_authenticated_endpoint(client):
@@ -75,7 +83,10 @@ async def test_frozen_user_blocked_on_authenticated_endpoint(client):
 
     resp = await client.get("/api/me", headers=auth_headers(init))
     assert resp.status_code == 403, resp.text
-    assert "заморожен" in resp.json().get("detail", "")
+    detail = resp.json()["detail"]
+    assert detail["code"] == "frozen"
+    assert "заморожен" in detail["message"]
+    assert detail["reason"] == "test"
 
 
 async def test_banned_user_cannot_write(client):
@@ -173,7 +184,7 @@ async def test_banned_user_request_does_not_touch_user_row(client):
     # bump any of the debounced columns.
     resp = await client.get("/api/me", headers=auth_headers(init))
     assert resp.status_code == 403, resp.text
-    assert "заблокирован" in resp.json().get("detail", "")
+    assert "заблокирован" in resp.json()["detail"]["message"]
 
     async with async_session() as session:
         user = (await session.execute(select(User).where(User.tg_user_id == 5101))).scalar_one()
@@ -190,6 +201,38 @@ async def test_banned_user_request_does_not_touch_user_row(client):
         assert user.username == poison_username, (
             "banned request synced username from initData — Comment 50 regression"
         )
+
+
+async def test_banned_user_403_includes_admin_username(client):
+    """Item 24 — the 403 payload exposes the first admin's username so
+    the frontend gate can deep-link "Связаться с админом" to
+    ``https://t.me/<admin>``.
+    """
+    init = signed_init_data(5201, "ban_admin_target")
+    await _bootstrap_user(client, 5201, "ban_admin_target")
+
+    # Promote a second user to admin so the gate has somewhere to send
+    # the appeal. The choice is deterministic (lowest-id admin with a
+    # non-NULL username), so the only admin in the test environment
+    # gets picked.
+    init_admin = signed_init_data(5202, "appeal_admin")
+    await _bootstrap_user(client, 5202, "appeal_admin")
+    async with async_session() as session:
+        admin_user = (
+            await session.execute(select(User).where(User.tg_user_id == 5202))
+        ).scalar_one()
+        admin_user.is_admin = True
+        await session.commit()
+    # Reference ``init_admin`` so static analysis sees it as used —
+    # the row was set up via /api/me bootstrap, not via this token.
+    _ = init_admin
+
+    await _set_user_flag(5201, banned=True)
+
+    resp = await client.get("/api/me", headers=auth_headers(init))
+    assert resp.status_code == 403
+    detail = resp.json()["detail"]
+    assert detail["admin_username"] == "appeal_admin"
 
 
 async def test_frozen_user_request_does_not_touch_user_row(client):
@@ -217,7 +260,7 @@ async def test_frozen_user_request_does_not_touch_user_row(client):
 
     resp = await client.get("/api/me", headers=auth_headers(init))
     assert resp.status_code == 403, resp.text
-    assert "заморожен" in resp.json().get("detail", "")
+    assert "заморожен" in resp.json()["detail"]["message"]
 
     async with async_session() as session:
         user = (await session.execute(select(User).where(User.tg_user_id == 5102))).scalar_one()
