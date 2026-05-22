@@ -48,12 +48,24 @@ function Stat({ icon, label, value, onClick, accent }: StatProps) {
 }
 
 export function ProfileStatsGrid({ user, onDepositClick }: { user: UserCardDto; onDepositClick?: () => void }) {
+  // ``user.rating`` is whatever the serializer picked (manual override
+  // if the admin set one, otherwise the auto-computed value). We want
+  // a manually-set rating to surface even when ``reviews_count`` is
+  // still 0, so the gate is "we have *something* to show" rather than
+  // "we have reviews". The ``(N)`` suffix stays gated on review count.
+  const ratingValue = Number(user.rating) || 0;
+  const hasRating = ratingValue > 0 || user.reviews_count > 0;
+  const ratingLabel = hasRating
+    ? user.reviews_count > 0
+      ? `${ratingValue.toFixed(1)} (${user.reviews_count})`
+      : ratingValue.toFixed(1)
+    : "—";
   return (
     <div className="grid grid-cols-2 gap-2">
       <Stat
         icon={<Star className="size-5" />}
         label="Рейтинг"
-        value={user.reviews_count ? `${user.rating.toFixed(1)} (${user.reviews_count})` : "—"}
+        value={ratingLabel}
         accent
       />
       <Stat

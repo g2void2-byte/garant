@@ -5,9 +5,14 @@ import { Avatar } from "@/components/ui/Avatar";
 import { countryFromCode } from "@/lib/countries";
 import { getTelegramUser } from "@/lib/tg";
 
-const ROLE_LABEL: Record<string, string> = {
+// Keep keys in lockstep with ``UserCardDto.prefix`` on the backend
+// (``backend/app/serializers._common_user_fields``). The ``vip`` entry
+// used to be missing here, which is why a user with ``is_vip=true``
+// got an empty pill instead of the badge.
+const ROLE_LABEL: Record<NonNullable<UserCardDto["prefix"]>, string> = {
   admin: "Админ",
   arbiter: "Арбитр",
+  vip: "VIP",
 };
 
 export function ProfileHeader({ user }: { user: UserCardDto }) {
