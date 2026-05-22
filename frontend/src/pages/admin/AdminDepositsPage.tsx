@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowDownToLine, RefreshCcw, Check } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
@@ -40,7 +40,7 @@ export default function AdminDepositsPage() {
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>
-      <Header
+      <AdminHeader
         title="Депозиты"
         subtitle={data ? `${data.total} всего` : undefined}
       />

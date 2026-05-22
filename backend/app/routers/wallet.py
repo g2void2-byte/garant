@@ -47,6 +47,7 @@ def _currency_dto(c: Currency) -> CurrencyOut:
         decimals=c.decimals,
         min_deposit=c.min_deposit,
         min_withdraw=c.min_withdraw,
+        kind=c.kind or "crypto",
     )
 
 

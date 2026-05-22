@@ -477,6 +477,11 @@ class DealCreate(BaseModel):
     # H-2: deprecated alias for backward-compatible JSON input.
     pay_comission: PayCommission | None = Field(default=None, exclude=True)
     currency_code: str = "USDT"
+    # Buyer's preferred upstream invoice provider; persisted on the
+    # :class:`backend.app.models.Deal` row for future invoice-driven
+    # escrow flows. ``"cryptobot"`` keeps legacy clients (no
+    # ``payment_provider`` on the wire) backwards-compatible.
+    payment_provider: Literal["cryptobot", "crystalpay"] = "cryptobot"
 
     @model_validator(mode="before")
     @classmethod
@@ -567,6 +572,10 @@ class DealOut(BaseModel):
     arbitration_resolved_by: str | None = None
     arbitration_resolution: str | None = None
     arbitration_resolved_at: datetime | None = None
+    # Persisted upstream invoice provider chosen by the buyer at
+    # deal-create time. Surfaced on the wire so the deal detail page
+    # can render the right provider badge without an extra lookup.
+    payment_provider: str = "cryptobot"
 
 
 # ── Reviews ────────────────────────────────────────────
@@ -698,6 +707,11 @@ class CurrencyOut(BaseModel):
     decimals: int
     min_deposit: MoneyDecimal
     min_withdraw: MoneyDecimal
+    # ``"crypto"`` (default) or ``"fiat"``. The deposit page uses
+    # this to filter the dropdown so the user only sees fiat
+    # options; the wallet page can independently decide which
+    # balances to render.
+    kind: str = "crypto"
 
 
 class WalletBalanceOut(BaseModel):
@@ -1859,6 +1873,10 @@ class AdminCurrencyOut(BaseModel):
     # Echoed back here so the admin UI can round-trip the value through
     # the upsert endpoint without losing it.
     address_regex: str = ""
+    # Mirrors :attr:`backend.app.models.Currency.kind` — ``"crypto"``
+    # (default) or ``"fiat"`` — so the admin currency editor can
+    # surface the kind alongside the rest of the row.
+    kind: str = "crypto"
 
 
 class AdminCurrencyUpsertIn(BaseModel):
@@ -1887,6 +1905,10 @@ class AdminCurrencyUpsertIn(BaseModel):
     # value is compiled below to reject malformed patterns at the API
     # boundary instead of crashing at withdrawal time.
     address_regex: str | None = None
+    # ``"crypto"`` (default) or ``"fiat"``. Admin-editable so a
+    # newly-added asset can be classified without an out-of-band
+    # SQL update.
+    kind: Literal["crypto", "fiat"] | None = None
 
     @field_validator("code")
     @classmethod

@@ -58,13 +58,14 @@ describe("<WalletPage />", () => {
       {
         currency: {
           id: 1,
-          code: "USDT",
-          name: "Tether",
-          network: "TRC20",
+          code: "USD",
+          name: "US Dollar",
+          network: "",
           icon_url: "",
           decimals: 2,
           min_deposit: 1,
           min_withdraw: 1,
+          kind: "fiat",
         },
         amount: 123.456,
         locked: 0,
@@ -73,12 +74,55 @@ describe("<WalletPage />", () => {
       },
     ];
     renderPage();
-    expect(screen.getByText("Tether")).toBeInTheDocument();
-    expect(screen.getByText("TRC20")).toBeInTheDocument();
-    expect(screen.getByText(/123\.46 USDT/)).toBeInTheDocument();
+    expect(screen.getByText("US Dollar")).toBeInTheDocument();
+    expect(screen.getByText(/123\.46 USD/)).toBeInTheDocument();
   });
 
   it("wraps each balance row in a Link to /wallet/<code>", () => {
+    mockState.data = [
+      {
+        currency: {
+          id: 1,
+          code: "USD",
+          name: "US Dollar",
+          network: "",
+          icon_url: "",
+          decimals: 2,
+          min_deposit: 1,
+          min_withdraw: 1,
+          kind: "fiat",
+        },
+        amount: 1,
+        locked: 0,
+        total: 1,
+        updated_at: null,
+      },
+      {
+        currency: {
+          id: 2,
+          code: "UAH",
+          name: "Українська гривня",
+          network: "",
+          icon_url: "",
+          decimals: 2,
+          min_deposit: 50,
+          min_withdraw: 50,
+          kind: "fiat",
+        },
+        amount: 2,
+        locked: 0,
+        total: 2,
+        updated_at: null,
+      },
+    ];
+    renderPage();
+    const usd = screen.getByRole("link", { name: /US Dollar/ });
+    expect(usd).toHaveAttribute("href", "/wallet/USD");
+    const uah = screen.getByRole("link", { name: /гривня/ });
+    expect(uah).toHaveAttribute("href", "/wallet/UAH");
+  });
+
+  it("hides crypto balance rows from the wallet list", () => {
     mockState.data = [
       {
         currency: {
@@ -90,34 +134,19 @@ describe("<WalletPage />", () => {
           decimals: 2,
           min_deposit: 1,
           min_withdraw: 1,
+          kind: "crypto",
         },
-        amount: 1,
+        amount: 5,
         locked: 0,
-        total: 1,
-        updated_at: null,
-      },
-      {
-        currency: {
-          id: 2,
-          code: "TON",
-          name: "Toncoin",
-          network: "TON",
-          icon_url: "",
-          decimals: 9,
-          min_deposit: 1,
-          min_withdraw: 1,
-        },
-        amount: 2,
-        locked: 0,
-        total: 2,
+        total: 5,
         updated_at: null,
       },
     ];
     renderPage();
-    const usdt = screen.getByRole("link", { name: /Tether/ });
-    expect(usdt).toHaveAttribute("href", "/wallet/USDT");
-    const ton = screen.getByRole("link", { name: /Toncoin/ });
-    expect(ton).toHaveAttribute("href", "/wallet/TON");
+    // Crypto balance must be filtered out; the empty-state copy is
+    // rendered instead because no fiat rows remain.
+    expect(screen.queryByText("Tether")).not.toBeInTheDocument();
+    expect(screen.getByText("Пока пусто")).toBeInTheDocument();
   });
 
   it('renders the "locked" hint when balance has reserves', () => {
@@ -125,13 +154,14 @@ describe("<WalletPage />", () => {
       {
         currency: {
           id: 2,
-          code: "BTC",
-          name: "Bitcoin",
-          network: "BTC",
+          code: "USD",
+          name: "US Dollar",
+          network: "",
           icon_url: "",
-          decimals: 8,
-          min_deposit: 0.001,
-          min_withdraw: 0.001,
+          decimals: 2,
+          min_deposit: 1,
+          min_withdraw: 1,
+          kind: "fiat",
         },
         amount: 0.5,
         locked: 0.1,

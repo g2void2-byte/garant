@@ -50,15 +50,29 @@ export default function WalletPage() {
             ))}
           </>
         )}
-        {!isLoading && !data?.length && (
-          <EmptyState
-            icon={<WalletIcon className="size-8" />}
-            title="Пока пусто"
-            description="Валюты появятся, как только администратор их добавит"
-          />
-        )}
-        {!isLoading &&
-          data?.map((b) => <WalletBalanceRow key={b.currency.id} balance={b} />)}
+        {(() => {
+          // Per the deposit-flow plan the wallet surfaces only the
+          // fiat balances (UAH/RUB/USD) — crypto rows stay in the
+          // ledger but are hidden from the user-facing list. ``kind``
+          // is optional on the wire for backwards-compatibility, so
+          // we default missing values to ``"crypto"`` (which gets
+          // filtered out).
+          const fiatBalances =
+            data?.filter((b) => (b.currency.kind ?? "crypto") === "fiat") ?? [];
+          if (isLoading) return null;
+          if (fiatBalances.length === 0) {
+            return (
+              <EmptyState
+                icon={<WalletIcon className="size-8" />}
+                title="Пока пусто"
+                description="Пополните баланс через выбранную валюту, чтобы начать"
+              />
+            );
+          }
+          return fiatBalances.map((b) => (
+            <WalletBalanceRow key={b.currency.id} balance={b} />
+          ));
+        })()}
 
         <div className="grid grid-cols-2 gap-2 pt-2">
           <button

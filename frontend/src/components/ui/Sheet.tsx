@@ -29,7 +29,12 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
     <>
       <div
         className={cn(
-          "fixed inset-0 z-50 bg-black/70 backdrop-blur-sm transition-opacity duration-300",
+          // V13 — heavier blur ``backdrop-blur-md`` + a slightly
+          // lighter overlay ``bg-black/60`` reads better behind a
+          // sheet that often dominates the screen on iOS Safari /
+          // Telegram WebView.
+          "fixed inset-0 z-50 bg-black/60 backdrop-blur-md",
+          "transition-opacity duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
           visible ? "opacity-100" : "opacity-0",
         )}
         onClick={onClose}
@@ -38,14 +43,16 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
         ref={drag.elRef}
         className={cn(
           "fixed z-50 left-0 right-0 bottom-0 flex flex-col",
-          // ``min-h-[60dvh]`` so a short form (e.g. "edit category"
-          // with a single text input) doesn't render as a sliver at
-          // the bottom edge of the viewport — the user complaint was
-          // "окно рассылки оно обрезано" / "вспывающее окно спавнится
-          // в самом низу". With a floor we always claim enough
-          // vertical space to be obviously the active surface.
-          "min-h-[60dvh] max-h-[92dvh] bg-panel border-t border-border rounded-t-3xl",
-          "transition-transform duration-300",
+          // V13 — bump the floor to ``min-h-[80dvh]`` so longer
+          // bottom-sheet forms (filter sheet, broadcast editor) no
+          // longer require an obvious scroll on first paint. The
+          // ceiling stays at ``max-h-[92dvh]`` so a small slice of
+          // the page peeks above the sheet, signalling that the
+          // backdrop is still tappable to dismiss.
+          "min-h-[80dvh] max-h-[92dvh] bg-panel border-t border-border rounded-t-3xl",
+          // V13 — spring-like easing matches the Continental
+          // Telegram aesthetic better than the default ease-in-out.
+          "transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
           visible ? "translate-y-0" : "translate-y-full",
           className,
         )}

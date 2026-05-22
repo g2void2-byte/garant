@@ -57,13 +57,14 @@ function renderPage() {
 function makeCurrency(over: Partial<CurrencyDto> = {}): CurrencyDto {
   return {
     id: 1,
-    code: "USDT",
-    name: "Tether",
-    network: "TRC20",
+    code: "USD",
+    name: "US Dollar",
+    network: "",
     icon_url: "",
     decimals: 2,
     min_deposit: 5,
     min_withdraw: 1,
+    kind: "fiat",
     ...over,
   };
 }
@@ -91,8 +92,16 @@ beforeEach(() => {
   openTelegramLinkSpy.mockClear();
   mockState.currenciesLoading = false;
   mockState.currencies = [
-    makeCurrency({ id: 1, code: "USDT", name: "Tether" }),
-    makeCurrency({ id: 2, code: "BTC", name: "Bitcoin", min_deposit: 0.001, decimals: 8 }),
+    makeCurrency({ id: 1, code: "USD", name: "US Dollar" }),
+    makeCurrency({ id: 2, code: "UAH", name: "Українська гривня", min_deposit: 50 }),
+    // A leftover crypto row must be filtered out of the dropdown.
+    makeCurrency({
+      id: 3,
+      code: "USDT",
+      name: "Tether",
+      network: "TRC20",
+      kind: "crypto",
+    }),
   ];
   mockState.balances = [];
   mockState.createMutation = {
@@ -112,16 +121,23 @@ describe("<WalletDepositPage />", () => {
     ).toBeInTheDocument();
   });
 
-  it("auto-selects the first currency and seeds the amount from min_deposit", () => {
+  it("auto-selects USD and seeds the amount from min_deposit", () => {
     renderPage();
-    // The select reflects the first currency.
-    expect(screen.getByText(/Tether \(TRC20\)/)).toBeInTheDocument();
+    // The select reflects the USD fiat currency (default fallback).
+    expect(screen.getByText(/US Dollar · USD/)).toBeInTheDocument();
     expect(screen.getByDisplayValue("5")).toBeInTheDocument();
   });
 
   it("shows the min-deposit hint for the selected currency", () => {
     renderPage();
-    expect(screen.getByText(/Минимум: 5 USDT/)).toBeInTheDocument();
+    expect(screen.getByText(/Минимум: 5 USD/)).toBeInTheDocument();
+  });
+
+  it("hides crypto currencies from the dropdown", () => {
+    renderPage();
+    // Tether (kind='crypto') is filtered out; only fiat rows remain.
+    expect(screen.queryByText(/Tether/)).not.toBeInTheDocument();
+    expect(screen.getByText(/US Dollar · USD/)).toBeInTheDocument();
   });
 
   it("renders a loading skeleton while currencies are loading", () => {
@@ -155,7 +171,7 @@ describe("<WalletDepositPage />", () => {
 
     await waitFor(() => {
       expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
-        currency_code: "USDT",
+        currency_code: "USD",
         amount: 10,
         provider: "cryptobot",
       });
@@ -183,7 +199,7 @@ describe("<WalletDepositPage />", () => {
 
     await waitFor(() => {
       expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
-        currency_code: "USDT",
+        currency_code: "USD",
         amount: 10,
         provider: "crystalpay",
       });

@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Activity, Users, TrendingUp, Wallet } from "lucide-react";
 import { Page } from "@/components/layout/Page";
-import { Header } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import {
   useAdminAnalyticsKpi,
@@ -29,7 +29,7 @@ export default function AdminAnalyticsPage() {
 
   return (
     <Page showBack onBack={() => navigate("/admin")}>
-      <Header title="Аналитика" subtitle="30 дней" />
+      <AdminHeader title="Аналитика" subtitle="30 дней" />
       <div className="px-4 grid grid-cols-2 gap-2 mb-4">
         <KpiCard
           icon={<Users size={14} />}

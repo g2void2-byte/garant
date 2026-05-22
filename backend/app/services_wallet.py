@@ -226,6 +226,13 @@ async def create_deposit_invoice(
     raise HTTPException(400, f"Неизвестный провайдер: {provider}")
 
 
+#: Crypto assets offered as payment options on a CryptoBot fiat
+#: invoice. The user picks one at checkout; CryptoBot handles the
+#: conversion server-side. Limited to the most-traded assets to keep
+#: the checkout grid short — extend as new fiat-paired assets land.
+_CRYPTOBOT_FIAT_ACCEPTED_ASSETS = "USDT,TON,BTC,ETH,USDC,LTC,BNB,TRX"
+
+
 async def _create_cryptobot_deposit(
     session: AsyncSession,
     user: User,
@@ -237,15 +244,31 @@ async def _create_cryptobot_deposit(
         raise HTTPException(502, "CryptoBot не настроен")
 
     expiry_seconds = int(settings.wallet_deposit_expiry_seconds)
+    is_fiat = (currency.kind or "crypto") == "fiat"
     try:
         async with CryptoPay(
             settings.cryptobot_token, testnet=settings.cryptobot_testnet
         ) as crypto:
-            invoice = await crypto.create_invoice(
-                asset=currency.code,
-                amount=amount,
-                expires_in=expiry_seconds if expiry_seconds > 0 else None,
-            )
+            if is_fiat:
+                # Fiat invoice — CryptoBot denominates the price in
+                # ``currency.code`` and lets the payer pick any of
+                # the ``accepted_assets`` at checkout. The realised
+                # crypto amount + rate land on the webhook payload
+                # (``paid_asset`` / ``paid_amount`` /
+                # ``paid_fiat_rate``).
+                invoice = await crypto.create_invoice(
+                    currency_type="fiat",
+                    fiat=currency.code,
+                    accepted_assets=_CRYPTOBOT_FIAT_ACCEPTED_ASSETS,
+                    amount=amount,
+                    expires_in=expiry_seconds if expiry_seconds > 0 else None,
+                )
+            else:
+                invoice = await crypto.create_invoice(
+                    asset=currency.code,
+                    amount=amount,
+                    expires_in=expiry_seconds if expiry_seconds > 0 else None,
+                )
     except CryptoPayError as e:
         # V11-L-15 — ``extra={}`` puts the user/currency/amount onto the
         # JSON log record as structured fields so Loki/Sentry queries

@@ -163,15 +163,47 @@ class CryptoPay:
     async def create_invoice(
         self,
         *,
-        asset: str,
+        asset: str | None = None,
         amount: float | str,
+        currency_type: str = "crypto",
+        fiat: str | None = None,
+        accepted_assets: str | None = None,
         description: str | None = None,
         payload: str | None = None,
         expires_in: int | None = None,
         allow_comments: bool | None = None,
         allow_anonymous: bool | None = None,
     ) -> Invoice:
-        data: dict[str, Any] = {"asset": asset, "amount": str(amount)}
+        """Create a Crypto Pay invoice.
+
+        The Crypto Pay ``createInvoice`` method accepts both crypto
+        invoices (``currency_type="crypto"`` + ``asset``) and fiat
+        invoices (``currency_type="fiat"`` + ``fiat=<code>`` +
+        optional ``accepted_assets``). The fiat path lets the user
+        pick which crypto to pay with at checkout while the merchant
+        denominates the invoice in fiat — Crypto Pay handles the
+        conversion server-side and surfaces the realised
+        ``paid_asset`` / ``paid_fiat_rate`` on the webhook payload.
+
+        See https://help.send.tg/en/articles/10279948-crypto-pay-api
+        for the upstream contract; the closed sets for
+        ``currency_type`` and ``fiat`` live there.
+        """
+        data: dict[str, Any] = {"amount": str(amount)}
+        if currency_type == "fiat":
+            if not fiat:
+                raise CryptoPayError("create_invoice: 'fiat' is required for fiat invoices")
+            data["currency_type"] = "fiat"
+            data["fiat"] = fiat
+            if accepted_assets is not None:
+                # Crypto Pay accepts either a comma-separated string
+                # or an array; the string form is friendlier to
+                # ``urlencode``-style debugging.
+                data["accepted_assets"] = accepted_assets
+        else:
+            if not asset:
+                raise CryptoPayError("create_invoice: 'asset' is required for crypto invoices")
+            data["asset"] = asset
         if description is not None:
             data["description"] = description
         if payload is not None:

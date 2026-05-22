@@ -161,6 +161,7 @@ def _cur_to_out(c: Currency) -> AdminCurrencyOut:
         is_active=bool(c.is_active),
         sort_order=c.sort_order,
         address_regex=c.address_regex or "",
+        kind=c.kind or "crypto",
     )
 
 
@@ -203,6 +204,7 @@ async def upsert_currency(
             # disabled), preserving back-compat with admins who haven't
             # filled the field in yet.
             address_regex=body.address_regex if body.address_regex is not None else "",
+            kind=body.kind if body.kind is not None else "crypto",
         )
         session.add(existing)
         await session.flush()
@@ -218,6 +220,7 @@ async def upsert_currency(
             "is_active": bool(existing.is_active),
             "sort_order": existing.sort_order,
             "address_regex": existing.address_regex or "",
+            "kind": existing.kind or "crypto",
         }
         if body.name is not None:
             existing.name = body.name
@@ -237,6 +240,8 @@ async def upsert_currency(
             existing.sort_order = body.sort_order
         if body.address_regex is not None:
             existing.address_regex = body.address_regex
+        if body.kind is not None:
+            existing.kind = body.kind
         action = "currency.update"
 
     await log_admin_action(

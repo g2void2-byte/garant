@@ -57,6 +57,7 @@ def _deal_out(deal: Deal, user_id: int) -> DealOut:
         arbitration_resolved_by=("admin" if deal.arbitration_resolved_by is not None else None),
         arbitration_resolution=deal.arbitration_resolution,
         arbitration_resolved_at=deal.arbitration_resolved_at,
+        payment_provider=deal.payment_provider or "cryptobot",
     )
 
 
@@ -161,6 +162,7 @@ async def create_deal_endpoint(
             body.amount,
             body.description,
             body.pay_commission,
+            payment_provider=body.payment_provider,
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e

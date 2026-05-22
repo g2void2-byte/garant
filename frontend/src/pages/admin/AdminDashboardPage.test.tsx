@@ -170,19 +170,8 @@ describe("<AdminDashboardPage />", () => {
     );
   });
 
-  it("NavTile 'Treasury' navigates to /admin/treasury", async () => {
-    mockState.data = makeData();
-    const user = userEvent.setup();
-    renderPage();
-    await user.click(screen.getByRole("button", { name: /Treasury/ }));
-    expect(screen.getByTestId("path").textContent).toBe("/admin/treasury");
-  });
-
-  it("NavTile '2FA' navigates to /admin/2fa", async () => {
-    mockState.data = makeData();
-    const user = userEvent.setup();
-    renderPage();
-    await user.click(screen.getByRole("button", { name: /2FA/ }));
-    expect(screen.getByTestId("path").textContent).toBe("/admin/2fa");
-  });
+  // Treasury / 2FA tiles have moved out of the dashboard and into
+  // the admin drawer menu (``AdminMenu``); they're no longer
+  // rendered inline on ``/admin/dashboard``. Navigation to those
+  // routes is exercised through ``AdminMenu`` instead.
 });

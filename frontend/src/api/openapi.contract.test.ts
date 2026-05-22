@@ -98,6 +98,7 @@ const dealFixture = {
   arbitration_resolved_by: null,
   arbitration_resolution: null,
   arbitration_resolved_at: null,
+  payment_provider: "cryptobot",
 } as const satisfies DealOutSchema;
 
 const usdtFixture = {
@@ -109,6 +110,7 @@ const usdtFixture = {
   decimals: 2,
   min_deposit: 1,
   min_withdraw: 1,
+  kind: "crypto",
 } as const satisfies CurrencyOutSchema;
 
 const walletBalanceFixture = {

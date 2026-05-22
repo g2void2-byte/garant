@@ -78,13 +78,14 @@ function renderPage(initialPath = "/deals/new?to=alice") {
 function makeCurrency(over: Partial<CurrencyDto> = {}): CurrencyDto {
   return {
     id: 1,
-    code: "USDT",
-    name: "Tether",
-    network: "TRC20",
+    code: "USD",
+    name: "US Dollar",
+    network: "",
     icon_url: "",
     decimals: 2,
     min_deposit: 1,
     min_withdraw: 1,
+    kind: "fiat",
     ...over,
   };
 }
@@ -114,6 +115,7 @@ function makeDeal(over: Partial<DealDto> = {}): DealDto {
     arbitration_resolved_by: null,
     arbitration_resolution: null,
     arbitration_resolved_at: null,
+    payment_provider: "cryptobot",
     ...over,
   };
 }
@@ -133,8 +135,16 @@ beforeEach(() => {
   };
   mockState.users = [];
   mockState.currencies = [
-    makeCurrency({ id: 1, code: "USDT", name: "Tether" }),
-    makeCurrency({ id: 2, code: "BTC", name: "Bitcoin", decimals: 8 }),
+    makeCurrency({ id: 1, code: "USD", name: "US Dollar" }),
+    makeCurrency({ id: 2, code: "UAH", name: "Українська гривня" }),
+    // Crypto rows must be hidden from the create-deal currency picker.
+    makeCurrency({
+      id: 3,
+      code: "USDT",
+      name: "Tether",
+      network: "TRC20",
+      kind: "crypto",
+    }),
   ];
 });
 
@@ -166,7 +176,14 @@ describe("<CreateDealPage />", () => {
     renderPage();
     expect(screen.getByText(/Валюта/)).toBeInTheDocument();
     // The default-selected currency label rendered by <Select>:
-    expect(screen.getByText(/USDT — Tether/)).toBeInTheDocument();
+    expect(screen.getByText(/USD — US Dollar/)).toBeInTheDocument();
+  });
+
+  it("hides crypto currencies from the dropdown", () => {
+    renderPage();
+    // Tether (kind='crypto') is filtered out; only fiat options surface.
+    expect(screen.queryByText(/USDT — Tether/)).not.toBeInTheDocument();
+    expect(screen.getByText(/USD — US Dollar/)).toBeInTheDocument();
   });
 
   it("hides the currency dropdown while currencies are loading", () => {
@@ -188,7 +205,7 @@ describe("<CreateDealPage />", () => {
     renderPage();
     await user.clear(screen.getByPlaceholderText(/Что покупаете/));
     await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
-    const sumInput = screen.getByLabelText(/Сумма \(USDT\)/);
+    const sumInput = screen.getByLabelText(/Сумма \(USD\)/);
     await user.clear(sumInput);
     await user.type(sumInput, "0");
     await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
@@ -201,7 +218,7 @@ describe("<CreateDealPage />", () => {
     const user = userEvent.setup();
     renderPage();
     await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
-    await user.type(screen.getByLabelText(/Сумма \(USDT\)/), "100.25");
+    await user.type(screen.getByLabelText(/Сумма \(USD\)/), "100.25");
     await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
 
     // PIN re-prompt now intercepts the submit — punch in 1234 to
@@ -216,7 +233,8 @@ describe("<CreateDealPage />", () => {
           amount: 100.25,
           description: "deal description",
           pay_comission: "buyer",
-          currency_code: "USDT",
+          currency_code: "USD",
+          payment_provider: "cryptobot",
         }),
       );
     });
@@ -229,7 +247,7 @@ describe("<CreateDealPage />", () => {
     const user = userEvent.setup();
     renderPage();
     await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
-    await user.type(screen.getByLabelText(/Сумма \(USDT\)/), "10");
+    await user.type(screen.getByLabelText(/Сумма \(USD\)/), "10");
     await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
     await enterPin(user);
     await waitFor(() => {
@@ -242,5 +260,28 @@ describe("<CreateDealPage />", () => {
     mockState.createMutation.isPending = true;
     renderPage();
     expect(screen.getByRole("button", { name: /Создаю/i })).toBeDisabled();
+  });
+
+  it("submits payment_provider='crystalpay' when the Crystalpay tile is selected", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(makeDeal({ id: 88 }));
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByTestId("provider-crystalpay"));
+    await user.type(
+      screen.getByPlaceholderText(/Что покупаете/),
+      "deal description",
+    );
+    await user.type(screen.getByLabelText(/Сумма \(USD\)/), "42");
+    await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
+    await enterPin(user);
+
+    await waitFor(() => {
+      expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payment_provider: "crystalpay",
+          currency_code: "USD",
+        }),
+      );
+    });
   });
 });

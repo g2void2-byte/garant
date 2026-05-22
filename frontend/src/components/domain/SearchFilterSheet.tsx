@@ -109,7 +109,11 @@ export function SearchFilterSheet({
 
   return (
     <Sheet open={open} onClose={onClose} title="Фильтры">
-      <div className="space-y-5">
+      {/* V13 — extra bottom padding on the scroll body lets the
+          sticky button bar sit clear of the safe-area inset and
+          guarantees the last filter section is never hidden behind
+          the buttons. */}
+      <div className="space-y-5 pb-32 pt-1">
         <section>
           <h3 className="text-base font-semibold mb-2">Рейтинг</h3>
           <RadioRow
@@ -183,14 +187,25 @@ export function SearchFilterSheet({
           </div>
         </section>
 
-        <div className="grid grid-cols-2 gap-2 pt-2">
-          <Button variant="secondary" onClick={reset}>
-            Сбросить
-          </Button>
-          <Button variant="primary" onClick={apply}>
-            Применить фильтры
-          </Button>
-        </div>
+      </div>
+      {/* V13 — sticky bottom bar so the "Применить" / "Сбросить"
+          buttons stay anchored on long forms. ``-mx-4 px-4`` cancels
+          the parent's horizontal padding so the bar reaches the
+          sheet edges; ``backdrop-blur-sm`` softens the content
+          peeking through behind it on iOS. */}
+      <div
+        className={cn(
+          "sticky bottom-0 -mx-4 px-4 pt-3 pb-4 bg-panel/95 backdrop-blur-sm",
+          "border-t border-border",
+          "grid grid-cols-2 gap-2",
+        )}
+      >
+        <Button variant="secondary" onClick={reset}>
+          Сбросить
+        </Button>
+        <Button variant="primary" onClick={apply}>
+          Применить фильтры
+        </Button>
       </div>
     </Sheet>
   );

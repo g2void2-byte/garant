@@ -15,6 +15,7 @@ import { PinGate } from "@/components/PinGate";
 import { TelegramAvatarSync } from "@/components/TelegramAvatarSync";
 import { TotpGate } from "@/components/TotpGate";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { AdminMenuMount } from "@/components/layout/AdminMenuMount";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ToastProvider } from "@/components/ui/Toast";
 import { installDevtoolsGuard } from "@/lib/devtoolsGuard";
@@ -240,6 +241,7 @@ export function App() {
                   </Routes>
                 </Suspense>
                 <BottomNav />
+                <AdminMenuMount />
               </div>
             </BrowserRouter>
           </PinGate>

@@ -215,6 +215,7 @@ async def create_deal(
     amount: float | Decimal,
     description: str,
     pay_commission: PayCommission,
+    payment_provider: str = "cryptobot",
 ) -> Deal:
     """Create a deal and lock buyer funds.
 
@@ -222,6 +223,12 @@ async def create_deal(
     locked sum is ``amount + commission``; if the seller pays commission,
     the locked sum is ``amount`` and commission is taken from the
     seller's payout at finish time.
+
+    ``payment_provider`` is the upstream invoice provider the buyer
+    picked at deal-create time (``"cryptobot"`` or ``"crystalpay"``)
+    — persisted on the deal row for future invoice-driven escrow
+    flows. Today the deal is funded from the buyer's pre-deposited
+    ``UserBalance`` so the value is purely informational.
     """
     if buyer.id == seller.id:
         raise ValueError("Нельзя создать сделку с самим собой")
@@ -253,6 +260,7 @@ async def create_deal(
         description=description,
         pay_commission=pay_commission,
         status=DealStatus.pending_confirmation,
+        payment_provider=payment_provider,
     )
     session.add(deal)
     # Comment 31 (H, anti-griefing) — ``deals_total`` is bumped on
