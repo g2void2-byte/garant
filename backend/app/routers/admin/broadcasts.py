@@ -80,6 +80,15 @@ def _audience_filter(body: AdminBroadcastCreateIn):
             )
         )
     if body.audience_active_days is not None:
+        # Audit §4.4 — the ``last_login_at >= since`` filter relies on a
+        # btree index for selectivity at scale. ``users.last_login_at``
+        # carries ``index=True`` in ``models.py`` (creating the SQLAlchemy
+        # auto-name) and the supplementary migration
+        # ``c8f4a2e91d35_pr_h_audit_refunded_indexes_softdelete`` adds
+        # ``ix_users_last_login_at`` explicitly via ``CREATE INDEX
+        # CONCURRENTLY`` so existing deployments pick it up without a
+        # table-rewrite. Verified by ``test_audit_followup_all_simple
+        # ::test_4_4_users_last_login_at_index_exists``.
         since = utcnow() - timedelta(days=body.audience_active_days)
         clauses.append(User.last_login_at >= since)
     if body.audience_min_deals is not None:

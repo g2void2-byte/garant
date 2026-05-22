@@ -183,6 +183,18 @@ class Settings(BaseSettings):
     # in-process state (WS broadcasts stay local; rate-limit stays in-memory).
     redis_url: str = ""
 
+    # Audit §4.5 — when set, the admin/2fa enrolment flow refuses to
+    # fall back to the per-process ``_pending_secrets`` dict. The
+    # fallback is fine for single-replica dev/test runs but breaks
+    # transparently on scale-out: ``/setup`` lands on replica A,
+    # ``/enable`` lands on replica B, and the secret isn't there.
+    # Production deployments running >1 replica should flip this on
+    # so the misconfiguration surfaces immediately (HTTP 503 on
+    # ``/setup`` and ``/enable``) instead of users seeing "TOTP секрет
+    # не найден" hours into the rollout. Default is ``False`` to
+    # preserve the existing dev/test behaviour.
+    require_redis_for_2fa: bool = False
+
     # Comment 38 (audit v10) — WS DoS hardening tunables.
     ws_max_sockets_per_user: int = 5
     ws_recv_max_messages_per_second: float = 10.0

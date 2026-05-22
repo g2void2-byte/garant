@@ -37,6 +37,7 @@ from ...auth_2fa import (
     otpauth_url,
     verify_totp_and_counter,
 )
+from ...config import settings
 from ...deps import AdminUser, SessionDep
 from ...rate_limit import rate_limit
 from ...redis_client import get_redis
@@ -113,7 +114,16 @@ def _warn_fallback_once(event: str, user_id: int) -> None:
 
 
 async def _store_pending(user_id: int, secret: str) -> None:
-    """Store a pending TOTP secret in Redis (or in-process fallback)."""
+    """Store a pending TOTP secret in Redis (or in-process fallback).
+
+    Audit §4.5 — when ``settings.require_redis_for_2fa`` is set we
+    refuse to fall back to ``_pending_secrets`` and raise ``HTTPException``
+    (503). The fallback is fine for single-replica dev/test runs but
+    breaks transparently on scale-out, so a production deploy with
+    multiple replicas should set ``REQUIRE_REDIS_FOR_2FA=1`` to surface
+    the misconfiguration immediately instead of letting users hit
+    "TOTP секрет не найден" hours into the rollout.
+    """
     r = await get_redis()
     if r is not None:
         try:
@@ -129,6 +139,13 @@ async def _store_pending(user_id: int, secret: str) -> None:
                 "Redis setex failed for pending TOTP; using fallback",
                 extra={"event": "totp.pending.redis_setex_failed", "user_id": user_id},
             )
+    if settings.require_redis_for_2fa:
+        logger.error(
+            "admin 2fa: Redis unavailable and require_redis_for_2fa=True; "
+            "refusing to use in-process fallback.",
+            extra={"event": "totp.pending.redis_required_missing", "user_id": user_id},
+        )
+        raise HTTPException(503, "2FA temporarily unavailable: Redis is required")
     _warn_fallback_once("totp.pending.fallback_write", user_id)
     _pending_secrets[user_id] = (secret, time.monotonic() + _PENDING_TTL)
 
