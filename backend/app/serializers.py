@@ -86,6 +86,17 @@ def _common_user_fields(
         rating=rating,
         reviews_count=reviews_count,
         deals_count=user.deals_total,
+        # Item 11 — surface the portfolio breakdown on the user
+        # DTOs. The columns are already maintained by
+        # ``services_deals.resolve_arbitration`` / ``mark_completed``
+        # (see ``tests/e2e/test_deals_arbitration.py``); admin panels
+        # already read them via ``AdminUserDetailOut``. Defensive
+        # ``or 0`` coerce for in-memory ``User(...)`` rows that tests
+        # build without flushing — the column has both a Python and a
+        # server default so flushed rows are always int.
+        deals_success=user.deals_success or 0,
+        deals_failed=user.deals_failed or 0,
+        deals_arbitrage=user.deals_arbitrage or 0,
         deals_sum=deals_sum,
         online=bool(
             user.last_login_at is not None

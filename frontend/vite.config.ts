@@ -26,6 +26,15 @@ export default defineConfig({
       // ``localhost:8080``. Outside of compose the default keeps
       // working for ``npm run dev`` against ``uvicorn`` on the host.
       "/api": process.env.VITE_PROXY_TARGET || "http://localhost:8080",
+      // The backend mounts uploaded media (banners, service photos,
+      // chat attachments) at ``/media/...`` via ``StaticFiles`` (see
+      // ``backend/app/main.py``). In dev the SPA-fallback catches
+      // every non-``/api``/``/ws`` request and returns ``index.html``
+      // — that's why ``<img src="/media/...">`` came back as HTML
+      // instead of a PNG. Proxy this prefix to the same backend so
+      // dev parity matches production (where backend + SPA share an
+      // origin).
+      "/media": process.env.VITE_PROXY_TARGET || "http://localhost:8080",
       "/ws": {
         target: (process.env.VITE_PROXY_TARGET || "http://localhost:8080").replace(
           /^http/,

@@ -55,7 +55,7 @@ from backend.app.models import (
     Review,
     User,
 )
-from backend.app.services import _recompute_user_rating
+from backend.app.services import recompute_user_rating
 from tests.helpers import (
     auth_headers,
     get_user_id_by_tg,
@@ -322,7 +322,7 @@ async def test_recompute_user_rating_sums_full_ladder(client):
         target = (await session.execute(select(User).where(User.id == target_id))).scalar_one()
         target.good = 99
         target.bad = 99
-        await _recompute_user_rating(session, target)
+        await recompute_user_rating(session, target)
         await session.flush()
         assert target.good == 0, "no reviews ⇒ good=0"
         assert target.bad == 0, "no reviews ⇒ bad=0"
@@ -352,7 +352,7 @@ async def test_recompute_user_rating_sums_full_ladder(client):
 
     async with async_session() as session:
         target = (await session.execute(select(User).where(User.id == target_id))).scalar_one()
-        await _recompute_user_rating(session, target)
+        await recompute_user_rating(session, target)
         await session.commit()
 
     async with async_session() as session:

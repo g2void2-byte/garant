@@ -277,7 +277,7 @@ class User(Base):
     # ``frontend/src/lib/countries.ts``.
     country: Mapped[str | None] = mapped_column(String(2), nullable=True)
     # Admin PR-A — optional override of the *computed* rating (see
-    # services.py:_recompute_user_rating). When non-null this value
+    # services.py:recompute_user_rating). When non-null this value
     # takes precedence in profile responses; setting to null restores
     # the auto-computed rating.
     rating_manual: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)

@@ -72,6 +72,14 @@ export interface UserCardDto {
   rating: number;
   reviews_count: number;
   deals_count: number;
+  // Item 11 — portfolio breakdown surfaced from the backend
+  // ``UserOut`` / ``UserPublicOut``. Already maintained on the
+  // ``User`` row by ``services_deals`` (see
+  // ``tests/e2e/test_deals_arbitration.py``) and shown next to
+  // ``deals_count`` in ``<ProfileStatsGrid />``.
+  deals_success: number;
+  deals_failed: number;
+  deals_arbitrage: number;
   deals_sum: number;
   online: boolean;
   banner_url?: string | null;

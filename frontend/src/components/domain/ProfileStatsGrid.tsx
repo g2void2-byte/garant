@@ -1,17 +1,44 @@
-import { Star, Wallet, Briefcase, BarChart3, ChevronRight } from "lucide-react";
+import {
+  Star,
+  Wallet,
+  Briefcase,
+  BarChart3,
+  ChevronRight,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+} from "lucide-react";
 import type { UserCardDto } from "@/api/types";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/cn";
+
+type StatTone = "neutral" | "accent" | "success" | "danger" | "warning";
 
 interface StatProps {
   icon: React.ReactNode;
   label: string;
   value: string;
   onClick?: () => void;
-  accent?: boolean;
+  tone?: StatTone;
 }
 
-function Stat({ icon, label, value, onClick, accent }: StatProps) {
+const TONE_BADGE: Record<StatTone, string> = {
+  neutral: "bg-panel-2 text-text-muted",
+  accent: "bg-accent/15 text-accent",
+  success: "bg-emerald-500/15 text-emerald-500",
+  danger: "bg-rose-500/15 text-rose-500",
+  warning: "bg-amber-500/15 text-amber-500",
+};
+
+const TONE_VALUE: Record<StatTone, string> = {
+  neutral: "text-text",
+  accent: "text-accent",
+  success: "text-emerald-500",
+  danger: "text-rose-500",
+  warning: "text-amber-500",
+};
+
+function Stat({ icon, label, value, onClick, tone = "neutral" }: StatProps) {
   return (
     <button
       type="button"
@@ -25,7 +52,7 @@ function Stat({ icon, label, value, onClick, accent }: StatProps) {
         <span
           className={cn(
             "size-9 rounded-full grid place-items-center",
-            accent ? "bg-accent/15 text-accent" : "bg-panel-2 text-text-muted",
+            TONE_BADGE[tone],
           )}
         >
           {icon}
@@ -36,7 +63,7 @@ function Stat({ icon, label, value, onClick, accent }: StatProps) {
         <div
           className={cn(
             "text-[22px] font-bold tracking-tight leading-none truncate",
-            accent ? "text-accent" : "text-text",
+            TONE_VALUE[tone],
           )}
         >
           {value}
@@ -66,17 +93,47 @@ export function ProfileStatsGrid({ user, onDepositClick }: { user: UserCardDto; 
         icon={<Star className="size-5" />}
         label="Рейтинг"
         value={ratingLabel}
-        accent
+        tone="accent"
       />
       <Stat
         icon={<Wallet className="size-5" />}
         label="Депозит"
         value={formatMoney(user.deposit)}
-        accent
+        tone="accent"
         onClick={onDepositClick}
       />
-      <Stat icon={<Briefcase className="size-5" />} label="Сделок" value={String(user.deals_count)} />
-      <Stat icon={<BarChart3 className="size-5" />} label="Сумма сделок" value={formatMoney(user.deals_sum)} />
+      <Stat
+        icon={<Briefcase className="size-5" />}
+        label="Сделок"
+        value={String(user.deals_count)}
+      />
+      <Stat
+        icon={<BarChart3 className="size-5" />}
+        label="Сумма сделок"
+        value={formatMoney(user.deals_sum)}
+      />
+      {/* Item 11 — portfolio breakdown. Always render the three tiles
+          so a fresh profile (0/0/0) reads as "no activity yet" rather
+          than missing data; the colour cue still differentiates them
+          when there are non-zero values. */}
+      <Stat
+        icon={<CheckCircle2 className="size-5" />}
+        label="Успешных"
+        value={String(user.deals_success ?? 0)}
+        tone="success"
+      />
+      <Stat
+        icon={<XCircle className="size-5" />}
+        label="Неуспешных"
+        value={String(user.deals_failed ?? 0)}
+        tone="danger"
+      />
+      <Stat
+        icon={<AlertTriangle className="size-5" />}
+        label="Арбитражи"
+        value={String(user.deals_arbitrage ?? 0)}
+        tone="warning"
+      />
     </div>
   );
 }
