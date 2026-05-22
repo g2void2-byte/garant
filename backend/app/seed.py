@@ -177,6 +177,7 @@ async def seed_currencies(session: AsyncSession) -> None:
                     "code": code,
                     "name": name,
                     "network": "",
+                    "icon_url": "",
                     "decimals": decimals,
                     "min_deposit": min_deposit,
                     "min_withdraw": min_withdraw,

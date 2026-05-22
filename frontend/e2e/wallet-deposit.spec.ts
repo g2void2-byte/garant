@@ -1,5 +1,5 @@
 import { test } from "@playwright/test";
-import { expect, mockApi, seedSession, USDT_CURRENCY } from "./fixtures";
+import { expect, mockApi, seedSession, USD_CURRENCY } from "./fixtures";
 
 /**
  * V12-M5 — withdraw/deposit e2e (deposit half).
@@ -23,7 +23,7 @@ test.describe("Wallet deposit", () => {
     await seedSession(page);
   });
 
-  test("creates a USDT invoice happy-path: nav -> auto-fill -> submit -> success toast", async ({
+  test("creates a USD invoice happy-path: nav -> auto-fill -> submit -> success toast", async ({
     page,
   }) => {
     await mockApi(page);
@@ -41,7 +41,7 @@ test.describe("Wallet deposit", () => {
             contentType: "application/json",
             body: JSON.stringify({
               id: 99,
-              currency: USDT_CURRENCY,
+              currency: USD_CURRENCY,
               amount: 5,
               status: "pending",
               pay_url: "",

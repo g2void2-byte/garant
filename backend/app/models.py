@@ -731,9 +731,7 @@ class Currency(Base):
     # Plain ``String`` rather than an enum so a third kind can be
     # added without ``ALTER TYPE`` ceremony — the closed set is
     # enforced by the admin upsert pydantic schema.
-    kind: Mapped[str] = mapped_column(
-        String(8), default="crypto", server_default="crypto"
-    )
+    kind: Mapped[str] = mapped_column(String(8), default="crypto", server_default="crypto")
 
 
 class UserBalance(Base):

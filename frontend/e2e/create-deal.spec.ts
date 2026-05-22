@@ -24,7 +24,7 @@ const NEW_DEAL = {
   confirm_seller: false,
   role: "buyer" as const,
   created_at: new Date().toISOString(),
-  currency_code: "USDT",
+  currency_code: "USD",
   amount: 150,
   commission_amount: 7.5,
   in_progress_at: null,
@@ -118,8 +118,10 @@ test.describe("Create-deal page", () => {
     // (seller) now that every deal is buyer-initiated; pre-fix it
     // was the generic "Контрагент" that flipped roles via a toggle.
     await page.getByLabel("Продавец (username)").fill("alice");
-    // ``Сумма (USDT)`` is the dynamic label driven by ``currencyCode``.
-    await page.getByLabel(/^Сумма \(USDT\)/).fill("150");
+    // ``Сумма (USD)`` is the dynamic label driven by ``currencyCode``
+    // (the create-deal currency picker filters to ``kind === "fiat"``
+    // after the fiat-only deposit refactor, so USD is the default).
+    await page.getByLabel(/^Сумма \(USD\)/).fill("150");
     await page
       .getByLabel("Описание сделки")
       .fill("Custom illustration");
@@ -146,7 +148,7 @@ test.describe("Create-deal page", () => {
       amount: 150,
       description: "Custom illustration",
       pay_comission: "buyer",
-      currency_code: "USDT",
+      currency_code: "USD",
     });
   });
 

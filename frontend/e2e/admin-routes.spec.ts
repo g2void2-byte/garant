@@ -123,7 +123,11 @@ test.describe("Admin routes guard", () => {
     // KPI label confirms ``useAdminDashboard`` data wired through.
     await expect(page.getByText("Всего", { exact: true }).first()).toBeVisible();
     // Section heading confirms the rest of the dashboard rendered
-    // (rather than the loading skeleton or error fallback).
-    await expect(page.getByText("Пользователи")).toBeVisible();
+    // (rather than the loading skeleton or error fallback). Scope to
+    // the heading role so we don't collide with the same label
+    // rendered inside the admin drawer (``AdminMenu``).
+    await expect(
+      page.getByRole("heading", { name: "Пользователи" }),
+    ).toBeVisible();
   });
 });

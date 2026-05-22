@@ -37,6 +37,11 @@ export async function seedSession(page: Page) {
  * and ``wallet/balances`` responses. Exported so specs that need the
  * exact shape (e.g. ``WalletDepositDto.currency`` in a POST response
  * stub) can reuse it instead of inlining a parallel copy that drifts.
+ *
+ * ``kind: "crypto"`` is what ``WalletPage`` / ``WalletDepositPage``
+ * / ``CreateDealPage`` filter against — crypto rows are hidden from
+ * the user-facing UI, fiat rows surface. Specs that need a row to
+ * appear in those views should use ``USD_CURRENCY`` instead.
  */
 export const USDT_CURRENCY = {
   id: 1,
@@ -47,6 +52,25 @@ export const USDT_CURRENCY = {
   decimals: 2,
   min_deposit: 5,
   min_withdraw: 1,
+  kind: "crypto" as const,
+};
+
+/**
+ * Default fiat currency surfaced in the user-facing wallet /
+ * deposit / create-deal flows after the fiat-only deposit refactor
+ * (see ``WalletPage.tsx`` / ``WalletDepositPage.tsx`` /
+ * ``CreateDealPage.tsx`` — they filter ``kind === "fiat"``).
+ */
+export const USD_CURRENCY = {
+  id: 100,
+  code: "USD",
+  name: "US Dollar",
+  network: "",
+  icon_url: "",
+  decimals: 2,
+  min_deposit: 5,
+  min_withdraw: 1,
+  kind: "fiat" as const,
 };
 
 interface MockOverrides {
@@ -184,9 +208,20 @@ export async function mockApi(page: Page, overrides: MockOverrides = {}) {
       total: 123.45,
       updated_at: null,
     },
+    {
+      currency: USD_CURRENCY,
+      amount: 123.45,
+      locked: 0,
+      total: 123.45,
+      updated_at: null,
+    },
   ];
 
-  const currencies = overrides.currencies ?? [USDT_CURRENCY];
+  // Include both a crypto (legacy ledger) and a fiat row by default
+  // so the wallet / deposit / create-deal screens (which filter to
+  // ``kind === "fiat"``) and any spec still asserting on the crypto
+  // codes both have something to find.
+  const currencies = overrides.currencies ?? [USDT_CURRENCY, USD_CURRENCY];
 
   const json = (route: Route, body: unknown, status = 200) =>
     route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });

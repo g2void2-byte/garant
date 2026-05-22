@@ -49,11 +49,17 @@ depends_on: str | Sequence[str] | None = None
 # Fiat rows back-filled by this migration. Mirror
 # ``backend.app.seed.FIAT_CURRENCIES`` (the seeder applies the same
 # set on fresh installs via ``ON CONFLICT DO NOTHING``).
+# ``icon_url`` is NOT NULL on the ``currencies`` table (see the
+# initial schema migration ``9d0e4d959e65``) — the model carries a
+# python-side default of ``""`` but the column itself has no server
+# default, so the back-fill INSERT has to provide a value explicitly
+# or the seed crashes with ``NotNullViolationError``.
 _FIAT_SEED: list[dict[str, object]] = [
     {
         "code": "USD",
         "name": "US Dollar",
         "network": "",
+        "icon_url": "",
         "decimals": 2,
         "min_deposit": 1,
         "min_withdraw": 1,
@@ -66,6 +72,7 @@ _FIAT_SEED: list[dict[str, object]] = [
         "code": "UAH",
         "name": "Українська гривня",
         "network": "",
+        "icon_url": "",
         "decimals": 2,
         "min_deposit": 50,
         "min_withdraw": 50,
@@ -78,6 +85,7 @@ _FIAT_SEED: list[dict[str, object]] = [
         "code": "RUB",
         "name": "Российский рубль",
         "network": "",
+        "icon_url": "",
         "decimals": 2,
         "min_deposit": 100,
         "min_withdraw": 100,
@@ -119,6 +127,7 @@ def upgrade() -> None:
         sa.column("code", sa.String()),
         sa.column("name", sa.String()),
         sa.column("network", sa.String()),
+        sa.column("icon_url", sa.Text()),
         sa.column("decimals", sa.Integer()),
         sa.column("min_deposit", sa.Numeric(28, 8)),
         sa.column("min_withdraw", sa.Numeric(28, 8)),
@@ -139,10 +148,7 @@ def downgrade() -> None:
     # one of them or added their own ``USD`` row should keep their
     # data. Match by both ``code`` and ``kind='fiat'`` to avoid
     # touching a hypothetical legacy crypto ``USD`` row.
-    op.execute(
-        "DELETE FROM currencies WHERE kind = 'fiat' "
-        "AND code IN ('USD', 'UAH', 'RUB')"
-    )
+    op.execute("DELETE FROM currencies WHERE kind = 'fiat' AND code IN ('USD', 'UAH', 'RUB')")
     with op.batch_alter_table("deals") as batch:
         batch.drop_column("payment_provider")
     with op.batch_alter_table("currencies") as batch:
