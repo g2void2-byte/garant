@@ -14,7 +14,7 @@ const mockState = vi.hoisted(() => ({
   isError: false,
 })) as PinStatusState;
 
-const pinTokenState = vi.hoisted(() => ({ valid: false }));
+const pinTokenState = vi.hoisted(() => ({ valid: false, cleared: 0 }));
 
 vi.mock("@/api/hooks", () => ({
   usePinStatus: () => mockState,
@@ -23,6 +23,20 @@ vi.mock("@/api/hooks", () => ({
 vi.mock("@/lib/pin", () => ({
   PIN_TOKEN_CHANGED_EVENT: "garant:pin-token-changed",
   hasValidPinToken: () => pinTokenState.valid,
+  // Mock matches the real ``clearPinToken`` contract: it wipes the
+  // local cache, flips ``hasValidPinToken``'s read-through to
+  // ``false``, AND dispatches the ``garant:pin-token-changed`` event
+  // that the existing ``PinGate`` listener re-syncs ``unlocked``
+  // against. The counter is what the new item-8 test asserts on.
+  clearPinToken: () => {
+    pinTokenState.cleared += 1;
+    pinTokenState.valid = false;
+    try {
+      window.dispatchEvent(new Event("garant:pin-token-changed"));
+    } catch {
+      /* DOM unavailable */
+    }
+  },
 }));
 
 // Stub out the lazy-loaded PinPage so the test stays purely synchronous —
@@ -39,6 +53,7 @@ beforeEach(() => {
   mockState.isLoading = false;
   mockState.isError = false;
   pinTokenState.valid = false;
+  pinTokenState.cleared = 0;
 });
 
 describe("<PinGate />", () => {
@@ -117,5 +132,68 @@ describe("<PinGate />", () => {
       expect(screen.getByText("Mock PIN page")).toBeInTheDocument();
     });
     expect(screen.queryByTestId("protected")).not.toBeInTheDocument();
+  });
+
+  it("force-clears the local PIN token when status reports has_pin=false (item 8)", async () => {
+    // This is the safety-net path: the server already wiped
+    // ``pin_hash`` (admin pressed "reset PIN") but the device still
+    // holds a non-expired JWT. ``usePinStatus`` refetches on focus
+    // and surfaces ``has_pin: false`` — the gate must call
+    // ``clearPinToken()`` so children stop rendering and the user
+    // lands on the new-PIN setup flow.
+    mockState.data = {
+      has_pin: false,
+      attempts_left: 5,
+      locked_until: null,
+      max_attempts: 5,
+      session_ttl_seconds: 600,
+    };
+    pinTokenState.valid = true;
+
+    await act(async () => {
+      render(
+        <PinGate>
+          <div data-testid="protected">secret</div>
+        </PinGate>,
+      );
+    });
+
+    await waitFor(() => {
+      expect(pinTokenState.cleared).toBe(1);
+    });
+    // After the effect runs, the gate should be showing PinPage —
+    // the mock ``clearPinToken`` dispatches the real
+    // ``garant:pin-token-changed`` event that the existing
+    // ``PinGate`` listener re-syncs ``unlocked`` against.
+    await waitFor(() => {
+      expect(screen.queryByText("Mock PIN page")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("protected")).not.toBeInTheDocument();
+  });
+
+  it("does not call clearPinToken when has_pin is true (item 8 guard)", async () => {
+    // Inverse of the previous test: a healthy session must NOT be
+    // torn down. A naive ``if (!status.data.has_pin) clear()``
+    // implementation would log a happy-path user out on every focus
+    // refetch because of the ``undefined`` → ``true`` transition.
+    mockState.data = {
+      has_pin: true,
+      attempts_left: 5,
+      locked_until: null,
+      max_attempts: 5,
+      session_ttl_seconds: 600,
+    };
+    pinTokenState.valid = true;
+
+    await act(async () => {
+      render(
+        <PinGate>
+          <div data-testid="protected">secret</div>
+        </PinGate>,
+      );
+    });
+
+    expect(pinTokenState.cleared).toBe(0);
+    expect(screen.getByTestId("protected")).toBeInTheDocument();
   });
 });

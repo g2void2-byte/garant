@@ -2,7 +2,7 @@ import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { usePinStatus } from "@/api/hooks";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { lazyWithRetry } from "@/lib/lazyWithRetry";
-import { PIN_TOKEN_CHANGED_EVENT, hasValidPinToken } from "@/lib/pin";
+import { PIN_TOKEN_CHANGED_EVENT, clearPinToken, hasValidPinToken } from "@/lib/pin";
 
 const PinPage = lazyWithRetry(() => import("@/pages/pin/PinPage"), "PinPage");
 
@@ -40,6 +40,23 @@ export function PinGate({ children }: { children: ReactNode }) {
       window.removeEventListener("storage", onChange);
     };
   }, []);
+
+  // Item 8 — the locally cached PIN token has its own TTL, but the
+  // *server* truth is ``status.data.has_pin``. After an admin reset
+  // those two diverge: the row's ``pin_hash`` is NULL while the
+  // device still holds a non-expired JWT, and ``PinGate`` happily
+  // rendered children. Force-drop the token whenever the server
+  // reports "no PIN configured" so the user lands on the new-PIN
+  // setup flow on the very next render. The companion ``pin.reset``
+  // WS listener in ``useLiveNotifications`` handles the live-tab
+  // case; this effect is the safety net once
+  // ``refetchOnWindowFocus`` brings the truth back.
+  const hasPinOnServer = status.data?.has_pin;
+  useEffect(() => {
+    if (hasPinOnServer === false && hasValidPinToken()) {
+      clearPinToken();
+    }
+  }, [hasPinOnServer]);
 
   if (status.isLoading || !status.data) return <FullScreenLoader />;
   if (status.isError) {

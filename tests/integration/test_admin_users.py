@@ -328,6 +328,92 @@ async def test_reset_pin_no_op_when_no_pin(client):
     assert await _audit_count("user.reset_pin") == before
 
 
+async def test_reset_pin_publishes_pin_reset_ws_event(client, monkeypatch):
+    """Item 8 — admin's ``reset-pin`` must surface a typed
+    ``pin.reset`` WS event to the affected user before invalidating
+    their socket.
+
+    Pre-fix the endpoint cleared ``pin_hash`` on the server but the
+    client only saw the consequence on the next PIN-gated REST call
+    (which the TMA's start-up sequence doesn't make); meanwhile the
+    locally cached PIN JWT kept ``PinGate`` in the authenticated
+    tree. The frontend listener in
+    ``frontend/src/lib/useLiveNotifications.ts`` reacts to this
+    event by dropping the token + invalidating ``pin/status``.
+
+    Why we still expect ``invalidate_user``: the socket has to be
+    closed so a now-untrusted device re-auths its WS connection
+    (mirrors the existing ``invalidate-sessions`` action).
+    """
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    await _set_flags(target_id, pin_hash="fake-hash", pin_attempts=3)
+
+    publish_calls: list[tuple[int, dict]] = []
+    invalidate_calls: list[int] = []
+
+    async def _capture_publish(uid, data):
+        publish_calls.append((uid, data))
+
+    async def _capture_invalidate(uid):
+        invalidate_calls.append(uid)
+
+    monkeypatch.setattr("backend.app.routers.admin.users.ws_manager.publish", _capture_publish)
+    monkeypatch.setattr(
+        "backend.app.routers.admin.users.ws_manager.invalidate_user",
+        _capture_invalidate,
+    )
+
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/reset-pin",
+        json={},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["has_pin"] is False
+
+    # Both side-effects must fire exactly once, in the order:
+    # publish(pin.reset) → invalidate_user. Without ``pin.reset``
+    # arriving first the live tab never learns the token is stale.
+    pin_reset_calls = [
+        (uid, data) for uid, data in publish_calls if data.get("event") == "pin.reset"
+    ]
+    assert pin_reset_calls == [(target_id, {"event": "pin.reset", "data": {}})], publish_calls
+    assert invalidate_calls == [target_id]
+
+
+async def test_reset_pin_no_ws_event_when_user_has_no_pin(client, monkeypatch):
+    """Companion to the no-op test: if the user never had a PIN
+    configured we must NOT publish ``pin.reset`` — the WS listener
+    would otherwise toast a phantom "your PIN was reset" message and
+    log the user out of an unrelated authenticated tree (e.g. an
+    admin clicked the button by mistake).
+    """
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+
+    publish_calls: list[tuple[int, dict]] = []
+
+    async def _capture_publish(uid, data):
+        publish_calls.append((uid, data))
+
+    monkeypatch.setattr("backend.app.routers.admin.users.ws_manager.publish", _capture_publish)
+
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/reset-pin",
+        json={},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    assert not [(uid, data) for uid, data in publish_calls if data.get("event") == "pin.reset"]
+
+
 # ── Set Role ───────────────────────────────────────────────────────────────
 
 

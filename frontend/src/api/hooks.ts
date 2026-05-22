@@ -487,6 +487,13 @@ export function usePinStatus() {
     queryFn: () => api.get("api/pin/status").json(),
     staleTime: 0,
     refetchOnMount: true,
+    // Item 8 — re-check ``has_pin`` whenever the user returns to the
+    // tab. Without this an admin-side reset stays invisible on the
+    // device until either the PIN-JWT TTL expires or the client makes
+    // a PIN-gated REST call; the user reported staying on the
+    // authenticated tree indefinitely. The companion WS event
+    // ``pin.reset`` covers the live-tab case (``useLivePinReset``).
+    refetchOnWindowFocus: true,
   });
 }
 

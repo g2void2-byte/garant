@@ -38,6 +38,11 @@ vi.mock("@/components/ui/Toast", () => ({
   useToast: () => ({ show: toastSpy }),
 }));
 
+const clearPinTokenSpy = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/pin", () => ({
+  clearPinToken: clearPinTokenSpy,
+}));
+
 import { useLiveNotifications } from "./useLiveNotifications";
 
 function makeWrapper(client: QueryClient) {
@@ -51,6 +56,7 @@ beforeEach(() => {
   wsState.disconnect.mockClear();
   hapticSpy.mockClear();
   toastSpy.mockClear();
+  clearPinTokenSpy.mockClear();
 });
 
 describe("useLiveNotifications", () => {
@@ -164,6 +170,30 @@ describe("useLiveNotifications", () => {
     wsState.capturedHandlers!.onEvent({ event: "notification" });
     wsState.capturedHandlers!.onEvent({ event: "unknown_event", data: { foo: 1 } });
 
+    expect(toastSpy).not.toHaveBeenCalled();
+    expect(hapticSpy).not.toHaveBeenCalled();
+  });
+
+  it("drops the local PIN token and invalidates pin status on pin.reset (item 8)", () => {
+    // Admin pressed ``reset-pin`` on this user. The backend publishes
+    // ``{event: 'pin.reset'}`` over the WS channel; the hook must:
+    // 1) call ``clearPinToken()`` (which dispatches the
+    //    ``garant:pin-token-changed`` event the PinGate listens for);
+    // 2) invalidate ``qk.pin.*`` so the next ``usePinStatus`` refetch
+    //    sees ``has_pin=false``.
+    // Without (1) the locally cached JWT TTL keeps PinGate in the
+    // authenticated tree until the user manually reloads.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({ event: "pin.reset", data: {} });
+
+    expect(clearPinTokenSpy).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["pin"] });
+    // Toast/haptic intentionally NOT fired on pin.reset — the user
+    // is about to be bounced to the new-PIN setup screen, no need
+    // for an additional in-app surface that they'd dismiss anyway.
     expect(toastSpy).not.toHaveBeenCalled();
     expect(hapticSpy).not.toHaveBeenCalled();
   });
