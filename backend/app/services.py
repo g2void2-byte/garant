@@ -43,7 +43,7 @@ REVIEWABLE_DEAL_STATUSES = frozenset(
 )
 
 
-async def _recompute_user_rating(session: AsyncSession, target: User) -> None:
+async def recompute_user_rating(session: AsyncSession, target: User) -> None:
     """Recompute ``good``/``bad`` counters from the live ``reviews`` table.
 
     Counts every received review for this user:
@@ -111,7 +111,7 @@ async def post_review(
     session.add(review)
     await session.flush()
 
-    await _recompute_user_rating(session, target)
+    await recompute_user_rating(session, target)
 
     # A9-M-2 — split-API: persist the notification row atomically with
     # the review insert + rating recompute, dispatch WS/DM after commit

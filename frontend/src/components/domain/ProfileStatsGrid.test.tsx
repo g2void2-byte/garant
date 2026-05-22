@@ -18,6 +18,9 @@ function makeUser(overrides: Partial<UserCardDto> = {}): UserCardDto {
     rating: 0,
     reviews_count: 0,
     deals_count: 0,
+    deals_success: 0,
+    deals_failed: 0,
+    deals_arbitrage: 0,
     deals_sum: 0,
     online: true,
     description: "",
@@ -45,5 +48,24 @@ describe("<ProfileStatsGrid />", () => {
   it("shows 'rating (count)' once at least one review exists", () => {
     render(<ProfileStatsGrid user={makeUser({ rating: 4.2, reviews_count: 12 })} />);
     expect(screen.getByText("4.2 (12)")).toBeInTheDocument();
+  });
+
+  it("renders the success / failed / arbitrage breakdown tiles (item 11)", () => {
+    render(
+      <ProfileStatsGrid
+        user={makeUser({
+          deals_count: 18,
+          deals_success: 12,
+          deals_failed: 4,
+          deals_arbitrage: 2,
+        })}
+      />,
+    );
+    expect(screen.getByText("Успешных")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
+    expect(screen.getByText("Неуспешных")).toBeInTheDocument();
+    expect(screen.getByText("4")).toBeInTheDocument();
+    expect(screen.getByText("Арбитражи")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
   });
 });

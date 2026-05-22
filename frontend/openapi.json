@@ -5346,8 +5346,20 @@
             ],
             "title": "Country"
           },
+          "deals_arbitrage": {
+            "title": "Deals Arbitrage",
+            "type": "integer"
+          },
           "deals_count": {
             "title": "Deals Count",
+            "type": "integer"
+          },
+          "deals_failed": {
+            "title": "Deals Failed",
+            "type": "integer"
+          },
+          "deals_success": {
+            "title": "Deals Success",
             "type": "integer"
           },
           "deals_sum": {
@@ -5497,6 +5509,9 @@
           "rating",
           "reviews_count",
           "deals_count",
+          "deals_success",
+          "deals_failed",
+          "deals_arbitrage",
           "deals_sum",
           "online",
           "forums"
@@ -5537,8 +5552,20 @@
             ],
             "title": "Country"
           },
+          "deals_arbitrage": {
+            "title": "Deals Arbitrage",
+            "type": "integer"
+          },
           "deals_count": {
             "title": "Deals Count",
+            "type": "integer"
+          },
+          "deals_failed": {
+            "title": "Deals Failed",
+            "type": "integer"
+          },
+          "deals_success": {
+            "title": "Deals Success",
             "type": "integer"
           },
           "deals_sum": {
@@ -5658,6 +5685,9 @@
           "rating",
           "reviews_count",
           "deals_count",
+          "deals_success",
+          "deals_failed",
+          "deals_arbitrage",
           "deals_sum",
           "online",
           "forums"

@@ -4188,8 +4188,14 @@ export interface components {
             banner_url: string | null;
             /** Country */
             country?: string | null;
+            /** Deals Arbitrage */
+            deals_arbitrage: number;
             /** Deals Count */
             deals_count: number;
+            /** Deals Failed */
+            deals_failed: number;
+            /** Deals Success */
+            deals_success: number;
             /** Deals Sum */
             deals_sum: number;
             /** Deposit */
@@ -4286,8 +4292,14 @@ export interface components {
             banner_url: string | null;
             /** Country */
             country?: string | null;
+            /** Deals Arbitrage */
+            deals_arbitrage: number;
             /** Deals Count */
             deals_count: number;
+            /** Deals Failed */
+            deals_failed: number;
+            /** Deals Success */
+            deals_success: number;
             /** Deals Sum */
             deals_sum: number;
             /** Deposit */

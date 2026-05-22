@@ -80,6 +80,14 @@ class UserOut(BaseModel):
     rating: MoneyDecimal
     reviews_count: int
     deals_count: int
+    # Item 11 — break ``deals_count`` (= ``deals_total``) into the
+    # success / failed / arbitrage tiles already tracked on the
+    # ``User`` row. Admin panel already exposes these via
+    # :class:`AdminUserDetailOut`; surfacing them here lets the
+    # regular profile show the same portfolio breakdown.
+    deals_success: int
+    deals_failed: int
+    deals_arbitrage: int
     deals_sum: MoneyDecimal
     online: bool
     forums: list[ForumOut]
@@ -122,6 +130,11 @@ class UserPublicOut(BaseModel):
     rating: MoneyDecimal
     reviews_count: int
     deals_count: int
+    # Item 11 — public-facing portfolio breakdown (mirrors the
+    # admin DTO). See :class:`UserOut` for the same rationale.
+    deals_success: int
+    deals_failed: int
+    deals_arbitrage: int
     deals_sum: MoneyDecimal
     online: bool
     forums: list[ForumOut]

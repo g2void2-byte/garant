@@ -43,6 +43,7 @@ from ...schemas import (
     AdminServiceItemOut,
     AdminServiceUpdateIn,
 )
+from ...services import recompute_user_rating
 
 logger = logging.getLogger(__name__)
 
@@ -415,6 +416,15 @@ async def create_review(
     session.add(review)
     await session.flush()
 
+    # Item 14 — keep ``target.good`` / ``target.bad`` in sync with the
+    # ``reviews`` table the same way ``services.post_review`` does for
+    # the regular user flow. Without this an admin-created review was
+    # invisible on the affected user's profile (``reviews_count`` /
+    # ``rating`` are derived from ``good + bad``).
+    target = await session.get(User, body.target_id)
+    if target is not None:
+        await recompute_user_rating(session, target)
+
     await log_admin_action(
         session,
         actor=admin,
@@ -470,6 +480,14 @@ async def update_review(
         review.text = body.text
     if not after:
         return await _review_to_out(session, review)
+    # Item 14 — a rating change has to flow into the target's
+    # ``good`` / ``bad`` counters. Recompute against the live reviews
+    # table so the projection stays consistent regardless of which
+    # direction the edit went (5→3, 2→4, etc.).
+    if "rating" in after:
+        target = await session.get(User, review.target_id)
+        if target is not None:
+            await recompute_user_rating(session, target)
     await log_admin_action(
         session,
         actor=admin,
@@ -512,6 +530,7 @@ async def delete_review(
         "rating": review.rating,
         "text": review.text,
     }
+    target_id = review.target_id
     await log_admin_action(
         session,
         actor=admin,
@@ -523,6 +542,13 @@ async def delete_review(
         request=request,
     )
     await session.delete(review)
+    # Item 14 — dropping a review has to remove its contribution from
+    # ``target.good`` / ``target.bad``. Flush first so the recompute's
+    # aggregate ``SELECT`` sees the deletion.
+    await session.flush()
+    target = await session.get(User, target_id)
+    if target is not None:
+        await recompute_user_rating(session, target)
     await session.commit()
     logger.info(
         "admin review.delete ok",

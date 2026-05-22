@@ -222,6 +222,91 @@ async def test_update_and_delete_review(client):
         assert await session.get(Review, rid) is None
 
 
+async def test_admin_review_create_update_delete_recomputes_target_counters(client):
+    """Item 14 — admin review CRUD has to keep ``target.good`` /
+    ``target.bad`` in sync with the ``reviews`` table.
+
+    Pre-fix the admin endpoints wrote the ``reviews`` row but never
+    touched ``good`` / ``bad`` (only ``services.post_review`` did).
+    Result: an admin-created review was invisible on the affected
+    user's profile because ``reviews_count = good + bad`` stayed
+    unchanged.
+    """
+    a_id = await _bootstrap_user(client, 200, "a")
+    b_id = await _bootstrap_user(client, 201, "b")
+    admin_init = await _make_admin(client)
+
+    # rating=5 ⇒ a "good" review.
+    create = await client.post(
+        "/api/admin/reviews",
+        json={"author_id": a_id, "target_id": b_id, "rating": 5, "text": "great"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert create.status_code == 201, create.text
+    rid = create.json()["id"]
+
+    async with async_session() as session:
+        target = await session.get(User, b_id)
+        assert target is not None
+        assert target.good == 1
+        assert target.bad == 0
+
+    # rating=5 → rating=2 ⇒ "good" decrements, "bad" increments.
+    upd = await client.post(
+        f"/api/admin/reviews/{rid}",
+        json={"rating": 2, "text": "not actually that great"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert upd.status_code == 200, upd.text
+
+    async with async_session() as session:
+        target = await session.get(User, b_id)
+        assert target is not None
+        assert target.good == 0
+        assert target.bad == 1
+
+    rm = await client.post(
+        f"/api/admin/reviews/{rid}/delete",
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert rm.status_code == 200, rm.text
+
+    async with async_session() as session:
+        target = await session.get(User, b_id)
+        assert target is not None
+        assert target.good == 0
+        assert target.bad == 0
+
+
+async def test_admin_review_create_surfaces_on_user_profile(client):
+    """End-to-end item 14 — after admin creates a review on B, the
+    public ``GET /api/users/<username>`` for B reflects the bumped
+    ``reviews_count`` and a non-zero ``good``. This is the user-
+    visible bug ("в админке вижу, на профиле нет") collapsed into a
+    single integration assertion.
+    """
+    a_id = await _bootstrap_user(client, 200, "a")
+    b_id = await _bootstrap_user(client, 201, "b")
+    admin_init = await _make_admin(client)
+
+    create = await client.post(
+        "/api/admin/reviews",
+        json={"author_id": a_id, "target_id": b_id, "rating": 5, "text": "great"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert create.status_code == 201, create.text
+
+    # Sanity: ``GET /api/users/b`` is the public profile fetch used
+    # by the TMA to render somebody else's stats grid.
+    resp = await client.get("/api/users/b", headers=auth_headers(admin_init))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["id"] == b_id
+    assert body["good"] == 1
+    assert body["bad"] == 0
+    assert body["reviews_count"] == 1
+
+
 # ── Comments ───────────────────────────────────────────────────────────────
 
 

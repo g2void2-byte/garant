@@ -506,3 +506,67 @@ async def test_set_stats_deposit_total(client):
     )
     assert resp.status_code == 200
     assert resp.json()["deposit_total"] == 1250.50
+
+
+# ── Item 11: public DTO breakdown ──────────────────────────────────────────
+
+
+async def test_user_me_exposes_deals_breakdown(client):
+    """``GET /api/me`` (``UserOut``) returns the success / failed /
+    arbitrage counters maintained on the ``User`` row.
+
+    Pre-fix the schema only surfaced ``deals_count`` (= ``deals_total``);
+    the breakdown was admin-only despite the underlying columns being
+    populated by every deal-state-machine transition. The ``UserCardDto``
+    fields are required on both ``UserOut`` and ``UserPublicOut``, so a
+    regression here would also break the openapi drift gate.
+    """
+    init = signed_init_data(100, "alice")
+    uid = await _bootstrap(client, tg_user_id=100, username="alice")
+
+    # Seed the per-status counters directly on the row. The deal-
+    # state-machine tests in ``tests/e2e/test_deals_arbitration.py``
+    # exercise the real increment path; here we only need the DTO
+    # projection.
+    async with async_session() as session:
+        user = await session.get(User, uid)
+        assert user is not None
+        user.deals_total = 18
+        user.deals_success = 12
+        user.deals_failed = 4
+        user.deals_arbitrage = 2
+        await session.commit()
+
+    resp = await client.get("/api/me", headers=auth_headers(init))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["deals_count"] == 18
+    assert body["deals_success"] == 12
+    assert body["deals_failed"] == 4
+    assert body["deals_arbitrage"] == 2
+
+
+async def test_user_public_profile_exposes_deals_breakdown(client):
+    """The same breakdown must surface on the public profile endpoint
+    used to render somebody else's stats grid (``UserPublicOut``).
+    """
+    viewer_init = signed_init_data(100, "viewer")
+    await _bootstrap(client, tg_user_id=100, username="viewer")
+    target_id = await _bootstrap(client, tg_user_id=200, username="bob")
+
+    async with async_session() as session:
+        user = await session.get(User, target_id)
+        assert user is not None
+        user.deals_total = 7
+        user.deals_success = 5
+        user.deals_failed = 1
+        user.deals_arbitrage = 1
+        await session.commit()
+
+    resp = await client.get("/api/users/bob", headers=auth_headers(viewer_init))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["deals_count"] == 7
+    assert body["deals_success"] == 5
+    assert body["deals_failed"] == 1
+    assert body["deals_arbitrage"] == 1
