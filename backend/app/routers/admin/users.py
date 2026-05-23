@@ -127,6 +127,7 @@ def _to_detail(user: User, *, has_pin: bool) -> AdminUserDetailOut:
         last_ip=user.last_ip,
         last_login_at=user.last_login_at,
         login_count=user.login_count,
+        sessions_count=user.sessions_count or 0,
         created_at=user.created_at,
     )
 

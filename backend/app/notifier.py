@@ -24,7 +24,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Notification, NotificationType, User
+from .models import Notification, NotificationDLQ, NotificationType, User
 from .ws import manager
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,14 @@ logger = logging.getLogger(__name__)
 # spreads further). 4 KB is enough room for the structured deal/wallet
 # events we actually emit; anything larger is almost certainly a bug.
 NOTIFICATION_PAYLOAD_MAX_BYTES = 4096
+
+# Audit v3 A-2 — when a payload is dropped at the cap the encoded JSON
+# is excerpted to the DLQ table (``notification_dlq``) for forensic
+# recovery. Keep the excerpt small enough that a hostile producer
+# flooding oversize payloads can't multiply the storage cost by more
+# than ~2× the parent cap. 8 KiB lets the SRE eyeball a reasonable
+# chunk of the dropped JSON while still bounding the worst case.
+NOTIFICATION_PAYLOAD_DLQ_EXCERPT_BYTES = 8192
 
 
 # Audit M-3 — strong references for fire-and-forget DM tasks.
@@ -56,24 +64,65 @@ def _spawn_dm_task(coro: Coroutine[Any, Any, None]) -> None:
     task.add_done_callback(_dm_dispatch_tasks.discard)
 
 
-def _payload_within_cap(payload: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Validate that ``payload`` serialises under :data:`NOTIFICATION_PAYLOAD_MAX_BYTES`.
+class _PayloadCapResult:
+    """Result of :func:`_check_payload_cap` — payload + DLQ metadata.
 
-    Returns the payload unchanged when it fits, ``None`` when it is
-    missing, and ``None`` (with a ``logger.warning`` line) when the
-    JSON encoding exceeds the cap. V11-M-10 — ``Notification.payload``
-    is now a JSONB column mapped to ``dict | None``; the DB layer
-    serialises the dict itself, so we no longer hand a pre-encoded
-    string to the ORM (which would double-encode into a JSON-string
-    literal). The size check still happens through ``json.dumps`` so
-    the cap is enforced against the on-the-wire encoding rather than
-    Python object size.
+    Pre-fix ``_payload_within_cap`` returned the (possibly-None)
+    payload and silently lost the metadata on a drop.  Audit v3 A-2
+    needs the drop metadata so ``insert``/``insert_bare`` can
+    persist it to ``notification_dlq`` for forensic recovery, but
+    keeping the call site shape ``stored, ws_payload = ...`` minimises
+    the churn at the existing callers.
+
+    ``stored`` is what goes to ``Notification.payload`` (None on drop
+    or empty input).  ``dlq_excerpt`` / ``dlq_encoded_bytes`` /
+    ``dlq_keys`` are populated only on the over-cap drop path; all
+    three being ``None`` / ``0`` / ``None`` means "fits, nothing to
+    DLQ".
+    """
+
+    __slots__ = ("stored", "dlq_excerpt", "dlq_encoded_bytes", "dlq_keys")
+
+    def __init__(
+        self,
+        stored: dict[str, Any] | None,
+        dlq_excerpt: str | None = None,
+        dlq_encoded_bytes: int = 0,
+        dlq_keys: list[str] | None = None,
+    ) -> None:
+        self.stored = stored
+        self.dlq_excerpt = dlq_excerpt
+        self.dlq_encoded_bytes = dlq_encoded_bytes
+        self.dlq_keys = dlq_keys
+
+    @property
+    def was_dropped(self) -> bool:
+        return self.dlq_excerpt is not None
+
+
+def _check_payload_cap(payload: dict[str, Any] | None) -> _PayloadCapResult:
+    """Enforce :data:`NOTIFICATION_PAYLOAD_MAX_BYTES` and capture DLQ metadata.
+
+    Returns a :class:`_PayloadCapResult` carrying both the value to
+    persist on ``Notification.payload`` and (on the over-cap path) the
+    excerpt + keys + byte count for the matching ``NotificationDLQ``
+    row.  Pre-fix the metadata only lived in the ``logger.warning``
+    line; persisting it lets the SRE join "row N had its payload
+    dropped" back to "the dropped JSON started with these keys / was
+    this many bytes" without grepping logs.
+
+    V11-M-10 — ``Notification.payload`` is a JSONB column mapped to
+    ``dict | None``; the DB layer serialises the dict itself so we no
+    longer hand a pre-encoded string to the ORM.  The size check still
+    runs through ``json.dumps`` so the cap is enforced against the
+    on-the-wire encoding rather than Python object size.
     """
     if not payload:
-        return None
+        return _PayloadCapResult(stored=None)
     encoded = json.dumps(payload)
     encoded_bytes = len(encoded.encode("utf-8"))
     if encoded_bytes > NOTIFICATION_PAYLOAD_MAX_BYTES:
+        keys = sorted(payload.keys())
         # V11-L-15 — structured-logging fields so the JSON-logger
         # downstream (Loki/Sentry) can pivot on event/size without
         # regexing the message body. Drop the payload (do NOT
@@ -82,16 +131,33 @@ def _payload_within_cap(payload: dict[str, Any] | None) -> dict[str, Any] | None
         logger.warning(
             "notification payload exceeds %d bytes, dropping (keys=%s)",
             NOTIFICATION_PAYLOAD_MAX_BYTES,
-            sorted(payload.keys()),
+            keys,
             extra={
                 "event": "notifier.payload.over_cap",
                 "encoded_bytes": encoded_bytes,
                 "cap_bytes": NOTIFICATION_PAYLOAD_MAX_BYTES,
-                "payload_keys": sorted(payload.keys()),
+                "payload_keys": keys,
             },
         )
-        return None
-    return payload
+        return _PayloadCapResult(
+            stored=None,
+            dlq_excerpt=encoded[:NOTIFICATION_PAYLOAD_DLQ_EXCERPT_BYTES],
+            dlq_encoded_bytes=encoded_bytes,
+            dlq_keys=keys,
+        )
+    return _PayloadCapResult(stored=payload)
+
+
+def _payload_within_cap(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Back-compat shim: return the stored payload only.
+
+    Several call sites (e.g. fan-out broadcasts that don't write a
+    ``Notification`` row) still call ``_payload_within_cap`` directly;
+    they care only about "what goes on the wire" and have no row to
+    attach a DLQ entry to.  Keep the historical name pointing at the
+    drop-only path so those callers stay untouched.
+    """
+    return _check_payload_cap(payload).stored
 
 
 def _dm_enabled(recipient: User, type_: NotificationType) -> bool:
@@ -171,7 +237,8 @@ async def insert(
     payload: dict[str, Any] | None = None,
 ) -> tuple[Notification, dict[str, Any] | None]:
     """Insert + flush a Notification row WITHOUT WS/DM dispatch."""
-    stored_payload = _payload_within_cap(payload)
+    cap = _check_payload_cap(payload)
+    stored_payload = cap.stored
     ws_payload = stored_payload
     notif = Notification(
         recipient_id=recipient_id,
@@ -182,6 +249,27 @@ async def insert(
     )
     session.add(notif)
     await session.flush()
+    # Audit v3 A-2 — on an over-cap drop persist the metadata + a
+    # bounded excerpt to ``notification_dlq`` so the SRE can join
+    # back to ``notifications.id`` and inspect what was lost.  The
+    # excerpt itself is JSON-text (UTF-8) capped at
+    # ``NOTIFICATION_PAYLOAD_DLQ_EXCERPT_BYTES`` — the encoded length
+    # is stored separately for the (rare) case where the dropped
+    # JSON exceeds the excerpt cap.  The DLQ row stays in the same
+    # transaction as the parent notification so a rollback elsewhere
+    # in the caller doesn't leave a half-recorded drop.
+    if cap.was_dropped:
+        session.add(
+            NotificationDLQ(
+                notification_id=notif.id,
+                recipient_id=recipient_id,
+                reason="payload_over_cap",
+                encoded_bytes=cap.dlq_encoded_bytes,
+                payload_keys={"keys": cap.dlq_keys or []},
+                payload_excerpt=cap.dlq_excerpt,
+            )
+        )
+        await session.flush()
     return notif, ws_payload
 
 

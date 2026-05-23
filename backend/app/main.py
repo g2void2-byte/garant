@@ -538,9 +538,7 @@ async def _security_headers(request, call_next):
     # year max-age is the OWASP baseline; ``includeSubDomains``
     # covers the ``media`` and ``api`` subpath mounts on the same
     # origin.
-    response.headers["Strict-Transport-Security"] = (
-        "max-age=31536000; includeSubDomains"
-    )
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     # Don't leak Garant URLs (which encode user IDs in paths) to
     # third-party origins users navigate to from inside the TMA.
     response.headers["Referrer-Policy"] = "no-referrer"

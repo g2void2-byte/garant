@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from ..deps import CurrentUser, SessionDep
+from ..media_signing import signed_media_url
 from ..models import TERMINAL_DEAL_STATUSES, Deal, DealMessage, DealStatus, Media
 from ..rate_limit import RLDealMessage
 from ..schemas import DealMessageCreate, DealMessageOut, MediaOut
@@ -52,10 +53,15 @@ async def _load_deal_or_403(session, deal_id: int, user) -> Deal:
 
 
 def _media_out(m: Media) -> MediaOut:
+    # Audit v3 L-14 — sign deal-bucket URLs at serialisation time so
+    # the link returned to the chat panel goes stale after
+    # ``settings.media_signed_url_ttl_seconds``. Pre-fix the link
+    # used to live indefinitely on the unsigned ``StaticFiles``
+    # mount.
     return MediaOut(
         id=m.id,
         kind=m.kind,
-        url=m.url,
+        url=signed_media_url(url=m.url, kind=m.kind),
         name=m.name,
         size=m.size,
         content_type=m.content_type,

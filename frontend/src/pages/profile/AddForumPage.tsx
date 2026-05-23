@@ -8,7 +8,7 @@ import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
-import { useMe, useUpdateMe } from "@/api/hooks";
+import { useForums, useMe, useUpdateMe } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
 
 /**
@@ -21,28 +21,36 @@ import { haptic } from "@/lib/tg";
  *       · URL input  ("Укажите ссылку на форум")
  *       · primary button "Добавить"
  *
- * Forum names are validated against a fixed list of common darknet
- * forums. The same list is rendered as the dropdown options.
+ * Forum names are validated against a fixed list approved by the
+ * backend (``backend.app.schemas.FORUM_WHITELIST``). Audit v3 A-1 —
+ * the list is fetched from ``GET /api/forums`` so this component
+ * cannot drift from the write-boundary validator on
+ * ``ForumIn._name_in_whitelist``. The hard-coded fallback below is
+ * only used if the network request fails (offline cold start) so the
+ * dropdown still renders something usable.
  */
-const FORUM_OPTIONS = [
-  "Darkmoney",
-  "Probiv",
-  "Verified",
+const FORUM_OPTIONS_FALLBACK = [
+  "Carder.market",
   "DarkNet",
+  "Darkmoney",
+  "Korovka",
   "Lolzteam",
   "Maza",
-  "Korovka",
-  "Carder.market",
+  "Probiv",
+  "Verified",
   "Другое",
 ];
 
 export default function AddForumPage() {
   const { data: me, isLoading } = useMe();
+  const { data: forumList } = useForums();
   const updateMe = useUpdateMe();
   const toast = useToast();
 
   const [forumName, setForumName] = useState<string>("");
   const [forumUrl, setForumUrl] = useState<string>("");
+
+  const forumOptions = forumList?.forums ?? FORUM_OPTIONS_FALLBACK;
 
   const extractApiError = async (e: unknown): Promise<string> => {
     const ke = e as { response?: Response; message?: string };
@@ -149,7 +157,7 @@ export default function AddForumPage() {
             <div className="mb-1 text-[14px] font-medium">Выберите форум</div>
             <Select
               value={forumName}
-              options={FORUM_OPTIONS.map((o) => ({ value: o, label: o }))}
+              options={forumOptions.map((o) => ({ value: o, label: o }))}
               onChange={setForumName}
               placeholder="Выберите форум"
               withIcon={false}
