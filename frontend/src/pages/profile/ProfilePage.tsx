@@ -1,7 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import {
-  ArrowUpFromLine,
   Pause,
   Play,
   Plus,
@@ -59,23 +58,20 @@ export default function ProfilePage() {
       <ProfileHeader user={me} />
 
       <div className="px-4 mt-3 space-y-3">
+        {/* Балансовая карточка теперь первой под шапкой — пользователь
+            видит текущий баланс выбранной фиатной валюты сразу, без
+            прокрутки, и оттуда же попадает в Пополнить / Вывести.
+            Соответственно дубликат «Вывести» из верхней сетки удалён —
+            единственная точка входа в withdraw теперь живёт здесь
+            (как и до Item-23). */}
+        <ProfileFiatBalanceCard user={me} />
+
         <div className="grid grid-cols-2 gap-2">
           <Button variant="primary" onClick={() => navigate("/profile/add-service")}>
             <Plus className="size-4" /> Добавить услугу
           </Button>
           <Button variant="primary" onClick={() => navigate("/wallet")}>
             <Wallet className="size-4" /> Депозит
-          </Button>
-          {/* Item 23 — surface the withdraw flow next to deposit so
-              the user has a direct entry point from the profile.
-              Pre-fix the only "Вывести" button lived on the (deeply
-              nested) ``ProfileFiatBalanceCard``, and users complained
-              they couldn't find a withdraw action at all. */}
-          <Button
-            variant="secondary"
-            onClick={() => navigate("/wallet/withdraw")}
-          >
-            <ArrowUpFromLine className="size-4" /> Вывести
           </Button>
           <Button
             variant="secondary"
@@ -86,7 +82,6 @@ export default function ProfilePage() {
           <Button
             variant="secondary"
             onClick={() => navigate("/profile/add-forum")}
-            className="col-span-2"
           >
             <Link2 className="size-4" /> Добавить форумы
           </Button>
@@ -110,8 +105,6 @@ export default function ProfilePage() {
         </div>
 
         <ProfileStatsGrid user={me} onDepositClick={() => navigate("/wallet")} />
-
-        <ProfileFiatBalanceCard user={me} />
 
         <ProfileForumsCard user={me} />
 
