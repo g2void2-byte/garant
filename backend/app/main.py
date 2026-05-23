@@ -238,6 +238,35 @@ async def lifespan(app: FastAPI):
             "and is dev-only."
         )
 
+    # Audit v3 M-6 — ``ADMIN_TOTP_BYPASS`` skips the entire TOTP
+    # verification when a matching ``X-Totp-Code`` header arrives.
+    # Like ``ALLOW_UNSIGNED_INIT_DATA`` above, this MUST NOT be
+    # enabled in production/staging: a misconfigured deploy would
+    # let anyone who knows the bypass string execute treasury
+    # withdrawals without 2FA.
+    from .auth_2fa import _totp_bypass  # noqa: E402
+
+    if _totp_bypass() and settings.environment in ("production", "staging"):
+        raise RuntimeError(
+            "ADMIN_TOTP_BYPASS must not be set when ENVIRONMENT is "
+            f"'{settings.environment}'; it disables admin 2FA verification "
+            "and is dev/test-only."
+        )
+
+    # Audit v3 L-13 — warn when ``PIN_PEPPER`` is empty in
+    # production/staging. An empty pepper means PIN hashes are pure
+    # bcrypt, which is adequate on its own, but the pepper adds
+    # defence-in-depth against a DB-only leak (attacker needs both
+    # the DB dump AND the pepper to mount offline attacks).
+    if not settings.pin_pepper and settings.environment in ("production", "staging"):
+        logger.warning(
+            "PIN_PEPPER is empty in %s — PIN hashes are pure bcrypt "
+            "without an application-level pepper. Set PIN_PEPPER for "
+            "defence-in-depth against DB-only compromise.",
+            settings.environment,
+            extra={"event": "lifespan.pin_pepper.empty"},
+        )
+
     # LOW #1 — empty ``TRUSTED_PROXIES`` means ``deps._is_trusted_peer``
     # returns ``True`` for every direct peer, so the
     # ``X-Forwarded-For`` / ``X-Real-IP`` headers are honoured
@@ -503,6 +532,15 @@ async def _security_headers(request, call_next):
     # for the /media/ mount, where a confused sniffer used to be how
     # uploaded HTML got executed.
     response.headers["X-Content-Type-Options"] = "nosniff"
+    # Audit v3 L-10 — HSTS. The TMA runs inside Telegram's WebView
+    # (always HTTPS), but direct API access or a future non-TMA
+    # frontend should not be downgradable via SSL stripping. One
+    # year max-age is the OWASP baseline; ``includeSubDomains``
+    # covers the ``media`` and ``api`` subpath mounts on the same
+    # origin.
+    response.headers["Strict-Transport-Security"] = (
+        "max-age=31536000; includeSubDomains"
+    )
     # Don't leak Garant URLs (which encode user IDs in paths) to
     # third-party origins users navigate to from inside the TMA.
     response.headers["Referrer-Policy"] = "no-referrer"
