@@ -264,21 +264,13 @@ class User(Base):
     # broadcast audience filters that target "active in past N days"
     # already use ``last_login_at`` directly and are unaffected.
     sessions_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    # Admin PR-A — aggregate stats editable by an admin via /admin/users/:id/stats.
-    # H-2 widened from ``Numeric(14, 2)`` to ``Numeric(28, 8)`` so the
-    # lifetime deposit aggregate matches the per-currency ledger
-    # precision and a satoshi-scale top-up no longer truncates on
-    # write. The migration backfills nothing because every existing
-    # value already fits inside the wider shape.
-    deposit_total: Mapped[float] = mapped_column(Numeric(28, 8), default=0, server_default="0")
     # Trust deposit — money the user voluntarily locks into the bot as a
     # trust signal. ``services_wallet.credit_deposit`` routes deposits
     # created with ``purpose="trust"`` here instead of ``UserBalance``;
     # there is *no* withdraw / spend path for this balance (lock-in by
     # design). Surfaced publicly as the ``deposit`` field on ``UserOut``
     # / ``UserPublicOut`` so other users can see how much trust capital
-    # a counterparty has put up. Distinct from ``deposit_total`` which
-    # is the admin-editable lifetime aggregate.
+    # a counterparty has put up.
     trust_deposit_balance: Mapped[float] = mapped_column(
         Numeric(28, 8), default=0, server_default="0"
     )

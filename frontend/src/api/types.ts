@@ -334,10 +334,8 @@ export interface AdminUserListItemDto {
   is_vip: boolean;
   is_banned: boolean;
   is_frozen: boolean;
-  deposit_total: number;
   // Item 12 — the trust-deposit balance is what the public profile
-  // surfaces as ``deposit``; rendered next to ``deposit_total`` so
-  // admins can disambiguate the two columns.
+  // surfaces as ``deposit``.
   trust_deposit_balance: number;
   rating: number;
   deals_total: number;
@@ -362,7 +360,6 @@ export interface AdminUserDetailDto {
   photo_url: string | null;
   banner_url: string | null;
   description: string;
-  deposit_total: number;
   // Item 12 — see ``AdminUserListItemDto.trust_deposit_balance``.
   trust_deposit_balance: number;
   rating_auto: number;
@@ -403,7 +400,7 @@ export interface AdminListUsersQuery {
   q?: string;
   role?: AdminUserRoleFilter;
   status?: AdminUserStatusFilter;
-  sort?: "created_desc" | "created_asc" | "rating" | "deals" | "deposit";
+  sort?: "created_desc" | "created_asc" | "rating" | "deals";
   page?: number;
   page_size?: number;
 }

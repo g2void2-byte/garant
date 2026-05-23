@@ -53,7 +53,7 @@ import { useAdminRedirect } from "@/hooks/useAdminRedirect";
  *   2. Moderation actions (ban/unban, freeze/unfreeze, reset-PIN, invalidate sessions)
  *   3. Roles (Admin / Arbiter / VIP toggles, saved atomically)
  *   4. Rating override
- *   5. Stats editor (deals_total / good / bad / deposit_total ...)
+ *   5. Stats editor (deals_total / good / bad / ...)
  *
  * Each section is its own subcomponent — they all share the same
  * mutation pattern (mutate → toast → invalidate via hook).
@@ -132,7 +132,6 @@ function IdentityCard({ user }: { user: AdminUserDetailDto }) {
         <Detail label="Последний вход" value={user.last_login_at ? shortDate(user.last_login_at) : "—"} />
         <Detail label="IP" value={user.last_ip ?? "—"} mono />
         <Detail label="Входов всего" value={String(user.login_count)} />
-        <Detail label="Лайфтайм-депозит" value={`$${user.deposit_total.toFixed(2)}`} />
         <Detail
           label="Трастовый депозит"
           value={`$${user.trust_deposit_balance.toFixed(2)}`}
@@ -462,7 +461,6 @@ interface StatsDraft {
   deals_arbitrage: string;
   good: string;
   bad: string;
-  deposit_total: string;
 }
 
 function StatsSection({ user }: { user: AdminUserDetailDto }) {
@@ -475,7 +473,6 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
     deals_arbitrage: String(user.deals_arbitrage),
     good: String(user.good),
     bad: String(user.bad),
-    deposit_total: String(user.deposit_total),
   });
 
   const fields: Array<{
@@ -489,7 +486,6 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
     { key: "deals_arbitrage", label: "В арбитраже", type: "int" },
     { key: "good", label: "Положительных оценок", type: "int" },
     { key: "bad", label: "Отрицательных оценок", type: "int" },
-    { key: "deposit_total", label: "Лайфтайм-депозит ($)", type: "float" },
   ];
 
   const apply = async () => {
@@ -547,10 +543,8 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
 
 /**
  * Item 12 — the public profile renders ``trust_deposit_balance`` as
- * its ``deposit`` field. ``StatsSection`` above edits the legacy
- * ``deposit_total`` aggregate (lifetime credit) — that column is
- * still useful for admin reporting but is *not* what users see, so
- * a separate section is needed to mutate the trust column directly.
+ * its ``deposit`` field. This section is the only path to mutate
+ * the column from the admin panel.
  */
 function TrustDepositSection({ user }: { user: AdminUserDetailDto }) {
   const toast = useToast();

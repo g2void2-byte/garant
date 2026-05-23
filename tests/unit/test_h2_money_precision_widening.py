@@ -211,32 +211,19 @@ async def test_currency_min_deposit_and_min_withdraw_round_trip_above_1e10():
 # The first H-2 migration (``9c3a4d2e1f08``) widened every per-currency
 # ledger column. The follow-up migration
 # (``m1d8e3f7a2b4_h2_widen_remaining_money_columns_to_28_8.py``) takes
-# care of the five columns that still lagged at ``Numeric(14, 2)``:
-# ``User.deposit_total``, ``Service.price``, ``Service.deposit`` and
-# ``AppSettings.min_deposit`` / ``min_withdraw``. The tests below pin
+# care of the columns that still lagged at ``Numeric(14, 2)``:
+# ``Service.price``, ``Service.deposit`` and
+# ``AppSettings.min_deposit`` / ``min_withdraw``. (The H-2 sweep
+# also widened ``User.deposit_total`` at the time; that column has
+# since been dropped — the public profile sources its ``deposit``
+# from ``trust_deposit_balance``, which has always been declared at
+# ``Numeric(28, 8)`` so it doesn't need a widening test of its own.)
+# The tests below pin
 # that each of them round-trips a value at the upper edge of the
 # wider shape (12-digit integer part, 8 fractional digits) — pre-fix
 # Postgres would have raised ``numeric field overflow`` because the
 # integer part exceeded ``Numeric(14, 2)``'s ``precision - scale = 12``
 # digit headroom.
-
-
-@pytest.mark.asyncio
-async def test_user_deposit_total_round_trips_above_1e10():
-    """``User.deposit_total`` keeps the full ``Numeric(28, 8)`` shape."""
-    async with async_session() as session:
-        user = User(
-            tg_user_id=49005,
-            username="h2_deposit_total",
-            display_name="h2dt",
-            deposit_total=_BIG,
-        )
-        session.add(user)
-        await session.commit()
-
-        fresh = (await session.execute(select(User).where(User.tg_user_id == 49005))).scalar_one()
-
-    assert Decimal(str(fresh.deposit_total)) == _BIG
 
 
 @pytest.mark.asyncio

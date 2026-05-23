@@ -146,7 +146,7 @@ def profile_summary(
     """
     username = f"@{escape(user.username)}" if user.username else "—"
     name = escape(user.display_name) if user.display_name else "—"
-    deposit_value = float(user.deposit_total)
+    deposit_value = float(user.trust_deposit_balance or 0)
     deposit_str = _format_money(deposit_value) if deposit_value > 0 else "—"
     buys_sum_line = _format_by_currency(by_currency, "buys_sum")
     sales_sum_line = _format_by_currency(by_currency, "sales_sum")

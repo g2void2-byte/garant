@@ -14,7 +14,7 @@ Implements the action set requested in the admin-panel spec:
     :func:`pin.bump_session_version`).
   - set role (``is_admin`` / ``is_arbiter`` / ``is_vip``)
   - set rating override
-  - edit aggregate stats (deals_total, good, bad, deposit_total, …)
+  - edit aggregate stats (deals_total, good, bad, …)
 
 Every action writes to :class:`AdminAuditLog` and DMs the target user
 when applicable (ban, freeze, role change, rating change). All mutations
@@ -97,13 +97,11 @@ def _to_detail(user: User, *, has_pin: bool) -> AdminUserDetailOut:
         photo_url=user.photo_url,
         banner_url=user.banner_url,
         description=user.description,
-        deposit_total=user.deposit_total,
-        # Item 12 — "trust deposit" (the public profile's ``deposit``
-        # field) is a separate column from the admin-editable
-        # lifetime aggregate ``deposit_total``. Defensive ``or 0``
-        # mirrors the serializer pattern: in-memory ``User(...)``
-        # rows that tests build without flushing read the attribute
-        # as ``None`` until SA applies the column default.
+        # Item 12 — "trust deposit" is the public profile's
+        # ``deposit`` field. Defensive ``or 0`` mirrors the
+        # serializer pattern: in-memory ``User(...)`` rows that
+        # tests build without flushing read the attribute as
+        # ``None`` until SA applies the column default.
         trust_deposit_balance=Decimal(str(user.trust_deposit_balance or 0)),
         rating_auto=auto,
         rating_manual=manual,
@@ -145,10 +143,8 @@ def _to_list_item(user: User) -> AdminUserListItem:
         is_vip=user.is_vip,
         is_banned=user.is_banned,
         is_frozen=user.is_frozen,
-        deposit_total=user.deposit_total,
-        # See ``_to_detail`` for the rationale; the public ``deposit``
-        # field is sourced from ``trust_deposit_balance``, not
-        # ``deposit_total``.
+        # See ``_to_detail`` for the rationale; the public
+        # ``deposit`` field is sourced from ``trust_deposit_balance``.
         trust_deposit_balance=Decimal(str(user.trust_deposit_balance or 0)),
         rating=(
             _rating_auto(user) if user.rating_manual is None else Decimal(str(user.rating_manual))
@@ -273,7 +269,7 @@ async def list_users(
     role: Annotated[Literal["admin", "arbiter", "vip", "regular", "any"], Query()] = "any",
     status: Annotated[Literal["any", "active", "banned", "frozen"], Query()] = "any",
     sort: Annotated[
-        Literal["created_desc", "created_asc", "rating", "deals", "deposit"], Query()
+        Literal["created_desc", "created_asc", "rating", "deals"], Query()
     ] = "created_desc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -320,7 +316,6 @@ async def list_users(
             User.good.desc(),
         ),
         "deals": User.deals_total.desc(),
-        "deposit": User.deposit_total.desc(),
     }[sort]
     if isinstance(order_clause, tuple):
         stmt = stmt.order_by(*order_clause)
@@ -774,11 +769,6 @@ async def set_stats(
         before["bad"] = target.bad
         after["bad"] = body.bad
         target.bad = body.bad
-    if body.deposit_total is not None and body.deposit_total != target.deposit_total:
-        before["deposit_total"] = str(target.deposit_total)
-        after["deposit_total"] = str(body.deposit_total)
-        target.deposit_total = body.deposit_total
-
     if not after:
         return _to_detail(target, has_pin=await _has_pin(target))
 
@@ -807,11 +797,10 @@ async def set_trust_deposit(
     """Set the user's trust-deposit balance (absolute value).
 
     Item 12 — the public profile's ``deposit`` field is sourced from
-    :attr:`User.trust_deposit_balance`, *not* from
-    :attr:`User.deposit_total` (which the legacy ``set_stats``
-    endpoint writes). Pre-fix admin edits to the lifetime aggregate
-    silently failed to propagate to the user-visible profile; this
-    endpoint targets the right column.
+    :attr:`User.trust_deposit_balance`. The lifetime ``deposit_total``
+    aggregate that ``set_stats`` used to write has since been
+    removed; this endpoint is the only path that mutates the
+    user-visible deposit.
 
     The body is an *absolute* amount — admin types the new total in
     the form, not a delta. Negative values are rejected at the schema

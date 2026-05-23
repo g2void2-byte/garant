@@ -1079,15 +1079,8 @@ class AdminUserListItem(BaseModel):
     is_vip: bool
     is_banned: bool
     is_frozen: bool
-    deposit_total: MoneyDecimal
-    # Item 12 — surface the *trust* deposit balance alongside
-    # ``deposit_total`` (the admin-editable lifetime aggregate) so
-    # the admin list can disambiguate "how much trust capital this
-    # user has locked in" from "how much they have ever deposited".
-    # The two columns are independent and the new
-    # ``POST /api/admin/users/:id/trust-deposit`` endpoint writes
-    # this one; the legacy ``POST /api/admin/users/:id/stats`` keeps
-    # writing ``deposit_total``.
+    # Item 12 — surface the *trust* deposit balance (lock-in capital).
+    # ``POST /api/admin/users/:id/trust-deposit`` is the only mutator.
     trust_deposit_balance: MoneyDecimal
     rating: MoneyDecimal
     deals_total: int
@@ -1118,12 +1111,10 @@ class AdminUserDetailOut(BaseModel):
     photo_url: str | None
     banner_url: str | None
     description: str
-    deposit_total: MoneyDecimal
     # Item 12 — the trust-deposit balance is the column the public
     # profile reads as ``deposit`` (see
-    # ``serializers._common_user_fields``). Surfaced here so the
-    # admin panel can show both numbers side-by-side and write the
-    # right one via the new ``trust-deposit`` endpoint.
+    # ``serializers._common_user_fields``). Written via the
+    # ``trust-deposit`` admin endpoint.
     trust_deposit_balance: MoneyDecimal
     rating_auto: MoneyDecimal
     rating_manual: MoneyDecimal | None
@@ -1230,7 +1221,6 @@ class AdminSetStatsIn(BaseModel):
     deals_arbitrage: int | None = None
     good: int | None = None
     bad: int | None = None
-    deposit_total: Decimal | None = None
 
     @field_validator(
         "deals_total",
@@ -1246,25 +1236,13 @@ class AdminSetStatsIn(BaseModel):
             raise ValueError("Значение не может быть отрицательным")
         return v
 
-    @field_validator("deposit_total")
-    @classmethod
-    def _non_negative_decimal(cls, v: Decimal | float | None) -> Decimal | None:
-        if v is None:
-            return None
-        d = _reject_non_finite_money(v)
-        if d is not None and d < 0:
-            raise ValueError("Значение не может быть отрицательным")
-        return d
-
 
 class AdminSetTrustDepositIn(BaseModel):
     """Body for ``POST /admin/users/:id/trust-deposit``.
 
     Sets the user's :attr:`~backend.app.models.User.trust_deposit_balance`
     — the column rendered as ``deposit`` on the public
-    ``UserOut`` / ``UserPublicOut`` DTOs. Distinct from
-    ``AdminSetStatsIn.deposit_total`` which edits the admin-only
-    lifetime aggregate.
+    ``UserOut`` / ``UserPublicOut`` DTOs.
 
     The value is *absolute* (the admin types the new total, not a
     delta); negative values are rejected because the trust deposit

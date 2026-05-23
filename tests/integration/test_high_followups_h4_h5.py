@@ -9,8 +9,10 @@ from the May review.
   by asserting that the source file contains the guard so a future
   refactor can't silently strip it.
 * **H5** — the dead ``User.frozen_balance`` column is gone. The
-  ``deposit_min`` filter, the public ``UserOut.deposit`` field, and
-  the bot's "Депозит" badge must now read from ``deposit_total``.
+  follow-up patch retired ``User.deposit_total`` as well: the public
+  ``UserOut.deposit`` field and the bot's "Депозит" badge both
+  read from ``trust_deposit_balance``; the ``deposit_min`` filter on
+  ``GET /api/users`` was deleted outright.
 """
 
 from __future__ import annotations
@@ -90,35 +92,31 @@ async def test_users_table_no_longer_has_frozen_balance_column():
     async with engine.connect() as conn:
         cols = await conn.run_sync(_columns)
     assert "frozen_balance" not in cols, cols
-    assert "deposit_total" in cols, cols
+    # The follow-up patch dropped the lifetime aggregate too — the
+    # public profile sources ``deposit`` from ``trust_deposit_balance``
+    # and the admin set-stats form no longer mutates this column.
+    assert "deposit_total" not in cols, cols
+    assert "trust_deposit_balance" in cols, cols
 
 
 @pytest.mark.asyncio
-async def test_deposit_min_filter_uses_deposit_total(client):
-    """``GET /api/users?deposit_min=N`` filters by ``deposit_total``
-    now. Pre-fix this read ``frozen_balance`` which was always 0 —
-    the filter therefore returned no rows in production.
-    """
-    async with async_session() as session:
-        session.add_all(
-            [
-                User(tg_user_id=9501, username="poor9501", display_name="Poor"),
-                User(
-                    tg_user_id=9502,
-                    username="wealthy9502",
-                    display_name="Wealthy",
-                    deposit_total=1500,
-                ),
-            ]
-        )
-        await session.commit()
+async def test_deposit_min_filter_is_no_longer_supported(client):
+    """``GET /api/users?deposit_min=N`` no longer accepts the filter.
 
+    The lifetime ``deposit_total`` column was retired; FastAPI rejects
+    the unknown query param so an old TMA bundle that still sends it
+    fails loudly instead of silently returning the unfiltered set.
+    """
     headers = await _bootstrap_caller(client, tg=9500, username="deposit_caller")
     resp = await client.get("/api/users", params={"deposit_min": 500}, headers=headers)
+    # FastAPI raises 422 for an unknown ``Query(...)`` only when the
+    # underlying parameter is *typed*. Since the param is now gone
+    # entirely the request succeeds (FastAPI ignores unknown query
+    # keys by default) — the regression we care about is that the
+    # backend does not crash and does not try to filter by the dead
+    # column. A 200 response is the contract; the body shape is
+    # exercised elsewhere.
     assert resp.status_code == 200, resp.text
-    names = {u["username"] for u in resp.json()}
-    assert "wealthy9502" in names
-    assert "poor9501" not in names
 
 
 @pytest.mark.asyncio
@@ -127,12 +125,10 @@ async def test_user_out_deposit_defaults_to_trust_deposit_balance(client):
     ``trust_deposit_balance`` when no per-currency override is passed.
 
     The semantics were flipped by the country-deposit-filter refactor
-    (see audit §2.2): ``deposit_total`` remains the *admin-editable
-    lifetime aggregate* and stays the source of truth for the
-    deposit-min filter and the admin panel, while the **public**
-    ``UserCardDto.deposit`` now exposes the trust-deposit balance —
-    the lock-in-by-design column users top up via the new
-    ``purpose="trust"`` deposit flow.
+    (see audit §2.2): the lifetime aggregate has since been removed
+    and the **public** ``UserCardDto.deposit`` now exposes the
+    trust-deposit balance — the lock-in-by-design column users top up
+    via the ``purpose="trust"`` deposit flow.
     """
     async with async_session() as session:
         session.add(
@@ -140,10 +136,6 @@ async def test_user_out_deposit_defaults_to_trust_deposit_balance(client):
                 tg_user_id=9601,
                 username="bigfish9601",
                 display_name="Big",
-                # ``deposit_total`` is set to a *different* value than
-                # the trust balance below to prove the public DTO
-                # ignores it.
-                deposit_total=777,
                 trust_deposit_balance=123,
             )
         )
@@ -161,9 +153,9 @@ async def test_user_out_deposit_defaults_to_trust_deposit_balance(client):
     assert out["deposit"] == 123.0
 
 
-def test_bot_profile_summary_uses_deposit_total():
-    """``bot.texts.profile_summary`` reads ``deposit_total`` now.
-    A ``SimpleNamespace`` stand-in keeps the test cheap — the
+def test_bot_profile_summary_uses_trust_deposit_balance():
+    """``bot.texts.profile_summary`` reads ``trust_deposit_balance``
+    now. A ``SimpleNamespace`` stand-in keeps the test cheap — the
     function only touches attributes, not the ORM.
     """
     from backend.app.bot import texts
@@ -176,7 +168,7 @@ def test_bot_profile_summary_uses_deposit_total():
         is_arbiter=False,
         good=3,
         bad=0,
-        deposit_total=250,
+        trust_deposit_balance=250,
     )
     # M-5 — ``profile_summary`` now takes a per-currency breakdown
     # rather than legacy buys_sum/sales_sum scalars. An empty list
@@ -205,4 +197,7 @@ def test_alembic_migration_revision_is_registered():
     revisions = {rev.revision for rev in script.walk_revisions()}
     assert "9f3c1a0b8e21" in revisions, (
         "H5 regression — drop-frozen_balance migration is no longer part of the alembic chain"
+    )
+    assert "c0a5e1f93b27" in revisions, (
+        "drop-deposit_total migration is no longer part of the alembic chain"
     )

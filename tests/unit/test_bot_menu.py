@@ -288,7 +288,7 @@ def test_profile_summary_text_uses_username_and_status():
         is_arbiter=True,
         good=4,
         bad=1,
-        deposit_total=12.0,
+        trust_deposit_balance=12.0,
     )
     body = texts.profile_summary(
         user,
@@ -318,7 +318,7 @@ def test_profile_summary_with_multi_currency():
         is_arbiter=False,
         good=0,
         bad=0,
-        deposit_total=0.0,
+        trust_deposit_balance=0.0,
     )
     body = texts.profile_summary(
         user,
@@ -353,7 +353,7 @@ def test_profile_summary_escapes_username_for_html_parse_mode():
         is_arbiter=False,
         good=0,
         bad=0,
-        deposit_total=0.0,
+        trust_deposit_balance=0.0,
     )
     body = texts.profile_summary(
         user,

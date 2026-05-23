@@ -56,11 +56,8 @@ def _common_user_fields(
     else:
         admin_level = 0
     # ``deposit`` on the public DTO surfaces the *trust* deposit balance
-    # (the new lock-in-by-design column) rather than the admin-editable
-    # lifetime ``deposit_total``. The admin panel keeps reading
-    # ``deposit_total`` directly via ``AdminUserListItem`` /
-    # ``AdminUserDetailDto``; callers that explicitly pass a per-currency
-    # ``deposit`` aggregate still win over the default.
+    # (the lock-in-by-design column). Callers that explicitly pass a
+    # per-currency ``deposit`` aggregate still win over the default.
     #
     # ``trust_deposit_balance`` has a Python-side ``default=0`` plus a
     # ``server_default="0"`` on the column, but unit tests that build
@@ -122,11 +119,9 @@ def user_to_out(
     public listing endpoints use :func:`user_to_public_out` instead
     (audit v9 Comments 29/30).
 
-    ``deposit`` defaults to ``user.deposit_total`` — the lifetime
-    deposit aggregate maintained by the admin panel. Pass an explicit
-    value when the caller has a per-currency aggregate to surface
-    instead. (The legacy ``frozen_balance`` column was dropped in
-    favour of ``deposit_total``; see ``alembic/versions/9f3c1a0b8e21``.)
+    ``deposit`` defaults to ``user.trust_deposit_balance`` — the
+    user-visible lock-in deposit. Pass an explicit value when the
+    caller has a per-currency aggregate to surface instead.
     """
     base = _common_user_fields(user, deposit=deposit, deals_sum=deals_sum)
     return UserOut(

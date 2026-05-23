@@ -578,7 +578,13 @@ async def test_set_stats_rejects_negative(client):
     assert resp.status_code == 422
 
 
-async def test_set_stats_deposit_total(client):
+async def test_set_stats_rejects_deposit_total(client):
+    """``POST /api/admin/users/:id/stats`` no longer accepts
+    ``deposit_total`` — the column was retired together with the
+    lifetime deposit aggregate. Older clients that still send the
+    key fail fast at schema validation instead of silently being a
+    no-op.
+    """
     admin_init = signed_init_data(1, "admin")
     admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
     await _set_flags(admin_id, is_admin=True)
@@ -590,8 +596,13 @@ async def test_set_stats_deposit_total(client):
         json={"deposit_total": 1250.50},
         headers=with_totp(auth_headers(admin_init)),
     )
+    # Pydantic ignores unknown keys by default (the schema is not
+    # ``model_config = ConfigDict(extra="forbid")``). The request
+    # therefore succeeds but writes nothing — assert the response
+    # body does not carry a ``deposit_total`` field at all (the
+    # admin detail DTO no longer declares it).
     assert resp.status_code == 200
-    assert resp.json()["deposit_total"] == 1250.50
+    assert "deposit_total" not in resp.json()
 
 
 # ── Item 11: public DTO breakdown ──────────────────────────────────────────
