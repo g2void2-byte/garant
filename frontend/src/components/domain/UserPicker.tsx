@@ -17,6 +17,16 @@ interface UserPickerProps {
   /** Fired with the username (without ``@``) on every change. */
   onChange: (username: string) => void;
   /**
+   * Optional callback fired with the full ``UserCardDto`` whenever a
+   * row is picked from the dropdown, and with ``null`` when the
+   * selection is cleared. Callers that need the picked user's ``id``
+   * (e.g. the admin "Новый отзыв" sheet) use this to avoid a
+   * secondary lookup-by-username round trip. Backwards-compatible —
+   * ``CreateDealPage`` does not pass this prop and continues to drive
+   * itself off ``value``/``onChange``.
+   */
+  onPick?: (user: UserCardDto | null) => void;
+  /**
    * Optional "Start deal" callback. When provided, the selected-card
    * footer renders a primary "Начать сделку" button; when omitted the
    * caller can drive submission from elsewhere on the form (e.g. a
@@ -44,6 +54,7 @@ interface UserPickerProps {
 export function UserPicker({
   value,
   onChange,
+  onPick,
   onStartDeal,
   label = "Контрагент",
   placeholder = "@username или ID",
@@ -102,6 +113,7 @@ export function UserPicker({
     setSelected(u);
     setInput(u.username);
     onChange(u.username);
+    onPick?.(u);
     setFocused(false);
   }
 
@@ -110,6 +122,7 @@ export function UserPicker({
     setInput("");
     setDebounced("");
     onChange("");
+    onPick?.(null);
     setFocused(true);
   }
 
@@ -142,7 +155,10 @@ export function UserPicker({
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
-              if (selected) setSelected(null);
+              if (selected) {
+                setSelected(null);
+                onPick?.(null);
+              }
               onChange(e.target.value.replace(/^@+/, "").trim());
             }}
             onFocus={() => setFocused(true)}
