@@ -68,7 +68,20 @@ def _generate_code() -> str:
 
 
 def _hash_code(code: str) -> str:
-    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+    # Audit v3 L-12 — use HMAC-SHA256 keyed with ``pin_pepper``
+    # instead of bare SHA-256.  The 6-digit code has only ~20 bits
+    # of entropy; bare SHA-256 hashes are brute-forceable in under a
+    # second if the ``account_transfer_codes`` table leaks.  Keying
+    # the hash with a server-side secret means an attacker also needs
+    # the pepper to mount an offline attack.  When ``pin_pepper`` is
+    # empty the construction degrades to ``HMAC(b"", ...)`` which is
+    # still structurally different from a bare ``sha256`` (the HMAC
+    # inner/outer pad XOR ensures the output differs), so existing
+    # rows hashed with the old scheme will NOT match — but that is
+    # acceptable because transfer codes are short-lived (15 min TTL)
+    # and any in-flight code at deploy time simply expires.
+    key = settings.pin_pepper.encode("utf-8")
+    return hmac.new(key, code.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _verify_code(code: str, code_hash: str) -> bool:

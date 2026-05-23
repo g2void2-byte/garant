@@ -136,7 +136,7 @@ describe("api ky client — beforeError", () => {
   it("clears the PIN token + invalidates PIN status on 401 with PIN-session detail", async () => {
     pinState.token = "stale-token";
     fetchSpy.mockResolvedValue(
-      jsonResponse(401, { detail: "PIN-сессия недействительна" }),
+      jsonResponse(401, { detail: { code: "pin_session_invalid", detail: "PIN-сессия недействительна" } }),
     );
 
     const { api } = await import("./client");

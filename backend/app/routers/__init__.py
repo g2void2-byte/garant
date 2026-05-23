@@ -10,6 +10,7 @@ from . import (
     account,
     arbitration,
     categories,
+    client_errors,
     csp_report,
     deal_messages,
     deals,
@@ -45,6 +46,7 @@ all_routers = [
     media.router,
     ws.router,
     csp_report.router,
+    client_errors.router,
     services.admin_router,
     *admin_routers,
 ]

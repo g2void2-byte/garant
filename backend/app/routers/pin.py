@@ -174,7 +174,7 @@ async def pin_check(
     body: PinCheckIn, user: CurrentUser, session: SessionDep, _rl: RLPin
 ) -> PinTokenOut:
     if not user.pin_hash:
-        raise HTTPException(409, "PIN не установлен")
+        raise HTTPException(409, {"code": "pin_not_set", "detail": "PIN не установлен"})
     _ensure_format(body.pin)
     if _is_locked(user):
         raise HTTPException(423, "Слишком много попыток. Попробуйте позже.")

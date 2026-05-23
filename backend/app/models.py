@@ -592,6 +592,15 @@ class Notification(Base):
 
 class AppSettings(Base):
     __tablename__ = "app_settings"
+    __table_args__ = (
+        # Audit v3 L-3 — prevent an admin from setting a commission
+        # percentage outside [0, 100]. ``Numeric(5, 2)`` alone accepts
+        # up to 999.99; an accidental ``500%`` would burn user balances.
+        CheckConstraint(
+            "deal_commission_percent BETWEEN 0 AND 100",
+            name="ck_app_settings_deal_commission_pct_range",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     deal_commission_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=5.0)

@@ -356,23 +356,36 @@ async def require_pin_session(
     request on busy users).
     """
     if not user.pin_hash:
-        raise HTTPException(403, "PIN не установлен")
+        raise HTTPException(
+            403, {"code": "pin_not_set", "detail": "PIN не установлен"},
+        )
     if not x_pin_token:
-        raise HTTPException(401, "PIN-сессия отсутствует")
+        raise HTTPException(
+            401, {"code": "pin_session_missing", "detail": "PIN-сессия отсутствует"},
+        )
     decoded = decode_session_token(x_pin_token)
     if decoded is None:
-        raise HTTPException(401, "PIN-сессия недействительна")
+        raise HTTPException(
+            401, {"code": "pin_session_invalid", "detail": "PIN-сессия недействительна"},
+        )
     token_user_id, token_epoch = decoded
     if token_user_id != user.id:
-        raise HTTPException(401, "PIN-сессия недействительна")
+        raise HTTPException(
+            401, {"code": "pin_session_invalid", "detail": "PIN-сессия недействительна"},
+        )
     if token_epoch != (user.pin_session_epoch or 0):
-        raise HTTPException(401, "PIN-сессия отозвана")
+        raise HTTPException(
+            401, {"code": "pin_session_revoked", "detail": "PIN-сессия отозвана"},
+        )
 
     now = utcnow()
     idle_window = timedelta(seconds=settings.pin_session_ttl_seconds)
     last = user.pin_last_activity_at
     if last is not None and (now - last) > idle_window:
-        raise HTTPException(401, "PIN-сессия истекла из-за неактивности")
+        raise HTTPException(
+            401,
+            {"code": "pin_session_idle", "detail": "PIN-сессия истекла из-за неактивности"},
+        )
     # Debounce the activity write so back-to-back protected calls don't
     # generate a write per request. NULL → first write unconditionally.
     debounce = timedelta(seconds=settings.pin_activity_debounce_seconds)

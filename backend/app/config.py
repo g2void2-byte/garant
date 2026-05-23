@@ -213,6 +213,13 @@ class Settings(BaseSettings):
     # preserve the existing dev/test behaviour.
     require_redis_for_2fa: bool = False
 
+    # Audit v3 L-11 — when ``True``, rate-limit checks return 503
+    # instead of falling back to the in-memory deque when Redis is
+    # unavailable. On a multi-replica deployment the in-memory
+    # fallback gives each replica its own counter, effectively
+    # multiplying the allowed rate by the replica count.
+    require_redis_for_rate_limit: bool = False
+
     # Comment 38 (audit v10) — WS DoS hardening tunables.
     ws_max_sockets_per_user: int = 5
     ws_recv_max_messages_per_second: float = 10.0

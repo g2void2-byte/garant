@@ -57,6 +57,26 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       console.error("[ErrorBoundary]", error, info.componentStack);
     }
     this.props.onError?.(error, info);
+
+    // Audit v3 L-9 — report the error to the backend so it surfaces
+    // in server-side logs / Sentry. Fire-and-forget; never block the
+    // fallback UI on a failed report.
+    try {
+      const body = JSON.stringify({
+        message: error.message?.slice(0, 2000) ?? "unknown",
+        stack: error.stack?.slice(0, 8000) ?? "",
+        component_stack: (info.componentStack ?? "").slice(0, 4000),
+        url: typeof window !== "undefined" ? window.location.href : "",
+        user_agent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+      });
+      fetch("/api/errors/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      }).catch(() => {});
+    } catch {
+      /* swallow — the fallback UI must always render */
+    }
   }
 
   private readonly handleReset = (): void => {

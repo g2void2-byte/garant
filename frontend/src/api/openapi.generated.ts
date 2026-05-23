@@ -1710,6 +1710,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/errors/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report Client Error */
+        post: operations["report_client_error_api_errors_report_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me": {
         parameters: {
             query?: never;
@@ -3711,6 +3728,31 @@ export interface components {
             services_count: number;
             /** Slug */
             slug: string;
+        };
+        /** ClientErrorReport */
+        ClientErrorReport: {
+            /**
+             * Component Stack
+             * @default
+             */
+            component_stack: string;
+            /** Message */
+            message: string;
+            /**
+             * Stack
+             * @default
+             */
+            stack: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+            /**
+             * User Agent
+             * @default
+             */
+            user_agent: string;
         };
         /** CurrencyOut */
         CurrencyOut: {
@@ -7942,6 +7984,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DealOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_client_error_api_errors_report_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientErrorReport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

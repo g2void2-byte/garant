@@ -360,7 +360,10 @@ async def enable(
     # skipped.
     if rotated and secret == admin.totp_secret:
         if new_counter <= (admin.totp_last_counter or -1):
-            raise HTTPException(401, "Код 2FA уже использован — введите новый")
+            raise HTTPException(
+                401,
+                {"code": "totp_replay", "detail": "Код 2FA уже использован — введите новый"},
+            )
 
     # Both codes verified — write the row. ``new_counter`` is the
     # counter of the *new* secret, which is what gates future replay

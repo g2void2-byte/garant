@@ -155,9 +155,10 @@ async def test_get_current_user_updates_after_debounce_window(client, monkeypatc
 
 async def test_pin_session_invalid_detail_strings_are_stable(client):
     """H2 contract test — the frontend's ``beforeError`` interceptor
-    matches on the exact ``detail`` strings ``require_pin_session``
-    raises. If they ever drift, PinGate stops reacting to server-side
-    invalidation. This test pins the strings.
+    matches on the ``code`` field of the structured error that
+    ``require_pin_session`` raises. If the codes ever drift, PinGate
+    stops reacting to server-side invalidation. This test pins the
+    codes and detail strings.
     """
     init = signed_init_data(8301, "pin_contract")
     await setup_pin(client, init)
@@ -168,7 +169,9 @@ async def test_pin_session_invalid_detail_strings_are_stable(client):
         headers=auth_headers(init),
     )
     assert resp.status_code == 401
-    assert resp.json().get("detail") == "PIN-сессия отсутствует"
+    detail = resp.json().get("detail")
+    assert detail["code"] == "pin_session_missing"
+    assert detail["detail"] == "PIN-сессия отсутствует"
 
     # Hit with a garbage token.
     resp = await client.post(
@@ -176,4 +179,6 @@ async def test_pin_session_invalid_detail_strings_are_stable(client):
         headers={**auth_headers(init), "X-Pin-Token": "not-a-jwt"},
     )
     assert resp.status_code == 401
-    assert resp.json().get("detail") == "PIN-сессия недействительна"
+    detail = resp.json().get("detail")
+    assert detail["code"] == "pin_session_invalid"
+    assert detail["detail"] == "PIN-сессия недействительна"

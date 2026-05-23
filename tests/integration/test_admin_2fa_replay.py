@@ -105,7 +105,8 @@ async def test_consume_totp_rejects_parallel_replay_via_redis(fake_redis):
     a, b = await asyncio.gather(_try_consume(), _try_consume())
     outcomes = sorted([a, b])
     # Exactly one "ok" and one 401.
-    assert outcomes[0] == "401:Код 2FA уже использован — дождитесь следующего", outcomes
+    assert outcomes[0].startswith("401:"), outcomes
+    assert "totp_replay" in outcomes[0], outcomes
     assert outcomes[1] == "ok", outcomes
 
 
