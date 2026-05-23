@@ -183,9 +183,24 @@ async def _build_lockout_exception(session: AsyncSession, user: User) -> HTTPExc
 
 async def get_current_user(
     request: Request,
-    authorization: Annotated[str, Header()],
+    authorization: Annotated[str | None, Header()] = None,
     session: AsyncSession = Depends(get_session),
 ) -> User:
+    # Audit (continuation) H-3 — pre-fix ``authorization`` was a
+    # *required* ``Header()`` parameter, so a client that omitted the
+    # header entirely got a 422 from FastAPI's Pydantic validation
+    # layer with body ``{"detail":[{"type":"missing","loc":["header",
+    # "authorization"]...}]}``. Two problems with that:
+    #   1. The 422 leaks the internal field name + Pydantic error
+    #      machinery to anonymous callers (defence-in-depth issue).
+    #   2. The frontend ``ky.beforeError`` hook is wired to re-auth
+    #      on 401/403 — 422 falls through to a generic error toast
+    #      so an expired initData blob shows a confusing "Не удалось"
+    #      instead of triggering a fresh re-auth handshake.
+    # Marking the header optional lets us emit a clean 401 with the
+    # same shape as the other auth failures below.
+    if not authorization:
+        raise HTTPException(401, "Authorization header missing")
     if not authorization.lower().startswith("tma "):
         raise HTTPException(401, "Invalid Authorization header")
 
@@ -256,8 +271,17 @@ async def get_current_user(
             raise await _build_lockout_exception(session, user)
 
         dirty = False
-        if tg_user.get("username") and user.username != tg_user["username"]:
-            user.username = tg_user["username"]
+        # Audit (continuation) L-8 — defensive ``.strip()`` so a
+        # malformed/empty ``username`` field from Telegram never
+        # overwrites a previously-set value with whitespace. Telegram
+        # itself never sends ``username=""`` (it omits the key when
+        # there's no username), but a future client-side
+        # transformation that calls ``trim()`` *and* keeps the field
+        # would otherwise pass this gate and blank out
+        # ``user.username``. Truthiness alone wouldn't catch that.
+        observed_username = (tg_user.get("username") or "").strip()
+        if observed_username and user.username != observed_username:
+            user.username = observed_username
             dirty = True
         # A-6 — refresh ``language_code`` on the same dirty-track as
         # ``username`` so an admin broadcast targeting the ``ru`` cohort

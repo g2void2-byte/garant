@@ -411,14 +411,15 @@ def test_v5_c_5_xff_honoured_for_trusted_peer(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_v5_c_7_dashboard_rejects_missing_auth_header(client):
-    """No ``Authorization`` header at all → FastAPI's required-header
-    validation kicks in *before* the admin guard.  We assert on the
-    status code only (401 / 422 are both "unauthenticated"); the
-    important contract is that the endpoint never returns 200 or
-    leaks data to an unauthenticated caller.
+    """No ``Authorization`` header at all → ``get_current_user`` returns
+    a clean 401.  Pre-fix (audit cont. H-3) this also accepted 422
+    from Pydantic's required-header validator running before the
+    admin guard; that path no longer fires because the header is
+    now optional and the dependency surfaces the same 401 the other
+    auth failures use.
     """
     resp = await client.get("/api/admin/dashboard")
-    assert resp.status_code in (401, 422), resp.text
+    assert resp.status_code == 401, resp.text
 
 
 @pytest.mark.asyncio

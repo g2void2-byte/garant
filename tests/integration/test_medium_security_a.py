@@ -69,10 +69,11 @@ async def test_api_returns_401_for_non_numeric_auth_date(client):
 
 
 async def test_support_admins_requires_auth(client):
-    # Missing Authorization header → 422 (FastAPI's required-header
-    # validation, matches the convention in ``test_auth.py``).
+    # Audit (continuation) H-3 — missing Authorization header now
+    # surfaces a clean 401 from ``get_current_user`` (pre-fix this
+    # leaked a 422 with Pydantic's required-header validator body).
     resp = await client.get("/api/support/admins")
-    assert resp.status_code == 422
+    assert resp.status_code == 401
     # Invalid scheme → 401.
     resp = await client.get("/api/support/admins", headers={"Authorization": "Bearer nope"})
     assert resp.status_code == 401
@@ -80,7 +81,7 @@ async def test_support_admins_requires_auth(client):
 
 async def test_support_arbiters_requires_auth(client):
     resp = await client.get("/api/support/arbiters")
-    assert resp.status_code == 422
+    assert resp.status_code == 401  # Audit cont. H-3
     resp = await client.get("/api/support/arbiters", headers={"Authorization": "Bearer nope"})
     assert resp.status_code == 401
 
@@ -104,7 +105,7 @@ async def test_support_arbiters_works_with_auth(client):
 
 async def test_categories_requires_auth(client):
     resp = await client.get("/api/categories")
-    assert resp.status_code == 422
+    assert resp.status_code == 401  # Audit cont. H-3
     resp = await client.get("/api/categories", headers={"Authorization": "Bearer nope"})
     assert resp.status_code == 401
 
@@ -151,7 +152,7 @@ async def _seed_reviews(target_username: str, count: int) -> None:
 
 async def test_reviews_list_requires_auth(client):
     resp = await client.get("/api/reviews", params={"user": "anyone"})
-    assert resp.status_code == 422
+    assert resp.status_code == 401  # Audit cont. H-3
     resp = await client.get(
         "/api/reviews",
         params={"user": "anyone"},

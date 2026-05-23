@@ -38,6 +38,11 @@ _bot_task: asyncio.Task | None = None
 _inactivity_task: asyncio.Task | None = None
 _deposit_expiry_task: asyncio.Task | None = None
 _last_ip_purge_task: asyncio.Task | None = None
+# Audit (continuation) H-2 — background reconciler for the
+# ``WalletWithdrawal`` Phase 2 → Phase 3 gap. See
+# ``services_wallet.sweep_stale_withdrawals`` for the recovery
+# semantics.
+_withdrawal_stale_task: asyncio.Task | None = None
 
 # V11-L-17 — exponential backoff ceiling for sweep loop error retries.
 # Without a ceiling a database that stays down would accelerate the
@@ -145,6 +150,18 @@ async def _deposit_expiry_work() -> int | None:
         return await sweep_expired_deposits(session)
 
 
+async def _withdrawal_stale_work() -> int | None:
+    # Audit (continuation) H-2 — reconcile ``pending``
+    # ``WalletWithdrawal`` rows the Phase 2 crash path left behind
+    # against CryptoBot's ``getTransfers`` API. Lives in its own
+    # session per iteration so a bad row doesn't poison the
+    # transaction for the rest of the sweep.
+    from .services_wallet import sweep_stale_withdrawals
+
+    async with async_session() as session:
+        return await sweep_stale_withdrawals(session)
+
+
 async def _last_ip_purge_work() -> int | None:
     from .services import sweep_user_last_ip
 
@@ -165,6 +182,11 @@ _deposit_expiry_loop = _make_sweep_loop(
     _deposit_expiry_work,
     "deposit-expiry sweep: marked %d deposit(s) expired",
 )
+_withdrawal_stale_loop = _make_sweep_loop(
+    "withdrawal-stale-reconcile",
+    _withdrawal_stale_work,
+    "withdrawal-stale sweep: reconciled %d withdrawal(s)",
+)
 _last_ip_purge_loop = _make_sweep_loop(
     "last-ip-purge",
     _last_ip_purge_work,
@@ -175,6 +197,7 @@ _last_ip_purge_loop = _make_sweep_loop(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _bot_task, _inactivity_task, _deposit_expiry_task, _last_ip_purge_task
+    global _withdrawal_stale_task
 
     # M-8 — Redis-backed rate limit is the only way to share counters
     # across uvicorn workers / replicas. With ``REDIS_URL`` empty the
@@ -296,6 +319,18 @@ async def lifespan(app: FastAPI):
             _deposit_expiry_loop(settings.wallet_deposit_sweep_seconds)
         )
 
+    # Audit (continuation) H-2 — gate identical to the deposit
+    # sweep: ``wallet_withdrawal_stale_sweep_seconds=0`` disables
+    # the reconciler entirely (the test suite default). The sweep
+    # function itself also no-ops if ``stale_seconds<=0`` or
+    # CryptoBot is not configured, so a deploy without CryptoBot
+    # (manual-mode-only) won't burn cycles iterating pending rows
+    # it can never reconcile.
+    if settings.wallet_withdrawal_stale_sweep_seconds > 0:
+        _withdrawal_stale_task = asyncio.create_task(
+            _withdrawal_stale_loop(settings.wallet_withdrawal_stale_sweep_seconds)
+        )
+
     if settings.last_ip_purge_sweep_seconds > 0:
         _last_ip_purge_task = asyncio.create_task(
             _last_ip_purge_loop(settings.last_ip_purge_sweep_seconds)
@@ -308,6 +343,7 @@ async def lifespan(app: FastAPI):
         _inactivity_task,
         _deposit_expiry_task,
         _last_ip_purge_task,
+        _withdrawal_stale_task,
     ):
         if task and not task.done():
             task.cancel()

@@ -282,12 +282,16 @@ async def test_patch_me_forums_replace_returns_post_commit_state(client):
     await _bootstrap(client, tg_user_id=9401, username="forum_pat")
 
     # Seed with two initial forums.
+    # Audit (continuation) M-1 — names sourced from
+    # ``schemas.FORUM_WHITELIST`` (the URL contract under test is
+    # unchanged; this test exercises wholesale replace, not the
+    # name list itself).
     seed = await client.patch(
         "/api/me",
         json={
             "forums": [
-                {"name": "Old1", "url": "https://forum-old-1.example.com/"},
-                {"name": "Old2", "url": "https://forum-old-2.example.com/"},
+                {"name": "Darkmoney", "url": "https://forum-old-1.example.com/"},
+                {"name": "Probiv", "url": "https://forum-old-2.example.com/"},
             ]
         },
         headers=auth_headers(init),
@@ -304,9 +308,9 @@ async def test_patch_me_forums_replace_returns_post_commit_state(client):
         "/api/me",
         json={
             "forums": [
-                {"name": "New1", "url": "https://t.me/forum_new_1"},
-                {"name": "New2", "url": "https://forum-new-2.example.com/"},
-                {"name": "New3", "url": "https://forum-new-3.example.com/"},
+                {"name": "Verified", "url": "https://t.me/forum_new_1"},
+                {"name": "DarkNet", "url": "https://forum-new-2.example.com/"},
+                {"name": "Lolzteam", "url": "https://forum-new-3.example.com/"},
             ]
         },
         headers=auth_headers(init),

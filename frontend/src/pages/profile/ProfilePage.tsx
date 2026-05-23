@@ -30,13 +30,21 @@ import {
 } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
 import { confirmDialog } from "@/lib/dialog";
-import { relativeTime } from "@/lib/format";
+import { parseDecimal, relativeTime } from "@/lib/format";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { data: me, isLoading } = useMe();
   const [tab, setTab] = useState<"services" | "reviews">("services");
-  const { data: services } = useServices({ owner: me?.username });
+  // Audit (continuation) L-2 — gate the services query on having a
+  // resolved ``owner`` so the first render (while ``useMe`` is still
+  // loading) doesn't issue a list-all request and pollute the
+  // TanStack Query cache with someone else's data. ``useReviews``
+  // already does this via its own ``enabled`` guard.
+  const { data: services } = useServices(
+    { owner: me?.username },
+    { enabled: !!me?.username },
+  );
   const { data: reviews } = useReviews(me?.username);
 
   const updateService = useUpdateService();
@@ -181,7 +189,14 @@ export default function ProfilePage() {
             reviews.map((r) => (
               <div key={r.id} className="bg-panel border border-border rounded-card p-3">
                 <div className="flex items-center gap-2 text-sm">
-                  <span className="text-accent font-bold">★ {r.rating.toFixed(1)}</span>
+                  {/* Audit (continuation) M-2 — defence-in-depth.
+                      ``r.rating`` is typed as ``number`` in the
+                      OpenAPI client, but it round-trips through
+                      Pydantic's ``Decimal`` serializer and a future
+                      ``json_encoders`` change could surface it as a
+                      JSON string. ``parseDecimal`` accepts both shapes,
+                      so the call below stays runtime-safe regardless. */}
+                  <span className="text-accent font-bold">★ {parseDecimal(r.rating).toFixed(1)}</span>
                   <span className="text-text-muted">от @{r.author_username}</span>
                   <span className="text-text-muted ml-auto">{relativeTime(r.created_at)}</span>
                 </div>

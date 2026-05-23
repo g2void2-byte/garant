@@ -16,6 +16,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import notifier
@@ -386,11 +387,23 @@ async def _create_crystalpay_deposit(
 
     try:
         async with Crystalpay(settings.crystalpay_login, settings.crystalpay_secret) as cp:
+            # Audit (continuation) L-6 — pre-fix the Crystalpay
+            # ``description`` field embedded the internal ``user.id``
+            # primary key, which Crystalpay then surfaces on the
+            # hosted payment page (the user sees "for user #1234"
+            # rendered above the pay button). That leaks our
+            # internal user-id enumeration to anyone the user
+            # forwards the invoice link to. The opaque ``extra``
+            # field (NOT rendered on the hosted page; only echoed
+            # back to webhooks for our own correlation) keeps the
+            # ``user:`` tag so support / webhook handlers can still
+            # pivot on it. The visible ``description`` is reduced
+            # to a generic top-up label.
             invoice = await cp.create_invoice(
                 amount=amount,
                 currency=currency.code,
                 lifetime=lifetime_minutes,
-                description=f"Garant wallet top-up for user #{user.id}",
+                description="Garant wallet top-up",
                 extra=f"user:{user.id}",
             )
     except CrystalpayError as e:
@@ -538,7 +551,16 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
         notif, ws_payload = pending
         try:
             await notifier.dispatch_after_commit(session, notif, ws_payload)
-        except Exception:
+        except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+            # Audit (continuation) M-6 — narrowed from ``except
+            # Exception``. The commit already landed; transient
+            # delivery failures (DB read of the recipient, WS
+            # publish, Redis I/O, async timeouts) must not undo it,
+            # but programmer bugs (NameError / TypeError /
+            # AttributeError) used to be silently swallowed here
+            # and surface only as a buried traceback in the log
+            # stream. Same allowlist pattern as
+            # ``routers/admin/users.py`` (Audit N-9).
             logger.exception(
                 "credit_deposit: post-commit dispatch failed for notif id=%s",
                 notif.id,
@@ -635,7 +657,8 @@ async def sweep_expired_deposits(session: AsyncSession) -> int:
     for notif, ws_payload in pending_dispatch:
         try:
             await notifier.dispatch_after_commit(session, notif, ws_payload)
-        except Exception:
+        except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+            # Audit (continuation) M-6 — see ``credit_deposit``.
             logger.exception(
                 "sweep_expired_deposits: post-commit dispatch failed for notif id=%s",
                 notif.id,
@@ -777,7 +800,8 @@ async def _lock_and_expire_deposit(session: AsyncSession, deposit: WalletDeposit
         notif, ws_payload = entry
         try:
             await notifier.dispatch_after_commit(session, notif, ws_payload)
-        except Exception:
+        except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+            # Audit (continuation) M-6 — see ``credit_deposit``.
             logger.exception(
                 "poll_deposit_status: post-commit dispatch failed for notif id=%s",
                 notif.id,
@@ -869,6 +893,41 @@ async def create_withdrawal(
     # currencies we ship.
     if currency.address_regex and not re.fullmatch(currency.address_regex, address):
         raise HTTPException(400, f"Неверный формат адреса для {currency.code} ({currency.network})")
+
+    # Audit (continuation) M-3 — refuse the withdrawal *before* the
+    # Phase 1 debit when the row would land in a state we have no
+    # path to clear. The legacy code committed the
+    # ``amount → locked`` debit, queued the row in ``pending``, and
+    # only then noticed there were no admins — leaving the user's
+    # funds trapped in ``locked`` with no automated recovery path
+    # (the sweep loop in :func:`sweep_stale_withdrawals` only fires
+    # when CryptoBot is configured; manual-mode-only deploys have no
+    # ``getTransfers`` reconciler to fall back to). Refusing upfront
+    # with 503 surfaces the misconfiguration to the user (and
+    # observability stack) instead of trapping their funds.
+    #
+    # The check is skipped when CryptoBot is configured because in
+    # that case the auto-mode path will either succeed (no admin
+    # needed) or fail to ``pending`` where the H-2 sweep loop will
+    # reconcile via ``getTransfers``.
+    if not _cryptopay_configured():
+        admin_count = (
+            await session.execute(select(User.id).where(User.is_admin.is_(True)).limit(1))
+        ).first()
+        if admin_count is None:
+            logger.error(
+                "create_withdrawal refused: manual mode but no admins exist",
+                extra={
+                    "event": "create_withdrawal.refused.no_admins",
+                    "user_id": user.id,
+                    "currency": currency.code,
+                    "amount": str(amount),
+                },
+            )
+            raise HTTPException(
+                503,
+                "Вывод временно недоступен: нет администраторов для обработки заявки",
+            )
 
     # Row-lock the balance: two concurrent withdrawals must not both
     # pass the ``amount >= price`` check on the same balance.
@@ -1049,7 +1108,8 @@ async def create_withdrawal(
             await session.commit()
             try:
                 await notifier.dispatch_after_commit(session, notif, ws_payload)
-            except Exception:
+            except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+                # Audit (continuation) M-6 — see ``credit_deposit``.
                 logger.exception(
                     "create_withdrawal: post-commit dispatch failed for notif id=%s",
                     notif.id,
@@ -1082,7 +1142,8 @@ async def create_withdrawal(
         for notif, ws_payload in pending_admin:
             try:
                 await notifier.dispatch_after_commit(session, notif, ws_payload)
-            except Exception:
+            except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+                # Audit (continuation) M-6 — see ``credit_deposit``.
                 logger.exception(
                     "create_withdrawal: post-commit dispatch failed for notif id=%s",
                     notif.id,
@@ -1120,3 +1181,218 @@ async def create_withdrawal(
 # ``backend.app.routers.admin.withdrawals.decide_withdrawal`` which
 # writes audit rows, holds row locks, and handles auto-mode
 # CryptoBot transfers.
+
+
+async def sweep_stale_withdrawals(session: AsyncSession) -> int:
+    """Reconcile stuck ``pending`` ``WalletWithdrawal`` rows against CryptoBot.
+
+    Audit (continuation) H-2 — Phase 2 of :func:`create_withdrawal`
+    can leave a row in ``status=pending`` if the CryptoBot HTTP
+    transfer call fails (network blip, upstream 5xx, the worker
+    process dies mid-await). The legacy recovery path was "an admin
+    notices and approves manually" — but the admin notifications are
+    fan-out best-effort and on a deploy with **no admins at all**
+    the user's funds sit in ``UserBalance.locked`` indefinitely with
+    no automated path back. This sweep is the missing reconciler:
+    every ``wallet_withdrawal_stale_sweep_seconds`` we look for
+    ``pending`` rows older than
+    ``wallet_withdrawal_stale_seconds`` and, for each one, ask
+    CryptoBot's ``getTransfers`` API whether the transfer actually
+    landed.
+
+    Three outcomes per row, all idempotent and three-phase like the
+    treasury reconcile endpoint (audit §4.19) so the row lock is
+    NOT held across the upstream HTTP roundtrip:
+
+    1. **Transfer present on CryptoBot side** — Phase 2 actually
+       succeeded but we crashed before persisting Phase 3. Promote
+       the row to ``sent``, drop the matching amount from
+       ``locked`` (because CryptoBot already shipped the funds),
+       and dispatch the post-success notification.
+    2. **No matching transfer, row is older than the cap** — the
+       transfer never made it to CryptoBot (whatever Phase 2 saw
+       was a local failure before the request landed). Refund the
+       user: credit ``locked → amount`` and flip the row to
+       ``rejected`` with a synthetic ``admin_note`` so audit
+       readers can tell the difference between an admin-rejected
+       row and a sweep-rejected one. Dispatch a refund
+       notification.
+    3. **Row already terminal** (``sent`` / ``rejected``) — never
+       observed inside the ``status=pending`` filter below; defended
+       in Phase 3 via the same status re-check ``create_withdrawal``
+       does.
+
+    Returns the number of rows reconciled so the
+    :func:`backend.app.main._make_sweep_loop` factory can log it
+    under the ``withdrawal-stale-reconcile`` sweep name.
+
+    Concurrency: uses ``with_for_update(skip_locked=True)`` like
+    :func:`sweep_expired_deposits` so two workers running the same
+    sweep don't double-flip rows.
+    """
+    stale_seconds = int(settings.wallet_withdrawal_stale_seconds)
+    if stale_seconds <= 0:
+        # Sweep is configured off — return without touching the DB
+        # so a misconfigured deploy can't accidentally refund every
+        # pending withdrawal at startup.
+        return 0
+    if not _cryptopay_configured():
+        # Without CryptoBot we can't ask whether the transfer
+        # landed; manual-mode deploys must use the admin queue for
+        # reconciliation. Same pattern as the treasury reconcile
+        # endpoint that 503s when the token is missing.
+        return 0
+
+    cutoff = utcnow() - timedelta(seconds=stale_seconds)
+
+    # ─── Phase A: snapshot the candidate set without holding locks.
+    # We intentionally do NOT take ``with_for_update`` here — the
+    # CryptoBot call below is expensive and we don't want a row
+    # lock held across an HTTP roundtrip. The Phase C re-SELECT
+    # picks the row back up under ``FOR UPDATE`` and re-checks
+    # ``status==pending`` to absorb any concurrent admin decide /
+    # sibling sweep that flipped the row in the meantime.
+    candidates = (
+        (
+            await session.execute(
+                select(WalletWithdrawal).where(
+                    WalletWithdrawal.status == WalletWithdrawStatus.pending,
+                    WalletWithdrawal.created_at <= cutoff,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    if not candidates:
+        return 0
+
+    reconciled = 0
+    pending_dispatch: list[tuple[Notification, dict[str, Any] | None]] = []
+
+    for candidate in candidates:
+        # Snapshot the fields we need for the upstream call before
+        # the session goes through commits below — accessing
+        # candidate.* after commit risks lazy-load round trips that
+        # surface as ``MissingGreenlet`` under async.
+        wd_id = candidate.id
+        wd_user_id = candidate.user_id
+        wd_currency_id = candidate.currency_id
+        wd_amount = candidate.amount
+        wd_address = candidate.address
+        spend_id = f"wd:{wd_id}"
+
+        # ─── Phase B: query CryptoBot for this row's spend_id. No
+        # DB locks held. Failures here are logged and we move on
+        # to the next row; the next sweep iteration will retry.
+        try:
+            async with CryptoPay(
+                settings.cryptobot_token, testnet=settings.cryptobot_testnet
+            ) as cp:
+                transfers = await cp.get_transfers(spend_id=spend_id)
+        except CryptoPayError as exc:
+            logger.warning(
+                "sweep_stale_withdrawals: get_transfers failed for wd_id=%s",
+                wd_id,
+                exc_info=True,
+                extra={
+                    "event": "cryptobot.sweep_stale_withdrawals.api_error",
+                    "withdrawal_id": wd_id,
+                    "spend_id": spend_id,
+                    "error": str(exc),
+                },
+            )
+            continue
+
+        matched = next((t for t in transfers if t.status == "completed"), None)
+
+        # ─── Phase C: re-lock the row + balance, re-check status,
+        # apply the transition. Two row locks (withdrawal + balance)
+        # sorted by id ascending to keep the lock order
+        # deterministic — same pattern as
+        # ``services_deals._release_to`` (Audit cont. H-1).
+        w_locked = (
+            await session.execute(
+                select(WalletWithdrawal).where(WalletWithdrawal.id == wd_id).with_for_update()
+            )
+        ).scalar_one_or_none()
+        if w_locked is None:
+            # Hard-deleted under us; nothing to reconcile.
+            continue
+        if w_locked.status != WalletWithdrawStatus.pending:
+            # A sibling decide / sweep got here first. The row is
+            # terminal — leave it alone, do NOT double-apply.
+            continue
+
+        bal = await lock_user_balance(session, wd_user_id, wd_currency_id)
+        amount_d = Decimal(str(wd_amount))
+
+        currency = await session.get(Currency, wd_currency_id)
+        currency_code = currency.code if currency is not None else ""
+
+        if matched is not None:
+            # Transfer landed on CryptoBot's side; we crashed
+            # before Phase 3. Drop the matching amount from
+            # ``locked`` and promote the row to ``sent``.
+            bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - amount_d)
+            w_locked.status = WalletWithdrawStatus.sent
+            w_locked.processed_at = utcnow()
+            existing_note = w_locked.admin_note or ""
+            stamp = f"sweep-reconcile: cryptobot_transfer_id={matched.transfer_id}"
+            w_locked.admin_note = existing_note + ("\n" if existing_note else "") + stamp
+            notif, ws_payload = await notifier.insert(
+                session,
+                wd_user_id,
+                NotificationType.deposits,
+                "Вывод выполнен",
+                f"-{wd_amount} {currency_code} отправлены на {wd_address}",
+                {"withdrawal_id": wd_id},
+            )
+        else:
+            # No matching transfer; the request never made it to
+            # CryptoBot. Refund: credit ``locked → amount`` and
+            # flip the row to ``rejected`` with a synthetic note
+            # so audit readers can tell apart sweep-rejected from
+            # admin-rejected rows.
+            bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - amount_d)
+            bal.amount = Decimal(str(bal.amount)) + amount_d
+            w_locked.status = WalletWithdrawStatus.rejected
+            w_locked.processed_at = utcnow()
+            existing_note = w_locked.admin_note or ""
+            stamp = (
+                f"sweep-reconcile: no cryptobot transfer for spend_id={spend_id}, funds refunded"
+            )
+            w_locked.admin_note = existing_note + ("\n" if existing_note else "") + stamp
+            notif, ws_payload = await notifier.insert(
+                session,
+                wd_user_id,
+                NotificationType.deposits,
+                "Заявка на вывод отклонена",
+                (
+                    f"+{wd_amount} {currency_code} возвращены на баланс "
+                    "(автосверка не нашла перевод)"
+                ),
+                {"withdrawal_id": wd_id},
+            )
+
+        pending_dispatch.append((notif, ws_payload))
+        reconciled += 1
+
+    await session.commit()
+
+    for notif, ws_payload in pending_dispatch:
+        try:
+            await notifier.dispatch_after_commit(session, notif, ws_payload)
+        except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+            # Audit (continuation) M-6 — see ``credit_deposit``.
+            logger.exception(
+                "sweep_stale_withdrawals: post-commit dispatch failed for notif id=%s",
+                notif.id,
+                extra={
+                    "event": "sweep_stale_withdrawals.dispatch.failed",
+                    "notif_id": notif.id,
+                },
+            )
+
+    return reconciled

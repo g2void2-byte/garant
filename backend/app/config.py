@@ -128,6 +128,24 @@ class Settings(BaseSettings):
     wallet_deposit_expiry_seconds: int = 30 * 60  # 30 min
     wallet_deposit_sweep_seconds: int = 60
 
+    # Audit (continuation) H-2 — auto-reconcile stale pending
+    # withdrawal rows the ``create_withdrawal`` Phase 2 fail branch
+    # left behind. ``wallet_withdrawal_stale_seconds`` is the
+    # grace window after which a still-``pending`` withdrawal is
+    # considered stuck and gets reconciled against CryptoBot's
+    # ``getTransfers`` API by ``spend_id=wd:{id}``;
+    # ``wallet_withdrawal_stale_sweep_seconds`` is how often the
+    # background loop runs (``0`` disables the loop).
+    #
+    # The default cap is 24 hours: well past the longest realistic
+    # admin response SLA, well short of "user contacts support".
+    # The sweep interval is 5 min by default — same order of
+    # magnitude as the deposit sweep, but slower because the
+    # CryptoBot call is a roundtrip per row and we don't want a
+    # tight loop hammering the upstream.
+    wallet_withdrawal_stale_seconds: int = 24 * 60 * 60  # 24 h
+    wallet_withdrawal_stale_sweep_seconds: int = 5 * 60  # 5 min
+
     # H-1 — the legacy ``Invoice`` ledger (``invoice_expiry_seconds`` /
     # ``invoice_sweep_seconds``) was retired together with the
     # ``users.balance`` USD column. The wallet ledger above is the

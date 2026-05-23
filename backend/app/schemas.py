@@ -80,7 +80,50 @@ MoneyDecimal = Annotated[Decimal, PlainSerializer(lambda v: float(v), return_typ
 # ── Users ──────────────────────────────────────────────
 
 
+# Audit (continuation) M-1 — backend whitelist for ``Forum.name``.
+# Pre-fix only the frontend ``AddForumPage.tsx`` enforced the list
+# of approved forum names (its ``FORUM_OPTIONS`` constant); a caller
+# hitting ``PATCH /api/me`` directly (curl/postman with a valid
+# initData) could record an arbitrary string in ``Forum.name`` and
+# have it rendered on their public profile via ``UserPublicOut.forums``.
+# That's a moderation hole (spam / illicit links / fake brand names).
+#
+# Kept in lockstep with ``frontend/src/pages/profile/AddForumPage.tsx``
+# ``FORUM_OPTIONS`` until the architectural fix (a ``GET /api/forums``
+# endpoint sourcing both sides from the same DB row) lands as a
+# follow-up. ``"Другое"`` is a frontend-only catch-all that lets the
+# user submit a custom name; the backend still rejects anything not
+# in the whitelist below — so that ``"Другое"`` is allowed as a
+# *name* (the user picks the option, then types the real forum
+# name into the URL field), keeping the existing UX flow intact.
+FORUM_WHITELIST: frozenset[str] = frozenset(
+    {
+        "Darkmoney",
+        "Probiv",
+        "Verified",
+        "DarkNet",
+        "Lolzteam",
+        "Maza",
+        "Korovka",
+        "Carder.market",
+        "Другое",
+    }
+)
+
+
 class ForumOut(BaseModel):
+    """Serialised view of a ``Forum`` row.
+
+    Audit (continuation) M-1 — *output* validation is kept lenient so
+    legacy rows whose ``name`` predates the whitelist still render in
+    public profiles. Whitelist enforcement lives on the matching input
+    schema :class:`ForumIn` below, which is what
+    ``UserUpdate.forums`` actually accepts on the wire. Keeping the
+    write boundary strict + the read boundary tolerant is the same
+    pattern :func:`_validate_https_or_media_url` follows for legacy
+    avatar URLs.
+    """
+
     name: str
     url: str
 
@@ -105,6 +148,34 @@ class ForumOut(BaseModel):
         v = _validate_https_or_media_url(v or "", what="Ссылка", max_len=512)
         if v.startswith("/media/"):
             raise ValueError("Ссылка должна быть внешней (https://)")
+        return v
+
+
+class ForumIn(ForumOut):
+    """Input schema for ``UserUpdate.forums``.
+
+    Audit (continuation) M-1 — splits the write boundary off the read
+    one (:class:`ForumOut`). The shared parent enforces the
+    URL/length/non-empty rules every call site cares about; this
+    subclass adds the whitelist gate so a caller hitting
+    ``PATCH /api/me`` directly (curl/postman with a valid initData)
+    can't record an arbitrary forum name and have it render on their
+    public profile. See :data:`FORUM_WHITELIST`.
+    """
+
+    @field_validator("name")
+    @classmethod
+    def _name_in_whitelist(cls, v: str) -> str:
+        # Re-runs the parent's non-empty / length-cap check first so
+        # the error messages stay in the same Russian-locale shape;
+        # then enforces the whitelist as the *additional* boundary.
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Имя форума не может быть пустым")
+        if len(v) > 64:
+            raise ValueError("Имя форума слишком длинное (≤64)")
+        if v not in FORUM_WHITELIST:
+            raise ValueError("Неизвестный форум")
         return v
 
 
@@ -212,7 +283,12 @@ class UserUpdate(BaseModel):
     description: str | None = None
     banner_url: str | None = None
     photo_url: str | None = None
-    forums: list[ForumOut] | None = None
+    # Audit (continuation) M-1 — write boundary validates against the
+    # backend whitelist via :class:`ForumIn` (subclass of
+    # :class:`ForumOut`). The serialised view used by the read-side
+    # ``UserOut`` / ``UserPublicOut`` still uses ``ForumOut`` so legacy
+    # rows whose ``name`` predates the whitelist keep rendering.
+    forums: list[ForumIn] | None = None
     dm_deals: bool | None = None
     dm_deposits: bool | None = None
     dm_system: bool | None = None
@@ -273,7 +349,7 @@ class UserUpdate(BaseModel):
 
     @field_validator("forums")
     @classmethod
-    def _forums_ok(cls, v: list[ForumOut] | None) -> list[ForumOut] | None:
+    def _forums_ok(cls, v: list[ForumIn] | None) -> list[ForumIn] | None:
         if v is None:
             return v
         if len(v) > 10:

@@ -102,6 +102,11 @@ export function useCategories() {
 
 export function useServices(
   params: { category?: string; q?: string; owner?: string; status?: string } = {},
+  // Audit (continuation) L-2 — opt-in ``enabled`` gate. Callers that
+  // pass ``owner: me?.username`` need a way to keep the query
+  // dormant until ``me`` resolves; without it the first render
+  // issues a list-all request that pollutes the cache.
+  options: { enabled?: boolean } = {},
 ) {
   const searchParams: Record<string, string> = {};
   if (params.category) searchParams.category = params.category;
@@ -112,6 +117,7 @@ export function useServices(
     queryKey: qk.services.list(params),
     queryFn: () => api.get("api/services", { searchParams }).json(),
     staleTime: 30_000,
+    enabled: options.enabled ?? true,
   });
 }
 

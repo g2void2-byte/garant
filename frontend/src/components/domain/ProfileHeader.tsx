@@ -42,8 +42,20 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
   // someone else's profile we fall back to ``user.photo_url`` from
   // the backend (which may be null). ``Avatar`` renders the first
   // letter of the display name when no URL is available.
+  //
+  // Audit (continuation) M-4 — pre-fix the "is this my own profile?"
+  // check compared by ``username``. That's unstable because Telegram
+  // usernames can be changed, and ``deps.get_current_user`` only
+  // syncs the new value through after the next REST call lands the
+  // ``user.username = tg_user["username"]`` write. During the race
+  // window an "anonymous Telegram user with a brand-new username"
+  // would compare unequal to themselves and miss the avatar
+  // fallback. ``tg_user_id`` is immutable per Telegram account and
+  // is exposed on every ``UserCardDto`` via ``user_id``, so the
+  // comparison below is stable across rename races.
   const tgUser = getTelegramUser();
-  const avatarSrc = user.photo_url || (tgUser?.username === user.username ? tgUser?.photo_url : null);
+  const isMe = tgUser?.id === user.user_id;
+  const avatarSrc = user.photo_url || (isMe ? tgUser?.photo_url : null);
 
   return (
     <div ref={ref}>

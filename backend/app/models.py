@@ -647,21 +647,22 @@ class Forum(Base):
       ``/api/users/{username}`` re-serialise this list via
       :func:`serializers.UserOut.from_model`.
     * There is **no** ``/api/forums`` router and the list of
-      *approved* forum names is **intentionally hardcoded on the
-      frontend** in ``frontend/src/pages/profile/AddForumPage.tsx``
-      (``FORUM_OPTIONS``). The trade-off is documented in
-      ``ADMIN-PANEL-SPEC.md §14`` — the whitelist evolves slowly
-      enough that wiring it through admin-CRUD + a settings table
-      would add ceremony without removing any operational pain. If a
-      backend whitelist ever lands, it should live on
-      :class:`AppSettings` (single-row config table) and surface via
-      ``GET /api/forums``; ``AddForumPage`` would then fetch the
-      list instead of carrying it inline.
-    * The backend currently **does not** validate ``name`` against
-      that whitelist either — ``ForumOut._name_ok`` only enforces
-      non-empty and ``len ≤ 64``. A user driving the API directly
-      can therefore record any forum name; the whitelist is a UX
-      affordance for the dropdown, not a security boundary.
+      *approved* forum names is **hardcoded on both sides** —
+      ``frontend/src/pages/profile/AddForumPage.tsx``
+      (``FORUM_OPTIONS``) and ``backend/app/schemas.FORUM_WHITELIST``.
+      The two constants must be kept in lockstep until the
+      architectural fix (a single ``GET /api/forums`` endpoint
+      sourcing both sides from the same DB row) lands. Until then
+      a regression test asserts the lists match (see
+      ``tests/test_forum_whitelist_sync.py``).
+    * Audit (continuation) M-1 — ``ForumOut._name_ok`` now rejects
+      names outside :data:`schemas.FORUM_WHITELIST`. Pre-fix the
+      backend only enforced non-empty + ``len ≤ 64``, so a user
+      driving the API directly (curl/postman with a valid initData)
+      could record an arbitrary forum name and have it render on
+      their public profile via ``UserPublicOut.forums``. The
+      whitelist is now a security/moderation boundary, not just a
+      UX affordance.
     """
 
     __tablename__ = "forums"
