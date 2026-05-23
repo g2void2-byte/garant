@@ -43,7 +43,7 @@ export default function AdminTwoFactorPage() {
   const enabled = status.data?.enabled ?? false;
 
   return (
-    <Page showBack onBack={() => navigate("/admin")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="2FA"
         subtitle={enabled ? "Включена" : "Не настроена"}

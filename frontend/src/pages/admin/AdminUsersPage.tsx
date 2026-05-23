@@ -83,7 +83,7 @@ export default function AdminUsersPage() {
   };
 
   return (
-    <Page showBack onBack={() => navigate("/admin")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Пользователи"
         subtitle={data ? `${data.total} всего` : undefined}

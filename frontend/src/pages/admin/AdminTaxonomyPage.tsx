@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Coins, Tags, Plus, Pencil } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { AdminHeader } from "@/components/layout/AdminHeader";
@@ -25,11 +25,22 @@ import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 export default function AdminTaxonomyPage() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"categories" | "currencies">("categories");
+  // Tab state lives in the URL so deep-links from the admin menu
+  // (``/admin/taxonomy?tab=currencies``) land on the right pane and
+  // browser back/forward preserves the selection.
+  const [params, setParams] = useSearchParams();
+  const tab: "categories" | "currencies" =
+    params.get("tab") === "currencies" ? "currencies" : "categories";
+  const setTab = (next: "categories" | "currencies") => {
+    const sp = new URLSearchParams(params);
+    if (next === "categories") sp.delete("tab");
+    else sp.set("tab", "currencies");
+    setParams(sp, { replace: true });
+  };
   const __guard = useAdminRedirect();
   if (!__guard.shouldRender) return null;
   return (
-    <Page showBack onBack={() => navigate("/admin")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader title="Таксономия" />
       <div className="px-4 mb-3 flex gap-1.5">
         <button
@@ -79,6 +90,10 @@ function CategoriesPane() {
         Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-14 rounded-card" />
         ))
+      ) : data && data.length === 0 ? (
+        <p className="text-sm text-text-muted text-center py-12">
+          Категорий нет
+        </p>
       ) : (
         data?.map((c, _idx) => (
           <div
@@ -208,6 +223,10 @@ function CurrenciesPane() {
         Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-14 rounded-card" />
         ))
+      ) : data && data.length === 0 ? (
+        <p className="text-sm text-text-muted text-center py-12">
+          Валют нет
+        </p>
       ) : (
         data?.map((c, _idx) => (
           <div

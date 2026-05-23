@@ -62,7 +62,7 @@ export default function AdminArbitrationPage() {
   };
 
   return (
-    <Page showBack onBack={() => navigate("/admin")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader title="Арбитраж" subtitle="Очередь споров" />
 
       <div className="px-4 grid grid-cols-3 gap-2 mb-3">

@@ -54,7 +54,7 @@ const ITEMS: AdminMenuItem[] = [
   { to: "/admin/broadcasts", label: "Рассылки", icon: <Bell size={18} /> },
   { to: "/admin/analytics", label: "Аналитика", icon: <LineChart size={18} /> },
   { to: "/admin/taxonomy", label: "Таксономия", icon: <Tags size={18} /> },
-  { to: "/admin/taxonomy", label: "Валюты", icon: <Coins size={18} /> },
+  { to: "/admin/taxonomy?tab=currencies", label: "Валюты", icon: <Coins size={18} /> },
   { to: "/admin/settings", label: "Настройки", icon: <SettingsIcon size={18} /> },
   { to: "/admin/system", label: "Система", icon: <Server size={18} /> },
   { to: "/admin/audit", label: "Аудит", icon: <History size={18} /> },
@@ -132,7 +132,19 @@ export function AdminMenu({ open, onClose }: AdminMenuProps) {
         </header>
         <nav className="px-3 py-1 space-y-1 overflow-y-auto h-[calc(100%-64px)]">
           {ITEMS.map((item, i) => {
-            const active = location.pathname.startsWith(item.to);
+            // Items can carry a ``?query`` (e.g. ``/admin/taxonomy?tab=currencies``)
+            // so the same pathname can render two distinct entries. Active state
+            // matches pathname AND — when the entry pins a tab — the corresponding
+            // search params; the tab-less entry only highlights when search is empty.
+            const [itemPath, itemSearch] = item.to.split("?");
+            const pathMatches =
+              location.pathname === itemPath ||
+              location.pathname.startsWith(itemPath + "/");
+            const active = pathMatches && (
+              itemSearch
+                ? location.search.includes(itemSearch)
+                : location.search === ""
+            );
             return (
               <button
                 key={`${item.to}-${item.label}`}

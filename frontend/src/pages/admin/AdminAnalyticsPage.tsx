@@ -28,7 +28,7 @@ export default function AdminAnalyticsPage() {
   if (!__guard.shouldRender) return null;
 
   return (
-    <Page showBack onBack={() => navigate("/admin")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader title="Аналитика" subtitle="30 дней" />
       <div className="px-4 grid grid-cols-2 gap-2 mb-4">
         <KpiCard

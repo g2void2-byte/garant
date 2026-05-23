@@ -182,6 +182,28 @@ describe("<AdminWalletsPage />", () => {
     expect(screen.queryByText("TON")).not.toBeInTheDocument();
   });
 
+  it("shows 'Балансов нет' placeholder when all balances are zero", () => {
+    const zeroUser = {
+      ...makeUserBalance(),
+      balances: makeUserBalance().balances.map((b) => ({
+        ...b,
+        amount: "0",
+        locked: "0",
+        total: "0",
+      })),
+    };
+    mockState.list = {
+      items: [zeroUser],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText("Балансов нет")).toBeInTheDocument();
+    // Sanity-check the row itself still renders the user identity.
+    expect(screen.getByText("Alice")).toBeInTheDocument();
+  });
+
   it("typing search + Enter triggers a refetch with trimmed q", async () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
     renderPage();

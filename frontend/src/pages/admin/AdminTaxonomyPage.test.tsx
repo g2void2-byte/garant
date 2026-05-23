@@ -71,11 +71,11 @@ vi.mock("@/lib/tg", () => ({
 
 import AdminTaxonomyPage from "./AdminTaxonomyPage";
 
-function renderPage() {
+function renderPage(initialEntry: string = "/admin/taxonomy") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <AdminTaxonomyPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -147,6 +147,29 @@ describe("<AdminTaxonomyPage />", () => {
     expect(screen.getByText("USDT")).toBeInTheDocument();
     expect(screen.getByText("off")).toBeInTheDocument();
     expect(screen.getByText(/Tether · TRC20/)).toBeInTheDocument();
+  });
+
+  it("renders the currencies pane directly when URL has ?tab=currencies", () => {
+    mockState.categories = [makeCategory()];
+    mockState.currencies = [makeCurrency()];
+    renderPage("/admin/taxonomy?tab=currencies");
+    // The currencies row should be present without any tab clicks.
+    expect(screen.getByText("USDT")).toBeInTheDocument();
+    // The categories row should NOT be present.
+    expect(screen.queryByText("Games")).not.toBeInTheDocument();
+  });
+
+  it("shows empty-state copy when categories list is empty", () => {
+    mockState.categories = [];
+    renderPage();
+    expect(screen.getByText("Категорий нет")).toBeInTheDocument();
+  });
+
+  it("shows empty-state copy when currencies list is empty", async () => {
+    mockState.categories = [makeCategory()];
+    mockState.currencies = [];
+    renderPage("/admin/taxonomy?tab=currencies");
+    expect(screen.getByText("Валют нет")).toBeInTheDocument();
   });
 
   it("category delete with confirm fires mutation and toasts", async () => {
