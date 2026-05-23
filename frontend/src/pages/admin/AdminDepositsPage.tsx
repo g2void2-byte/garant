@@ -39,7 +39,7 @@ export default function AdminDepositsPage() {
   if (!__guard.shouldRender) return null;
 
   return (
-    <Page showBack onBack={() => navigate("/admin")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Депозиты"
         subtitle={data ? `${data.total} всего` : undefined}

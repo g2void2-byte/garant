@@ -37,7 +37,7 @@ export default function AdminWithdrawalsPage() {
   const counters = data?.counters ?? {};
 
   return (
-    <Page showBack onBack={() => navigate("/admin")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader title="Выводы" subtitle="Заявки на вывод" />
       <div className="px-4 mb-3 flex gap-1.5 overflow-x-auto">
         {STATUSES.map((s) => (

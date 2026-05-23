@@ -37,7 +37,7 @@ export default function AdminWalletsPage() {
   if (!__guard.shouldRender) return null;
 
   return (
-    <Page showBack onBack={() => navigate("/admin")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Балансы"
         subtitle={data ? `${data.total} пользователей` : undefined}
@@ -96,31 +96,44 @@ export default function AdminWalletsPage() {
                 </div>
                 <Wallet size={16} className="text-text-muted" />
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-1.5">
-                {it.balances
-                  .filter((b) => parseDecimal(b.total) > 0)
-                  .slice(0, 4)
-                  .map((b) => {
-                    const amt = parseDecimal(b.amount);
-                    const locked = parseDecimal(b.locked);
-                    return (
-                      <div
-                        key={b.currency_id}
-                        className="text-xs bg-panel-2 rounded-button px-2 py-1.5"
-                      >
-                        <div className="text-text-muted">{b.currency_code}</div>
-                        <div className="font-mono">
-                          {amt.toFixed(b.decimals)}
-                          {locked > 0 && (
-                            <span className="text-warning ml-1">
-                              (+{locked.toFixed(b.decimals)} лок.)
-                            </span>
-                          )}
+              {(() => {
+                // Filter once so we know both whether to render the grid
+                // at all *and* what to put in it — otherwise users with
+                // all-zero balances would see an empty grid container
+                // that looks like a broken layout.
+                const nonZero = it.balances.filter((b) => parseDecimal(b.total) > 0);
+                if (nonZero.length === 0) {
+                  return (
+                    <div className="mt-2 text-xs text-text-muted italic">
+                      Балансов нет
+                    </div>
+                  );
+                }
+                return (
+                  <div className="mt-3 grid grid-cols-2 gap-1.5">
+                    {nonZero.slice(0, 4).map((b) => {
+                      const amt = parseDecimal(b.amount);
+                      const locked = parseDecimal(b.locked);
+                      return (
+                        <div
+                          key={b.currency_id}
+                          className="text-xs bg-panel-2 rounded-button px-2 py-1.5"
+                        >
+                          <div className="text-text-muted">{b.currency_code}</div>
+                          <div className="font-mono">
+                            {amt.toFixed(b.decimals)}
+                            {locked > 0 && (
+                              <span className="text-warning ml-1">
+                                (+{locked.toFixed(b.decimals)} лок.)
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-              </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </button>
           ))
         )}

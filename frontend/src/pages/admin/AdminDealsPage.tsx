@@ -92,7 +92,7 @@ export default function AdminDealsPage() {
   const totalPages = Math.max(1, Math.ceil(total / 20));
 
   return (
-    <Page showBack onBack={() => navigate("/admin")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Сделки"
         subtitle={data ? `${total} всего` : undefined}

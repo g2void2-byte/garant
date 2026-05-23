@@ -26,7 +26,7 @@ export default function AdminAuditPage() {
   if (!__guard.shouldRender) return null;
 
   return (
-    <Page showBack onBack={() => navigate("/admin")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Аудит"
         subtitle={data ? `${data.total} событий` : undefined}

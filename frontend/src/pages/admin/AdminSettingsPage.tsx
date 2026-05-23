@@ -36,7 +36,7 @@ export default function AdminSettingsPage() {
 
   if (isLoading || !form) {
     return (
-      <Page showBack onBack={() => navigate("/admin")}>
+      <Page showBack onBack={() => navigate(-1)}>
         <AdminHeader title="Настройки" />
         <div className="px-4 space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -56,7 +56,7 @@ export default function AdminSettingsPage() {
   const dirty = Object.keys(diff).length > 0;
 
   return (
-    <Page showBack onBack={() => navigate("/admin")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader title="Настройки" subtitle={dirty ? "Несохранённые изменения" : undefined} />
       <div className="px-4 space-y-4 pb-24">
         <Section title="Комиссии (%)">

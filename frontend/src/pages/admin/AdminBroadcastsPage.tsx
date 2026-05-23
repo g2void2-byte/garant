@@ -39,7 +39,7 @@ export default function AdminBroadcastsPage() {
   if (!__guard.shouldRender) return null;
 
   return (
-    <Page showBack onBack={() => navigate("/admin")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Рассылки"
         subtitle={data ? `${data.total} всего` : undefined}

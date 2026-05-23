@@ -26,7 +26,7 @@ export default function AdminSystemPage() {
   if (!__guard.shouldRender) return null;
 
   return (
-    <Page showBack onBack={() => navigate("/admin")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader title="Система" subtitle="Сервисы и инфраструктура" />
       <div className="px-4 space-y-2 pb-24">
         {isLoading ? (
