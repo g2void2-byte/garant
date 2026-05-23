@@ -35,9 +35,11 @@ vi.mock("@/api/hooks", () => ({
 
 const hapticSpy = vi.hoisted(() => vi.fn());
 const openTelegramLinkSpy = vi.hoisted(() => vi.fn());
+const openExternalLinkSpy = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/tg", () => ({
   haptic: hapticSpy,
   openTelegramLink: openTelegramLinkSpy,
+  openExternalLink: openExternalLinkSpy,
   showBackButton: () => () => {},
 }));
 
@@ -90,6 +92,7 @@ function makeDeposit(over: Partial<WalletDepositDto> = {}): WalletDepositDto {
 beforeEach(() => {
   hapticSpy.mockClear();
   openTelegramLinkSpy.mockClear();
+  openExternalLinkSpy.mockClear();
   mockState.currenciesLoading = false;
   mockState.currencies = [
     makeCurrency({ id: 1, code: "USD", name: "US Dollar" }),
@@ -204,9 +207,10 @@ describe("<WalletDepositPage />", () => {
         provider: "crystalpay",
       });
     });
-    expect(openTelegramLinkSpy).toHaveBeenCalledWith(
+    expect(openExternalLinkSpy).toHaveBeenCalledWith(
       "https://pay.crystalpay.io/cp-1",
     );
+    expect(openTelegramLinkSpy).not.toHaveBeenCalled();
   });
 
   it("error path: surfaces server error via haptic('error')", async () => {
@@ -218,6 +222,7 @@ describe("<WalletDepositPage />", () => {
       expect(hapticSpy).toHaveBeenCalledWith("error");
     });
     expect(openTelegramLinkSpy).not.toHaveBeenCalled();
+    expect(openExternalLinkSpy).not.toHaveBeenCalled();
   });
 
   it("shows '...' while the mutation is pending and disables the button", () => {

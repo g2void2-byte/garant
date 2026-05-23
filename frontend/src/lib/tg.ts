@@ -289,9 +289,12 @@ function isSafeLink(url: string): boolean {
 
 export function openTelegramLink(url: string) {
   // Audit L-13 — reject anything that isn't a plain ``http(s):`` URL
-  // before delegating; the host is intentionally not constrained so we
-  // can still open CryptoBot (``t.me/CryptoBot?...``) and Crystalpay
-  // invoice URLs (``pay.crystalpay.io/...``).
+  // before delegating. ``tg.openTelegramLink`` itself only accepts
+  // ``t.me/*`` URLs (anything else raises ``WebAppTgUrlInvalid`` on the
+  // Telegram client side), so callers must route non-t.me invoice URLs
+  // (e.g. Crystalpay ``pay.crystalpay.io/...``) through ``openExternalLink``
+  // instead. CryptoBot invoice URLs are ``https://t.me/CryptoBot?...`` and
+  // do work here.
   if (!isSafeLink(url)) return;
   // Audit M-7 — the fallback path is only taken outside of Telegram
   // (desktop preview / unit tests). Match ``openExternalLink`` and pass

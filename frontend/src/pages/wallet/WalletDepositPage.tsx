@@ -14,7 +14,7 @@ import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { formatCurrency } from "@/lib/format";
-import { haptic, openTelegramLink } from "@/lib/tg";
+import { haptic, openExternalLink, openTelegramLink } from "@/lib/tg";
 
 type DepositProvider = "cryptobot" | "crystalpay";
 
@@ -116,7 +116,16 @@ export default function WalletDepositPage() {
         provider,
       });
       haptic("success");
-      if (dep.pay_url) openTelegramLink(dep.pay_url);
+      if (dep.pay_url) {
+        // Telegram's ``openTelegramLink`` only accepts ``t.me/*`` URLs and
+        // raises ``WebAppTgUrlInvalid`` for anything else. CryptoBot returns
+        // a ``https://t.me/CryptoBot?start=...`` invoice which fits, but
+        // Crystalpay returns its own ``https://pay.crystalpay.io/...`` URL
+        // that has to go through ``openLink``/``openExternalLink`` instead.
+        const isTmeLink = /^https?:\/\/t\.me\//i.test(dep.pay_url);
+        if (isTmeLink) openTelegramLink(dep.pay_url);
+        else openExternalLink(dep.pay_url);
+      }
       toast.show({
         kind: "success",
         title: "Счёт создан",
