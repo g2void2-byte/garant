@@ -10,7 +10,13 @@ interface SheetProps {
   className?: string;
 }
 
-export function Sheet({ open, onClose, title, children, className }: SheetProps) {
+export function Sheet({
+  open,
+  onClose,
+  title,
+  children,
+  className,
+}: SheetProps) {
   const { mounted, visible } = usePresence(open, 300);
   const drag = useVerticalDrag(onClose);
 
@@ -41,6 +47,8 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
       />
       <div
         ref={drag.elRef}
+        data-testid="sheet"
+        data-state={visible ? "open" : "closed"}
         className={cn(
           "fixed z-50 left-0 right-0 bottom-0 flex flex-col",
           // V13 — bump the floor to ``min-h-[80dvh]`` so longer
@@ -61,12 +69,28 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
           onPointerDown={drag.onPointerDown}
           onPointerMove={drag.onPointerMove}
           onPointerUp={drag.onPointerUp}
+          // V13.1 — ``touch-none`` so the dismissal drag doesn't
+          // conflict with vertical scroll inside the sheet body; the
+          // handle is the *only* place that owns vertical pointer
+          // gestures. Body scrolling is opted-in explicitly below.
           className="shrink-0 bg-panel pt-3 px-4 z-10 touch-none cursor-grab active:cursor-grabbing rounded-t-3xl"
         >
           <div className="mx-auto h-1 w-10 rounded-full bg-text-muted/30" />
           {title && <div className="mt-3 text-lg font-bold">{title}</div>}
         </div>
-        <div className="flex-1 overflow-y-auto overscroll-contain px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,16px)+16px)]">
+        <div
+          // V13.1 — ``touch-action: pan-y`` lets Telegram’s iOS
+          // WebView surface the inner overflow scroll even after
+          // ``AdminMenu`` set ``body.style.overflow = "hidden"``.
+          // Without it, long composer forms (broadcasts, filter
+          // sheet on TMA) appear stuck on first paint because the
+          // top of the form is off-screen and the body refuses to
+          // scroll. Children opt into a sticky-footer row inside
+          // ``children`` (see ``AdminBroadcastsPage`` Composer) so
+          // the primary CTA stays visible regardless of form length.
+          style={{ touchAction: "pan-y" }}
+          className="flex-1 overflow-y-auto overscroll-contain px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,16px)+16px)]"
+        >
           {children}
         </div>
       </div>

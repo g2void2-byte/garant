@@ -64,8 +64,14 @@ export function useVerticalDrag(onDismiss: () => void, threshold = 120) {
       onDismiss();
     }
     if (elRef.current) {
+      // V13.1 — clear the inline transform rather than pinning it to
+      // ``translateY(0)`` so the consumer's open/closed Tailwind
+      // class (``translate-y-0`` vs ``translate-y-full``) regains
+      // control. Pinning it inline meant a drag-dismissed sheet
+      // visually stuck around because its inline style overrode
+      // the parent's "closed" class on the very next render.
       elRef.current.style.transition = "transform .2s ease-out";
-      elRef.current.style.transform = "translateY(0)";
+      elRef.current.style.transform = "";
       const el = elRef.current;
       const cleanup = () => {
         el.style.transition = "";
@@ -109,8 +115,11 @@ export function useHorizontalSwipe(onSwipe: () => void, threshold = 50) {
       onSwipe();
     }
     if (elRef.current) {
+      // V13.1 — clear the inline transform so the consumer's
+      // open/closed class regains control after a swipe (mirrors the
+      // ``useVerticalDrag`` fix; same root-cause).
       elRef.current.style.transition = "transform .2s ease-out";
-      elRef.current.style.transform = "translateX(0)";
+      elRef.current.style.transform = "";
       const el = elRef.current;
       const cleanup = () => {
         el.style.transition = "";
