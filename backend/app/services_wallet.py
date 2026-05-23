@@ -7,6 +7,7 @@ review or during the cool-down window).
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import re
 from datetime import timedelta
@@ -64,6 +65,40 @@ _WITHDRAW_ADDRESS_MAX_LEN = 256
 _WITHDRAW_ADDRESS_FORBIDDEN_CHARS = frozenset(chr(b) for b in [*range(0, 32), 0x7F]) | frozenset(
     ["\\"]
 )
+
+
+_REGEX_TIMEOUT_SECONDS = 2
+_regex_pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+
+def _safe_fullmatch(pattern: str, string: str) -> bool:
+    """``re.fullmatch`` with a hard timeout.
+
+    Admin-controlled ``address_regex`` is stored in the DB and could
+    contain pathological patterns (e.g. ``(a+)+$``) that cause
+    catastrophic backtracking. The input is already capped at
+    ``_WITHDRAW_ADDRESS_MAX_LEN`` (256) chars, but even 256 chars
+    can stall a pathological NFA. Running the match in a thread with
+    a timeout ensures we never block the event loop.
+    """
+    try:
+        future = _regex_pool.submit(re.fullmatch, pattern, string)
+        return future.result(timeout=_REGEX_TIMEOUT_SECONDS) is not None
+    except concurrent.futures.TimeoutError:
+        logger.warning(
+            "address_regex timed out after %ss for pattern %.60s",
+            _REGEX_TIMEOUT_SECONDS,
+            pattern,
+            extra={"event": "wallet.regex.timeout"},
+        )
+        return False
+    except re.error:
+        logger.warning(
+            "address_regex is invalid: %.60s",
+            pattern,
+            extra={"event": "wallet.regex.invalid"},
+        )
+        return False
 
 
 def _truncate_address(addr: str, *, head: int = 6, tail: int = 6) -> str:
@@ -904,8 +939,12 @@ async def create_withdrawal(
     # ``re.compile`` here because the regex column rarely changes and
     # Python's regex cache caps at 512 patterns — well above the ~10
     # currencies we ship.
-    if currency.address_regex and not re.fullmatch(currency.address_regex, address):
-        raise HTTPException(400, f"Неверный формат адреса для {currency.code} ({currency.network})")
+    if currency.address_regex:
+        if not _safe_fullmatch(currency.address_regex, address):
+            raise HTTPException(
+                400,
+                f"Неверный формат адреса для {currency.code} ({currency.network})",
+            )
 
     # Audit (continuation) M-3 — refuse the withdrawal *before* the
     # Phase 1 debit when the row would land in a state we have no

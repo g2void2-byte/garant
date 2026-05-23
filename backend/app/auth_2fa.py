@@ -246,15 +246,21 @@ async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> 
     if bypass and code == bypass:
         return
     if not user.totp_enabled or not user.totp_secret:
-        raise HTTPException(403, "2FA не настроен — пройдите настройку 2FA")
+        raise HTTPException(
+            403,
+            {"code": "totp_not_configured", "detail": "2FA не настроен — пройдите настройку 2FA"},
+        )
     if not code:
-        raise HTTPException(401, "Введите код 2FA")
+        raise HTTPException(401, {"code": "totp_required", "detail": "Введите код 2FA"})
     matched = verify_totp_and_counter(user.totp_secret, code)
     if matched is None:
-        raise HTTPException(401, "Неверный код 2FA")
+        raise HTTPException(401, {"code": "totp_invalid", "detail": "Неверный код 2FA"})
     if matched <= (user.totp_last_counter or -1):
         # Replay: code already accepted in this (or an earlier) window.
-        raise HTTPException(401, "Код 2FA уже использован — дождитесь следующего")
+        raise HTTPException(
+            401,
+            {"code": "totp_replay", "detail": "Код 2FA уже использован — дождитесь следующего"},
+        )
     # claim the counter in Redis BEFORE we trust the DB
     # commit. Pre-fix, replay protection lived only in
     # ``users.totp_last_counter`` which the caller would persist
@@ -280,7 +286,10 @@ async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> 
                 ex=_PERIOD * (2 * _DRIFT_WINDOWS + 1) + 1,
             )
             if not claimed:
-                raise HTTPException(401, "Код 2FA уже использован — дождитесь следующего")
+                _d = "Код 2FA уже использован — дождитесь следующего"
+                raise HTTPException(
+                    401, {"code": "totp_replay", "detail": _d},
+                )
         except HTTPException:
             raise
         except Exception:

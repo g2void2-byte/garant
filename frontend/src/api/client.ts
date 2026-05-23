@@ -10,29 +10,24 @@ import { qk } from "./queryKeys";
 
 const baseURL = import.meta.env.VITE_API_URL || "";
 
-// Server-side strings that mean "your PIN session is no longer valid".
-// On a 401 with one of these we drop the local token and force the
-// PinGate to re-render so the user lands back on the PIN screen
-// instead of sitting in an authenticated UI whose every request 401s.
-const PIN_SESSION_INVALID_DETAILS = new Set([
-  "PIN-сессия отсутствует",
-  "PIN-сессия недействительна",
-  "PIN-сессия отозвана",
-  "PIN-сессия истекла из-за неактивности",
+// Audit v3 A-4 — match on structured ``code`` fields instead of
+// hardcoded Russian detail strings. The backend now returns
+// ``{"code": "...", "detail": "..."}`` for PIN / TOTP errors.
+// The ``code`` is locale-independent and forms a stable API contract.
+const PIN_SESSION_INVALID_CODES = new Set([
+  "pin_session_missing",
+  "pin_session_invalid",
+  "pin_session_revoked",
+  "pin_session_idle",
 ]);
 
-// Server-side strings that mean "your TOTP session is missing /
-// invalid / expired" — both the missing-code 401 and the
-// stale-session 401 surface this set. The global ``TotpGate``
-// listens for the ``garant:totp-required`` window event we
-// dispatch below and renders the inline code-entry sheet.
-const TOTP_REQUIRED_DETAILS = new Set([
-  "Введите код 2FA",
-  "Неверный код 2FA",
-  "Код 2FA уже использован — дождитесь следующего",
+const TOTP_REQUIRED_CODES = new Set([
+  "totp_required",
+  "totp_invalid",
+  "totp_replay",
 ]);
 
-const TOTP_NOT_CONFIGURED_DETAIL = "2FA не настроен — пройдите настройку 2FA";
+const TOTP_NOT_CONFIGURED_CODE = "totp_not_configured";
 
 export const TOTP_REQUIRED_EVENT = "garant:totp-required";
 export const TOTP_NOT_CONFIGURED_EVENT = "garant:totp-not-configured";
@@ -109,11 +104,18 @@ export const api = ky.create({
     beforeError: [
       async (err: HTTPError) => {
         let detail: unknown;
+        let code: string | undefined;
         try {
           const data: unknown = await err.response.clone().json();
           if (data && typeof data === "object" && "detail" in data) {
             detail = (data as { detail?: unknown }).detail;
-            if (detail) {
+            // Audit v3 A-4 — structured errors return
+            // ``{"detail": {"code": "...", "detail": "..."}}``
+            if (detail && typeof detail === "object" && "code" in detail) {
+              const structured = detail as { code: string; detail: string };
+              code = structured.code;
+              err.message = structured.detail;
+            } else if (detail) {
               err.message = typeof detail === "string" ? detail : JSON.stringify(detail);
             }
           }
@@ -122,30 +124,27 @@ export const api = ky.create({
         }
         if (
           err.response.status === 401 &&
-          typeof detail === "string" &&
-          PIN_SESSION_INVALID_DETAILS.has(detail)
+          code !== undefined &&
+          PIN_SESSION_INVALID_CODES.has(code)
         ) {
           clearPinToken();
-          // Invalidate the cached PIN status so PinGate (and every
-          // other consumer of ``["pin", "status"]``) refetches and
-          // re-renders the lock screen.
           queryClient.invalidateQueries({ queryKey: qk.pin.status() });
         }
         // 2FA failure — drop any cached session token (it's stale or
         // already invalidated server-side) and dispatch the event the
-        // global ``TotpGate`` listens on. The detail carries enough
-        // metadata for the gate to replay the failed admin action
-        // after the user types a fresh code.
+        // global ``TotpGate`` listens on.
         if (
           err.response.status === 401 &&
-          typeof detail === "string" &&
-          TOTP_REQUIRED_DETAILS.has(detail)
+          code !== undefined &&
+          TOTP_REQUIRED_CODES.has(code)
         ) {
           clearTotpSessionToken();
           try {
             const evt = new CustomEvent<TotpRequiredDetail>(TOTP_REQUIRED_EVENT, {
               detail: {
-                detail,
+                detail: typeof detail === "object" && detail !== null && "detail" in detail
+                  ? (detail as { detail: string }).detail
+                  : String(detail),
                 method: err.request.method,
                 url: err.request.url,
                 body: bodyFromInit(err.request),
@@ -157,7 +156,7 @@ export const api = ky.create({
             /* DOM unavailable */
           }
         }
-        if (err.response.status === 403 && detail === TOTP_NOT_CONFIGURED_DETAIL) {
+        if (err.response.status === 403 && code === TOTP_NOT_CONFIGURED_CODE) {
           try {
             window.dispatchEvent(new Event(TOTP_NOT_CONFIGURED_EVENT));
           } catch {
