@@ -5958,6 +5958,10 @@
             "title": "Amount",
             "type": "number"
           },
+          "amount_str": {
+            "title": "Amount Str",
+            "type": "string"
+          },
           "currency": {
             "$ref": "#/components/schemas/CurrencyOut"
           },
@@ -5965,9 +5969,17 @@
             "title": "Locked",
             "type": "number"
           },
+          "locked_str": {
+            "title": "Locked Str",
+            "type": "string"
+          },
           "total": {
             "title": "Total",
             "type": "number"
+          },
+          "total_str": {
+            "title": "Total Str",
+            "type": "string"
           },
           "updated_at": {
             "anyOf": [
@@ -5987,7 +5999,10 @@
           "amount",
           "locked",
           "total",
-          "updated_at"
+          "updated_at",
+          "amount_str",
+          "locked_str",
+          "total_str"
         ],
         "title": "WalletBalanceOut",
         "type": "object"
@@ -15948,6 +15963,15 @@
               "description": "ISO date (YYYY-MM-DD)",
               "title": "Reg To"
             }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": true,
+            "schema": {
+              "title": "Authorization",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -15992,6 +16016,15 @@
             "required": true,
             "schema": {
               "title": "Username",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": true,
+            "schema": {
+              "title": "Authorization",
               "type": "string"
             }
           }

@@ -792,6 +792,19 @@ class WalletDeposit(Base):
             "purpose IN ('wallet', 'trust')",
             name="ck_wallet_deposits_purpose_known",
         ),
+        # Audit H-6 — composite UNIQUE on ``(provider, provider_invoice_id)``
+        # isolates per-provider id namespaces. CryptoBot and Crystalpay
+        # each start their invoice ids at 1; without this constraint a
+        # webhook lookup keyed on ``provider_invoice_id`` alone could
+        # cross-load rows between providers. ``_find_wallet_deposit``
+        # also includes ``provider`` in its WHERE clause; the unique
+        # index here is the schema-level belt to that code-level
+        # braces. Mirrors migration ``y7e8f9a0b1c2``.
+        UniqueConstraint(
+            "provider",
+            "provider_invoice_id",
+            name="ux_wallet_deposits_provider_provider_invoice_id",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

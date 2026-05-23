@@ -688,8 +688,16 @@ export function useWalletWithdrawals() {
 
 export function useCreateWalletWithdrawal() {
   const qc = useQueryClient();
+  // Audit M-7 — ``amount`` is typed ``string`` here (not ``number``)
+  // so the caller passes the user-visible decimal string straight
+  // through. The backend's ``WalletWithdrawCreateReq.amount: Decimal``
+  // accepts a JSON string and parses it without going through
+  // ``float``, preserving every digit. JavaScript's IEEE-754
+  // ``Number`` truncates the last 2-3 base-10 digits at the 10^10
+  // scale that USDT can hit, so ``parseFloat(amount)`` was leaking
+  // user money on big balances.
   return useMutation({
-    mutationFn: (body: { currency_code: string; amount: number; address: string }) =>
+    mutationFn: (body: { currency_code: string; amount: string; address: string }) =>
       api.post("api/wallet/withdrawals", { json: body }).json<WalletWithdrawalDto>(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.wallet.withdrawals() });

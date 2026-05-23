@@ -4471,11 +4471,17 @@ export interface components {
         WalletBalanceOut: {
             /** Amount */
             amount: number;
+            /** Amount Str */
+            amount_str: string;
             currency: components["schemas"]["CurrencyOut"];
             /** Locked */
             locked: number;
+            /** Locked Str */
+            locked_str: string;
             /** Total */
             total: number;
+            /** Total Str */
+            total_str: string;
             /** Updated At */
             updated_at: string | null;
         };
@@ -8873,7 +8879,9 @@ export interface operations {
                 /** @description ISO date (YYYY-MM-DD) */
                 reg_to?: string | null;
             };
-            header?: never;
+            header: {
+                authorization: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -8902,7 +8910,9 @@ export interface operations {
     get_user_api_users__username__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                authorization: string;
+            };
             path: {
                 username: string;
             };

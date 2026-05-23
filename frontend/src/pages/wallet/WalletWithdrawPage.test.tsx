@@ -98,6 +98,9 @@ function makeBalance(
     locked: 0,
     total: amount,
     updated_at: null,
+    amount_str: String(amount),
+    locked_str: "0",
+    total_str: String(amount),
   };
 }
 
@@ -202,7 +205,10 @@ describe("<WalletWithdrawPage />", () => {
     await waitFor(() => {
       expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USDT",
-        amount: 25,
+        // Audit M-7 — amount goes over the wire as a string so the
+        // backend can parse it into ``Decimal`` without an
+        // intermediate ``float`` round-trip.
+        amount: "25",
         // Address is trimmed before being sent.
         address: "TXYZ-some-address",
       });

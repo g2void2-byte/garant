@@ -112,6 +112,9 @@ function makeBalance(amount: number, locked = 0): WalletBalanceDto {
     locked,
     total: amount + locked,
     updated_at: null,
+    amount_str: String(amount),
+    locked_str: String(locked),
+    total_str: String(amount + locked),
   };
 }
 
@@ -210,7 +213,9 @@ describe("<WalletCurrencyPage />", () => {
     await waitFor(() => {
       expect(mockState.createWithdrawal.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USDT",
-        amount: 10,
+        // Audit M-7 — wire format is now ``string`` to avoid the
+        // ``parseFloat`` round-trip that truncated big balances.
+        amount: "10",
         address: "TX-addr",
       });
     });

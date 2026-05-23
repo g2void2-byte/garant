@@ -29,7 +29,9 @@ from urllib.parse import parse_qs
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth_helpers import ensure_user_row
 from ..db import async_session
 from ..deps import _normalise_language_code
 from ..models import User
@@ -125,6 +127,45 @@ async def _read_auth_frame(websocket: WebSocket) -> str | None:
     return init_data
 
 
+async def _ws_first_touch(
+    session: AsyncSession,
+    *,
+    tg_user_id: int,
+    tg_user: dict,
+    language_code: str | None,
+) -> tuple[User, bool]:
+    """SELECT-or-upsert the ``users`` row for a freshly handshaking socket.
+
+    Returns ``(user, was_new)`` so the caller can emit the
+    ``ws.handshake.user_autocreated`` log line only on the genuine
+    first-touch path. ``was_new`` is best-effort: under a tight race
+    with a concurrent REST/WS first-touch the helper might report
+    ``was_new=False`` even though THIS coroutine's INSERT landed first,
+    but the row will still be present after the upsert — the log line
+    is purely cosmetic, the correctness invariant is just "row exists".
+
+    Splitting the SELECT-then-upsert lets us short-circuit the
+    expensive ``INSERT ... ON CONFLICT`` for the common case of an
+    already-known user (every connection after the first one); only
+    the literal first-touch hits the upsert.
+    """
+    user = (
+        await session.execute(select(User).where(User.tg_user_id == tg_user_id))
+    ).scalar_one_or_none()
+    if user is not None:
+        return user, False
+    user = await ensure_user_row(
+        session,
+        tg_user_id=tg_user_id,
+        username=tg_user.get("username"),
+        display_name=tg_user.get("first_name", ""),
+        photo_url=tg_user.get("photo_url"),
+        language_code=language_code,
+        bump_login=False,
+    )
+    return user, True
+
+
 def _parse_auth_date(init_data: str) -> int | None:
     """Extract ``auth_date`` from a verified initData blob.
 
@@ -184,22 +225,41 @@ async def websocket_endpoint(websocket: WebSocket):
     # ``tg_user_id`` exposed in initData) — otherwise the WS channel is a
     # silent black hole.
     async with async_session() as session:
-        result = await session.execute(select(User).where(User.tg_user_id == tg_user_id))
-        user = result.scalar_one_or_none()
-        if user is None:
-            # A-6 — capture the Telegram client locale on the WS first-touch
-            # path too, so a brand-new user whose very first hit is the
-            # notifications socket still lands in the right broadcast
-            # cohort (see ``deps._normalise_language_code``).
-            user = User(
+        # Audit H-2 — share the same ``INSERT ... ON CONFLICT`` first-touch
+        # helper with ``deps.get_current_user`` (REST). Pre-fix the WS
+        # handshake had its own naive ``session.add(User(...))`` + commit,
+        # so two parallel ``/ws/notifications`` connects from a
+        # brand-new client raced on the ``users.tg_user_id`` unique
+        # constraint and the loser surfaced as a 500 to Starlette,
+        # kicking the client into a reconnect loop. ``bump_login=False``
+        # because the WS handshake is not a session-ping event — the
+        # next REST call (which fires from the TMA bootstrap moments
+        # later) is what stamps ``login_count`` / ``last_login_at``.
+        #
+        # A-6 — capture the Telegram client locale on the WS first-touch
+        # path too, so a brand-new user whose very first hit is the
+        # notifications socket still lands in the right broadcast
+        # cohort (see ``deps._normalise_language_code``).
+        was_new = False
+        try:
+            language_code = _normalise_language_code(tg_user.get("language_code"))
+            user, was_new = await _ws_first_touch(
+                session,
                 tg_user_id=tg_user_id,
-                username=tg_user.get("username"),
-                display_name=tg_user.get("first_name", ""),
-                photo_url=tg_user.get("photo_url"),
-                language_code=_normalise_language_code(tg_user.get("language_code")),
+                tg_user=tg_user,
+                language_code=language_code,
             )
-            session.add(user)
-            await session.commit()
+        except RuntimeError:
+            logger.exception(
+                "ws handshake: ensure_user_row failed",
+                extra={
+                    "event": "ws.handshake.ensure_user_row_failed",
+                    "tg_user_id": tg_user_id,
+                },
+            )
+            await websocket.close(code=1011, reason="Server error")
+            return
+        if was_new:
             # V11-L-15 — flag the first-touch auto-create path so ops
             # can correlate a spike in new ``User`` rows to the WS
             # endpoint specifically (vs the REST ``/api/me`` bootstrap).

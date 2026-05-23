@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import notifier
@@ -51,19 +51,68 @@ async def recompute_user_rating(session: AsyncSession, target: User) -> None:
     * ``rating <= 2`` → bad
     * ``rating == 3`` → neutral (excluded from both counters)
 
-    single round-trip ``SUM(CASE ...)`` instead of two
-    ``SELECT COUNT(...)``.  ``post_review`` is on the hot path for
-    every newly-finished deal; cutting the recompute from two
-    sequential queries to one halves the DB round-trips per review
-    and lets Postgres scan the per-target index just once.
+    Audit H-5 — pre-fix this helper SELECTed the aggregates and
+    assigned them back to the ORM-managed ``target`` row WITHOUT a
+    row lock on ``users.target_id``. Two concurrent ``post_review``
+    calls could each see their own INSERT but not the other's, and
+    both write the SAME value back, losing one review's contribution
+    to the materialised counter. The underlying ``reviews`` table is
+    still authoritative — but the public profile page reads
+    ``good`` / ``bad`` directly off the row, so the counter lied.
+
+    The fix is a single ``UPDATE users SET good = (SELECT ...), bad
+    = (SELECT ...) WHERE id = :target_id``. Postgres takes a ROW
+    lock on the target users row at the start of the UPDATE; under
+    ``READ COMMITTED`` (our isolation level) a concurrent UPDATE
+    that lands first causes the second UPDATE to wait and then
+    re-read the row using the latest committed snapshot (EvalPlanQual
+    semantics). The inner subselect inside the SET clause also
+    re-evaluates against the latest snapshot — that is what
+    guarantees the second writer's count includes the first writer's
+    review.
+
+    The caller is expected to have already locked the target row
+    via :func:`lock_user_for_rating` (see ``post_review`` below) so
+    the row-lock window covers the INSERT-then-recompute critical
+    section; using a single-statement UPDATE on top is belt-and-
+    braces against any future caller that forgets the explicit
+    lock.
+
+    We do NOT use the ORM ``target.good = …`` assignment any more
+    because that's what produced the lost update: ORM dirty-track
+    plus a stale Python-side count is exactly the read-modify-write
+    cycle the race exploited.
     """
     good_expr = func.coalesce(func.sum(case((Review.rating >= 4, 1), else_=0)), 0)
     bad_expr = func.coalesce(func.sum(case((Review.rating <= 2, 1), else_=0)), 0)
-    good, bad = (
-        await session.execute(select(good_expr, bad_expr).where(Review.target_id == target.id))
-    ).one()
-    target.good = int(good or 0)
-    target.bad = int(bad or 0)
+    good_sub = select(good_expr).where(Review.target_id == target.id).scalar_subquery()
+    bad_sub = select(bad_expr).where(Review.target_id == target.id).scalar_subquery()
+    await session.execute(
+        update(User).where(User.id == target.id).values(good=good_sub, bad=bad_sub)
+    )
+    # Refresh the in-session ORM object so callers that read
+    # ``target.good`` / ``target.bad`` after this helper returns see
+    # the values we just wrote (instead of the stale ORM cache).
+    await session.refresh(target, attribute_names=["good", "bad"])
+
+
+async def lock_user_for_rating(session: AsyncSession, target: User) -> None:
+    """Acquire ``SELECT … FOR UPDATE`` on the target users row.
+
+    Audit H-5 lock-order helper: callers that are about to insert a
+    new ``reviews`` row and then call :func:`recompute_user_rating`
+    should issue this lock first. The lock blocks any concurrent
+    review-insert-then-recompute against the same target, so the
+    materialised ``good`` / ``bad`` counters cannot suffer a
+    lost-update race.
+
+    Lock order intentionally matches the rest of the codebase:
+    insert the *child* row (``Review``) first, then take FOR UPDATE
+    on the *parent* row (``User``). Reviews never reference each
+    other, so the child insert can never deadlock against the
+    parent lock.
+    """
+    await session.execute(select(User.id).where(User.id == target.id).with_for_update())
 
 
 async def post_review(
@@ -111,6 +160,15 @@ async def post_review(
     session.add(review)
     await session.flush()
 
+    # Audit H-5 — lock the target users row so the INSERT-then-
+    # recompute critical section serialises against any concurrent
+    # ``post_review`` for the same target. Without this lock two
+    # parallel ``post_review(target=X)`` calls could each see only
+    # their own freshly-inserted review and both write the same
+    # materialised counter back. ``recompute_user_rating`` is also
+    # rewritten as a single-statement UPDATE-with-subselect for
+    # defence-in-depth (see its docstring).
+    await lock_user_for_rating(session, target)
     await recompute_user_rating(session, target)
 
     # A9-M-2 — split-API: persist the notification row atomically with

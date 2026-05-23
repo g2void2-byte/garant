@@ -33,6 +33,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from ... import notifier
 from ...admin_audit import log_admin_action
@@ -43,6 +44,7 @@ from ...models import (
     Deal,
     DealMessage,
     DealStatus,
+    Media,
     Notification,
     NotificationType,
     PayCommission,
@@ -218,18 +220,50 @@ async def _serialize_message(session: AsyncSession, msg: DealMessage) -> DealMes
 
 
 async def _list_messages(session: AsyncSession, deal_id: int) -> list[DealMessageOut]:
+    """Admin chat transcript — batched media load (Audit M-4).
+
+    Pre-fix this helper called ``_serialize_message`` for every row,
+    which in turn fired one ``SELECT Media WHERE id IN (...)`` *per
+    message* through ``deal_messages._serialize``. An arbitration
+    deal with N messages produced N round-trips on every admin
+    transcript view. The fix mirrors the user-side
+    ``deal_messages.list_messages`` batched pattern: load all media
+    referenced by the whole transcript in a single
+    ``SELECT Media WHERE id IN (... union ...)`` then serialise each
+    row against the pre-built dict.
+    """
+    # Lazy import to avoid a circular dependency with deal_messages router.
+    from ..deal_messages import _parse_attachment_ids, _serialize_one
+
     rows = (
         (
             await session.execute(
                 select(DealMessage)
                 .where(DealMessage.deal_id == deal_id)
+                .options(selectinload(DealMessage.sender))
                 .order_by(DealMessage.created_at.asc(), DealMessage.id.asc())
             )
         )
         .scalars()
         .all()
     )
-    return [await _serialize_message(session, m) for m in rows]
+    # Audit M-4 — collect every attachment id across the whole
+    # transcript in one pass, then issue a single ``WHERE id IN (...)``
+    # SELECT. ``set`` collapses duplicate ids (a media file linked
+    # from multiple messages, which the chat actively allows on the
+    # client) into one DB-side fetch.
+    all_media_ids: set[int] = set()
+    for msg in rows:
+        all_media_ids.update(_parse_attachment_ids(msg.attachments_json))
+    media_by_id: dict[int, Media] = {}
+    if all_media_ids:
+        media_rows = (
+            (await session.execute(select(Media).where(Media.id.in_(all_media_ids))))
+            .scalars()
+            .all()
+        )
+        media_by_id = {m.id: m for m in media_rows}
+    return [_serialize_one(m, media_by_id) for m in rows]
 
 
 async def _to_detail(session: AsyncSession, deal: Deal) -> AdminDealDetailOut:

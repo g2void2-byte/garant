@@ -121,16 +121,38 @@ async def get_balances(
     source instead of post-fetch on the client.
     """
     rows = await list_balances(session, user.id, kind=kind)
-    return [
-        WalletBalanceOut(
-            currency=_currency_dto(c),
-            amount=b.amount if b else Decimal(0),
-            locked=b.locked if b else Decimal(0),
-            total=(b.amount + b.locked) if b else Decimal(0),
-            updated_at=b.updated_at if b else None,
+    out: list[WalletBalanceOut] = []
+    for c, b in rows:
+        # Audit M-7 — fold the ``Decimal`` value once per row into a
+        # single source of truth, then derive both the legacy float
+        # (via ``MoneyDecimal``) and the lossless ``*_str`` form from
+        # it. The frontend should prefer ``*_str`` when it needs to
+        # round-trip the value back to the API (e.g. the "Все"
+        # button on the withdraw form) so JavaScript's IEEE-754
+        # double parsing doesn't truncate the last few base-10
+        # digits.
+        # ``Balance.amount`` / ``Balance.locked`` are typed
+        # ``Mapped[float]`` in the ORM (legacy annotation) but
+        # ``Numeric(28,8)`` at the DB layer, so the runtime value is
+        # ``Decimal``. Normalise through ``Decimal(str(...))`` so the
+        # ``+`` below is unambiguous to the type-checker and the
+        # arithmetic stays exact even on the legacy float path.
+        amount = Decimal(str(b.amount)) if b else Decimal(0)
+        locked = Decimal(str(b.locked)) if b else Decimal(0)
+        total = amount + locked
+        out.append(
+            WalletBalanceOut(
+                currency=_currency_dto(c),
+                amount=amount,
+                locked=locked,
+                total=total,
+                updated_at=b.updated_at if b else None,
+                amount_str=str(amount),
+                locked_str=str(locked),
+                total_str=str(total),
+            )
         )
-        for c, b in rows
-    ]
+    return out
 
 
 # ── Deposits ───────────────────────────────────────────

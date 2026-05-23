@@ -7,9 +7,9 @@ from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .auth_helpers import ensure_user_row
 from .config import settings
 from .db import async_session
 from .models import User
@@ -207,20 +207,13 @@ async def get_current_user(
     user = result.scalar_one_or_none()
 
     if user is None:
-        # Comment 28 (H) — Several parallel ``/api/me``,
-        # ``/api/wallet/balances``, ``/api/notifications``, ``/api/categories``
-        # calls from a brand-new client race the initial SELECT. Two
-        # of them see no row, both call ``session.add(User(...))``,
-        # the second commit explodes with an IntegrityError on
-        # ``users.tg_user_id``. We instead emit an
-        # ``INSERT ... ON CONFLICT (tg_user_id) DO UPDATE`` (was
-        # ``DO NOTHING`` pre-audit L-1) so the loser of the race
-        # still bumps ``login_count`` / refreshes ``last_login_at``
-        # via a single atomic statement, then re-SELECT to load
-        # whichever row persisted. The ON CONFLICT path is
-        # idempotent and safe to retry — and required, because every
-        # downstream endpoint depends on ``current_user`` being
-        # populated.
+        # Audit H-2 / L-1 — both REST (``get_current_user``) and WS
+        # (``routers/ws._authenticate``) routes go through the same
+        # ``ensure_user_row`` helper so two parallel first-touch
+        # deliveries from a brand-new client always converge on a
+        # single row via ``INSERT ... ON CONFLICT`` instead of crashing
+        # the loser with an ``IntegrityError`` on ``users.tg_user_id``.
+        #
         # A-6 — Telegram populates ``user.language_code`` (a two-letter
         # IETF tag like ``ru`` or ``en``, occasionally a region-tagged
         # variant like ``pt-br``) in the initData blob. Normalise to
@@ -228,48 +221,27 @@ async def get_current_user(
         # can't OOM the admin broadcast filter, and tolerate clients
         # that omit the field entirely (legacy Telegram desktop builds).
         language_code = _normalise_language_code(tg_user.get("language_code"))
-        # Audit L-1 — ``ON CONFLICT DO UPDATE`` instead of
-        # ``DO NOTHING``. The loser-transaction of the first-touch
-        # race (two parallel ``/api/me`` from a brand-new client)
-        # used to commit a no-op, so ``login_count`` ended up at 1
-        # after two concurrent first-touches instead of 2. We now
-        # bump ``login_count`` and refresh ``last_login_at`` /
-        # ``last_ip`` atomically in the same statement, mirroring
-        # what the existing-user branch below does for every
-        # post-debounce session ping. Identity columns
-        # (``username`` / ``display_name`` / ``photo_url`` /
-        # ``language_code``) are intentionally left to the winning
-        # insert — the loser is by definition the same TG user with
-        # the same payload, so re-asserting them would be a no-op
-        # at best and would race with the existing-user branch's
-        # dirty-track at worst.
-        ins_stmt = pg_insert(User).values(
-            tg_user_id=tg_user_id,
-            username=tg_user.get("username"),
-            display_name=tg_user.get("first_name", ""),
-            photo_url=tg_user.get("photo_url"),
-            language_code=language_code,
-            last_ip=ip,
-            last_login_at=now,
-            login_count=1,
-        )
-        ins = ins_stmt.on_conflict_do_update(
-            index_elements=["tg_user_id"],
-            set_={
-                "login_count": User.__table__.c.login_count + 1,
-                "last_login_at": ins_stmt.excluded.last_login_at,
-                "last_ip": ins_stmt.excluded.last_ip,
-            },
-        )
-        await session.execute(ins)
-        await session.commit()
-        user = (
-            await session.execute(select(User).where(User.tg_user_id == tg_user_id))
-        ).scalar_one_or_none()
-        if user is None:
-            # Should be unreachable — the row either existed (other
-            # writer committed first) or our INSERT just landed.
-            raise HTTPException(500, "Failed to create user account")
+        # ``bump_login=True`` is REST-only: the helper bumps
+        # ``login_count`` and refreshes ``last_login_at`` / ``last_ip``
+        # for both the winning insert AND the loser of the race,
+        # mirroring what the existing-user branch below does on every
+        # post-debounce session ping (audit L-1). WS does not count as
+        # a "session ping" — see ``routers/ws._authenticate`` for the
+        # ``DO NOTHING`` variant.
+        try:
+            user = await ensure_user_row(
+                session,
+                tg_user_id=tg_user_id,
+                username=tg_user.get("username"),
+                display_name=tg_user.get("first_name", ""),
+                photo_url=tg_user.get("photo_url"),
+                language_code=language_code,
+                bump_login=True,
+                last_ip=ip,
+                now=now,
+            )
+        except RuntimeError as exc:  # pragma: no cover — see helper
+            raise HTTPException(500, "Failed to create user account") from exc
     else:
         # Comment 50 (M) — refuse banned / frozen accounts BEFORE
         # writing anything to their row. Pre-fix the access check

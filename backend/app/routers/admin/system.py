@@ -97,33 +97,116 @@ async def status(_admin: AdminUser, session: SessionDep):
     )
 
 
+# Audit L-12 — closed set of Redis key prefixes the backend itself
+# writes. The admin "flush Redis" button now scans for exactly these
+# prefixes and deletes only matching keys, instead of calling
+# ``FLUSHDB`` which would wipe every key in the DB — including keys
+# written by neighbouring services if the Redis instance is shared
+# (a common production setup). Adding a new prefix? Add it here too,
+# otherwise the flush button won't clear it.
+#
+# Each entry is paired with a short human description so a follow-up
+# audit can grep the codebase for the prefix and find the owning
+# module. The descriptions are not exposed in the API response.
+_KNOWN_REDIS_PREFIXES: tuple[tuple[str, str], ...] = (
+    # rate_limit.py: sliding-window counters keyed
+    # ``rl:{scope}:{user|ip}:...``.
+    ("rl:", "rate-limit counters"),
+    # auth_2fa.py: TOTP single-use claim (``totp-claim:{uid}:{step}``).
+    ("totp-claim:", "TOTP single-use claim"),
+    # routers/admin/twofa.py: TOTP enrolment pending secret
+    # (``totp:pending:{uid}``).
+    ("totp:pending:", "TOTP enrolment pending"),
+    # ws.py: pub/sub channels for cross-process WS fan-out.
+    ("ws:", "WS pub/sub channels"),
+)
+
+
+async def _flush_known_prefixes(r) -> dict[str, int]:
+    """Delete every key matching one of :data:`_KNOWN_REDIS_PREFIXES`.
+
+    Uses ``SCAN`` (not ``KEYS``) so the loop is co-operative under a
+    big keyspace — ``KEYS`` blocks the Redis event loop for the
+    duration of the iteration, while ``SCAN`` returns cursor-paged
+    batches that other clients can interleave their commands
+    against. Deletes are batched into ``UNLINK`` calls (lazy
+    background free in Redis 4+), falling back to ``DEL`` if the
+    server is older.
+
+    Returns a ``{prefix: deleted_count}`` map for the audit log so
+    operators can see exactly what got wiped.
+    """
+    counts: dict[str, int] = {}
+    for prefix, _desc in _KNOWN_REDIS_PREFIXES:
+        match = f"{prefix}*"
+        deleted = 0
+        # ``scan_iter`` is the async-iterator wrapper around
+        # ``SCAN`` provided by redis-py. ``count=500`` is a hint to
+        # Redis for the per-batch upper bound (Redis may return
+        # fewer); 500 is small enough to avoid long-tail latency
+        # spikes and large enough to keep round-trip overhead low.
+        batch: list[str] = []
+        async for key in r.scan_iter(match=match, count=500):
+            batch.append(key)
+            if len(batch) >= 500:
+                try:
+                    deleted += await r.unlink(*batch)
+                except Exception:
+                    # ``UNLINK`` was added in Redis 4.0 — fall back
+                    # to synchronous ``DEL`` on older servers.
+                    deleted += await r.delete(*batch)
+                batch.clear()
+        if batch:
+            try:
+                deleted += await r.unlink(*batch)
+            except Exception:
+                deleted += await r.delete(*batch)
+        counts[prefix] = deleted
+    return counts
+
+
 @router.post("/redis/flush")
 async def flush_redis(
     admin: TotpUser,
     request: Request,
     session: SessionDep,
 ):
-    """Wipe the Redis database used by the backend.
+    """Selectively wipe Redis keys this backend wrote.
 
-    Gated behind 2FA + audit log because a flush clears every key in
-    the DB — including shared rate-limit counters and WS pub/sub
-    state. The action is recorded under ``system.redis_flush`` so an
-    operator can always trace who triggered it.
+    Gated behind 2FA + audit log because a flush clears all
+    rate-limit counters, TOTP claims and WS pub/sub state. The
+    action is recorded under ``system.redis_flush`` so an operator
+    can always trace who triggered it.
+
+    Audit L-12 — pre-fix this endpoint called ``FLUSHDB``, which
+    wipes EVERY key in the configured Redis DB regardless of which
+    service wrote it. In a shared-Redis production deployment the
+    button would silently knock out neighbouring services. We now
+    iterate the closed set of prefixes the backend itself owns
+    (see :data:`_KNOWN_REDIS_PREFIXES`) via ``SCAN`` + ``UNLINK``
+    and delete only those keys. Foreign keys are left untouched.
     """
     r = await get_redis()
     redis_configured = r is not None
+    deleted_by_prefix: dict[str, int] = {}
     if redis_configured:
-        await r.flushdb()
+        deleted_by_prefix = await _flush_known_prefixes(r)
     await log_admin_action(
         session,
         actor=admin,
         action="system.redis_flush",
         target_type="system",
         target_id=None,
-        payload={"redis_configured": redis_configured},
+        payload={
+            "redis_configured": redis_configured,
+            # Mirror the per-prefix delete counts into the audit log
+            # so a follow-up incident review can see exactly what
+            # was wiped without re-running the flush.
+            "deleted_by_prefix": deleted_by_prefix,
+        },
         request=request,
     )
     await session.commit()
     if not redis_configured:
         return {"ok": False, "message": "Redis не настроен"}
-    return {"ok": True}
+    return {"ok": True, "deleted_by_prefix": deleted_by_prefix}

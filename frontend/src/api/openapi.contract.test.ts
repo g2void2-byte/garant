@@ -122,6 +122,11 @@ const walletBalanceFixture = {
   locked: 0,
   total: 123.45,
   updated_at: null,
+  // Audit M-7 — string mirrors of the money fields. See
+  // ``WalletBalanceDto`` for the precision rationale.
+  amount_str: "123.45",
+  locked_str: "0",
+  total_str: "123.45",
 } as const satisfies WalletBalanceOutSchema;
 
 const pinStatusFixture = {

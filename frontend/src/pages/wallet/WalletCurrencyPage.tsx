@@ -129,6 +129,7 @@ export default function WalletCurrencyPage() {
             minWithdraw={currency.min_withdraw}
             decimals={currency.decimals}
             available={balance?.amount ?? 0}
+            availableStr={balance?.amount_str ?? "0"}
           />
         )}
         {tab === "history" && (
@@ -204,16 +205,23 @@ function DepositForm({
   );
 }
 
+// Audit M-7 — see ``WalletWithdrawPage.tsx`` for the full rationale.
+// Reject anything that isn't a well-formed decimal so we never round-trip
+// through ``parseFloat``.
+const _DECIMAL_RE = /^\d+(?:\.\d{1,18})?$|^\.\d{1,18}$/;
+
 function WithdrawForm({
   currencyCode,
   minWithdraw,
   decimals,
   available,
+  availableStr,
 }: {
   currencyCode: string;
   minWithdraw: number;
   decimals: number;
   available: number;
+  availableStr: string;
 }) {
   const create = useCreateWalletWithdrawal();
   const toast = useToast();
@@ -221,8 +229,8 @@ function WithdrawForm({
   const [address, setAddress] = useState("");
 
   async function submit() {
-    const value = parseFloat(amount);
-    if (!Number.isFinite(value) || value <= 0) {
+    const trimmed = amount.trim();
+    if (!_DECIMAL_RE.test(trimmed) || /^0+(?:\.0+)?$/.test(trimmed)) {
       haptic("error");
       toast.show({ kind: "error", title: "Введите корректную сумму" });
       return;
@@ -233,7 +241,10 @@ function WithdrawForm({
       return;
     }
     try {
-      await create.mutateAsync({ currency_code: currencyCode, amount: value, address });
+      // Audit M-7 — send the user-visible decimal string straight to
+      // the backend; ``WalletWithdrawCreateReq.amount: Decimal``
+      // accepts it without ``float`` truncation.
+      await create.mutateAsync({ currency_code: currencyCode, amount: trimmed, address });
       haptic("success");
       toast.show({
         kind: "success",
@@ -254,7 +265,7 @@ function WithdrawForm({
         <span>Доступно: {formatCurrency(available, currencyCode, decimals)}</span>
         <button
           type="button"
-          onClick={() => setAmount(String(available))}
+          onClick={() => setAmount(availableStr)}
           className="text-accent text-xs underline"
           disabled={available <= 0}
         >
