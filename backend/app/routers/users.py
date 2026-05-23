@@ -5,8 +5,9 @@ from datetime import date, datetime, time
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import case, func, literal, select
 
-from ..deps import SessionDep
+from ..deps import CurrentUser, SessionDep
 from ..models import User
+from ..rate_limit import RLUsersDetail, RLUsersList
 from ..schemas import UserPublicOut
 from ..search import build_prefix_tsquery
 from ..serializers import user_to_public_out
@@ -57,6 +58,16 @@ def _parse_date(value: str | None) -> datetime | None:
 @router.get("", response_model=list[UserPublicOut])
 async def list_users(
     session: SessionDep,
+    # Audit M-1 — ``_user: CurrentUser`` gates the endpoint behind
+    # initData verification (pre-fix it was anonymous, so a scraper
+    # didn't even need a valid Telegram session) and ``_rl:
+    # RLUsersList`` rate-limits per-user so a logged-in adversary
+    # can't re-scrape the directory at high volume. The dependency
+    # parameters are deliberately leading underscores: we don't use
+    # the resolved values, FastAPI only invokes the dependency for
+    # its side effects (auth check + RL counter bump).
+    _user: CurrentUser,
+    _rl: RLUsersList,
     q: str | None = Query(None),
     filter: str | None = Query(None),
     rating: str | None = Query(None, description="Continental rating bucket"),
@@ -163,7 +174,18 @@ async def list_users(
 
 
 @router.get("/{username}", response_model=UserPublicOut)
-async def get_user(username: str, session: SessionDep):
+async def get_user(
+    username: str,
+    session: SessionDep,
+    # Audit M-1 — same auth + RL story as ``list_users`` above.
+    # ``RLUsersDetail`` is more generous (120/min vs 60/min) because
+    # opening a deal/service detail page typically triggers a handful
+    # of profile fetches in quick succession (buyer + seller +
+    # mentioned counterparties), so the per-request budget should not
+    # bottleneck UX while still capping a scrape loop.
+    _user: CurrentUser,
+    _rl: RLUsersDetail,
+):
     stmt = select(User).where(User.username == username)
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()

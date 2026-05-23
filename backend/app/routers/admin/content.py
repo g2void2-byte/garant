@@ -43,7 +43,7 @@ from ...schemas import (
     AdminServiceItemOut,
     AdminServiceUpdateIn,
 )
-from ...services import recompute_user_rating
+from ...services import lock_user_for_rating, recompute_user_rating
 
 logger = logging.getLogger(__name__)
 
@@ -421,8 +421,12 @@ async def create_review(
     # the regular user flow. Without this an admin-created review was
     # invisible on the affected user's profile (``reviews_count`` /
     # ``rating`` are derived from ``good + bad``).
+    # Audit H-5 — lock the target row so an admin review-create that
+    # lands concurrently with a user-side ``post_review`` for the same
+    # target serialises through the same ``FOR UPDATE`` gate.
     target = await session.get(User, body.target_id)
     if target is not None:
+        await lock_user_for_rating(session, target)
         await recompute_user_rating(session, target)
 
     await log_admin_action(
@@ -484,9 +488,13 @@ async def update_review(
     # ``good`` / ``bad`` counters. Recompute against the live reviews
     # table so the projection stays consistent regardless of which
     # direction the edit went (5→3, 2→4, etc.).
+    # Audit H-5 — lock the target row so the rating edit serialises
+    # against concurrent ``post_review`` / admin review edits on the
+    # same target.
     if "rating" in after:
         target = await session.get(User, review.target_id)
         if target is not None:
+            await lock_user_for_rating(session, target)
             await recompute_user_rating(session, target)
     await log_admin_action(
         session,
@@ -545,9 +553,12 @@ async def delete_review(
     # Item 14 — dropping a review has to remove its contribution from
     # ``target.good`` / ``target.bad``. Flush first so the recompute's
     # aggregate ``SELECT`` sees the deletion.
+    # Audit H-5 — same lock-then-recompute pattern as the create /
+    # update paths above.
     await session.flush()
     target = await session.get(User, target_id)
     if target is not None:
+        await lock_user_for_rating(session, target)
         await recompute_user_rating(session, target)
     await session.commit()
     logger.info(

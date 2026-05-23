@@ -221,7 +221,15 @@ async def test_concurrent_invoice_paid_webhook_credits_wallet_only_once(client):
     body = json.dumps(
         {
             "update_type": "invoice_paid",
-            "payload": {"invoice_id": provider_id, "status": "paid"},
+            # Audit L-9 — ``handle_invoice_paid`` now compares
+            # ``payload["amount"]`` against the seeded ``wallet.amount``
+            # before crediting; the real Crypto Pay webhook always
+            # ships ``amount`` so we mirror the production shape.
+            "payload": {
+                "invoice_id": provider_id,
+                "status": "paid",
+                "amount": str(deposit_amount),
+            },
         }
     ).encode()
     sig = _sign_webhook(body)
@@ -383,7 +391,13 @@ async def test_concurrent_webhook_and_poll_credits_wallet_only_once(client, monk
 
     monkeypatch.setattr(services_wallet, "CryptoPay", _FakeCryptoPay)
 
-    payload = {"invoice_id": provider_id, "status": "paid"}
+    # Audit L-9 — include the reported amount so
+    # ``handle_invoice_paid`` passes the amount-mismatch guard.
+    payload = {
+        "invoice_id": provider_id,
+        "status": "paid",
+        "amount": str(deposit_amount),
+    }
 
     async def _run_webhook():
         async with async_session() as s:
@@ -490,7 +504,12 @@ async def test_concurrent_paid_and_expired_webhook_keeps_paid_status_sticky(clie
     paid_body = json.dumps(
         {
             "update_type": "invoice_paid",
-            "payload": {"invoice_id": provider_id, "status": "paid"},
+            # Audit L-9 — mirror the real Crypto Pay payload shape.
+            "payload": {
+                "invoice_id": provider_id,
+                "status": "paid",
+                "amount": str(deposit_amount),
+            },
         }
     ).encode()
     expired_body = json.dumps(

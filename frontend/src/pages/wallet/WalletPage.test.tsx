@@ -71,6 +71,9 @@ describe("<WalletPage />", () => {
         locked: 0,
         total: 123.456,
         updated_at: null,
+        amount_str: "123.456",
+        locked_str: "0",
+        total_str: "123.456",
       },
     ];
     renderPage();
@@ -96,6 +99,9 @@ describe("<WalletPage />", () => {
         locked: 0,
         total: 1,
         updated_at: null,
+        amount_str: "1",
+        locked_str: "0",
+        total_str: "1",
       },
       {
         currency: {
@@ -113,6 +119,9 @@ describe("<WalletPage />", () => {
         locked: 0,
         total: 2,
         updated_at: null,
+        amount_str: "2",
+        locked_str: "0",
+        total_str: "2",
       },
     ];
     renderPage();
@@ -140,6 +149,9 @@ describe("<WalletPage />", () => {
         locked: 0,
         total: 5,
         updated_at: null,
+        amount_str: "5",
+        locked_str: "0",
+        total_str: "5",
       },
     ];
     renderPage();
@@ -167,6 +179,9 @@ describe("<WalletPage />", () => {
         locked: 0.1,
         total: 0.6,
         updated_at: null,
+        amount_str: "0.5",
+        locked_str: "0.1",
+        total_str: "0.6",
       },
     ];
     renderPage();

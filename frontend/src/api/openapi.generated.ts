@@ -844,12 +844,20 @@ export interface paths {
         put?: never;
         /**
          * Flush Redis
-         * @description Wipe the Redis database used by the backend.
+         * @description Selectively wipe Redis keys this backend wrote.
          *
-         *     Gated behind 2FA + audit log because a flush clears every key in
-         *     the DB — including shared rate-limit counters and WS pub/sub
-         *     state. The action is recorded under ``system.redis_flush`` so an
-         *     operator can always trace who triggered it.
+         *     Gated behind 2FA + audit log because a flush clears all
+         *     rate-limit counters, TOTP claims and WS pub/sub state. The
+         *     action is recorded under ``system.redis_flush`` so an operator
+         *     can always trace who triggered it.
+         *
+         *     Audit L-12 — pre-fix this endpoint called ``FLUSHDB``, which
+         *     wipes EVERY key in the configured Redis DB regardless of which
+         *     service wrote it. In a shared-Redis production deployment the
+         *     button would silently knock out neighbouring services. We now
+         *     iterate the closed set of prefixes the backend itself owns
+         *     (see :data:`_KNOWN_REDIS_PREFIXES`) via ``SCAN`` + ``UNLINK``
+         *     and delete only those keys. Foreign keys are left untouched.
          */
         post: operations["flush_redis_api_admin_system_redis_flush_post"];
         delete?: never;
@@ -4471,11 +4479,17 @@ export interface components {
         WalletBalanceOut: {
             /** Amount */
             amount: number;
+            /** Amount Str */
+            amount_str: string;
             currency: components["schemas"]["CurrencyOut"];
             /** Locked */
             locked: number;
+            /** Locked Str */
+            locked_str: string;
             /** Total */
             total: number;
+            /** Total Str */
+            total_str: string;
             /** Updated At */
             updated_at: string | null;
         };
@@ -8873,7 +8887,9 @@ export interface operations {
                 /** @description ISO date (YYYY-MM-DD) */
                 reg_to?: string | null;
             };
-            header?: never;
+            header: {
+                authorization: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -8902,7 +8918,9 @@ export interface operations {
     get_user_api_users__username__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                authorization: string;
+            };
             path: {
                 username: string;
             };

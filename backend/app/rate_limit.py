@@ -249,6 +249,19 @@ RLCategories = Annotated[None, Depends(rate_limit("categories", limit=120, windo
 RLReviewsList = Annotated[None, Depends(rate_limit("reviews-list", limit=60, window=60))]
 RLSupport = Annotated[None, Depends(rate_limit("support", limit=60, window=60))]
 
+# Audit M-1 — ``GET /api/users`` (list + detail) is the public user
+# directory used by the Continental search page. Pre-fix both
+# endpoints were unauthenticated and unmetered, so any caller (with
+# or without initData) could scrape the entire user table by
+# paginating through ``GET /api/users?q=...``. Now gated behind
+# ``CurrentUser`` (auth) + ``RLUsersList`` / ``RLUsersDetail`` so
+# the per-user budget caps scraping at human-navigation rates.
+# 60/min is comfortably above what the search-bottom-sheet ever
+# does (one search + a handful of filter flips), and tight enough
+# to prevent a logged-in adversary from re-scraping in bulk.
+RLUsersList = Annotated[None, Depends(rate_limit("users-list", limit=60, window=60))]
+RLUsersDetail = Annotated[None, Depends(rate_limit("users-detail", limit=120, window=60))]
+
 # ``POST /api/notifications/read-all`` is a fan-out UPDATE
 # that scans every unread row for the user. Without a throttle, an
 # attacker with a stolen Telegram initData could spam the endpoint to

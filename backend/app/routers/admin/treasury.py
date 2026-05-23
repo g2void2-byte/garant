@@ -567,11 +567,30 @@ async def treasury_reconcile(
     if not is_cryptopay_configured(app_settings_env.cryptobot_token):
         raise HTTPException(503, "CryptoBot не настроен: сверка казны недоступна")
 
+    # Audit H-4 — three-phase pattern, matching ``admin/withdrawals.decide_withdrawal``
+    # (Audit 4.2). Pre-fix this endpoint took ``SELECT ... FOR UPDATE``
+    # *before* calling ``cp.get_transfers``, so the row lock was held
+    # for the full HTTP roundtrip. A slow / retrying CryptoBot upstream
+    # then serialised every parallel ``mark_sent`` / ``decide_withdrawal``
+    # / ``reconcile`` / read on the same row for the duration of the
+    # network call. The new shape:
+    #
+    #   Phase A: SELECT (no lock) — validate caller-visible state
+    #     (row exists, status is ``pending``).
+    #   Phase B: CryptoBot ``get_transfers`` — no DB locks held.
+    #   Phase C: SELECT ... FOR UPDATE — re-read the row, re-check
+    #     status (could have flipped under us while we were waiting on
+    #     the HTTP roundtrip), apply the transition, audit, commit.
+    #
+    # The endpoint stays idempotent because Phase C re-checks the row
+    # — a sibling call that landed Phase 3 between our Phase A and our
+    # Phase C will be observed as ``status="sent"`` and we return the
+    # existing payload.
+
+    # ─── Phase A: snapshot the row without holding a lock ────────────
     row = (
         await session.execute(
-            select(TreasuryWithdrawal)
-            .where(TreasuryWithdrawal.id == withdrawal_id)
-            .with_for_update()
+            select(TreasuryWithdrawal).where(TreasuryWithdrawal.id == withdrawal_id)
         )
     ).scalar_one_or_none()
     if row is None:
@@ -595,11 +614,15 @@ async def treasury_reconcile(
             "Сверять можно только pending-запись (failed терминальный — создайте новую)",
         )
 
-    # ─── Query CryptoBot for the transfer with our deterministic
-    #     ``spend_id``. The row's ``spend_id`` is
+    row_id = row.id
+
+    # ─── Phase B: query CryptoBot for the transfer with our
+    #     deterministic ``spend_id``. The row's ``spend_id`` is
     #     ``treas:{withdrawal_id}`` by contract — see
-    #     ``treasury_withdraw``'s Phase 2.
-    spend_id = f"treas:{row.id}"
+    #     ``treasury_withdraw``'s Phase 2. No DB locks held during this
+    #     network call, so parallel ``mark_sent`` / ``decide_withdrawal``
+    #     /  reconcile on other rows is unblocked.
+    spend_id = f"treas:{row_id}"
     try:
         async with CryptoPay(
             app_settings_env.cryptobot_token,
@@ -612,7 +635,7 @@ async def treasury_reconcile(
             e,
             extra={
                 "event": "cryptobot.treasury_reconcile.api_error",
-                "treasury_withdrawal_id": row.id,
+                "treasury_withdrawal_id": row_id,
                 "actor_id": admin.id,
                 "currency": currency_code,
                 "spend_id": spend_id,
@@ -625,7 +648,7 @@ async def treasury_reconcile(
             "treasury reconcile: no matching transfer on CryptoBot side",
             extra={
                 "event": "cryptobot.treasury_reconcile.no_match",
-                "treasury_withdrawal_id": row.id,
+                "treasury_withdrawal_id": row_id,
                 "actor_id": admin.id,
                 "currency": currency_code,
                 "spend_id": spend_id,
@@ -646,6 +669,49 @@ async def treasury_reconcile(
     # prefer the first ``completed`` one and fall back to the
     # first item.
     matched = next((t for t in transfers if t.status == "completed"), transfers[0])
+
+    # ─── Phase C: re-lock the row and re-check status. A sibling
+    #     ``mark_sent`` / ``decide_withdrawal`` may have flipped the
+    #     row while we were blocked on the HTTP roundtrip in Phase B,
+    #     and we MUST observe that — otherwise we'd double-log an
+    #     audit row over an already-applied transition.
+    row = (
+        await session.execute(
+            select(TreasuryWithdrawal).where(TreasuryWithdrawal.id == row_id).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        # Extremely unlikely — somebody hard-deleted the row between
+        # Phase A and Phase C. Surface 404 the same as the initial
+        # lookup so the admin UI shows a consistent "Запись не найдена".
+        raise HTTPException(404, "Запись о выводе казны не найдена")
+    if row.status == "sent":
+        # Concurrent ``mark_sent`` / sibling reconcile won the race
+        # while we were blocked on CryptoBot. Return the existing
+        # payload idempotently — we did NOT double-apply.
+        return AdminTreasuryReconcileOut(
+            withdrawal=_withdrawal_to_out(row, currency),
+            cryptobot_transfer_id=row.cryptobot_transfer_id,
+        )
+    if row.status != "pending":
+        # ``failed`` (or any future terminal status added without
+        # bumping this code) — surface 409 so the admin notices the
+        # inconsistency. CryptoBot side already paid out per the
+        # transfer above; the operator needs to investigate manually.
+        logger.error(
+            "treasury reconcile: row status changed under us to %s",
+            row.status,
+            extra={
+                "event": "cryptobot.treasury_reconcile.race",
+                "treasury_withdrawal_id": row_id,
+                "observed_status": row.status,
+                "cryptobot_transfer_id": str(matched.transfer_id),
+            },
+        )
+        raise HTTPException(
+            409,
+            "Статус записи изменился во время сверки — повторите запрос",
+        )
 
     row.status = "sent"
     row.cryptobot_transfer_id = str(matched.transfer_id)

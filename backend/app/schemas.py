@@ -6,10 +6,71 @@ import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, PlainSerializer, field_validator, model_validator
 
 from .models import PayCommission
+
+
+def _validate_https_or_media_url(v: str, *, what: str, max_len: int = 1024) -> str:
+    """Audit L-3 — strict URL validator for user-supplied avatar/banner/forum links.
+
+    Pre-fix the validators only checked a lowercase ``startswith``
+    prefix, which let edge-case schemes through. For example:
+
+    * ``https:javascript:alert(1)`` — ``startswith("https://")`` is
+      ``False`` so we already rejected this, but a sloppy variant
+      ``https:/javascript`` slipped through if the prefix was the
+      single-slash form. Parsing with ``urlparse`` makes the host
+      requirement explicit.
+    * URLs with embedded whitespace / control characters (``\\n``,
+      ``\\r``, ``\\t``) — ``urlparse`` retains them but the host
+      check below rejects anything that doesn't look like a domain.
+    * Empty hosts (``https:///path``) — these pass a naive prefix
+      check; parsing surfaces them as ``netloc == ''`` so we can
+      reject explicitly.
+
+    The validator allows two shapes:
+
+    1. ``https://<host>[...]`` — ``host`` is any non-empty token
+       matching the conservative ``[a-z0-9][a-z0-9.-]*`` shape.
+       ``http://`` is intentionally disallowed (downgrade vector
+       inside a TMA shell that only serves https resources).
+    2. ``/media/...`` — a relative path served by the backend's own
+       static handler. Used by uploaded avatars/banners.
+
+    Any other scheme (``javascript:``, ``data:``, ``file:``,
+    ``tg:``, ``mailto:``, ...) raises ``ValueError``. The caller
+    plugs the field-specific error message via the ``what`` arg.
+    """
+    v = v.strip()
+    if not v:
+        raise ValueError(f"{what} не может быть пустым")
+    if len(v) > max_len:
+        raise ValueError(f"{what} слишком длинный")
+    # Reject embedded control characters / whitespace; urlparse keeps
+    # them silently which lets an attacker smuggle CR/LF into a
+    # header-injection downstream.
+    for ch in v:
+        if ord(ch) < 0x20 or ch in (" ", "\x7f"):
+            raise ValueError(f"{what} содержит недопустимые символы")
+    if v.startswith("/media/"):
+        # Backend-served path — fine, no scheme to validate.
+        return v
+    parsed = urlparse(v)
+    if parsed.scheme.lower() != "https":
+        raise ValueError(f"{what} должен быть https:// ссылкой")
+    host = (parsed.netloc or "").lower()
+    if not host:
+        raise ValueError(f"{what} должен содержать хост")
+    # Reject userinfo (``user@host``) — Telegram's link preview will
+    # cheerfully render ``https://example.com@evil.com/`` as
+    # ``example.com``, which the user will trust. Strip-and-reject.
+    if "@" in host:
+        raise ValueError(f"{what} не может содержать userinfo")
+    return v
+
 
 # H-1: internal calculations use ``Decimal`` for precision, but the
 # JSON wire format emits a plain number (``float``) so the frontend
@@ -36,18 +97,14 @@ class ForumOut(BaseModel):
     @field_validator("url")
     @classmethod
     def _url_ok(cls, v: str) -> str:
-        # Comment 36 (audit v9): forum links — whitelist ``https://`` only
-        # (``https://t.me/`` is a subset). ``http://`` was downgrade-friendly
-        # and ``tg://`` lets a forum entry deep-link straight into Telegram
-        # clients without an explicit https handoff; both are dropped.
-        v = (v or "").strip()
-        if not v:
-            raise ValueError("Ссылка не может быть пустой")
-        if len(v) > 512:
-            raise ValueError("Ссылка слишком длинная")
-        low = v.lower()
-        if not low.startswith("https://"):
-            raise ValueError("Ссылка должна начинаться с https://")
+        # Audit L-3 — was a ``startswith("https://")`` check, now a
+        # full parse via ``_validate_https_or_media_url``. The
+        # ``/media/...`` shape isn't useful for a forum link (those
+        # always point at an external community), so callers reject
+        # it explicitly after the shared validator runs.
+        v = _validate_https_or_media_url(v or "", what="Ссылка", max_len=512)
+        if v.startswith("/media/"):
+            raise ValueError("Ссылка должна быть внешней (https://)")
         return v
 
 
@@ -178,19 +235,14 @@ class UserUpdate(BaseModel):
     @field_validator("photo_url")
     @classmethod
     def _photo_url_ok(cls, v: str | None) -> str | None:
-        # Comment 35 (audit v9): drop ``http://`` from the whitelist.
-        # Plaintext avatar URLs were a downgrade vector inside a TMA that
-        # otherwise only emits https resources; ``/media/...`` is the
-        # self-hosted path served by the backend.
+        # Audit L-3 — full URL parse via shared helper. Pre-fix was
+        # ``startswith("https://")``, which silently allowed shapes
+        # like ``https:///alert.js`` (empty host) and embedded
+        # control characters. The shared helper rejects both, in
+        # addition to all non-``https``/``/media`` schemes.
         if v is None or v == "":
             return v
-        v = v.strip()
-        if len(v) > 1024:
-            raise ValueError("Ссылка на фото слишком длинная")
-        low = v.lower()
-        if not (low.startswith("https://") or low.startswith("/media/")):
-            raise ValueError("Фото должно быть https:// или /media/... ссылкой")
-        return v
+        return _validate_https_or_media_url(v, what="Фото", max_len=1024)
 
     @field_validator("display_name")
     @classmethod
@@ -214,18 +266,10 @@ class UserUpdate(BaseModel):
     @field_validator("banner_url")
     @classmethod
     def _banner_url_ok(cls, v: str | None) -> str | None:
-        # Comment 35 (audit v9): drop ``http://`` from the whitelist.
-        # ``/media/...`` is allowed so admins can pin a self-hosted
-        # banner the same way they do for avatars.
+        # Audit L-3 — same hardening as ``photo_url`` above.
         if v is None or v == "":
             return v
-        v = v.strip()
-        if len(v) > 1024:
-            raise ValueError("Ссылка на баннер слишком длинная")
-        low = v.lower()
-        if not (low.startswith("https://") or low.startswith("/media/")):
-            raise ValueError("Баннер должен быть https:// или /media/... ссылкой")
-        return v
+        return _validate_https_or_media_url(v, what="Баннер", max_len=1024)
 
     @field_validator("forums")
     @classmethod
@@ -769,6 +813,24 @@ class WalletBalanceOut(BaseModel):
     locked: MoneyDecimal
     total: MoneyDecimal
     updated_at: datetime | None
+    # Audit M-7 — string mirrors of the three balance fields. The
+    # ``MoneyDecimal`` wire serialiser above casts each ``Decimal``
+    # to ``float`` for JSON compatibility; JavaScript then re-reads
+    # it as an IEEE-754 double, which silently loses precision at the
+    # 10^10-ish scale USDT can hit (a balance of ``99999999.12345678``
+    # round-trips as ``99999999.12345679``). The frontend's "Все"
+    # button used ``String(current.amount)`` to pre-fill the withdraw
+    # input, so the loss-of-precision then leaked into the
+    # ``WalletWithdrawCreateReq.amount`` body and the user saw a
+    # rounding error appear out of thin air. We now ship a parallel
+    # ``*_str`` field for every money column so the frontend can pass
+    # the user-visible string straight through to the API (which
+    # accepts ``Decimal`` from a string body without going through
+    # ``float``). The float field is kept for backward compatibility
+    # with older clients that ignore the new ``*_str`` fields.
+    amount_str: str
+    locked_str: str
+    total_str: str
 
 
 class WalletDepositCreateReq(BaseModel):
@@ -2056,6 +2118,37 @@ class AdminCurrencyUpsertIn(BaseModel):
             return v
         if len(v) > 1024:
             raise ValueError("address_regex слишком длинный (≤1024)")
+        # Audit L-4 — the regex column is admin-controlled and runs
+        # ``re.fullmatch(address_regex, address)`` per withdrawal in
+        # ``services_wallet.create_withdrawal``. Python's ``re`` has
+        # no per-match timeout, so a regex with catastrophic
+        # backtracking (``^(a+)+$``, ``(.*?)+$``, …) plus a long
+        # user-supplied address can pin a worker thread indefinitely.
+        # Exploitation requires admin access (already-privileged
+        # threat), but the blast radius is the whole event loop on
+        # that worker — every other request stalls.
+        #
+        # We reject the two ReDoS-canonical shapes at write time so
+        # an inattentive admin can't paste a textbook bad pattern.
+        # The denylist is intentionally narrow (not a full regex
+        # static analyser — that's its own can of worms); it catches
+        # the well-known cases without blocking legitimate
+        # ``^[A-Za-z0-9]{34}$``-style addresses.
+        nested_quantifier = re.compile(
+            r"""
+            \(            # opening group
+            [^()]*        # body without nesting (keeps the check linear)
+            [+*]          # inner quantifier
+            \)            # close group
+            [+*]          # quantifier on the group itself  ← the ReDoS shape
+            """,
+            re.VERBOSE,
+        )
+        if nested_quantifier.search(v):
+            raise ValueError(
+                "address_regex содержит вложенные квантификаторы (риск ReDoS); "
+                "используйте простые шаблоны вида ^[A-Za-z0-9]{...}$"
+            )
         try:
             re.compile(v)
         except re.error as exc:

@@ -39,6 +39,12 @@ test.describe("Wallet currency drill-down", () => {
           locked: 0,
           total: 42,
           updated_at: null,
+          // Audit M-7 — string mirrors required by the
+          // ``WalletBalanceDto`` contract; the WithdrawForm reads
+          // ``balance?.amount_str`` for the "Всё" button.
+          amount_str: "42",
+          locked_str: "0",
+          total_str: "42",
         },
         {
           currency: UAH_CURRENCY,
@@ -46,6 +52,9 @@ test.describe("Wallet currency drill-down", () => {
           locked: 0,
           total: 10,
           updated_at: null,
+          amount_str: "10",
+          locked_str: "0",
+          total_str: "10",
         },
       ],
     });

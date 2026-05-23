@@ -200,6 +200,14 @@ export async function mockApi(page: Page, overrides: MockOverrides = {}) {
     },
   ];
 
+  // Audit M-7 — every ``WalletBalanceOut`` row now carries lossless
+  // string mirrors (``amount_str`` / ``locked_str`` / ``total_str``)
+  // alongside the legacy float fields. The withdraw form's "Всё"
+  // button reads ``current.amount_str`` to prefill the amount input
+  // without going through ``parseFloat``, so the e2e fixtures must
+  // ship the new fields or the input lands empty and every
+  // downstream assertion (``toHaveValue("123.45")`` / validate-then-
+  // toast) trips.
   const walletBalances = overrides.walletBalances ?? [
     {
       currency: USDT_CURRENCY,
@@ -207,6 +215,9 @@ export async function mockApi(page: Page, overrides: MockOverrides = {}) {
       locked: 0,
       total: 123.45,
       updated_at: null,
+      amount_str: "123.45",
+      locked_str: "0",
+      total_str: "123.45",
     },
     {
       currency: USD_CURRENCY,
@@ -214,6 +225,9 @@ export async function mockApi(page: Page, overrides: MockOverrides = {}) {
       locked: 0,
       total: 123.45,
       updated_at: null,
+      amount_str: "123.45",
+      locked_str: "0",
+      total_str: "123.45",
     },
   ];
 

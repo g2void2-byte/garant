@@ -244,6 +244,17 @@ export interface WalletBalanceDto {
   locked: number;
   total: number;
   updated_at: string | null;
+  // Audit M-7 — string mirrors of the three money fields. The
+  // ``amount`` / ``locked`` / ``total`` fields are typed ``number``
+  // for backward compatibility, but JavaScript's IEEE-754 double
+  // silently loses precision at the 10^10-ish scale USDT can hit.
+  // Always prefer ``*_str`` for any value that round-trips back to
+  // the API (e.g. the "Все" button on the withdraw form pre-filling
+  // the amount input) so the user-visible string passes straight
+  // through without going through ``parseFloat``.
+  amount_str: string;
+  locked_str: string;
+  total_str: string;
 }
 
 export interface WalletDepositDto {

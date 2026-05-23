@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import select
@@ -35,6 +36,7 @@ from .crystalpay import (
 )
 from .models import (
     WalletDeposit,
+    WalletDepositProvider,
     WalletDepositStatus,
 )
 from .services_wallet import _build_expired_notification, credit_deposit
@@ -57,22 +59,82 @@ def verify_webhook_signature(secret: str, body: bytes, signature: str | None) ->
 
 
 async def _find_wallet_deposit(
-    session: AsyncSession, provider_invoice_id: str, *, lock: bool = False
+    session: AsyncSession,
+    provider_invoice_id: str,
+    *,
+    provider: WalletDepositProvider,
+    lock: bool = False,
 ) -> WalletDeposit | None:
-    """Look up a ``WalletDeposit`` row by its CryptoBot id.
+    """Look up a ``WalletDeposit`` row by ``(provider, provider_invoice_id)``.
 
-    when ``lock`` is true, the row is fetched with
+    Audit H-6 — pre-fix the lookup keyed only on
+    ``provider_invoice_id`` and indexed it for FK-lookup speed but
+    did NOT make the column unique across providers. CryptoBot and
+    Crystalpay each maintain their own ``invoice_id`` namespace
+    starting from ``1``, so a Crystalpay invoice with ``id=42`` and
+    a CryptoBot invoice with ``invoice_id=42`` would collide on the
+    lookup. The Crystalpay webhook handler could then load a
+    CryptoBot row (or vice versa) and either credit the wrong user,
+    flip the wrong row to ``expired``, or silently no-op (depending
+    on which row was returned by ``scalar_one_or_none``).
+
+    The fix narrows the lookup to ``(provider, provider_invoice_id)``
+    so each provider's invoice id namespace is isolated. The
+    ``provider`` parameter is required (no default) so a future
+    caller can't reintroduce the collision by forgetting to pass it.
+
+    When ``lock`` is true, the row is fetched with
     ``SELECT ... FOR UPDATE`` so two concurrent webhook deliveries
-    serialise on the row instead of both reading ``pending`` and both
-    crediting. The caller is expected to re-check ``status`` after the
-    lock returns to detect the case where the other transaction
-    already flipped the row to ``paid`` while we were blocked.
+    from the SAME provider serialise on the row instead of both
+    reading ``pending`` and both crediting. The caller is expected
+    to re-check ``status`` after the lock returns to detect the
+    case where the other transaction already flipped the row to
+    ``paid`` while we were blocked.
     """
-    stmt = select(WalletDeposit).where(WalletDeposit.provider_invoice_id == provider_invoice_id)
+    stmt = select(WalletDeposit).where(
+        WalletDeposit.provider == provider,
+        WalletDeposit.provider_invoice_id == provider_invoice_id,
+    )
     if lock:
         stmt = stmt.with_for_update()
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
+
+
+# Audit L-9 — tolerance for the upstream-vs-local amount equality
+# check. Both CryptoBot and Crystalpay quote up to 8 fractional
+# digits, so 1e-8 is one unit in the last decimal place. We keep
+# the comparison inclusive to absorb rounding noise on the
+# provider side without letting a partial payment slip through.
+_AMOUNT_MISMATCH_TOLERANCE = Decimal("0.00000001")
+
+
+def _amounts_match(reported: Any, expected: Any) -> bool:
+    """Compare a webhook-reported amount against the deposit row.
+
+    ``reported`` is whatever the provider sent in ``payload["amount"]``
+    (string, int or float — Crypto Pay emits string, Crystalpay emits
+    a number) and ``expected`` is ``wallet.amount`` (annotated
+    ``Mapped[float]`` in the ORM but realised as ``Decimal`` at
+    runtime — ``Numeric(28,8)``). Both sides are normalised through
+    ``Decimal(str(...))`` so the comparison stays exact.
+
+    Returns ``True`` if the reported amount is at least the expected
+    amount minus :data:`_AMOUNT_MISMATCH_TOLERANCE`. Returns ``False``
+    if parsing fails or the value is smaller — caller must not
+    credit in that case.
+    """
+    if reported is None or expected is None:
+        return False
+    try:
+        reported_d = Decimal(str(reported))
+        expected_d = Decimal(str(expected))
+    except (InvalidOperation, ValueError, TypeError):
+        return False
+    # ``>=`` (not ``==``) — overpayments by the user must not block
+    # the credit, only underpayments must. ``- tolerance`` absorbs
+    # last-decimal-place rounding noise on the provider side.
+    return reported_d >= expected_d - _AMOUNT_MISMATCH_TOLERANCE
 
 
 async def handle_invoice_paid(session: AsyncSession, payload: dict[str, Any]) -> dict[str, Any]:
@@ -98,7 +160,11 @@ async def handle_invoice_paid(session: AsyncSession, payload: dict[str, Any]) ->
         return {"ok": False, "reason": "missing invoice_id"}
     provider_id = str(invoice_id)
 
-    wallet = await _find_wallet_deposit(session, provider_id, lock=True)
+    # Audit H-6 — scope lookup to CryptoBot rows only; a Crystalpay
+    # invoice with the same id must NOT be returned here.
+    wallet = await _find_wallet_deposit(
+        session, provider_id, provider=WalletDepositProvider.cryptobot, lock=True
+    )
     if wallet is not None:
         # re-check status after acquiring the FOR UPDATE
         # lock: a sibling webhook delivery (CryptoBot retry / proxy
@@ -107,6 +173,33 @@ async def handle_invoice_paid(session: AsyncSession, payload: dict[str, Any]) ->
         # without crediting twice.
         if wallet.status == WalletDepositStatus.paid:
             return {"ok": True, "already_paid": True, "kind": "wallet"}
+        # Audit L-9 — defensive equality check between the reported
+        # ``payload["amount"]`` and the deposit row's
+        # ``wallet.amount``. We don't *trust* the provider to never
+        # send "paid" on a partial payment, so an underpayment
+        # detected here halts the credit, logs a structured warning
+        # (so SRE can correlate via ``event`` + ``provider_invoice_id``),
+        # and returns a sentinel reason so the webhook router can
+        # echo it back / Sentry can fingerprint on the dict key.
+        # The deposit row stays in ``pending`` so a follow-up
+        # delivery (or a manual reconciliation) can still credit it
+        # once the discrepancy is understood.
+        reported = payload.get("amount")
+        if not _amounts_match(reported, wallet.amount):
+            logger.warning(
+                "CryptoBot webhook amount mismatch invoice_id=%s reported=%s expected=%s",
+                provider_id,
+                reported,
+                wallet.amount,
+                extra={
+                    "event": "cryptobot.webhook.amount_mismatch",
+                    "provider_invoice_id": provider_id,
+                    "deposit_id": wallet.id,
+                    "reported_amount": str(reported),
+                    "expected_amount": str(wallet.amount),
+                },
+            )
+            return {"ok": False, "reason": "amount mismatch"}
         await credit_deposit(session, wallet)
         return {"ok": True, "kind": "wallet"}
 
@@ -141,7 +234,10 @@ async def handle_invoice_expired(session: AsyncSession, payload: dict[str, Any])
         return {"ok": False, "reason": "missing invoice_id"}
     provider_id = str(invoice_id)
 
-    wallet = await _find_wallet_deposit(session, provider_id, lock=True)
+    # Audit H-6 — scope lookup to CryptoBot rows only.
+    wallet = await _find_wallet_deposit(
+        session, provider_id, provider=WalletDepositProvider.cryptobot, lock=True
+    )
     if wallet is not None:
         # Terminal states are sticky — never flip ``paid`` back to
         # ``expired`` even if Crypto Pay sends a stale update; that
@@ -238,7 +334,11 @@ async def handle_crystalpay_invoice(
         return {"ok": False, "reason": "missing invoice id"}
     state = str(payload.get("state") or "").lower()
 
-    wallet = await _find_wallet_deposit(session, provider_id, lock=True)
+    # Audit H-6 — scope lookup to Crystalpay rows only; a CryptoBot
+    # invoice with a colliding id must NOT be returned here.
+    wallet = await _find_wallet_deposit(
+        session, provider_id, provider=WalletDepositProvider.crystalpay, lock=True
+    )
     if wallet is None:
         logger.warning(
             "Crystalpay webhook for unknown invoice id=%s",
@@ -274,6 +374,27 @@ async def handle_crystalpay_invoice(
                 },
             )
             return {"ok": False, "reason": "deposit not pending"}
+        # Audit L-9 — same defensive amount check as the CryptoBot
+        # path. Crystalpay v3 sends the amount under ``amount`` in
+        # the webhook envelope, sometimes as a string (when the
+        # invoice currency is fiat) and sometimes as a number;
+        # ``_amounts_match`` accepts both.
+        reported = payload.get("amount")
+        if not _amounts_match(reported, wallet.amount):
+            logger.warning(
+                "Crystalpay webhook amount mismatch id=%s reported=%s expected=%s",
+                provider_id,
+                reported,
+                wallet.amount,
+                extra={
+                    "event": "crystalpay.webhook.amount_mismatch",
+                    "provider_invoice_id": provider_id,
+                    "deposit_id": wallet.id,
+                    "reported_amount": str(reported),
+                    "expected_amount": str(wallet.amount),
+                },
+            )
+            return {"ok": False, "reason": "amount mismatch"}
         await credit_deposit(session, wallet)
         return {"ok": True, "kind": "wallet"}
 

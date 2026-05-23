@@ -16,6 +16,24 @@ from sqlalchemy import select
 from backend.app.db import async_session
 from backend.app.models import User
 from backend.app.time_utils import utcnow
+from tests.helpers import auth_headers, signed_init_data
+
+# Audit M-1 — ``GET /api/users`` is now gated behind ``CurrentUser``
+# (initData verification) and ``RLUsersList`` rate-limiting. Tests
+# in this module ride a single bootstrapped caller and supply
+# ``Authorization: tma ...`` on every list call. The caller is
+# bootstrapped once per test via ``_caller_headers`` so each test's
+# rate-limit bucket starts fresh.
+_CALLER_TG = 9999
+_CALLER_USERNAME = "users_filter_caller"
+
+
+async def _caller_headers(client) -> dict[str, str]:
+    init = signed_init_data(_CALLER_TG, _CALLER_USERNAME)
+    # Bootstrap so the user row exists; ``CurrentUser`` then resolves.
+    resp = await client.get("/api/me", headers=auth_headers(init))
+    assert resp.status_code == 200, resp.text
+    return auth_headers(init)
 
 
 async def _make_user(
@@ -53,9 +71,14 @@ async def _make_user(
 
 
 async def _usernames(client, **params: object) -> list[str]:
-    resp = await client.get("/api/users", params=params)
+    headers = await _caller_headers(client)
+    resp = await client.get("/api/users", params=params, headers=headers)
     assert resp.status_code == 200, resp.text
-    return [u["username"] for u in resp.json()]
+    # The bootstrapped caller appears in the listing alongside the
+    # rows each test seeds; filter it out so the per-test expectations
+    # stay focused on the seeded rows. Pre-M-1 these tests were
+    # anonymous and there was no caller row to filter.
+    return [u["username"] for u in resp.json() if u["username"] != _CALLER_USERNAME]
 
 
 @pytest.mark.asyncio
@@ -90,7 +113,8 @@ async def test_rating_bucket_lt_3_5(client):
 
 @pytest.mark.asyncio
 async def test_rating_bucket_invalid(client):
-    resp = await client.get("/api/users", params={"rating": "bogus"})
+    headers = await _caller_headers(client)
+    resp = await client.get("/api/users", params={"rating": "bogus"}, headers=headers)
     assert resp.status_code == 400
 
 
@@ -130,7 +154,8 @@ async def test_status_admin(client):
 @pytest.mark.asyncio
 async def test_status_moderator_retired(client):
     """Tier 4 (moderator) was dropped; the API rejects it as unknown."""
-    resp = await client.get("/api/users", params={"status": "4"})
+    headers = await _caller_headers(client)
+    resp = await client.get("/api/users", params={"status": "4"}, headers=headers)
     assert resp.status_code == 400
 
 
@@ -144,7 +169,8 @@ async def test_status_arbiter(client):
 
 @pytest.mark.asyncio
 async def test_status_invalid(client):
-    resp = await client.get("/api/users", params={"status": "9"})
+    headers = await _caller_headers(client)
+    resp = await client.get("/api/users", params={"status": "9"}, headers=headers)
     assert resp.status_code == 400
 
 
@@ -176,7 +202,8 @@ async def test_filters_compose(client):
 async def test_user_out_no_moderator_field(client):
     """After the moderator role retirement, no row reports the flag."""
     await _make_user(1200, "alice", is_admin=True)
-    resp = await client.get("/api/users")
+    headers = await _caller_headers(client)
+    resp = await client.get("/api/users", headers=headers)
     assert resp.status_code == 200
     by_name = {u["username"]: u for u in resp.json()}
     assert "is_moderator" not in by_name["alice"]
@@ -188,7 +215,8 @@ async def test_user_out_no_moderator_field(client):
 async def test_admin_level_is_5(client):
     """Continental encodes admin tier as int 5."""
     await _make_user(1300, "adminx", is_admin=True)
-    resp = await client.get("/api/users")
+    headers = await _caller_headers(client)
+    resp = await client.get("/api/users", headers=headers)
     by_name = {u["username"]: u for u in resp.json()}
     assert by_name["adminx"]["admin"] == 5
 

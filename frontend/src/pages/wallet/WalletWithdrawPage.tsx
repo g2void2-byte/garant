@@ -114,10 +114,21 @@ export default function WalletWithdrawPage() {
     );
   }
 
+  // Audit M-7 — accept only a well-formed decimal literal so we
+  // never need to call ``parseFloat`` (which would round-trip the
+  // value through a 64-bit IEEE-754 double and silently truncate
+  // the last few base-10 digits at the 10^10-ish scale USDT can
+  // hit). The regex matches an optional leading digit run followed
+  // by an optional fractional run, allowing at most 18 fractional
+  // digits — comfortably above the 8 decimal places the DB column
+  // stores so a normal balance string round-trips without rejection.
+  // Strings like ``"1e5"`` / ``"0x10"`` / ``"NaN"`` are rejected.
+  const _DECIMAL_RE = /^\d+(?:\.\d{1,18})?$|^\.\d{1,18}$/;
+
   function validate(): boolean {
     if (!current) return false;
-    const value = parseFloat(amount);
-    if (!Number.isFinite(value) || value <= 0) {
+    const trimmed = amount.trim();
+    if (!_DECIMAL_RE.test(trimmed) || /^0+(?:\.0+)?$/.test(trimmed)) {
       haptic("error");
       toast.show({ kind: "error", title: "Введите корректную сумму" });
       return false;
@@ -138,7 +149,10 @@ export default function WalletWithdrawPage() {
 
   async function submitWithdraw() {
     if (!current) return;
-    const value = parseFloat(amount);
+    // Audit M-7 — send the decimal string as-is. The backend
+    // ``WalletWithdrawCreateReq.amount: Decimal`` accepts a JSON
+    // string and parses it without going through ``float``.
+    const value = amount.trim();
     try {
       await create.mutateAsync({
         currency_code: current.currency.code,
@@ -203,7 +217,7 @@ export default function WalletWithdrawPage() {
             <button
               type="button"
               className="text-accent underline"
-              onClick={() => setAmount(String(current.amount))}
+              onClick={() => setAmount(current.amount_str)}
             >
               Всё
             </button>
