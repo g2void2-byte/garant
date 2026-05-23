@@ -10659,7 +10659,7 @@
     },
     "/api/admin/system/redis/flush": {
       "post": {
-        "description": "Wipe the Redis database used by the backend.\n\nGated behind 2FA + audit log because a flush clears every key in\nthe DB \u2014 including shared rate-limit counters and WS pub/sub\nstate. The action is recorded under ``system.redis_flush`` so an\noperator can always trace who triggered it.",
+        "description": "Selectively wipe Redis keys this backend wrote.\n\nGated behind 2FA + audit log because a flush clears all\nrate-limit counters, TOTP claims and WS pub/sub state. The\naction is recorded under ``system.redis_flush`` so an operator\ncan always trace who triggered it.\n\nAudit L-12 \u2014 pre-fix this endpoint called ``FLUSHDB``, which\nwipes EVERY key in the configured Redis DB regardless of which\nservice wrote it. In a shared-Redis production deployment the\nbutton would silently knock out neighbouring services. We now\niterate the closed set of prefixes the backend itself owns\n(see :data:`_KNOWN_REDIS_PREFIXES`) via ``SCAN`` + ``UNLINK``\nand delete only those keys. Foreign keys are left untouched.",
         "operationId": "flush_redis_api_admin_system_redis_flush_post",
         "parameters": [
           {

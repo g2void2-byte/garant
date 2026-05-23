@@ -86,6 +86,21 @@ ALLOWED_SITES: frozenset[tuple[str, str, str, tuple[str, ...]]] = frozenset(
             "comment",
             ("author",),
         ),
+        # Audit H-5 — ``recompute_user_rating`` writes ``good`` /
+        # ``bad`` via a single-statement
+        # ``UPDATE users SET good=..., bad=... WHERE id=...`` so the
+        # in-session ORM object's cached counters stay stale until we
+        # reload them. Callers reach for ``target.good`` /
+        # ``target.bad`` straight after this helper returns (e.g.
+        # ``post_review`` building the notification payload), so the
+        # narrow ``attribute_names`` refresh is the deliberate
+        # "we want the just-written values".
+        (
+            "backend/app/services.py",
+            "recompute_user_rating",
+            "target",
+            ("bad", "good"),
+        ),
         # ``create_deal`` builds a brand-new ``Deal`` from FK ids
         # (``buyer_id`` / ``seller_id`` / ``currency_id``) and never
         # SELECTs it back, so ``lazy="selectin"`` doesn't fire on the

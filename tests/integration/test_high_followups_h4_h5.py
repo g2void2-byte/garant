@@ -23,6 +23,19 @@ from sqlalchemy import inspect
 
 from backend.app.db import async_session
 from backend.app.models import User
+from tests.helpers import auth_headers, signed_init_data
+
+
+async def _bootstrap_caller(client, *, tg: int, username: str) -> dict[str, str]:
+    """Audit M-1 — ``GET /api/users`` is now auth-gated. Bootstrap a
+    caller user via ``/api/me`` and return the ``Authorization`` headers
+    each subsequent request needs.
+    """
+    init = signed_init_data(tg, username)
+    resp = await client.get("/api/me", headers=auth_headers(init))
+    assert resp.status_code == 200, resp.text
+    return auth_headers(init)
+
 
 # --- H4: front-end guard is present in the source. -----------------------
 
@@ -100,7 +113,8 @@ async def test_deposit_min_filter_uses_deposit_total(client):
         )
         await session.commit()
 
-    resp = await client.get("/api/users", params={"deposit_min": 500})
+    headers = await _bootstrap_caller(client, tg=9500, username="deposit_caller")
+    resp = await client.get("/api/users", params={"deposit_min": 500}, headers=headers)
     assert resp.status_code == 200, resp.text
     names = {u["username"] for u in resp.json()}
     assert "wealthy9502" in names
@@ -138,7 +152,8 @@ async def test_user_out_deposit_defaults_to_trust_deposit_balance(client):
     # We hit the public listing endpoint; ``user_to_public_out`` is
     # invoked without an explicit ``deposit`` override, so the
     # serializer must surface ``user.trust_deposit_balance``.
-    resp = await client.get("/api/users", params={"q": "bigfish9601"})
+    headers = await _bootstrap_caller(client, tg=9600, username="bigfish_caller")
+    resp = await client.get("/api/users", params={"q": "bigfish9601"}, headers=headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body, body

@@ -50,7 +50,14 @@ async def test_webhook_credits_pending_deposit_and_is_idempotent(client):
         await session.commit()
 
     body = json.dumps(
-        {"update_type": "invoice_paid", "payload": {"invoice_id": "cb-789", "status": "paid"}}
+        {
+            "update_type": "invoice_paid",
+            # Audit L-9 — ``handle_invoice_paid`` now compares
+            # ``payload["amount"]`` against ``wallet.amount`` before
+            # crediting; the real Crypto Pay webhook always emits
+            # ``amount`` so we mirror that shape here too.
+            "payload": {"invoice_id": "cb-789", "status": "paid", "amount": "42.0"},
+        }
     ).encode()
     sig = _sign(body)
     headers = {
@@ -250,7 +257,10 @@ async def test_webhook_invoice_expired_is_idempotent_after_paid(client):
     paid_body = json.dumps(
         {
             "update_type": "invoice_paid",
-            "payload": {"invoice_id": "cb-exp-3", "status": "paid"},
+            # Audit L-9 — mirror the real Crypto Pay payload shape so
+            # the amount-mismatch check in ``handle_invoice_paid``
+            # doesn't refuse the credit.
+            "payload": {"invoice_id": "cb-exp-3", "status": "paid", "amount": "42.0"},
         }
     ).encode()
     sig = _sign(paid_body)
