@@ -24,6 +24,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import crystalpay as crystalpay_client
@@ -265,7 +266,10 @@ async def handle_invoice_expired(session: AsyncSession, payload: dict[str, Any])
             notif, ws_payload = entry
             try:
                 await notifier.dispatch_after_commit(session, notif, ws_payload)
-            except Exception:
+            except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+                # Audit (continuation) M-6 — narrowed from ``except
+                # Exception``. See ``services_wallet.credit_deposit``
+                # for the same allowlist rationale.
                 logger.exception(
                     "handle_invoice_expired: post-commit dispatch failed for notif id=%s",
                     notif.id,
@@ -412,7 +416,8 @@ async def handle_crystalpay_invoice(
             notif, ws_payload = entry
             try:
                 await notifier.dispatch_after_commit(session, notif, ws_payload)
-            except Exception:
+            except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+                # Audit (continuation) M-6 — see above.
                 logger.exception(
                     "handle_crystalpay_invoice: post-commit dispatch failed for notif id=%s",
                     notif.id,

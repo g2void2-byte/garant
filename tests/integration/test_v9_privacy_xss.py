@@ -220,9 +220,13 @@ async def test_forum_url_rejects_http_and_tg_schemes(client):
         "tg://resolve?domain=foo",
         "javascript:alert(1)",
     ):
+        # Audit (continuation) M-1 — ``name`` now has to come from
+        # the whitelist (see ``schemas.FORUM_WHITELIST``). ``Probiv``
+        # is one of the approved values; the test still asserts the
+        # URL validator rejects the bad scheme.
         resp = await client.patch(
             "/api/me",
-            json={"forums": [{"name": "Forum", "url": bad}]},
+            json={"forums": [{"name": "Probiv", "url": bad}]},
             headers=auth_headers(init),
         )
         assert resp.status_code == 422, f"{bad} accepted: {resp.text}"
@@ -232,12 +236,16 @@ async def test_forum_url_accepts_https_including_t_me(client):
     init = signed_init_data(8302, "forum_ok")
     await _bootstrap(client, tg_user_id=8302, username="forum_ok")
 
+    # Audit (continuation) M-1 — names sourced from the backend
+    # whitelist (lockstep with frontend ``FORUM_OPTIONS``). The
+    # URL contract under test (https:// generally + https://t.me/
+    # specifically) is unchanged.
     resp = await client.patch(
         "/api/me",
         json={
             "forums": [
-                {"name": "Generic", "url": "https://forum.example/board"},
-                {"name": "Telegram", "url": "https://t.me/channel"},
+                {"name": "Darkmoney", "url": "https://forum.example/board"},
+                {"name": "Probiv", "url": "https://t.me/channel"},
             ]
         },
         headers=auth_headers(init),

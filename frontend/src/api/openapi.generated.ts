@@ -3887,7 +3887,37 @@ export interface components {
             /** Winner */
             winner: string;
         };
-        /** ForumOut */
+        /**
+         * ForumIn
+         * @description Input schema for ``UserUpdate.forums``.
+         *
+         *     Audit (continuation) M-1 — splits the write boundary off the read
+         *     one (:class:`ForumOut`). The shared parent enforces the
+         *     URL/length/non-empty rules every call site cares about; this
+         *     subclass adds the whitelist gate so a caller hitting
+         *     ``PATCH /api/me`` directly (curl/postman with a valid initData)
+         *     can't record an arbitrary forum name and have it render on their
+         *     public profile. See :data:`FORUM_WHITELIST`.
+         */
+        ForumIn: {
+            /** Name */
+            name: string;
+            /** Url */
+            url: string;
+        };
+        /**
+         * ForumOut
+         * @description Serialised view of a ``Forum`` row.
+         *
+         *     Audit (continuation) M-1 — *output* validation is kept lenient so
+         *     legacy rows whose ``name`` predates the whitelist still render in
+         *     public profiles. Whitelist enforcement lives on the matching input
+         *     schema :class:`ForumIn` below, which is what
+         *     ``UserUpdate.forums`` actually accepts on the wire. Keeping the
+         *     write boundary strict + the read boundary tolerant is the same
+         *     pattern :func:`_validate_https_or_media_url` follows for legacy
+         *     avatar URLs.
+         */
         ForumOut: {
             /** Name */
             name: string;
@@ -4454,7 +4484,7 @@ export interface components {
             /** Dm System */
             dm_system?: boolean | null;
             /** Forums */
-            forums?: components["schemas"]["ForumOut"][] | null;
+            forums?: components["schemas"]["ForumIn"][] | null;
             /** Is Anonymous Deals */
             is_anonymous_deals?: boolean | null;
             /** Is Hidden Profile */
@@ -4579,9 +4609,9 @@ export interface operations {
     transfer_cancel_api_account_transfer_cancel_post: {
         parameters: {
             query?: never;
-            header: {
+            header?: {
                 "X-Pin-Token"?: string | null;
-                authorization: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4611,8 +4641,8 @@ export interface operations {
     transfer_confirm_api_account_transfer_confirm_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4646,9 +4676,9 @@ export interface operations {
     transfer_start_api_account_transfer_start_post: {
         parameters: {
             query?: never;
-            header: {
+            header?: {
                 "X-Pin-Token"?: string | null;
-                authorization: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4678,8 +4708,8 @@ export interface operations {
     transfer_status_api_account_transfer_status_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -4709,8 +4739,8 @@ export interface operations {
     disable_api_admin_2fa_disable_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -4746,8 +4776,8 @@ export interface operations {
     enable_api_admin_2fa_enable_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -4783,8 +4813,8 @@ export interface operations {
     open_session_api_admin_2fa_session_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -4820,8 +4850,8 @@ export interface operations {
     setup_api_admin_2fa_setup_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -4853,8 +4883,8 @@ export interface operations {
     status_api_admin_2fa_status_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -4886,8 +4916,8 @@ export interface operations {
     kpi_api_admin_analytics_kpi_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -4919,8 +4949,8 @@ export interface operations {
     series_api_admin_analytics_series_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -4952,8 +4982,8 @@ export interface operations {
     top_api_admin_analytics_top_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -4989,8 +5019,8 @@ export interface operations {
                 page?: number;
                 page_size?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5022,8 +5052,8 @@ export interface operations {
     claim_arbitration_api_admin_arbitration__deal_id__claim_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5068,8 +5098,8 @@ export interface operations {
                 page?: number;
                 page_size?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5104,8 +5134,8 @@ export interface operations {
                 page?: number;
                 page_size?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5137,8 +5167,8 @@ export interface operations {
     create_broadcast_api_admin_broadcasts_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5174,8 +5204,8 @@ export interface operations {
     preview_audience_api_admin_broadcasts_preview_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5211,8 +5241,8 @@ export interface operations {
     delete_broadcast_api_admin_broadcasts__broadcast_id__delete: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5246,8 +5276,8 @@ export interface operations {
     list_categories_api_admin_categories_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5279,8 +5309,8 @@ export interface operations {
     upsert_category_api_admin_categories_put: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5316,8 +5346,8 @@ export interface operations {
     delete_category_api_admin_categories__category_id__delete: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5351,8 +5381,8 @@ export interface operations {
     update_comment_api_admin_comments__comment_id__post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5390,8 +5420,8 @@ export interface operations {
     delete_comment_api_admin_comments__comment_id__delete_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5427,8 +5457,8 @@ export interface operations {
     list_currencies_admin_api_admin_currencies_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5460,8 +5490,8 @@ export interface operations {
     upsert_currency_api_admin_currencies_put: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5497,8 +5527,8 @@ export interface operations {
     delete_currency_api_admin_currencies__currency_id__delete: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5532,8 +5562,8 @@ export interface operations {
     dashboard_api_admin_dashboard_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5578,8 +5608,8 @@ export interface operations {
                 page?: number;
                 page_size?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5611,8 +5641,8 @@ export interface operations {
     get_deal_api_admin_deals__deal_id__get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5646,8 +5676,8 @@ export interface operations {
     assign_arbiter_api_admin_deals__deal_id__assign_arbiter_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5685,8 +5715,8 @@ export interface operations {
     delete_deal_api_admin_deals__deal_id__delete_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5726,8 +5756,8 @@ export interface operations {
     force_arbitration_api_admin_deals__deal_id__force_arbitration_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5765,8 +5795,8 @@ export interface operations {
     force_refund_api_admin_deals__deal_id__force_refund_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5804,8 +5834,8 @@ export interface operations {
     force_release_api_admin_deals__deal_id__force_release_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5843,8 +5873,8 @@ export interface operations {
     split_deal_api_admin_deals__deal_id__split_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5888,8 +5918,8 @@ export interface operations {
                 page?: number;
                 page_size?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5921,8 +5951,8 @@ export interface operations {
     mark_paid_api_admin_deposits__deposit_id__mark_paid_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5960,8 +5990,8 @@ export interface operations {
     refund_deposit_api_admin_deposits__deposit_id__refund_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -5999,8 +6029,8 @@ export interface operations {
     create_review_api_admin_reviews_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6036,8 +6066,8 @@ export interface operations {
     update_review_api_admin_reviews__review_id__post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6075,8 +6105,8 @@ export interface operations {
     delete_review_api_admin_reviews__review_id__delete_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6117,8 +6147,8 @@ export interface operations {
                 offset?: number;
                 limit?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6150,8 +6180,8 @@ export interface operations {
     update_service_api_admin_services__service_id__post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6189,8 +6219,8 @@ export interface operations {
     list_service_comments_api_admin_services__service_id__comments_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6224,8 +6254,8 @@ export interface operations {
     delete_service_api_admin_services__service_id__delete_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6261,8 +6291,8 @@ export interface operations {
     admin_moderate_api_admin_services__service_id__moderate_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6300,8 +6330,8 @@ export interface operations {
     get_settings_api_admin_settings_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6333,8 +6363,8 @@ export interface operations {
     update_settings_api_admin_settings_patch: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6370,8 +6400,8 @@ export interface operations {
     flush_redis_api_admin_system_redis_flush_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6403,8 +6433,8 @@ export interface operations {
     status_api_admin_system_status_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6436,8 +6466,8 @@ export interface operations {
     treasury_overview_api_admin_treasury_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6469,8 +6499,8 @@ export interface operations {
     treasury_withdraw_api_admin_treasury_withdraw_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6510,8 +6540,8 @@ export interface operations {
                 page_size?: number;
                 status?: ("pending" | "sent" | "failed") | null;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6543,8 +6573,8 @@ export interface operations {
     treasury_mark_sent_api_admin_treasury__withdrawal_id__mark_sent_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6582,8 +6612,8 @@ export interface operations {
     treasury_reconcile_api_admin_treasury__withdrawal_id__reconcile_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6629,8 +6659,8 @@ export interface operations {
                 page?: number;
                 page_size?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6662,8 +6692,8 @@ export interface operations {
     get_user_api_admin_users__user_id__get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6697,8 +6727,8 @@ export interface operations {
     ban_user_api_admin_users__user_id__ban_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6736,8 +6766,8 @@ export interface operations {
     list_user_comments_api_admin_users__user_id__comments_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6771,8 +6801,8 @@ export interface operations {
     freeze_user_api_admin_users__user_id__freeze_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6810,8 +6840,8 @@ export interface operations {
     invalidate_sessions_api_admin_users__user_id__invalidate_sessions_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6849,8 +6879,8 @@ export interface operations {
     set_rating_api_admin_users__user_id__rating_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6888,8 +6918,8 @@ export interface operations {
     reset_pin_api_admin_users__user_id__reset_pin_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6929,8 +6959,8 @@ export interface operations {
             query?: {
                 direction?: string;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -6964,8 +6994,8 @@ export interface operations {
     set_role_api_admin_users__user_id__role_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -7003,8 +7033,8 @@ export interface operations {
     list_user_services_api_admin_users__user_id__services_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -7038,8 +7068,8 @@ export interface operations {
     set_stats_api_admin_users__user_id__stats_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -7077,8 +7107,8 @@ export interface operations {
     set_trust_deposit_api_admin_users__user_id__trust_deposit_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -7116,8 +7146,8 @@ export interface operations {
     unban_user_api_admin_users__user_id__unban_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -7155,8 +7185,8 @@ export interface operations {
     unfreeze_user_api_admin_users__user_id__unfreeze_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -7198,8 +7228,8 @@ export interface operations {
                 page?: number;
                 page_size?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -7231,8 +7261,8 @@ export interface operations {
     user_wallet_detail_api_admin_wallets__user_id__get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -7266,8 +7296,8 @@ export interface operations {
     adjust_user_balance_api_admin_wallets__user_id__adjust_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -7310,8 +7340,8 @@ export interface operations {
                 page?: number;
                 page_size?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -7343,8 +7373,8 @@ export interface operations {
     decide_withdrawal_api_admin_withdrawals__withdrawal_id__decide_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
                 "X-Totp-Code"?: string | null;
                 "X-Totp-Session"?: string | null;
             };
@@ -7385,8 +7415,8 @@ export interface operations {
                 limit?: number;
                 offset?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7416,8 +7446,8 @@ export interface operations {
     list_categories_api_categories_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7468,8 +7498,8 @@ export interface operations {
                 role?: string | null;
                 status?: string | null;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7499,9 +7529,9 @@ export interface operations {
     create_deal_endpoint_api_deals_post: {
         parameters: {
             query?: never;
-            header: {
+            header?: {
                 "X-Pin-Token"?: string | null;
-                authorization: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7535,8 +7565,8 @@ export interface operations {
     get_deal_api_deals__deal_id__get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path: {
                 deal_id: number;
@@ -7568,9 +7598,9 @@ export interface operations {
     accept_deal_endpoint_api_deals__deal_id__accept_post: {
         parameters: {
             query?: never;
-            header: {
+            header?: {
                 "X-Pin-Token"?: string | null;
-                authorization: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: number;
@@ -7602,9 +7632,9 @@ export interface operations {
     cancel_request_endpoint_api_deals__deal_id__cancel_request_post: {
         parameters: {
             query?: never;
-            header: {
+            header?: {
                 "X-Pin-Token"?: string | null;
-                authorization: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: number;
@@ -7640,9 +7670,9 @@ export interface operations {
     cancel_accept_endpoint_api_deals__deal_id__cancel_request_accept_post: {
         parameters: {
             query?: never;
-            header: {
+            header?: {
                 "X-Pin-Token"?: string | null;
-                authorization: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: number;
@@ -7674,9 +7704,9 @@ export interface operations {
     cancel_revoke_endpoint_api_deals__deal_id__cancel_request_revoke_post: {
         parameters: {
             query?: never;
-            header: {
+            header?: {
                 "X-Pin-Token"?: string | null;
-                authorization: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: number;
@@ -7708,9 +7738,9 @@ export interface operations {
     debate_endpoint_api_deals__deal_id__debate_post: {
         parameters: {
             query?: never;
-            header: {
+            header?: {
                 "X-Pin-Token"?: string | null;
-                authorization: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: number;
@@ -7746,9 +7776,9 @@ export interface operations {
     decline_deal_endpoint_api_deals__deal_id__decline_post: {
         parameters: {
             query?: never;
-            header: {
+            header?: {
                 "X-Pin-Token"?: string | null;
-                authorization: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: number;
@@ -7780,9 +7810,9 @@ export interface operations {
     finish_deal_endpoint_api_deals__deal_id__finish_post: {
         parameters: {
             query?: never;
-            header: {
+            header?: {
                 "X-Pin-Token"?: string | null;
-                authorization: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: number;
@@ -7819,8 +7849,8 @@ export interface operations {
                 /** @description Cursor — return only messages with ``id`` strictly less than this. Use the ``id`` of the oldest already-loaded message to fetch the next older page. */
                 before_id?: number | null;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path: {
                 deal_id: number;
@@ -7852,8 +7882,8 @@ export interface operations {
     create_message_api_deals__deal_id__messages_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path: {
                 deal_id: number;
@@ -7889,9 +7919,9 @@ export interface operations {
     resolve_endpoint_api_deals__deal_id__resolve_post: {
         parameters: {
             query?: never;
-            header: {
+            header?: {
                 "X-Pin-Token"?: string | null;
-                authorization: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: number;
@@ -7927,8 +7957,8 @@ export interface operations {
     get_me_api_me_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7958,8 +7988,8 @@ export interface operations {
     update_me_api_me_patch: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7993,8 +8023,8 @@ export interface operations {
     upload_media_api_media_upload_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8035,8 +8065,8 @@ export interface operations {
                 before_id?: number | null;
                 limit?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8066,8 +8096,8 @@ export interface operations {
     get_counters_api_notifications_counters_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8097,8 +8127,8 @@ export interface operations {
     mark_all_read_api_notifications_read_all_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8128,8 +8158,8 @@ export interface operations {
     get_notification_api_notifications__notif_id__get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path: {
                 notif_id: number;
@@ -8161,8 +8191,8 @@ export interface operations {
     mark_read_api_notifications__notif_id__read_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path: {
                 notif_id: number;
@@ -8234,8 +8264,8 @@ export interface operations {
     pin_change_api_pin_change_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8269,8 +8299,8 @@ export interface operations {
     pin_check_api_pin_check_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8304,8 +8334,8 @@ export interface operations {
     pin_reset_confirm_api_pin_reset_confirm_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8339,8 +8369,8 @@ export interface operations {
     pin_reset_request_api_pin_reset_request_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8370,8 +8400,8 @@ export interface operations {
     pin_setup_api_pin_setup_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8405,8 +8435,8 @@ export interface operations {
     pin_status_api_pin_status_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8440,8 +8470,8 @@ export interface operations {
                 limit?: number;
                 offset?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8471,8 +8501,8 @@ export interface operations {
     create_review_api_reviews_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8516,8 +8546,8 @@ export interface operations {
                 /** @description Row offset for cursorless pagination. */
                 offset?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8547,8 +8577,8 @@ export interface operations {
     create_service_api_services_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8582,8 +8612,8 @@ export interface operations {
     get_service_api_services__service_id__get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path: {
                 service_id: number;
@@ -8615,8 +8645,8 @@ export interface operations {
     delete_service_api_services__service_id__delete: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path: {
                 service_id: number;
@@ -8648,8 +8678,8 @@ export interface operations {
     update_service_api_services__service_id__patch: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path: {
                 service_id: number;
@@ -8687,8 +8717,8 @@ export interface operations {
             query?: {
                 limit?: number;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path: {
                 service_id: number;
@@ -8720,8 +8750,8 @@ export interface operations {
     create_service_comment_api_services__service_id__comments_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path: {
                 service_id: number;
@@ -8757,8 +8787,8 @@ export interface operations {
     delete_service_comment_api_services__service_id__comments__comment_id__delete: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path: {
                 service_id: number;
@@ -8811,8 +8841,8 @@ export interface operations {
     list_admins_api_support_admins_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8842,8 +8872,8 @@ export interface operations {
     list_arbiters_api_support_arbiters_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8887,8 +8917,8 @@ export interface operations {
                 /** @description ISO date (YYYY-MM-DD) */
                 reg_to?: string | null;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8918,8 +8948,8 @@ export interface operations {
     get_user_api_users__username__get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path: {
                 username: string;
@@ -8953,8 +8983,8 @@ export interface operations {
             query?: {
                 kind?: ("fiat" | "crypto") | null;
             };
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9015,8 +9045,8 @@ export interface operations {
     list_user_deposits_api_wallet_deposits_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9046,8 +9076,8 @@ export interface operations {
     create_deposit_api_wallet_deposits_post: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9081,8 +9111,8 @@ export interface operations {
     get_deposit_api_wallet_deposits__deposit_id__get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path: {
                 deposit_id: number;
@@ -9114,8 +9144,8 @@ export interface operations {
     list_user_withdrawals_api_wallet_withdrawals_get: {
         parameters: {
             query?: never;
-            header: {
-                authorization: string;
+            header?: {
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9145,9 +9175,9 @@ export interface operations {
     create_user_withdrawal_api_wallet_withdrawals_post: {
         parameters: {
             query?: never;
-            header: {
+            header?: {
                 "X-Pin-Token"?: string | null;
-                authorization: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;

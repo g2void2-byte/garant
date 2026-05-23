@@ -9,9 +9,16 @@ from tests.helpers import auth_headers, signed_init_data
 
 async def test_missing_authorization_header(client):
     resp = await client.get("/api/me")
-    # FastAPI returns 422 for a missing required header (parsed via
-    # ``Annotated[str, Header()]``); the contract is "client must send it".
-    assert resp.status_code == 422
+    # Audit (continuation) H-3 — pre-fix this returned 422 from the
+    # Pydantic ``missing`` validator because ``authorization`` was a
+    # required ``Header()`` parameter. Two problems with that:
+    #   1. 422 leaks the internal field name + Pydantic error shape.
+    #   2. The frontend re-auth hook is wired on 401/403 so the user
+    #      saw a generic "Не удалось" toast instead of a fresh
+    #      initData handshake.
+    # The header is now optional and ``get_current_user`` returns a
+    # clean 401 with the same shape as the other auth failures.
+    assert resp.status_code == 401
 
 
 async def test_invalid_authorization_scheme(client):

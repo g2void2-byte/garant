@@ -29,6 +29,7 @@ from typing import Any
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import notifier
@@ -67,7 +68,12 @@ async def _safe_dispatch(
     for notif, ws_payload in pending:
         try:
             await notifier.dispatch_after_commit(session, notif, ws_payload)
-        except Exception:
+        except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+            # Audit (continuation) M-6 — narrowed from ``except
+            # Exception`` for the same reason as the same fan-out
+            # helpers in ``services_wallet`` (post-commit dispatch
+            # must survive transient I/O failures but not silently
+            # swallow programmer bugs).
             # Structured-logging fields so JSON-logger downstream
             # (Loki/Sentry) can pivot on event/notif_id without
             # regexing the message body.
@@ -221,14 +227,27 @@ async def _release_to(
     it stays in payer's locked → effectively "burns" it into the platform
     pool. The platform's own ledger isn't modeled in PR-3.
     """
-    # Two row locks — same lost-update rationale as ``_refund``. Lock
-    # payer first (smaller user_id by convention if we cared about
-    # deadlocks here, but the only callers in this module always
-    # order buyer→seller and Postgres FK ordering keeps the pattern
-    # deterministic across the deal lifecycle).
-    payer = await lock_user_balance(session, payer_id, currency_id)
+    # Two row locks — same lost-update rationale as ``_refund``.
+    #
+    # Audit (continuation) H-1 — deadlock-free ordering. Pre-fix this
+    # helper always locked ``payer`` first and ``payee`` second. With
+    # one user marketplace it doesn't matter, but two distinct deals
+    # between the same pair ``(A, B)`` in *opposite* directions
+    # (deal#1: A→B, deal#2: B→A) racing through ``_release_to`` would
+    # acquire the two ``UserBalance`` row locks in opposite orders —
+    # ``A,B`` for deal#1 and ``B,A`` for deal#2 — and PostgreSQL's
+    # deadlock detector would abort one of them with a 40P01 forcing
+    # the caller to see ``Transaction aborted, please retry`` 500.
+    # Same fix pattern as ``services_account.transfer_account``: sort
+    # the two user_ids ascending and lock in that order. The
+    # subsequent mutations (decrement payer.locked, increment
+    # payee.amount) still target the correct rows because we hold
+    # both locks simultaneously when we mutate.
+    first_id, second_id = sorted((payer_id, payee_id))
+    first = await lock_user_balance(session, first_id, currency_id)
+    second = await lock_user_balance(session, second_id, currency_id)
+    payer, payee = (first, second) if payer_id == first_id else (second, first)
     payer.locked = max(Decimal(0), Decimal(str(payer.locked)) - locked_amount)
-    payee = await lock_user_balance(session, payee_id, currency_id)
     payee.amount = Decimal(str(payee.amount)) + payout_amount
 
 

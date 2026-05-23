@@ -4330,7 +4330,27 @@
         "title": "DealResolveRequest",
         "type": "object"
       },
+      "ForumIn": {
+        "description": "Input schema for ``UserUpdate.forums``.\n\nAudit (continuation) M-1 \u2014 splits the write boundary off the read\none (:class:`ForumOut`). The shared parent enforces the\nURL/length/non-empty rules every call site cares about; this\nsubclass adds the whitelist gate so a caller hitting\n``PATCH /api/me`` directly (curl/postman with a valid initData)\ncan't record an arbitrary forum name and have it render on their\npublic profile. See :data:`FORUM_WHITELIST`.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ],
+        "title": "ForumIn",
+        "type": "object"
+      },
       "ForumOut": {
+        "description": "Serialised view of a ``Forum`` row.\n\nAudit (continuation) M-1 \u2014 *output* validation is kept lenient so\nlegacy rows whose ``name`` predates the whitelist still render in\npublic profiles. Whitelist enforcement lives on the matching input\nschema :class:`ForumIn` below, which is what\n``UserUpdate.forums`` actually accepts on the wire. Keeping the\nwrite boundary strict + the read boundary tolerant is the same\npattern :func:`_validate_https_or_media_url` follows for legacy\navatar URLs.",
         "properties": {
           "name": {
             "title": "Name",
@@ -5865,7 +5885,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/ForumOut"
+                  "$ref": "#/components/schemas/ForumIn"
                 },
                 "type": "array"
               },
@@ -6235,10 +6255,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -6277,10 +6304,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -6345,10 +6379,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -6387,10 +6428,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -6429,10 +6477,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -6513,10 +6568,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -6598,10 +6660,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -6682,10 +6751,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -6756,10 +6832,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -6830,10 +6913,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -6904,10 +6994,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -6978,10 +7075,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -7090,10 +7194,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -7174,10 +7285,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -7371,10 +7489,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -7468,10 +7593,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -7540,10 +7672,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -7624,10 +7763,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -7717,10 +7863,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -7789,10 +7942,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -7865,10 +8025,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -7958,10 +8125,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -8039,10 +8213,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -8132,10 +8313,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -8208,10 +8396,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -8284,10 +8479,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -8378,10 +8580,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -8451,10 +8660,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -8704,10 +8920,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -8787,10 +9010,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -8870,10 +9100,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -8964,10 +9201,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -9059,10 +9303,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -9152,10 +9403,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -9245,10 +9503,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -9338,10 +9603,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -9493,10 +9765,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -9576,10 +9855,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -9670,10 +9956,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -9755,10 +10048,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -9848,10 +10148,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -9941,10 +10248,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -10072,10 +10386,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -10159,10 +10480,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -10252,10 +10580,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -10339,10 +10674,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -10424,10 +10766,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -10508,10 +10857,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -10580,10 +10936,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -10665,10 +11028,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -10737,10 +11107,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -10811,10 +11188,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -10886,10 +11270,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -11014,10 +11405,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -11102,10 +11500,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -11196,10 +11601,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -11371,10 +11783,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -11454,10 +11873,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -11537,10 +11963,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -11630,10 +12063,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -11717,10 +12157,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -11811,10 +12258,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -11905,10 +12359,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -11999,10 +12460,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -12103,10 +12571,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -12191,10 +12666,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -12284,10 +12766,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -12372,10 +12861,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -12466,10 +12962,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -12559,10 +13062,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -12652,10 +13162,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -12775,10 +13292,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -12858,10 +13382,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -12945,10 +13476,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -13084,10 +13622,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -13167,10 +13712,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -13274,10 +13826,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -13320,10 +13879,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -13413,10 +13979,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -13473,10 +14046,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -13534,10 +14114,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -13601,10 +14188,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -13668,10 +14262,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -13745,10 +14346,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -13812,10 +14420,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -13879,10 +14494,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -13956,10 +14578,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14023,10 +14652,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14107,10 +14743,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14160,10 +14803,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14237,10 +14887,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14289,10 +14946,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14329,10 +14993,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14381,10 +15052,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14498,10 +15176,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14544,10 +15229,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14586,10 +15278,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14636,10 +15335,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14687,10 +15393,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14767,10 +15480,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14819,10 +15539,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14871,10 +15598,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14923,10 +15657,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -14965,10 +15706,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15017,10 +15765,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15092,10 +15847,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15136,10 +15898,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15281,10 +16050,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15325,10 +16101,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15386,10 +16169,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15433,10 +16223,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15482,10 +16279,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15555,10 +16359,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15608,10 +16419,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15678,10 +16496,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15735,10 +16560,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15781,10 +16613,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -15967,10 +16806,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -16022,10 +16868,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -16085,10 +16938,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -16189,10 +17049,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -16233,10 +17100,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -16294,10 +17168,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -16336,10 +17217,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -16396,10 +17284,17 @@
           {
             "in": "header",
             "name": "authorization",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Authorization",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
