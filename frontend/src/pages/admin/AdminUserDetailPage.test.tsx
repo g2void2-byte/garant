@@ -134,7 +134,6 @@ function makeUser(
     photo_url: null,
     banner_url: null,
     description: "",
-    deposit_total: 50,
     trust_deposit_balance: 100,
     rating_auto: 4.8,
     rating_manual: null,
@@ -206,7 +205,10 @@ describe("<AdminUserDetailPage />", () => {
     expect(screen.getByText("tg_id: 1234")).toBeInTheDocument();
     expect(screen.getByText("1.2.3.4")).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument(); // login_count
-    expect(screen.getByText("$50.00")).toBeInTheDocument();
+    // The identity card now surfaces the trust deposit (the public
+    // profile's ``deposit`` field) — the lifetime aggregate was
+    // retired together with ``User.deposit_total``.
+    expect(screen.getByText("$100.00")).toBeInTheDocument();
     expect(screen.getByText("Установлен")).toBeInTheDocument();
   });
 

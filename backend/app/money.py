@@ -5,11 +5,11 @@ H-2 unified every per-currency money column in the schema to
 the unification two parallel inconsistencies leaked into responses
 and ledger writes:
 
-1. Five money columns lagged at ``Numeric(14, 2)`` — ``User.deposit_total``,
+1. Four money columns lagged at ``Numeric(14, 2)`` —
    ``Service.price``, ``Service.deposit``, ``AppSettings.min_deposit`` and
    ``AppSettings.min_withdraw``. Writing a satoshi-scale value (8 fractional
    digits) into those columns silently truncated the trailing six digits.
-   The companion migration widens all five to ``Numeric(28, 8)``.
+   The companion migration widens all four to ``Numeric(28, 8)``.
 2. Two near-identical ``_q`` helpers lived in
    ``services_deals.py`` and ``routers/admin/deals.py``. Both quantised via
    ``Decimal.quantize`` without an explicit ``rounding`` keyword, inheriting

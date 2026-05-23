@@ -1,9 +1,13 @@
 """PR-4 — Continental search filter sheet wiring.
 
 ``GET /api/users`` gained query params for the bottom-sheet filters from
-Continental: rating bucket, deals bucket, deposit_min, prefix tier, and
-registration date range. Each test pins one filter at a time so a
-regression on an unrelated branch is immediately obvious.
+Continental: rating bucket, deals bucket, prefix tier, and registration
+date range. Each test pins one filter at a time so a regression on an
+unrelated branch is immediately obvious.
+
+The ``deposit_min`` filter was retired together with
+``User.deposit_total`` — the lifetime aggregate it filtered against no
+longer exists.
 """
 
 from __future__ import annotations
@@ -11,7 +15,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import select
 
 from backend.app.db import async_session
 from backend.app.models import User
@@ -43,7 +46,6 @@ async def _make_user(
     good: int = 0,
     bad: int = 0,
     deals_total: int = 0,
-    deposit_total: float = 0.0,
     is_admin: bool = False,
     is_arbiter: bool = False,
     created_at: datetime | None = None,
@@ -56,7 +58,6 @@ async def _make_user(
             good=good,
             bad=bad,
             deals_total=deals_total,
-            deposit_total=deposit_total,
             is_admin=is_admin,
             is_arbiter=is_arbiter,
         )
@@ -136,14 +137,6 @@ async def test_deals_bucket_101_plus(client):
 
 
 @pytest.mark.asyncio
-async def test_deposit_min(client):
-    await _make_user(600, "broke", deposit_total=0)
-    await _make_user(601, "rich", deposit_total=1000.50)
-    names = await _usernames(client, deposit_min=500)
-    assert names == ["rich"]
-
-
-@pytest.mark.asyncio
 async def test_status_admin(client):
     await _make_user(700, "alice")
     await _make_user(701, "admin1", is_admin=True)
@@ -219,7 +212,3 @@ async def test_admin_level_is_5(client):
     resp = await client.get("/api/users", headers=headers)
     by_name = {u["username"]: u for u in resp.json()}
     assert by_name["adminx"]["admin"] == 5
-
-
-# Silence ruff: ``select`` reserved for ad-hoc DB peeking in this test file.
-_ = select

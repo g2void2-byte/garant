@@ -72,7 +72,6 @@ async def list_users(
     filter: str | None = Query(None),
     rating: str | None = Query(None, description="Continental rating bucket"),
     deals: str | None = Query(None, description="Continental deals bucket"),
-    deposit_min: float | None = Query(None, ge=0),
     status: str | None = Query(None, description="Continental prefix tier"),
     reg_from: str | None = Query(None, description="ISO date (YYYY-MM-DD)"),
     reg_to: str | None = Query(None, description="ISO date (YYYY-MM-DD)"),
@@ -80,8 +79,8 @@ async def list_users(
     """List users, optionally filtered by Continental's search-page schema.
 
     ``q`` and ``filter`` keep their pre-PR-4 semantics. ``rating`` / ``deals``
-    / ``deposit_min`` / ``status`` / ``reg_from`` / ``reg_to`` correspond
-    1:1 to the bottom-sheet sections in Continental's TMA bundle.
+    / ``status`` / ``reg_from`` / ``reg_to`` correspond 1:1 to the
+    bottom-sheet sections in Continental's TMA bundle.
     """
     stmt = select(User).where(User.is_hidden_profile.is_(False))
     q_trimmed = (q or "").strip()
@@ -138,14 +137,6 @@ async def list_users(
             stmt = stmt.where(User.deals_total >= d_lo)
         if d_hi is not None:
             stmt = stmt.where(User.deals_total <= d_hi)
-
-    if deposit_min is not None and deposit_min > 0:
-        # Continental's "Депозит ≥ N" filter targets the user's
-        # lifetime deposit aggregate. The legacy ``frozen_balance``
-        # column it used to sit on was retired in favour of
-        # ``deposit_total`` (the actively-maintained admin-panel
-        # value).
-        stmt = stmt.where(User.deposit_total >= deposit_min)
 
     if status is not None:
         if status not in _STATUS_KEYS:

@@ -59,7 +59,6 @@ export default function SearchPage() {
       filter,
       rating: filters.rating,
       deals: filters.deals,
-      deposit_min: filters.deposit_min,
       status: filters.status,
       reg_from: filters.reg_from,
       reg_to: filters.reg_to,

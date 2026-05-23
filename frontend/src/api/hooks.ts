@@ -239,7 +239,6 @@ export interface UsersQueryParams {
   filter?: string;
   rating?: string;
   deals?: string;
-  deposit_min?: string;
   status?: string;
   reg_from?: string;
   reg_to?: string;
@@ -251,7 +250,6 @@ export function useUsers(params: UsersQueryParams = {}) {
   if (params.filter) searchParams.filter = params.filter;
   if (params.rating) searchParams.rating = params.rating;
   if (params.deals) searchParams.deals = params.deals;
-  if (params.deposit_min) searchParams.deposit_min = params.deposit_min;
   if (params.status) searchParams.status = params.status;
   if (params.reg_from) searchParams.reg_from = params.reg_from;
   if (params.reg_to) searchParams.reg_to = params.reg_to;

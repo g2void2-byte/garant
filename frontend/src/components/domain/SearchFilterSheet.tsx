@@ -5,22 +5,24 @@ import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/cn";
 
 /**
- * Continental's "Применить фильтры" bottom-sheet, ported 1:1 from the
- * reference TMA bundle. Five sections:
+ * Continental's "Применить фильтры" bottom-sheet. Four sections:
  *
  *  1. Рейтинг          — single-select: 5.0 / 4.5-4.9 / 4.0-4.4 / 3.5-3.9 / Ниже 3.5
  *  2. Количество сделок — single-select: 0-10 / 11-50 / 51-100 / 101+
- *  3. Депозит          — numeric "от" input
- *  4. Префикс          — single-select: Администратор / Модератор / Арбитр / VIP
- *  5. Дата регистрации — От / До date inputs
+ *  3. Префикс          — single-select: Администратор / Модератор / Арбитр / VIP
+ *  4. Дата регистрации — От / До date inputs
  *
  * On Apply the parent receives the new filter object and is responsible
  * for refetching ``GET /api/users`` with the matching query params.
+ *
+ * The “Депозит” section was retired together with
+ * ``User.deposit_total`` — there is no longer a lifetime deposit
+ * column to filter by; the user-visible “Депозит” on the profile
+ * page is the lock-in trust deposit, which is not searchable.
  */
 export interface SearchFilters {
   rating?: string;
   deals?: string;
-  deposit_min?: string;
   status?: string;
   reg_from?: string;
   reg_to?: string;
@@ -129,24 +131,6 @@ export function SearchFilterSheet({
             options={DEALS_OPTIONS}
             value={local.deals}
             onChange={(v) => setLocal({ ...local, deals: v })}
-          />
-        </section>
-
-        <section>
-          <h3 className="text-base font-semibold mb-2">Депозит</h3>
-          <Input
-            type="number"
-            inputMode="decimal"
-            min={0}
-            step="0.01"
-            placeholder="0.00"
-            value={local.deposit_min ?? ""}
-            onChange={(e) =>
-              setLocal({
-                ...local,
-                deposit_min: e.target.value ? e.target.value : undefined,
-              })
-            }
           />
         </section>
 

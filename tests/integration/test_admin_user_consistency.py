@@ -3,10 +3,11 @@
 The pre-fix bug was that admin mutations on a target user landed in
 fields the user-facing serializer never read:
 
-* ``POST /api/admin/users/:id/stats`` writes ``deposit_total``, but the
-  public profile reads ``trust_deposit_balance`` for its ``deposit``
-  field. Two separate columns, never synchronised → admin sees the
-  number change, user sees nothing.
+* ``POST /api/admin/users/:id/stats`` used to write ``deposit_total``,
+  but the public profile reads ``trust_deposit_balance`` for its
+  ``deposit`` field. The lifetime aggregate has since been removed
+  outright — the only path that mutates the user-visible deposit is
+  now ``POST /api/admin/users/:id/trust-deposit``.
 * The admin-only ``POST /api/admin/wallets/:id/adjust`` *does* write
   the right column, but the user has no surface in the *profile* that
   shows fiat balances, so the change was invisible to the user.
@@ -57,8 +58,8 @@ async def test_admin_trust_deposit_propagates_to_user_deposit(client):
     """``POST /api/admin/users/:id/trust-deposit`` writes
     ``trust_deposit_balance``, which the public ``UserOut`` /
     ``UserPublicOut`` surface as ``deposit``. Pre-fix the legacy
-    ``set_stats`` endpoint wrote ``deposit_total`` instead, which
-    never reached the user-side serializer.
+    ``set_stats`` endpoint wrote ``deposit_total`` instead (since
+    removed), which never reached the user-side serializer.
     """
     admin_init = signed_init_data(1, "admin")
     admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
@@ -125,27 +126,26 @@ async def test_admin_trust_deposit_rejects_negative(client):
 
 
 async def test_admin_user_detail_exposes_trust_deposit(client):
-    """``AdminUserDetailOut`` carries both ``deposit_total`` and
-    ``trust_deposit_balance`` so the admin UI can label them
-    separately ("Лайфтайм-депозит" vs "Трастовый депозит").
+    """``AdminUserDetailOut`` surfaces ``trust_deposit_balance`` — the
+    single column the public profile reads as ``deposit``. The
+    legacy ``deposit_total`` aggregate was removed in the same patch
+    that dropped the column.
     """
     admin_init = signed_init_data(1, "admin")
     admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
     await _promote_admin(admin_id)
     target_id = await _bootstrap(client, tg_user_id=2, username="bob")
 
-    # Pre-seed both columns to distinct values.
     async with async_session() as session:
         u = await session.get(User, target_id)
         assert u is not None
-        u.deposit_total = Decimal("250")
         u.trust_deposit_balance = Decimal("100")
         await session.commit()
 
     resp = await client.get(f"/api/admin/users/{target_id}", headers=auth_headers(admin_init))
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["deposit_total"] == pytest.approx(250.0)
+    assert "deposit_total" not in body
     assert body["trust_deposit_balance"] == pytest.approx(100.0)
 
 

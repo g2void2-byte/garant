@@ -42,9 +42,6 @@ function buildChips(value: SearchFilters): ChipDef[] {
   if (value.deals) {
     chips.push({ key: "deals", label: DEALS_LABELS[value.deals] ?? value.deals });
   }
-  if (value.deposit_min) {
-    chips.push({ key: "deposit_min", label: `Депозит от ${value.deposit_min}` });
-  }
   if (value.status) {
     chips.push({ key: "status", label: STATUS_LABELS[value.status] ?? value.status });
   }

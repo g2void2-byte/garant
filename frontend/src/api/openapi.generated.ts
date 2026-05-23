@@ -1326,11 +1326,10 @@ export interface paths {
          * @description Set the user's trust-deposit balance (absolute value).
          *
          *     Item 12 — the public profile's ``deposit`` field is sourced from
-         *     :attr:`User.trust_deposit_balance`, *not* from
-         *     :attr:`User.deposit_total` (which the legacy ``set_stats``
-         *     endpoint writes). Pre-fix admin edits to the lifetime aggregate
-         *     silently failed to propagate to the user-visible profile; this
-         *     endpoint targets the right column.
+         *     :attr:`User.trust_deposit_balance`. The lifetime ``deposit_total``
+         *     aggregate that ``set_stats`` used to write has since been
+         *     removed; this endpoint is the only path that mutates the
+         *     user-visible deposit.
          *
          *     The body is an *absolute* amount — admin types the new total in
          *     the form, not a delta. Negative values are rejected at the schema
@@ -2202,8 +2201,8 @@ export interface paths {
          * @description List users, optionally filtered by Continental's search-page schema.
          *
          *     ``q`` and ``filter`` keep their pre-PR-4 semantics. ``rating`` / ``deals``
-         *     / ``deposit_min`` / ``status`` / ``reg_from`` / ``reg_to`` correspond
-         *     1:1 to the bottom-sheet sections in Continental's TMA bundle.
+         *     / ``status`` / ``reg_from`` / ``reg_to`` correspond 1:1 to the
+         *     bottom-sheet sections in Continental's TMA bundle.
          */
         get: operations["list_users_api_users_get"];
         put?: never;
@@ -3244,8 +3243,6 @@ export interface components {
             deals_success?: number | null;
             /** Deals Total */
             deals_total?: number | null;
-            /** Deposit Total */
-            deposit_total?: number | string | null;
             /** Good */
             good?: number | null;
         };
@@ -3255,9 +3252,7 @@ export interface components {
          *
          *     Sets the user's :attr:`~backend.app.models.User.trust_deposit_balance`
          *     — the column rendered as ``deposit`` on the public
-         *     ``UserOut`` / ``UserPublicOut`` DTOs. Distinct from
-         *     ``AdminSetStatsIn.deposit_total`` which edits the admin-only
-         *     lifetime aggregate.
+         *     ``UserOut`` / ``UserPublicOut`` DTOs.
          *
          *     The value is *absolute* (the admin types the new total, not a
          *     delta); negative values are rejected because the trust deposit
@@ -3548,8 +3543,6 @@ export interface components {
             deals_success: number;
             /** Deals Total */
             deals_total: number;
-            /** Deposit Total */
-            deposit_total: number;
             /** Description */
             description: string;
             /** Display Name */
@@ -3613,8 +3606,6 @@ export interface components {
             deals_success: number;
             /** Deals Total */
             deals_total: number;
-            /** Deposit Total */
-            deposit_total: number;
             /** Display Name */
             display_name: string;
             /** Id */
@@ -6773,7 +6764,7 @@ export interface operations {
                 q?: string | null;
                 role?: "admin" | "arbiter" | "vip" | "regular" | "any";
                 status?: "any" | "active" | "banned" | "frozen";
-                sort?: "created_desc" | "created_asc" | "rating" | "deals" | "deposit";
+                sort?: "created_desc" | "created_asc" | "rating" | "deals";
                 page?: number;
                 page_size?: number;
             };
@@ -9078,7 +9069,6 @@ export interface operations {
                 rating?: string | null;
                 /** @description Continental deals bucket */
                 deals?: string | null;
-                deposit_min?: number | null;
                 /** @description Continental prefix tier */
                 status?: string | null;
                 /** @description ISO date (YYYY-MM-DD) */

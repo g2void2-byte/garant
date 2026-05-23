@@ -169,9 +169,7 @@ export function useAdminSetStats() {
 
 /**
  * Item 12 — set the user's *trust* deposit balance (the lock-in
- * column the public profile renders as ``deposit``). Distinct from
- * ``deposit_total`` which is the admin-only lifetime aggregate
- * surfaced via ``StatsSection``.
+ * column the public profile renders as ``deposit``).
  *
  * Also invalidates the ``["me"]`` cache so the *current admin* sees
  * the change immediately if they edited their own trust deposit

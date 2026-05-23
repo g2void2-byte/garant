@@ -237,7 +237,7 @@ function UserRow({ user, onClick }: { user: AdminUserListItemDto; onClick: () =>
           @{user.username ?? "—"} · tg {user.tg_user_id}
         </div>
         <div className="text-xs text-text-muted">
-          Сделок: {user.deals_total} · ★ {user.rating.toFixed(1)} · Депозит ${user.deposit_total.toFixed(2)}
+          Сделок: {user.deals_total} · ★ {user.rating.toFixed(1)} · Траст ${user.trust_deposit_balance.toFixed(2)}
         </div>
       </div>
       <div className="flex flex-col items-end gap-1">

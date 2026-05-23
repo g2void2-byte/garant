@@ -85,7 +85,6 @@ export interface UsersQueryKey {
   filter?: string;
   rating?: string;
   deals?: string;
-  deposit_min?: string;
   status?: string;
   reg_from?: string;
   reg_to?: string;
