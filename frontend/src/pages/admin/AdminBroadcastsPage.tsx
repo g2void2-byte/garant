@@ -103,11 +103,34 @@ export default function AdminBroadcastsPage() {
         )}
       </div>
 
-      <Sheet open={composerOpen} onClose={() => setComposerOpen(false)} title="Новая рассылка">
+      <Sheet
+        open={composerOpen}
+        onClose={() => setComposerOpen(false)}
+        title="Новая рассылка"
+      >
         <Composer onClose={() => setComposerOpen(false)} />
       </Sheet>
     </Page>
   );
+}
+
+// Mirrors the backend ``AdminBroadcastCreateIn`` field validators
+// (``schemas.py``). Keep these in sync so the live UI counter and
+// inline deeplink error match what the server would reject.
+const BODY_MAX_LEN = 4096;
+const DEEPLINK_MAX_LEN = 256;
+
+function validateDeeplink(raw: string): string | null {
+  const v = raw.trim();
+  if (!v) return null;
+  if (v.length > DEEPLINK_MAX_LEN) {
+    return `Ссылка слишком длинная (≤${DEEPLINK_MAX_LEN})`;
+  }
+  const low = v.toLowerCase();
+  if (!(low.startsWith("https://") || low.startsWith("tg://"))) {
+    return "Ссылка должна начинаться с https:// или tg://";
+  }
+  return null;
 }
 
 function Composer({ onClose }: { onClose: () => void }) {
@@ -126,6 +149,11 @@ function Composer({ onClose }: { onClose: () => void }) {
   const preview = useAdminBroadcastPreview();
   const create = useAdminCreateBroadcast();
   const toast = useToast();
+
+  const deeplinkError = validateDeeplink(deeplink);
+  const bodyOverLimit = body.length > BODY_MAX_LEN;
+  const submitBlocked =
+    !body.trim() || bodyOverLimit || deeplinkError !== null;
 
   const buildBody = (): AdminBroadcastCreateBody => ({
     title: title.trim() || undefined,
@@ -146,12 +174,23 @@ function Composer({ onClose }: { onClose: () => void }) {
         <Input value={title} onChange={(e) => setTitle(e.target.value)} />
       </div>
       <div>
-        <label className="block text-xs text-text-muted mb-1">Текст</label>
+        <div className="flex items-end justify-between mb-1">
+          <label className="block text-xs text-text-muted">Текст</label>
+          <span
+            className={`text-[11px] tabular-nums ${
+              bodyOverLimit ? "text-danger" : "text-text-muted"
+            }`}
+            aria-live="polite"
+          >
+            {body.length}/{BODY_MAX_LEN}
+          </span>
+        </div>
         <Textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
           rows={4}
           placeholder="Что отправляем..."
+          error={bodyOverLimit ? `Текст слишком длинный (≤${BODY_MAX_LEN})` : undefined}
         />
       </div>
       <div>
@@ -159,7 +198,8 @@ function Composer({ onClose }: { onClose: () => void }) {
         <Input
           value={deeplink}
           onChange={(e) => setDeeplink(e.target.value)}
-          placeholder="https://t.me/your_bot/app?... или /deals/123"
+          placeholder="https://t.me/your_bot/app?... или tg://resolve?domain=..."
+          error={deeplinkError ?? undefined}
         />
       </div>
       <div>
@@ -223,51 +263,63 @@ function Composer({ onClose }: { onClose: () => void }) {
           Будет отправлено: {previewCount}
         </div>
       )}
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          className="flex-1"
-          disabled={!body.trim() || preview.isPending}
-          onClick={async () => {
-            try {
-              const res = await preview.mutateAsync(buildBody());
-              setPreviewCount(res.total_recipients);
-            } catch (e) {
-              toast.show({
-                kind: "error",
-                title: "Ошибка",
-                body: (e as Error).message,
-              });
-            }
-          }}
-        >
-          Предпросмотр
-        </Button>
-        <Button
-          type="button"
-          disabled={!body.trim() || create.isPending}
-          className="flex-1"
-          onClick={async () => {
-            try {
-              const res = await create.mutateAsync(buildBody());
-              toast.show({
-                kind: "success",
-                title: "Отправлено",
-                body: `${res.total_recipients} получателей`,
-              });
-              onClose();
-            } catch (e) {
-              toast.show({
-                kind: "error",
-                title: "Ошибка",
-                body: (e as Error).message,
-              });
-            }
-          }}
-        >
-          <Send size={14} className="mr-1" /> Отправить
-        </Button>
+      {/*
+        Sticky-footer for the primary actions. The Composer form has
+        grown long enough that the «Отправить» button used to fall
+        below the fold on TMA, leaving the operator with no visible
+        affordance and the impression that the page was broken.
+        ``sticky bottom-0`` keeps the action row anchored to the
+        Sheet body's viewport while the form above stays scrollable.
+        The ``-mx-4`` neutralises the scroll container's ``px-4`` so
+        the border/background run edge-to-edge.
+      */}
+      <div className="sticky bottom-0 -mx-4 mt-2 border-t border-border bg-panel/95 backdrop-blur px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+12px)]">
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            className="flex-1"
+            disabled={submitBlocked || preview.isPending}
+            onClick={async () => {
+              try {
+                const res = await preview.mutateAsync(buildBody());
+                setPreviewCount(res.total_recipients);
+              } catch (e) {
+                toast.show({
+                  kind: "error",
+                  title: "Ошибка",
+                  body: (e as Error).message,
+                });
+              }
+            }}
+          >
+            Предпросмотр
+          </Button>
+          <Button
+            type="button"
+            disabled={submitBlocked || create.isPending}
+            className="flex-1"
+            onClick={async () => {
+              try {
+                const res = await create.mutateAsync(buildBody());
+                toast.show({
+                  kind: "success",
+                  title: "Отправлено",
+                  body: `${res.total_recipients} получателей`,
+                });
+                onClose();
+              } catch (e) {
+                toast.show({
+                  kind: "error",
+                  title: "Ошибка",
+                  body: (e as Error).message,
+                });
+              }
+            }}
+          >
+            <Send size={14} className="mr-1" /> Отправить
+          </Button>
+        </div>
       </div>
     </div>
   );

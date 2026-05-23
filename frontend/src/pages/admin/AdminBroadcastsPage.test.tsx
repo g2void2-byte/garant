@@ -289,4 +289,72 @@ describe("<AdminBroadcastsPage />", () => {
       ),
     );
   });
+
+  it("renders a live char-counter for the body and blocks submit past the 4096 limit", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    // Counter starts at 0/4096 with no body typed.
+    expect(await screen.findByText(/0\/4096/)).toBeInTheDocument();
+
+    // Type a short body → counter updates and submit becomes enabled.
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hi" },
+    });
+    expect(screen.getByText(/2\/4096/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Отправить/ })).not.toBeDisabled();
+
+    // Exceed the limit → counter colours red, submit goes back to
+    // disabled, no mutation fires when clicked.
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "x".repeat(4097) },
+    });
+    expect(screen.getByText(/4097\/4096/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Текст слишком длинный/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
+  });
+
+  it("inline-validates the deeplink and blocks send on invalid schemes", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hi" },
+    });
+
+    const deeplinkInput = screen.getByPlaceholderText(
+      /https:\/\/t\.me\/your_bot\/app/,
+    );
+
+    // ``http://`` is rejected (mirror backend validator).
+    fireEvent.change(deeplinkInput, {
+      target: { value: "http://example.com" },
+    });
+    expect(
+      screen.getByText(/начинаться с https:\/\/ или tg:\/\//),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Предпросмотр" })).toBeDisabled();
+
+    // ``https://`` is accepted.
+    fireEvent.change(deeplinkInput, {
+      target: { value: "https://t.me/garant_bot/app" },
+    });
+    expect(
+      screen.queryByText(/начинаться с https:\/\/ или tg:\/\//),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Отправить/ })).not.toBeDisabled();
+
+    // ``tg://`` is accepted too.
+    fireEvent.change(deeplinkInput, {
+      target: { value: "tg://resolve?domain=garant_bot" },
+    });
+    expect(screen.getByRole("button", { name: /Отправить/ })).not.toBeDisabled();
+  });
 });
