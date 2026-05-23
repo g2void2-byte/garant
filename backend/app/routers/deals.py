@@ -10,14 +10,18 @@ from ..schemas import (
     DealArbitrationRequest,
     DealCancelRequest,
     DealCreate,
+    DealCreateWithTopup,
+    DealCreateWithTopupOut,
     DealOut,
     DealResolveRequest,
+    DealTopupInvoiceOut,
 )
 from ..services_deals import (
     InsufficientFundsError,
     accept_cancel,
     accept_deal,
     create_deal,
+    create_deal_with_topup,
     decline_deal,
     finish_deal,
     request_cancel,
@@ -40,8 +44,6 @@ def _deal_out(deal: Deal, user_id: int) -> DealOut:
         buyer_photo_url=deal.buyer.photo_url if deal.buyer else None,
         seller_photo_url=deal.seller.photo_url if deal.seller else None,
         description=deal.description,
-        pay_commission=deal.pay_commission.value,
-        pay_comission=deal.pay_commission.value,
         status=deal.status.value,
         confirm_buyer=deal.confirm_buyer,
         confirm_seller=deal.confirm_seller,
@@ -61,6 +63,8 @@ def _deal_out(deal: Deal, user_id: int) -> DealOut:
         arbitration_resolution=deal.arbitration_resolution,
         arbitration_resolved_at=deal.arbitration_resolved_at,
         payment_provider=deal.payment_provider or "cryptobot",
+        topup_deposit_id=deal.topup_deposit_id,
+        commission_paid=bool(deal.commission_paid),
     )
 
 
@@ -164,7 +168,6 @@ async def create_deal_endpoint(
             body.currency_code,
             body.amount,
             body.description,
-            body.pay_commission,
             payment_provider=body.payment_provider,
         )
     except InsufficientFundsError as e:
@@ -187,6 +190,68 @@ async def create_deal_endpoint(
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     return _deal_out(deal, user.id)
+
+
+@router.post(
+    "/with-topup",
+    response_model=DealCreateWithTopupOut,
+    status_code=201,
+)
+async def create_deal_with_topup_endpoint(
+    body: DealCreateWithTopup,
+    user: PinUser,
+    session: SessionDep,
+    _rl: RLDealCreate,
+):
+    """P10 — create a deal funded by a deposit-invoice top-up.
+
+    Replaces the balance-only :func:`create_deal_endpoint` for the
+    happy-path frontend flow. The endpoint always issues a deposit
+    invoice covering ``max(0, amount - buyer.balance) + commission``;
+    the deal is born in :data:`DealStatus.pending_topup` and only
+    advances to :data:`DealStatus.pending_confirmation` once the
+    webhook lands a payment large enough to cover the principal.
+    """
+    if body.role != "buyer":  # pragma: no cover — schema rejects it first
+        raise HTTPException(400, "Создавать сделку может только покупатель")
+    stmt = select(User).where(User.username == body.counterparty)
+    result = await session.execute(stmt)
+    counterparty = result.scalar_one_or_none()
+    if not counterparty:
+        raise HTTPException(404, "Пользователь не найден")
+    buyer, seller = user, counterparty
+
+    try:
+        deal, deposit = await create_deal_with_topup(
+            session,
+            buyer,
+            seller,
+            body.currency_code,
+            body.amount,
+            body.description,
+            payment_provider=body.payment_provider,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+    from decimal import Decimal as _Dec
+
+    commission = _Dec(str(deal.commission_amount or 0))
+    total = _Dec(str(deposit.amount))
+    topup_principal = max(_Dec(0), total - commission)
+    invoice = DealTopupInvoiceOut(
+        deposit_id=deposit.id,
+        pay_url=deposit.pay_url or "",
+        total=total,
+        topup_principal=topup_principal,
+        commission=commission,
+        currency_code=deposit.currency.code if deposit.currency else "",
+        provider=(
+            deposit.provider.value if hasattr(deposit.provider, "value") else str(deposit.provider)
+        ),
+        expires_at=None,
+    )
+    return DealCreateWithTopupOut(deal=_deal_out(deal, user.id), invoice=invoice)
 
 
 @router.post("/{deal_id}/accept", response_model=DealOut)

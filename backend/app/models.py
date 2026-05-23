@@ -53,6 +53,14 @@ class DealStatus(str, enum.Enum):
     resolved_for_seller = "resolved_for_seller"  # 7
     pending_cancellation = "pending_cancellation"  # 8
     cancelled_for_inactivity = "cancelled_for_inactivity"  # 9
+    # P10 — buyer created the deal via ``POST /api/deals/with-topup``
+    # but still owes the platform either a top-up (balance < amount)
+    # or just the commission (balance ≥ amount). The deal sits here
+    # until the linked ``WalletDeposit`` (``topup_deposit_id``,
+    # ``purpose='deal_topup'``) flips to ``paid``; the webhook then
+    # locks ``Deal.amount`` into escrow and advances the deal to
+    # ``pending_confirmation``.
+    pending_topup = "pending_topup"  # 10
 
 
 TERMINAL_DEAL_STATUSES = frozenset(
@@ -64,11 +72,6 @@ TERMINAL_DEAL_STATUSES = frozenset(
         DealStatus.cancelled_for_inactivity,
     }
 )
-
-
-class PayCommission(str, enum.Enum):
-    buyer = "buyer"
-    seller = "seller"
 
 
 class NotificationType(str, enum.Enum):
@@ -473,9 +476,6 @@ class Deal(Base):
     buyer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     description: Mapped[str] = mapped_column(Text, default="")
-    pay_commission: Mapped[PayCommission] = mapped_column(
-        Enum(PayCommission), default=PayCommission.buyer
-    )
     status: Mapped[DealStatus] = mapped_column(
         Enum(DealStatus), default=DealStatus.pending_confirmation, index=True
     )
@@ -526,6 +526,25 @@ class Deal(Base):
     payment_provider: Mapped[str] = mapped_column(
         String(16), default="cryptobot", server_default="cryptobot"
     )
+
+    # P10 — commission-via-invoice flow. ``topup_deposit_id`` is the
+    # FK to the ``WalletDeposit`` row issued by
+    # ``create_deal_with_topup`` (``purpose='deal_topup'``) when the
+    # buyer's balance was insufficient OR when only the commission
+    # needs to be charged externally. The deal sits in
+    # ``DealStatus.pending_topup`` until that deposit is paid; the
+    # webhook then flips the deal to ``pending_confirmation``.
+    # ``commission_paid`` records whether the platform has received
+    # the commission share (either pre-funded from
+    # ``UserBalance.amount`` during creation when the buyer had
+    # enough balance for ``amount`` but the deal still went through
+    # the with-topup endpoint, or after the deal_topup webhook
+    # crediting the deposit). Used by ``finish_deal`` /
+    # ``_refund_principal`` to avoid double-charging.
+    topup_deposit_id: Mapped[int | None] = mapped_column(
+        ForeignKey("wallet_deposits.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    commission_paid: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     buyer: Mapped[User] = relationship(foreign_keys=[buyer_id], lazy="selectin")
     seller: Mapped[User] = relationship(foreign_keys=[seller_id], lazy="selectin")
@@ -693,6 +712,16 @@ class AppSettings(Base):
     auto_withdraw_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # P10 — auto-expire deals stuck in ``DealStatus.pending_topup``
+    # whose linked ``WalletDeposit`` was never paid. The sweep loop
+    # (``services_deals.sweep_pending_topup``) cancels rows older than
+    # this and marks the deposit ``expired`` so the buyer's
+    # ``UserBalance`` (if anything was reserved) is released and the
+    # admin queue doesn't accumulate forever. Default 24 h matches
+    # the typical CryptoBot/Crystalpay invoice TTL.
+    pending_topup_expiry_hours: Mapped[int] = mapped_column(
+        Integer, default=24, server_default="24"
+    )
 
 
 class Forum(Base):
@@ -850,7 +879,7 @@ class WalletDeposit(Base):
         # ``WalletDepositCreateReq.purpose`` ``Literal`` in
         # ``backend/app/schemas.py``.
         CheckConstraint(
-            "purpose IN ('wallet', 'trust')",
+            "purpose IN ('wallet', 'trust', 'deal_topup')",
             name="ck_wallet_deposits_purpose_known",
         ),
         # Audit H-6 — composite UNIQUE on ``(provider, provider_invoice_id)``
@@ -891,8 +920,23 @@ class WalletDeposit(Base):
     # a third purpose; the application layer enforces the closed set
     # via the ``WalletDepositCreateReq.purpose`` ``Literal``.
     purpose: Mapped[str] = mapped_column(String(16), default="wallet", server_default="wallet")
+    # P10 — reverse pointer to the :class:`Deal` row this deposit was
+    # issued for when ``purpose == 'deal_topup'``. The forward edge
+    # is ``Deal.topup_deposit_id``; both are nullable because legacy
+    # wallet/trust deposits have no associated deal. ``ondelete='SET
+    # NULL'`` so deleting a deal (admin nuclear option) doesn't
+    # cascade-drop the deposit row — the historical paid invoice
+    # belongs to the user's deposit ledger.
+    linked_deal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("deals.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # P10 — capture the actual amount the webhook reports the user
+    # paid. May differ from ``amount`` (which is what we asked for)
+    # in the underpayment / overpayment cases. ``credit_deposit`` /
+    # ``_complete_topup_payment`` write this once on the paid flip.
+    paid_amount: Mapped[float | None] = mapped_column(Numeric(28, 8), nullable=True)
 
     user: Mapped[User] = relationship(foreign_keys=[user_id], lazy="selectin")
     currency: Mapped[Currency] = relationship(foreign_keys=[currency_id], lazy="selectin")
@@ -947,36 +991,6 @@ class AccountTransferCode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     source_user: Mapped[User] = relationship(foreign_keys=[source_user_id], lazy="selectin")
-
-
-class TreasuryWithdrawal(Base):
-    """Admin-initiated withdrawal of accumulated commission.
-
-    Tracks payouts of the platform's commission balance to an external
-    address. Requires 2FA + double-confirm on creation; status moves
-    ``pending`` → ``sent`` (or ``rejected``) once the CryptoBot transfer
-    completes. Currency is stored by ``currency_id`` so the
-    ``treasury_balance`` view can aggregate by asset.
-    """
-
-    __tablename__ = "treasury_withdrawals"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
-    # H-2 — Numeric(28,8) so treasury payouts match the rest of the
-    # money ledger and don't truncate at the 10¹⁰ scale.
-    amount: Mapped[float] = mapped_column(Numeric(28, 8))
-    address: Mapped[str] = mapped_column(String(256))
-    status: Mapped[str] = mapped_column(
-        String(16), default="sent", server_default="sent", index=True
-    )
-    note: Mapped[str] = mapped_column(Text, default="")
-    cryptobot_transfer_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
-
-    actor: Mapped[User] = relationship(foreign_keys=[actor_id], lazy="selectin")
-    currency: Mapped[Currency] = relationship(foreign_keys=[currency_id], lazy="selectin")
 
 
 class Broadcast(Base):

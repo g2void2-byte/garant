@@ -40,9 +40,10 @@ from .models import (
     DealStatus,
     Notification,
     NotificationType,
-    PayCommission,
     User,
     UserBalance,
+    WalletDeposit,
+    WalletDepositStatus,
 )
 from .money import quantize_money
 from .services_wallet import get_currency_by_code, lock_user_balance
@@ -190,25 +191,28 @@ async def _refund(
     return bal
 
 
-async def _refund_principal_keep_commission(
+async def _refund_principal(
     session: AsyncSession,
     user_id: int,
     currency_id: int,
-    locked: Decimal,
     principal: Decimal,
 ) -> UserBalance:
-    """Unlock the full ``locked`` amount but credit only ``principal`` back.
+    """Unlock ``principal`` and credit the same amount back to ``amount``.
 
-    The difference (``locked - principal``) is the commission share kept
-    by the platform — per spec, commission is retained on every deal
-    even if it doesn't complete successfully. Used for buyer-side
-    refunds (decline / accept_cancel / sweep / arbitration-for-buyer
-    / admin force-refund).
+    P10 — in the commission-via-invoice flow the platform's commission
+    is paid out-of-band through the deposit invoice and never enters
+    ``UserBalance.locked``; the only thing locked into escrow is the
+    deal principal (``Deal.amount``). All refund paths therefore
+    simply unlock + credit ``principal`` 1:1 with no commission
+    retention math. The pre-P10 helper name
+    ``_refund_principal_keep_commission`` was misleading once the
+    commission stopped flowing through ``UserBalance`` — the new name
+    matches the spec's "refund principal (only what was locked)".
     """
     # Same ``FOR UPDATE`` lock as ``_refund`` above — see that helper's
     # comment for the lost-update rationale.
     bal = await lock_user_balance(session, user_id, currency_id)
-    bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - locked)
+    bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - principal)
     bal.amount = Decimal(str(bal.amount)) + principal
     return bal
 
@@ -254,6 +258,21 @@ async def _release_to(
 # ── Lifecycle ──────────────────────────────────────────
 
 
+def _resolve_commission_rate(settings: AppSettings, buyer: User, seller: User) -> Decimal:
+    """Pick the commission percentage for this buyer/seller pair.
+
+    Per spec, VIP users get a reduced commission rate (set globally in
+    ``app_settings.vip_commission_percent``). The override applies
+    whenever either side of the deal is VIP and the override is
+    non-negative; ``-1`` is the sentinel "no override".
+    """
+    rate = Decimal(str(settings.deal_commission_percent))
+    vip_rate = Decimal(str(settings.vip_commission_percent))
+    if vip_rate >= 0 and (buyer.is_vip or seller.is_vip):
+        rate = vip_rate
+    return rate
+
+
 async def create_deal(
     session: AsyncSession,
     buyer: User,
@@ -261,21 +280,25 @@ async def create_deal(
     currency_code: str,
     amount: float | Decimal,
     description: str,
-    pay_commission: PayCommission,
     payment_provider: str = "cryptobot",
 ) -> Deal:
-    """Create a deal and lock buyer funds.
+    """Create a deal and lock buyer funds from their existing balance.
 
-    ``amount`` is the headline price. If the buyer pays commission, the
-    locked sum is ``amount + commission``; if the seller pays commission,
-    the locked sum is ``amount`` and commission is taken from the
-    seller's payout at finish time.
+    P10 — the legacy ``pay_commission`` parameter and the
+    ``locked = amount + commission`` arithmetic were removed: the
+    platform commission is now charged via a deposit invoice (see
+    :func:`create_deal_with_topup`). The plain ``create_deal`` path
+    funds the deal entirely from ``UserBalance.amount`` and only
+    locks ``amount`` — the buyer is expected to have already paid
+    commission either via an upfront top-up or via the with-topup
+    flow. This entry point is kept for legacy callers / tests that
+    have already covered the commission externally; production HTTP
+    traffic now routes through :func:`create_deal_with_topup`.
 
     ``payment_provider`` is the upstream invoice provider the buyer
     picked at deal-create time (``"cryptobot"`` or ``"crystalpay"``)
     — persisted on the deal row for future invoice-driven escrow
-    flows. Today the deal is funded from the buyer's pre-deposited
-    ``UserBalance`` so the value is purely informational.
+    flows.
     """
     if buyer.id == seller.id:
         raise ValueError("Нельзя создать сделку с самим собой")
@@ -304,17 +327,12 @@ async def create_deal(
         # site below.
         raise ValueError("Сумма должна быть больше нуля")
 
-    # Per spec, VIP users get a reduced commission rate (set globally
-    # in ``app_settings.vip_commission_percent``). The override applies
-    # whenever either side of the deal is VIP — keeps the discount on
-    # the user who actually holds the VIP flag regardless of who pays.
-    rate = Decimal(str(settings.deal_commission_percent))
-    vip_rate = Decimal(str(settings.vip_commission_percent))
-    if vip_rate >= 0 and (buyer.is_vip or seller.is_vip):
-        rate = vip_rate
+    rate = _resolve_commission_rate(settings, buyer, seller)
     commission = _commission(amt, rate, currency.decimals)
-    locked = amt + commission if pay_commission == PayCommission.buyer else amt
-    await _debit(session, buyer.id, currency.id, locked)
+    # P10 — lock only the principal. Commission is charged via the
+    # deposit invoice path (see ``create_deal_with_topup``) and never
+    # touches ``UserBalance.locked``.
+    await _debit(session, buyer.id, currency.id, amt)
 
     deal = Deal(
         buyer_id=buyer.id,
@@ -323,9 +341,12 @@ async def create_deal(
         commission_amount=commission,
         currency_id=currency.id,
         description=description,
-        pay_commission=pay_commission,
         status=DealStatus.pending_confirmation,
         payment_provider=payment_provider,
+        # Commission was assumed pre-paid before this entry point;
+        # see the docstring above. The ``create_deal_with_topup``
+        # path is the one that flips this on webhook arrival.
+        commission_paid=True,
     )
     session.add(deal)
     # Comment 31 (H, anti-griefing) — ``deals_total`` is bumped on
@@ -366,6 +387,401 @@ async def create_deal(
     # relationships rather than re-SELECT every column.
     await session.refresh(deal, attribute_names=["buyer", "seller", "currency"])
     return deal
+
+
+# ── Commission-via-invoice flow (P10) ──────────────────
+
+
+async def create_deal_with_topup(
+    session: AsyncSession,
+    buyer: User,
+    seller: User,
+    currency_code: str,
+    amount: float | Decimal,
+    description: str,
+    payment_provider: str = "cryptobot",
+) -> tuple[Deal, WalletDeposit]:
+    """Create a deal that's funded by an outstanding deposit invoice.
+
+    P10 — replaces the legacy ``create_deal`` HTTP entry point. The
+    buyer no longer needs to pre-deposit funds; instead the platform
+    issues a single deposit invoice covering:
+
+    * the difference between ``amount`` and the buyer's current
+      ``UserBalance.amount`` (``topup_principal = max(0, amount - balance)``)
+    * plus the platform commission (``commission = amount * rate / 100``)
+
+    so ``invoice_total = topup_principal + commission``. When the
+    buyer's balance already covers ``amount``, ``topup_principal = 0``
+    and the invoice charges only the commission.
+
+    The deal is created in :data:`DealStatus.pending_topup` and the
+    invoice is linked through ``Deal.topup_deposit_id`` /
+    ``WalletDeposit.linked_deal_id``. The webhook handler
+    (:func:`complete_deal_topup_payment`) credits the deposit, locks
+    the principal, and advances the deal to
+    :data:`DealStatus.pending_confirmation` once enough has been
+    paid. Underpayment / overpayment / commission-only edge cases
+    are documented on that helper.
+    """
+    # ``create_deposit_invoice`` is imported lazily because
+    # ``services_wallet`` already pulls ``services_deals`` indirectly
+    # through ``credit_deposit`` → ``complete_deal_topup_payment``.
+    # Same cycle-breaking pattern as the ``credit_deposit`` branch in
+    # ``services_wallet``.
+    from .services_wallet import create_deposit_invoice, lock_user_balance
+
+    if buyer.id == seller.id:
+        raise ValueError("Нельзя создать сделку с самим собой")
+
+    currency = await get_currency_by_code(session, currency_code)
+    settings = await _settings(session)
+
+    raw = Decimal(str(amount))
+    if not raw.is_finite() or raw <= 0:
+        raise ValueError("Сумма должна быть больше нуля")
+    amt = quantize_money(raw, currency.decimals)
+    if amt <= 0:
+        raise ValueError("Сумма должна быть больше нуля")
+
+    rate = _resolve_commission_rate(settings, buyer, seller)
+    commission = _commission(amt, rate, currency.decimals)
+    # ``commission`` may quantise to zero on a very small ``amt``
+    # against a non-zero rate (e.g. 0.01 USD × 0.5 %). Don't issue
+    # a zero-total invoice in that case — fall back to the legacy
+    # balance-funded path. The platform retains the right to drop
+    # sub-decimal commission below the currency precision.
+    bal = await lock_user_balance(session, buyer.id, currency.id)
+    balance_amount = Decimal(str(bal.amount))
+    topup_principal = max(Decimal(0), amt - balance_amount)
+    topup_principal = quantize_money(topup_principal, currency.decimals)
+    invoice_total = quantize_money(topup_principal + commission, currency.decimals)
+
+    deal = Deal(
+        buyer_id=buyer.id,
+        seller_id=seller.id,
+        amount=amt,
+        commission_amount=commission,
+        currency_id=currency.id,
+        description=description,
+        status=DealStatus.pending_topup,
+        payment_provider=payment_provider,
+        commission_paid=False,
+    )
+    session.add(deal)
+    await session.flush()
+
+    if invoice_total <= 0:
+        # Nothing to charge externally (commission rounded to zero
+        # AND balance ≥ amount). Promote the deal straight to
+        # pending_confirmation, locking the principal now. No
+        # deposit row is created; the caller still gets a (deal,
+        # synthetic deposit-like sentinel) tuple via a NULL deposit
+        # — but the public contract returns ``WalletDeposit`` so we
+        # take the small cost of a placeholder by lifting the
+        # debit + status flip into this branch and returning a
+        # never-paid row stub via a 1-token deposit. Cleaner: skip
+        # the with-topup path in the router when invoice_total<=0
+        # and use ``create_deal`` instead. We enforce that here.
+        raise ValueError("Сумма комиссии меньше точности валюты — используйте обычную сделку")
+
+    # Issue the deposit invoice on the buyer's chosen provider. Note
+    # the float() coercion: ``create_deposit_invoice`` accepts
+    # ``float`` because the upstream provider clients (CryptoBot,
+    # Crystalpay) consume floats; the row itself stores the Decimal
+    # back via ``Numeric(28,8)`` so no precision is lost on the way.
+    deposit = await create_deposit_invoice(
+        session,
+        buyer,
+        currency.code,
+        float(invoice_total),
+        purpose="deal_topup",
+        provider=payment_provider,
+    )
+    deposit.linked_deal_id = deal.id
+    deal.topup_deposit_id = deposit.id
+
+    notif, ws_payload = await notifier.insert(
+        session,
+        seller.id,
+        NotificationType.deals,
+        "Новая сделка (ожидает оплату)",
+        (
+            f"@{buyer.username or buyer.tg_user_id} создал сделку #{deal.id} "
+            f"на {amt} {currency.code}. Ждём оплату счёта покупателем."
+        ),
+        {"deal_id": deal.id},
+    )
+    await session.commit()
+    await _safe_dispatch(session, [(notif, ws_payload)])
+    await notifier.publish_deal_update(
+        deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+    )
+    await session.refresh(deal, attribute_names=["buyer", "seller", "currency"])
+    await session.refresh(deposit, attribute_names=["currency"])
+    return deal, deposit
+
+
+async def complete_deal_topup_payment(
+    session: AsyncSession,
+    deposit: WalletDeposit,
+    *,
+    paid_amount: Decimal | float | None = None,
+) -> WalletDeposit:
+    """Webhook callback for a paid ``purpose='deal_topup'`` deposit.
+
+    Idempotent — short-circuits when the deposit is already ``paid``.
+    Algorithm (spec):
+
+    * ``paid = paid_amount or deposit.amount``
+    * ``principal_credit = paid - deal.commission_amount``
+    * If ``principal_credit < 0``: credit the full ``paid`` to the
+      buyer's ``UserBalance.amount`` (no commission charged); the
+      deal stays ``pending_topup``; notify buyer to top up the rest.
+    * Else: credit ``principal_credit`` to the buyer's balance,
+      re-check ``balance >= deal.amount``. If yes: lock ``deal.amount``
+      into ``UserBalance.locked``, advance to ``pending_confirmation``,
+      flip ``commission_paid = True``. If no: stay ``pending_topup``,
+      notify buyer to top up more.
+
+    Lock order: ``WalletDeposit (already locked by caller) → Deal →
+    UserBalance``. The deposit row is the canonical entry point in
+    the deposit-webhook flow so we don't take a redundant lock on
+    it here; the deal + balance locks run in stable id order.
+    """
+    from .services_wallet import lock_user_balance
+
+    if deposit.status == WalletDepositStatus.paid:
+        return deposit
+
+    if deposit.linked_deal_id is None:
+        # Defensive — a deal_topup deposit MUST be linked to a deal.
+        # Without that we can't settle anything; flag the row paid
+        # (so the upstream provider stops retrying the webhook) and
+        # surface a loud log entry. The user's payment is effectively
+        # an unattached deposit; SRE can reconcile manually.
+        deposit.status = WalletDepositStatus.paid
+        deposit.paid_at = utcnow()
+        if paid_amount is not None:
+            deposit.paid_amount = Decimal(str(paid_amount))
+        await session.commit()
+        logger.error(
+            "deal_topup deposit %s paid with no linked deal",
+            deposit.id,
+            extra={"event": "deal_topup.unlinked", "deposit_id": deposit.id},
+        )
+        return deposit
+
+    deal = (
+        await session.execute(
+            select(Deal).where(Deal.id == deposit.linked_deal_id).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if deal is None:
+        deposit.status = WalletDepositStatus.paid
+        deposit.paid_at = utcnow()
+        if paid_amount is not None:
+            deposit.paid_amount = Decimal(str(paid_amount))
+        await session.commit()
+        logger.error(
+            "deal_topup deposit %s linked deal %s not found",
+            deposit.id,
+            deposit.linked_deal_id,
+            extra={
+                "event": "deal_topup.deal_missing",
+                "deposit_id": deposit.id,
+                "deal_id": deposit.linked_deal_id,
+            },
+        )
+        return deposit
+
+    currency = await session.get(Currency, deal.currency_id)
+    if currency is None:
+        raise ValueError("currency vanished")
+
+    paid = Decimal(str(paid_amount)) if paid_amount is not None else Decimal(str(deposit.amount))
+    paid = quantize_money(paid, currency.decimals)
+    amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
+    commission = quantize_money(Decimal(str(deal.commission_amount or 0)), currency.decimals)
+
+    bal = await lock_user_balance(session, deal.buyer_id, currency.id)
+    balance_amount = Decimal(str(bal.amount))
+
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
+
+    if paid < commission:
+        # Spec: principal_credit < 0 → all paid goes to balance, deal
+        # stays pending_topup. Commission stays uncollected on the
+        # platform side (the wallet provider still has the money but
+        # we route it back into the buyer's spendable balance per
+        # spec). Buyer is asked to top up the rest.
+        bal.amount = balance_amount + paid
+        deposit.status = WalletDepositStatus.paid
+        deposit.paid_at = utcnow()
+        deposit.paid_amount = paid
+        deficit = quantize_money(commission - paid + amt, currency.decimals)
+        # The deal still owes (amt + commission - paid); ``deficit``
+        # is how much *more* must arrive before the principal can be
+        # locked. Buyer is expected to issue a manual top-up to the
+        # wallet OR the admin can force-cancel the deal.
+        notif, ws_payload = await notifier.insert(
+            session,
+            deal.buyer_id,
+            NotificationType.deals,
+            "Недостаточная оплата по сделке",
+            (
+                f"По сделке #{deal.id} получено {paid} {currency.code}. "
+                f"Требуется ещё около {deficit} {currency.code} для активации."
+            ),
+            {"deal_id": deal.id, "deposit_id": deposit.id, "kind": "underpayment"},
+        )
+        pending.append((notif, ws_payload))
+        await session.commit()
+        await _safe_dispatch(session, pending)
+        await notifier.publish_deal_update(
+            deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+        )
+        return deposit
+
+    # ``paid >= commission``. The principal_credit is what's left
+    # after deducting the platform commission.
+    principal_credit = quantize_money(paid - commission, currency.decimals)
+    bal.amount = balance_amount + principal_credit
+
+    # Re-read post-credit balance so the lock check below uses the
+    # post-credit value.
+    new_balance = Decimal(str(bal.amount))
+    if new_balance < amt:
+        # Commission was paid but the balance is still short of the
+        # principal. Stay pending_topup; the buyer needs to top up
+        # the remaining gap. ``commission_paid`` stays False per
+        # spec — the field flips only when the deal actually
+        # advances.
+        deposit.status = WalletDepositStatus.paid
+        deposit.paid_at = utcnow()
+        deposit.paid_amount = paid
+        deficit = quantize_money(amt - new_balance, currency.decimals)
+        notif, ws_payload = await notifier.insert(
+            session,
+            deal.buyer_id,
+            NotificationType.deals,
+            "Недостаточная оплата по сделке",
+            (
+                f"По сделке #{deal.id} получено {paid} {currency.code}. "
+                f"Не хватает ещё {deficit} {currency.code} на баланс."
+            ),
+            {"deal_id": deal.id, "deposit_id": deposit.id, "kind": "underpayment"},
+        )
+        pending.append((notif, ws_payload))
+        await session.commit()
+        await _safe_dispatch(session, pending)
+        await notifier.publish_deal_update(
+            deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+        )
+        return deposit
+
+    # Happy path — lock the principal and advance the deal.
+    bal.amount = new_balance - amt
+    bal.locked = Decimal(str(bal.locked)) + amt
+    deposit.status = WalletDepositStatus.paid
+    deposit.paid_at = utcnow()
+    deposit.paid_amount = paid
+    deal.status = DealStatus.pending_confirmation
+    deal.commission_paid = True
+
+    notif, ws_payload = await notifier.insert(
+        session,
+        deal.seller_id,
+        NotificationType.deals,
+        "Сделка активирована",
+        (f"Покупатель оплатил сделку #{deal.id}. Подтвердите участие, чтобы перейти к работе."),
+        {"deal_id": deal.id},
+    )
+    pending.append((notif, ws_payload))
+    notif_b, ws_b = await notifier.insert(
+        session,
+        deal.buyer_id,
+        NotificationType.deals,
+        "Оплата получена",
+        f"Сделка #{deal.id} ожидает подтверждения продавцом.",
+        {"deal_id": deal.id},
+    )
+    pending.append((notif_b, ws_b))
+    await session.commit()
+    await _safe_dispatch(session, pending)
+    await notifier.publish_deal_update(
+        deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+    )
+    return deposit
+
+
+async def sweep_pending_topup(session: AsyncSession) -> int:
+    """Auto-cancel deals stuck in ``pending_topup`` past expiry.
+
+    Mirrors :func:`sweep_inactivity` but uses the dedicated
+    ``app_settings.pending_topup_expiry_hours`` window (default 24 h)
+    so the operator can tune the deposit-invoice grace period
+    independently from the seller-confirmation window. Linked
+    deposits are flipped to ``expired`` so they no longer surface
+    in the user's wallet ``pending`` list.
+    """
+    settings = await _settings(session)
+    expiry_hours = int(settings.pending_topup_expiry_hours or 24)
+    if expiry_hours <= 0:
+        return 0
+    cutoff = utcnow() - timedelta(hours=expiry_hours)
+
+    rows = (
+        (
+            await session.execute(
+                select(Deal)
+                .where(
+                    Deal.status == DealStatus.pending_topup,
+                    Deal.created_at <= cutoff,
+                )
+                .with_for_update(skip_locked=True)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    pending_dispatch: list[tuple[Notification, dict[str, Any] | None]] = []
+    for deal in rows:
+        # Expire the linked deposit (if still pending) so the wallet
+        # provider's stale invoice no longer surfaces in the user's
+        # list. We don't refund anything from ``UserBalance`` — the
+        # deal never locked principal in the pending_topup state.
+        if deal.topup_deposit_id is not None:
+            deposit = (
+                await session.execute(
+                    select(WalletDeposit)
+                    .where(WalletDeposit.id == deal.topup_deposit_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if deposit is not None and deposit.status == WalletDepositStatus.pending:
+                deposit.status = WalletDepositStatus.expired
+        deal.status = DealStatus.cancelled_for_inactivity
+        deal.completed_at = utcnow()
+        for recipient_id in (deal.buyer_id, deal.seller_id):
+            notif, ws_payload = await notifier.insert(
+                session,
+                recipient_id,
+                NotificationType.deals,
+                "Сделка отменена за неактивность",
+                f"Сделка #{deal.id} закрыта — оплата не поступила.",
+                {"deal_id": deal.id},
+            )
+            pending_dispatch.append((notif, ws_payload))
+
+    await session.commit()
+    await _safe_dispatch(session, pending_dispatch, event="sweep_pending_topup.dispatch.failed")
+    for deal in rows:
+        await notifier.publish_deal_update(
+            deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+        )
+    return len(rows)
 
 
 async def accept_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
@@ -421,7 +837,6 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     if deal.currency_id is None or deal.amount is None:
         raise ValueError("У сделки не задана валюта")
 
-    settings = await _settings(session)
     currency = await session.get(Currency, deal.currency_id)
     # V11-L-18 — ``assert`` is stripped under ``python -O`` so it is
     # not a safety net in production. The ``deal.currency_id is None``
@@ -431,22 +846,11 @@ async def decline_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     if currency is None:
         raise ValueError("currency vanished")
     amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
-    commission = quantize_money(
-        Decimal(str(deal.commission_amount or 0)), currency.decimals
-    ) or _commission(amt, settings.deal_commission_percent, currency.decimals)
-    if deal.pay_commission == PayCommission.buyer:
-        await _refund_principal_keep_commission(
-            session, deal.buyer_id, currency.id, amt + commission, amt
-        )
-        commission_clause = "комиссия удержана"
-    else:
-        await _refund(session, deal.buyer_id, currency.id, amt)
-        # Audit M1 — seller-paid commission was never locked from the buyer
-        # in ``create_deal`` (it's deducted from the seller's payout on
-        # finish), so cancelling here does not retain anything on the
-        # platform side. Saying "commission retained" in the DM is
-        # factually wrong from the user's perspective.
-        commission_clause = "комиссия не взималась"
+    # P10 — commission is on the platform (paid via deposit invoice)
+    # and never enters ``UserBalance.locked``. Refund only the
+    # principal; commission is NOT returned to the buyer per spec.
+    await _refund_principal(session, deal.buyer_id, currency.id, amt)
+    commission_clause = "комиссия удержана" if deal.commission_paid else "комиссия не взималась"
 
     deal.status = DealStatus.cancelled
     deal.completed_at = utcnow()
@@ -481,16 +885,13 @@ async def finish_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     if currency is None:
         raise ValueError("currency vanished")
     amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
-    commission = quantize_money(Decimal(str(deal.commission_amount or 0)), currency.decimals)
 
-    if deal.pay_commission == PayCommission.buyer:
-        locked = amt + commission
-        payout = amt
-    else:
-        locked = amt
-        payout = amt - commission
-
-    await _release_to(session, deal.buyer_id, deal.seller_id, currency.id, locked, payout)
+    # P10 — seller receives the full ``amount`` because the platform
+    # commission was already collected via the deposit invoice path.
+    # Locked pot equals the principal; commission never entered
+    # ``UserBalance.locked``.
+    await _release_to(session, deal.buyer_id, deal.seller_id, currency.id, amt, amt)
+    payout = amt
 
     deal.status = DealStatus.completed
     deal.completed_at = utcnow()
@@ -586,26 +987,15 @@ async def accept_cancel(session: AsyncSession, deal: Deal, user: User) -> Deal:
     if deal.currency_id is None or deal.amount is None:
         raise ValueError("У сделки не задана валюта")
 
-    settings = await _settings(session)
     currency = await session.get(Currency, deal.currency_id)
     # V11-L-18 — explicit raise instead of ``assert``.
     if currency is None:
         raise ValueError("currency vanished")
     amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
-    commission = quantize_money(
-        Decimal(str(deal.commission_amount or 0)), currency.decimals
-    ) or _commission(amt, settings.deal_commission_percent, currency.decimals)
-    if deal.pay_commission == PayCommission.buyer:
-        await _refund_principal_keep_commission(
-            session, deal.buyer_id, currency.id, amt + commission, amt
-        )
-        commission_clause = "комиссия удержана"
-    else:
-        await _refund(session, deal.buyer_id, currency.id, amt)
-        # Audit M1 — see ``decline_deal`` for the rationale; the
-        # seller-paid commission was never locked from the buyer at
-        # creation, so no retention happens on cancellation.
-        commission_clause = "комиссия не взималась"
+    # P10 — refund only the principal; commission already on platform
+    # (paid via deposit invoice) and not returned on cancel.
+    await _refund_principal(session, deal.buyer_id, currency.id, amt)
+    commission_clause = "комиссия удержана" if deal.commission_paid else "комиссия не взималась"
 
     deal.status = DealStatus.cancelled
     deal.completed_at = utcnow()
@@ -722,27 +1112,17 @@ async def resolve_arbitration(
     if currency is None:
         raise ValueError("currency vanished")
     amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
-    commission = quantize_money(Decimal(str(deal.commission_amount or 0)), currency.decimals)
 
     if winner == "buyer":
-        # Refund the buyer's principal but retain commission on the
-        # platform side — commission is charged on every deal regardless
-        # of outcome (per spec).
-        if deal.pay_commission == PayCommission.buyer:
-            await _refund_principal_keep_commission(
-                session, deal.buyer_id, currency.id, amt + commission, amt
-            )
-        else:
-            await _refund(session, deal.buyer_id, currency.id, amt)
+        # P10 — refund only the principal; commission stays on the
+        # platform side. Same refund math as ``decline_deal`` /
+        # ``accept_cancel``.
+        await _refund_principal(session, deal.buyer_id, currency.id, amt)
         deal.status = DealStatus.resolved_for_buyer
     else:
-        if deal.pay_commission == PayCommission.buyer:
-            locked = amt + commission
-            payout = amt
-        else:
-            locked = amt
-            payout = amt - commission
-        await _release_to(session, deal.buyer_id, deal.seller_id, currency.id, locked, payout)
+        # P10 — seller receives full ``amount``; commission already
+        # charged via the deposit invoice.
+        await _release_to(session, deal.buyer_id, deal.seller_id, currency.id, amt, amt)
         deal.status = DealStatus.resolved_for_seller
 
     deal.arbitration_resolved_by = admin.id
@@ -854,13 +1234,10 @@ async def sweep_inactivity(session: AsyncSession) -> int:
         if currency is None:
             continue
         amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
-        commission = quantize_money(Decimal(str(deal.commission_amount or 0)), currency.decimals)
-        if deal.pay_commission == PayCommission.buyer:
-            await _refund_principal_keep_commission(
-                session, deal.buyer_id, currency.id, amt + commission, amt
-            )
-        else:
-            await _refund(session, deal.buyer_id, currency.id, amt)
+        # P10 — refund only the principal; commission already charged
+        # via the deposit invoice. Matches ``_refund_principal``
+        # contract in the rest of the lifecycle.
+        await _refund_principal(session, deal.buyer_id, currency.id, amt)
         target_status = (
             DealStatus.cancelled_for_inactivity
             if deal.status == DealStatus.pending_confirmation

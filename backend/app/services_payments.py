@@ -110,6 +110,22 @@ async def _find_wallet_deposit(
 _AMOUNT_MISMATCH_TOLERANCE = Decimal("0.00000001")
 
 
+def _parse_paid_amount(reported: Any) -> Decimal | None:
+    """Best-effort parse of the webhook-reported ``paid`` amount.
+
+    Crypto Pay sends strings, Crystalpay sends numbers. Returns
+    ``None`` if the value is missing or unparseable so the
+    downstream ``complete_deal_topup_payment`` falls back to the
+    invoice's nominal ``amount``.
+    """
+    if reported is None:
+        return None
+    try:
+        return Decimal(str(reported))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
 def _amounts_match(reported: Any, expected: Any) -> bool:
     """Compare a webhook-reported amount against the deposit row.
 
@@ -186,7 +202,15 @@ async def handle_invoice_paid(session: AsyncSession, payload: dict[str, Any]) ->
         # delivery (or a manual reconciliation) can still credit it
         # once the discrepancy is understood.
         reported = payload.get("amount")
-        if not _amounts_match(reported, wallet.amount):
+        # P10 — ``deal_topup`` invoices accept ANY paid amount
+        # (under-/overpayment is part of the spec) and the
+        # settlement logic in ``complete_deal_topup_payment``
+        # branches on ``paid - commission``. Skip the strict
+        # equality check for those rows. ``wallet`` / ``trust``
+        # purposes keep the existing defensive amount-mismatch
+        # guard so legacy invoices can't be credited on a partial
+        # provider-side payment.
+        if wallet.purpose != "deal_topup" and not _amounts_match(reported, wallet.amount):
             logger.warning(
                 "CryptoBot webhook amount mismatch invoice_id=%s reported=%s expected=%s",
                 provider_id,
@@ -201,8 +225,9 @@ async def handle_invoice_paid(session: AsyncSession, payload: dict[str, Any]) ->
                 },
             )
             return {"ok": False, "reason": "amount mismatch"}
-        await credit_deposit(session, wallet)
-        return {"ok": True, "kind": "wallet"}
+        paid_decimal = _parse_paid_amount(reported)
+        await credit_deposit(session, wallet, paid_amount=paid_decimal)
+        return {"ok": True, "kind": wallet.purpose or "wallet"}
 
     logger.warning(
         "CryptoBot webhook for unknown invoice_id=%s",
@@ -384,7 +409,8 @@ async def handle_crystalpay_invoice(
         # invoice currency is fiat) and sometimes as a number;
         # ``_amounts_match`` accepts both.
         reported = payload.get("amount")
-        if not _amounts_match(reported, wallet.amount):
+        # P10 — see the matching note in ``handle_invoice_paid``.
+        if wallet.purpose != "deal_topup" and not _amounts_match(reported, wallet.amount):
             logger.warning(
                 "Crystalpay webhook amount mismatch id=%s reported=%s expected=%s",
                 provider_id,
@@ -399,8 +425,9 @@ async def handle_crystalpay_invoice(
                 },
             )
             return {"ok": False, "reason": "amount mismatch"}
-        await credit_deposit(session, wallet)
-        return {"ok": True, "kind": "wallet"}
+        paid_decimal = _parse_paid_amount(reported)
+        await credit_deposit(session, wallet, paid_amount=paid_decimal)
+        return {"ok": True, "kind": wallet.purpose or "wallet"}
 
     if state in (INVOICE_STATE_UNAVAILABLE, INVOICE_STATE_FAILED):
         if wallet.status in (
