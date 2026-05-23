@@ -1,18 +1,19 @@
-"""Audit (continuation) M-1 — keep the backend + frontend forum
-whitelist in lockstep.
+"""Audit v3 A-1 — verify the ``AddForumPage`` offline-fallback list
+stays a subset of the backend whitelist.
 
-Pre-fix the backend ``ForumOut._name_ok`` validator only enforced
-non-empty / length caps, and the list of approved forum names lived
-only in ``frontend/src/pages/profile/AddForumPage.tsx`` as
-``FORUM_OPTIONS``. The validator now rejects names outside
-``schemas.FORUM_WHITELIST`` — but as long as the two constants are
-maintained by hand on opposite sides of the wire there is exactly
-one regression test worth writing: "if they drift, fail loudly".
+Pre-fix this test guarded a hand-maintained ``FORUM_OPTIONS`` literal
+that mirrored :data:`backend.app.schemas.FORUM_WHITELIST`. The
+architectural fix landed: ``GET /api/forums`` is now the single
+source of truth, the frontend fetches it at runtime, and the
+hard-coded ``FORUM_OPTIONS_FALLBACK`` in ``AddForumPage.tsx`` is
+only used when the network request fails (offline cold start) so
+the dropdown still renders something usable.
 
-The architectural fix is a ``GET /api/forums`` endpoint that both
-sides consume; once that lands this test (and ``FORUM_OPTIONS``)
-should be deleted. Until then, this test is the only mechanism that
-detects an out-of-band edit of either side.
+The fallback is intentionally allowed to be a *subset* of the
+backend whitelist — dropping a name from it just hides one offline
+choice without breaking the write boundary — but it must never
+contain a name the backend would reject, because picking that name
+would surface a confusing 422 after the user clicked Add.
 """
 
 from __future__ import annotations
@@ -33,11 +34,11 @@ _FRONTEND_FILE = (
 
 
 def _parse_frontend_options() -> set[str]:
-    """Pluck ``FORUM_OPTIONS`` from ``AddForumPage.tsx``.
+    """Pluck ``FORUM_OPTIONS_FALLBACK`` from ``AddForumPage.tsx``.
 
     The source uses the shape::
 
-        const FORUM_OPTIONS = [
+        const FORUM_OPTIONS_FALLBACK = [
           "Darkmoney",
           "Probiv",
           ...
@@ -46,12 +47,12 @@ def _parse_frontend_options() -> set[str]:
     We extract the string literals from inside the brackets with a
     tolerant regex that survives trailing commas, comments, or
     additional fields landing in the array later. The test asserts
-    against a *set* equality, so the order doesn't matter.
+    against a subset relationship, so the order doesn't matter.
     """
     text = _FRONTEND_FILE.read_text(encoding="utf-8")
-    match = re.search(r"FORUM_OPTIONS\s*=\s*\[(.*?)\]", text, re.DOTALL)
+    match = re.search(r"FORUM_OPTIONS_FALLBACK\s*=\s*\[(.*?)\]", text, re.DOTALL)
     assert match, (
-        "Failed to locate FORUM_OPTIONS in AddForumPage.tsx. "
+        "Failed to locate FORUM_OPTIONS_FALLBACK in AddForumPage.tsx. "
         "If the source moved, update this test to follow."
     )
     # Strip line comments (//...) before plucking string literals so a
@@ -60,32 +61,22 @@ def _parse_frontend_options() -> set[str]:
     return set(re.findall(r'"([^"]+)"', body))
 
 
-def test_forum_whitelist_matches_frontend_options() -> None:
-    """Backend ``FORUM_WHITELIST`` and frontend ``FORUM_OPTIONS`` must match.
+def test_forum_offline_fallback_is_subset_of_backend_whitelist() -> None:
+    """The offline-fallback dropdown must not surface unknown names.
 
-    A drift in either direction is a real bug:
-
-    * Backend adds a name the frontend doesn't render → that forum
-      is unreachable via the dropdown (only via direct API hits).
-    * Frontend adds a name the backend rejects → user picks it
-      from the dropdown, submits the form, hits a confusing 422
-      with no actionable error message.
-
-    Failure mode for this test: edit ``schemas.FORUM_WHITELIST`` and
-    ``frontend/src/pages/profile/AddForumPage.tsx`` together in the
-    same PR so both sides stay synchronised.
+    The runtime path (``useForums`` → ``GET /api/forums``) is the
+    single source of truth; the fallback only kicks in when that
+    request fails. A drift where the fallback picks up a name the
+    backend rejects would land the user on a confusing 422 after
+    submit — keep them in sync (subset) so the offline UX still
+    matches the write boundary.
     """
-    frontend_options = _parse_frontend_options()
+    fallback = _parse_frontend_options()
     backend_options = set(FORUM_WHITELIST)
-    missing_in_backend = frontend_options - backend_options
-    missing_in_frontend = backend_options - frontend_options
-    assert not missing_in_backend, (
-        "Frontend FORUM_OPTIONS has names the backend does NOT accept; "
-        "add them to backend/app/schemas.FORUM_WHITELIST: "
-        f"{sorted(missing_in_backend)}"
-    )
-    assert not missing_in_frontend, (
-        "Backend FORUM_WHITELIST has names the frontend does NOT render; "
-        "add them to frontend/src/pages/profile/AddForumPage.tsx "
-        f"FORUM_OPTIONS: {sorted(missing_in_frontend)}"
+    surplus = fallback - backend_options
+    assert not surplus, (
+        "FORUM_OPTIONS_FALLBACK in AddForumPage.tsx has names the backend "
+        "does NOT accept; either add them to "
+        "backend/app/schemas.FORUM_WHITELIST or remove from the fallback: "
+        f"{sorted(surplus)}"
     )

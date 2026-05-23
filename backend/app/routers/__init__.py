@@ -14,8 +14,10 @@ from . import (
     csp_report,
     deal_messages,
     deals,
+    forums,
     me,
     media,
+    media_serve,
     notifications,
     payments,
     pin,
@@ -43,7 +45,15 @@ all_routers = [
     wallet.router,
     support.router,
     arbitration.router,
+    forums.router,
     media.router,
+    # Audit v3 L-14 — auth-gated serve route for deal-chat
+    # attachments. Must come *before* the ``StaticFiles`` mount in
+    # ``main.py`` (Starlette matches routes in insertion order) so
+    # the signed-URL handler wins over the catch-all static mount
+    # for the ``/media/deal/...`` prefix. The router itself just
+    # serves files; uploads still go through ``media.router``.
+    media_serve.router,
     ws.router,
     csp_report.router,
     client_errors.router,

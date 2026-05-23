@@ -288,7 +288,8 @@ async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> 
             if not claimed:
                 _d = "Код 2FA уже использован — дождитесь следующего"
                 raise HTTPException(
-                    401, {"code": "totp_replay", "detail": _d},
+                    401,
+                    {"code": "totp_replay", "detail": _d},
                 )
         except HTTPException:
             raise

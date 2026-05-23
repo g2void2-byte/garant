@@ -192,6 +192,30 @@ class Settings(BaseSettings):
     # whitelist validator.
     media_allowed_kinds: str = "avatar,banner,deal,service"
 
+    # Audit v3 L-14 — comma-separated list of ``Media.kind`` buckets
+    # whose URLs must be HMAC-signed and short-lived. Public buckets
+    # (avatar, banner, service) keep the legacy unsigned
+    # ``StaticFiles`` mount because they are already exposed on user
+    # profiles / service cards; only deal-chat attachments — which
+    # carry user-supplied screenshots inside a private 1:1 chat — get
+    # the auth-gated, expiring-URL treatment by default.
+    media_signed_kinds: str = "deal"
+    # TTL for signed deal-media URLs. Long enough that a chat page
+    # render still resolves attachments after a few minutes of idle,
+    # short enough that a leaked link goes stale before it ends up
+    # in a third-party log / referrer header. The ``Media.url``
+    # values stored in the DB stay unsigned; signing happens at
+    # serialisation time (``_signed_media_url`` in
+    # ``media_signing.py``) per request.
+    media_signed_url_ttl_seconds: int = 600
+    # Empty (the default) derives the signing secret from
+    # ``pin_secret()`` (which itself falls back to a deterministic
+    # hash of ``BOT_TOKEN`` outside production / staging). Production
+    # deployments should set this explicitly so rotating the
+    # PIN-session secret does not invalidate every outstanding deal
+    # attachment link in flight.
+    media_url_signing_secret: str = ""
+
     # Comma-separated list of trusted proxy IPs/CIDRs. When set, X-Forwarded-For
     # is only honoured if the direct peer is in this list. Empty = trust all
     # (backwards-compatible, suitable for single-proxy setups).

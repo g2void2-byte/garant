@@ -282,8 +282,26 @@ async def create_deal(
 
     currency = await get_currency_by_code(session, currency_code)
     settings = await _settings(session)
-    amt = quantize_money(Decimal(str(amount)), currency.decimals)
+    # M-5 — defence-in-depth: the caller is normally
+    # ``routers/deals.py`` which already constrains ``DealCreate.amount
+    # >= 1e-8`` at the schema layer, but ``create_deal`` is also driven
+    # from admin / test helpers / future internal services that may
+    # pass a raw value. Reject zero / negative / sub-satoshi values
+    # *before* we touch the per-currency quantisation so a non-HTTP
+    # caller can't (a) lock a zero-balance escrow, (b) trigger a free
+    # commission rounding to zero, or (c) spam pending-confirmation
+    # rows against a victim seller.
+    raw = Decimal(str(amount))
+    if not raw.is_finite() or raw <= 0:
+        raise ValueError("Сумма должна быть больше нуля")
+    amt = quantize_money(raw, currency.decimals)
     if amt <= 0:
+        # ``quantize_money`` rounds half-even at ``currency.decimals``
+        # digits, so a positive sub-currency-precision input (e.g.
+        # ``Decimal("0.000000001")`` for an 8-decimal asset) lands on
+        # zero here. We re-check after the quantise step to keep the
+        # post-rounding invariant ``amt > 0`` explicit at the lock
+        # site below.
         raise ValueError("Сумма должна быть больше нуля")
 
     # Per spec, VIP users get a reduced commission rate (set globally

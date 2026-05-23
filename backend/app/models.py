@@ -252,6 +252,18 @@ class User(Base):
     # ever changes, update both the column comment and the admin
     # copy.
     login_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Audit v3 A-3 — *true* distinct-session counter, complementary to
+    # ``login_count``.  ``login_count`` increments on every
+    # ``_LAST_LOGIN_DEBOUNCE`` (5 min) tick, so a user idle on the deal
+    # list for 8 h with a single SPA visible in the foreground racks
+    # up ~96 "logins" — useless for DAU/MAU.  ``sessions_count`` only
+    # ticks when ``now - last_login_at`` exceeds
+    # ``deps._SESSION_GAP`` (30 min), i.e. a real "I came back to the
+    # app after lunch" event.  Admin /users/:id surfaces both so the
+    # operator can tell heavy chatter from genuine return visits;
+    # broadcast audience filters that target "active in past N days"
+    # already use ``last_login_at`` directly and are unaffected.
+    sessions_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # Admin PR-A — aggregate stats editable by an admin via /admin/users/:id/stats.
     # H-2 widened from ``Numeric(14, 2)`` to ``Numeric(28, 8)`` so the
     # lifetime deposit aggregate matches the per-currency ledger
@@ -588,6 +600,63 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
     recipient: Mapped[User] = relationship(foreign_keys=[recipient_id], lazy="selectin")
+
+
+class NotificationDLQ(Base):
+    """Dead-letter row for a notification payload dropped at the cap (Audit v3 A-2).
+
+    The notifier rejects payloads that serialise above
+    ``NOTIFICATION_PAYLOAD_MAX_BYTES`` and emits the bare
+    ``Notification`` row without the dropped JSON.  Pre-fix the
+    payload was effectively lost — only ``logger.warning`` saw it,
+    and the structured fields it carried (``payload_keys`` /
+    ``encoded_bytes``) were not joinable to the recipient timeline
+    in a database query.
+
+    This table persists the metadata + a bounded excerpt of the
+    encoded JSON for forensic recovery.  Callers can join
+    ``notification_dlq.notification_id`` back to ``notifications.id``
+    to answer "which row lost a payload, and what was in it" without
+    grepping logs.  The excerpt is intentionally truncated to a few
+    KB so an attacker that manages to flood with oversize payloads
+    cannot blow up the DLQ size beyond a small multiple of the
+    parent cap.
+
+    The full encoded JSON length is recorded separately
+    (``encoded_bytes``) so an oversized payload that exceeds the
+    excerpt cap is still measurable for the SRE dashboard.
+    """
+
+    __tablename__ = "notification_dlq"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # ``ON DELETE SET NULL`` — the parent notification row may be
+    # purged by the recipient before SRE gets around to inspecting the
+    # DLQ entry; preserving the metadata on the DLQ side is the whole
+    # point.  ``nullable=True`` covers the (currently impossible)
+    # "DLQ-only with no companion row" future variant.
+    notification_id: Mapped[int | None] = mapped_column(
+        ForeignKey("notifications.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # Recipient is denormalised so a "show all dropped events for
+    # user X" admin query is a single indexed scan even after the
+    # parent ``Notification`` row is gone.
+    recipient_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    reason: Mapped[str] = mapped_column(String(64), default="payload_over_cap")
+    encoded_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    # Top-level keys of the dropped dict, sorted.  Cheap to index
+    # into for "which producer overshot the cap" queries.
+    payload_keys: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # First ``NOTIFICATION_PAYLOAD_DLQ_EXCERPT_BYTES`` of the encoded
+    # JSON — UTF-8 string, may be truncated mid-character; we keep the
+    # raw text so the SRE can still read it as a JSON-ish blob even
+    # when the tail is sliced off.
+    payload_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
 
 class AppSettings(Base):

@@ -91,6 +91,12 @@ async def ensure_user_row(
         values["last_ip"] = last_ip
         values["last_login_at"] = now
         values["login_count"] = 1
+        # Audit v3 A-3 — first-touch always counts as a new session.
+        # The conflict branch below increments the column on the
+        # losing transaction too, mirroring ``login_count``: a row
+        # that was just created by the winner is *not* yet inside a
+        # 30-min window, so the loser also crosses the session gap.
+        values["sessions_count"] = 1
 
     ins_stmt = pg_insert(User).values(**values)
     if bump_login:
@@ -98,6 +104,7 @@ async def ensure_user_row(
             index_elements=["tg_user_id"],
             set_={
                 "login_count": User.__table__.c.login_count + 1,
+                "sessions_count": User.__table__.c.sessions_count + 1,
                 "last_login_at": ins_stmt.excluded.last_login_at,
                 "last_ip": ins_stmt.excluded.last_ip,
             },

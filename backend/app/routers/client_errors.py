@@ -23,9 +23,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["errors"])
 
-RLClientError = Annotated[
-    None, Depends(rate_limit_anon("client-error", limit=10, window=60))
-]
+RLClientError = Annotated[None, Depends(rate_limit_anon("client-error", limit=10, window=60))]
 
 
 class ClientErrorReport(BaseModel):

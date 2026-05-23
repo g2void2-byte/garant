@@ -100,6 +100,27 @@ export function useCategories() {
   });
 }
 
+// Audit v3 A-1 — fetch the approved forum names from the backend
+// instead of duplicating the list in ``AddForumPage.tsx``. The
+// response carries ``freeform_option`` (the "Другое" catch-all) so
+// the UI can flag it for the "pick + type custom URL" affordance
+// without hard-coding the spelling. The 30-minute ``staleTime`` is
+// well past the page navigations a user makes in a session, and the
+// HTTP response also carries ``Cache-Control: max-age=300`` for the
+// browser layer below TanStack.
+export interface ForumListDto {
+  forums: string[];
+  freeform_option: string;
+}
+
+export function useForums() {
+  return useQuery<ForumListDto>({
+    queryKey: qk.forums(),
+    queryFn: () => api.get("api/forums").json(),
+    staleTime: 30 * 60_000,
+  });
+}
+
 export function useServices(
   params: { category?: string; q?: string; owner?: string; status?: string } = {},
   // Audit (continuation) L-2 — opt-in ``enabled`` gate. Callers that

@@ -111,6 +111,16 @@ async def kpi(_admin: AdminUser, session: SessionDep):
     # used by ``admin/dashboard.py``. Wire payload is identical; the
     # DB does 2 sequential scans + in-row predicate checks instead
     # of 7 separate scans.
+    #
+    # Audit v3 A-3 — DAU/WAU/MAU here intentionally key off
+    # ``User.last_login_at`` (the timestamp of the user's most recent
+    # session ping), NOT ``User.login_count``.  Each User row counts
+    # at most once per bucket, so the 5-min debounce on
+    # ``login_count`` does *not* inflate these figures: a single user
+    # pulling-to-refresh 50 times still contributes 1 to DAU.
+    # ``User.sessions_count`` (added in the same audit fix) is a
+    # complementary cumulative counter for "how many distinct sessions
+    # has this user ever started" and is not used here.
     user_row = (
         await session.execute(
             select(

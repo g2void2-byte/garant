@@ -21,6 +21,7 @@ from PIL import Image, UnidentifiedImageError
 
 from ..config import settings
 from ..deps import CurrentUser, SessionDep
+from ..media_signing import signed_media_url
 from ..models import Media
 from ..rate_limit import RLMediaUpload
 from ..schemas import MediaOut
@@ -106,10 +107,16 @@ async def _ensure_root() -> Path:
 
 
 def _media_out(m: Media) -> MediaOut:
+    # Audit v3 L-14 — buckets listed in ``settings.media_signed_kinds``
+    # (deal-chat attachments by default) get an HMAC-signed URL with
+    # a short ``?exp=`` window so a leaked link goes stale instead of
+    # being usable forever.  Public buckets (avatar / banner /
+    # service) keep the unsigned ``StaticFiles`` URL — they're already
+    # exposed on user profiles.
     return MediaOut(
         id=m.id,
         kind=m.kind,
-        url=m.url,
+        url=signed_media_url(url=m.url, kind=m.kind),
         name=m.name,
         size=m.size,
         content_type=m.content_type,

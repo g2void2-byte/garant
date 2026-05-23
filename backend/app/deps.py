@@ -124,6 +124,16 @@ async def get_session():
 # write per call. Module-level so tests can patch it.
 _LAST_LOGIN_DEBOUNCE = timedelta(minutes=5)
 
+# Audit v3 A-3 — minimum gap of inactivity before we treat the next
+# request as the start of a new "session" for analytics purposes.  Any
+# gap shorter than this is the same continuous session (user idle on
+# the deal list, app suspended in background, fast-pull-to-refresh).
+# 30 min is the industry-standard idle timeout (matches GA4's default
+# session timeout) and is long enough that a normal "switched apps for
+# a coffee" doesn't double-count, short enough that "came back after
+# lunch" does.  Module-level so tests can patch it.
+_SESSION_GAP = timedelta(minutes=30)
+
 
 # Item 24 — backwards-compatible structured lockout payload. Pre-fix
 # the 403 carried only a Russian string ("Аккаунт заблокирован"); the
@@ -311,8 +321,21 @@ async def get_current_user(
             user.last_login_at is None or (now - user.last_login_at) >= _LAST_LOGIN_DEBOUNCE
         )
         if should_ping:
+            # Audit v3 A-3 — only treat this as a fresh *session* if
+            # the gap since the last ping crossed ``_SESSION_GAP``;
+            # within that window the user is still inside the same
+            # session.  ``last_login_at is None`` is the brand-new
+            # row case (no prior pings) and trivially counts as a
+            # new session.  We evaluate this BEFORE the
+            # ``last_login_at = now`` assignment below so the gap
+            # measurement is taken against the *previous* ping.
+            is_new_session = (
+                user.last_login_at is None or (now - user.last_login_at) >= _SESSION_GAP
+            )
             user.last_login_at = now
             user.login_count = (user.login_count or 0) + 1
+            if is_new_session:
+                user.sessions_count = (user.sessions_count or 0) + 1
             if user.last_ip != ip:
                 user.last_ip = ip
             dirty = True
@@ -357,25 +380,30 @@ async def require_pin_session(
     """
     if not user.pin_hash:
         raise HTTPException(
-            403, {"code": "pin_not_set", "detail": "PIN не установлен"},
+            403,
+            {"code": "pin_not_set", "detail": "PIN не установлен"},
         )
     if not x_pin_token:
         raise HTTPException(
-            401, {"code": "pin_session_missing", "detail": "PIN-сессия отсутствует"},
+            401,
+            {"code": "pin_session_missing", "detail": "PIN-сессия отсутствует"},
         )
     decoded = decode_session_token(x_pin_token)
     if decoded is None:
         raise HTTPException(
-            401, {"code": "pin_session_invalid", "detail": "PIN-сессия недействительна"},
+            401,
+            {"code": "pin_session_invalid", "detail": "PIN-сессия недействительна"},
         )
     token_user_id, token_epoch = decoded
     if token_user_id != user.id:
         raise HTTPException(
-            401, {"code": "pin_session_invalid", "detail": "PIN-сессия недействительна"},
+            401,
+            {"code": "pin_session_invalid", "detail": "PIN-сессия недействительна"},
         )
     if token_epoch != (user.pin_session_epoch or 0):
         raise HTTPException(
-            401, {"code": "pin_session_revoked", "detail": "PIN-сессия отозвана"},
+            401,
+            {"code": "pin_session_revoked", "detail": "PIN-сессия отозвана"},
         )
 
     now = utcnow()

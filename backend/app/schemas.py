@@ -110,6 +110,35 @@ FORUM_WHITELIST: frozenset[str] = frozenset(
     }
 )
 
+# Audit v3 A-1 — the catch-all "Other" option that lets a user pick
+# ``FORUM_FREEFORM_OPTION`` from the dropdown and then type whatever
+# URL they want. Pre-fix the literal lived in
+# ``frontend/src/pages/profile/AddForumPage.tsx`` and was duplicated
+# inside :data:`FORUM_WHITELIST` here — drift between the two would
+# silently desync the dropdown from the write-boundary validator. The
+# new ``GET /api/forums`` endpoint returns the canonical list plus
+# this marker so the frontend renders whatever the backend says is
+# valid, and both sides agree on the spelling.
+FORUM_FREEFORM_OPTION: str = "Другое"
+
+
+class ForumListOut(BaseModel):
+    """Public list of approved forum names served by ``GET /api/forums``.
+
+    Audit v3 A-1 — single source of truth for the dropdown rendered
+    on ``AddForumPage.tsx``. Pre-fix the frontend hard-coded
+    ``FORUM_OPTIONS`` and drift between the two was caught only by
+    ``tests/test_forum_whitelist_sync.py``; with this endpoint the
+    frontend fetches the canonical list at runtime.
+
+    ``freeform_option`` is the marker name that the UI treats as
+    "pick this and type a custom URL"; it is always one of the
+    entries in ``forums``.
+    """
+
+    forums: list[str]
+    freeform_option: str
+
 
 class ForumOut(BaseModel):
     """Serialised view of a ``Forum`` row.
@@ -628,14 +657,20 @@ class DealCreate(BaseModel):
     # a 422 before touching the DB.  Default is provided so legacy
     # clients that omit the field continue to work.
     role: Literal["buyer"] = "buyer"
-    # L-1: ``gt=0`` matches the explicit ``if amt <= 0`` guard in
-    # ``services_deals.create_deal``. The validator below additionally
-    # rejects ``NaN``/``±inf`` JSON values that bypass the ``gt=0``
-    # comparison (``NaN > 0`` is ``False`` — still rejected by
-    # ``Field(gt=0)`` — but ``+inf > 0`` is ``True``, which would slip
-    # through and break downstream ``Decimal(str(amount))``
-    # conversion).
-    amount: Decimal = Field(gt=0)
+    # L-1 / M-5: ``ge=Decimal("0.00000001")`` matches the smallest
+    # representable amount our 8-fractional-digit ``Numeric(28, 8)``
+    # money columns support — i.e. one satoshi for BTC-scale assets.
+    # Pre-fix ``gt=0`` accepted ``Decimal("1e-20")`` which quantises
+    # straight to ``0`` inside ``services_deals.create_deal`` and only
+    # then trips the ``amt <= 0`` guard; using ``ge=1e-8`` rejects the
+    # dust at the schema layer so the deal-create path never even
+    # reaches the DB lock for a sub-satoshi amount. The validator below
+    # additionally rejects ``NaN``/``±inf`` JSON values that bypass the
+    # bound comparison entirely (``NaN`` comparisons return ``False``
+    # against any number, so ``Field(ge=...)`` would happily admit it,
+    # and ``+inf`` would slip through and break the downstream
+    # ``Decimal(str(amount))`` round-trip).
+    amount: Decimal = Field(ge=Decimal("0.00000001"))
     description: str = ""
     # H-2: canonical field with correct spelling.
     pay_commission: PayCommission = PayCommission.buyer
@@ -1116,6 +1151,13 @@ class AdminUserDetailOut(BaseModel):
     # Effectively counts "API sessions seen" rather than literal
     # Telegram logins.
     login_count: int
+    # Audit v3 A-3 — true distinct-session counter, bumped only when
+    # the gap since the previous ping crossed ``deps._SESSION_GAP``
+    # (30 min by default).  A user idle on the SPA all day shows up
+    # with ``login_count ≈ 96`` but ``sessions_count = 1``; a user
+    # who comes back twice (morning + evening) shows ``sessions_count
+    # = 2``. Use this column — not ``login_count`` — for DAU/MAU.
+    sessions_count: int
     created_at: datetime
 
 
