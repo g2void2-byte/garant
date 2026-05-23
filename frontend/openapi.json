@@ -3845,6 +3845,44 @@
         "title": "CategoryOut",
         "type": "object"
       },
+      "ClientErrorReport": {
+        "properties": {
+          "component_stack": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Component Stack",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 2000,
+            "title": "Message",
+            "type": "string"
+          },
+          "stack": {
+            "default": "",
+            "maxLength": 8000,
+            "title": "Stack",
+            "type": "string"
+          },
+          "url": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Url",
+            "type": "string"
+          },
+          "user_agent": {
+            "default": "",
+            "maxLength": 500,
+            "title": "User Agent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "ClientErrorReport",
+        "type": "object"
+      },
       "CurrencyOut": {
         "properties": {
           "code": {
@@ -14936,6 +14974,40 @@
         "summary": "Resolve Endpoint",
         "tags": [
           "deals"
+        ]
+      }
+    },
+    "/api/errors/report": {
+      "post": {
+        "operationId": "report_client_error_api_errors_report_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientErrorReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Client Error",
+        "tags": [
+          "errors"
         ]
       }
     },
