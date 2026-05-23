@@ -66,12 +66,6 @@ export default function AdminSettingsPage() {
               onChange={(v) => setForm({ ...form, deal_commission_percent: v })}
             />
           </Row>
-          <Row label="Комиссия по счетам">
-            <NumberField
-              value={form.invoice_commission_percent}
-              onChange={(v) => setForm({ ...form, invoice_commission_percent: v })}
-            />
-          </Row>
           <Row label="VIP комиссия (−1 = такая же как обычная)">
             <NumberField
               value={form.vip_commission_percent}
@@ -81,18 +75,6 @@ export default function AdminSettingsPage() {
         </Section>
 
         <Section title="Лимиты и тайминги">
-          <Row label="Мин. депозит (USD)">
-            <NumberField
-              value={form.min_deposit}
-              onChange={(v) => setForm({ ...form, min_deposit: v })}
-            />
-          </Row>
-          <Row label="Мин. вывод (USD)">
-            <NumberField
-              value={form.min_withdraw}
-              onChange={(v) => setForm({ ...form, min_withdraw: v })}
-            />
-          </Row>
           <Row label="Авто-истечение pending payment (дни)">
             <NumberField
               value={form.inactivity_pending_confirmation_days}

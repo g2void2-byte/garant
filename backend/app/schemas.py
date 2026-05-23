@@ -1983,10 +1983,7 @@ class AdminTreasuryReconcileOut(BaseModel):
 
 class AdminSettingsOut(BaseModel):
     deal_commission_percent: MoneyDecimal
-    invoice_commission_percent: MoneyDecimal
     vip_commission_percent: MoneyDecimal
-    min_deposit: MoneyDecimal
-    min_withdraw: MoneyDecimal
     inactivity_pending_confirmation_days: int
     inactivity_pending_cancellation_days: int
     max_active_services_per_user: int
@@ -2003,10 +2000,7 @@ class AdminSettingsUpdateIn(BaseModel):
     """
 
     deal_commission_percent: Decimal | None = None
-    invoice_commission_percent: Decimal | None = None
     vip_commission_percent: Decimal | None = None
-    min_deposit: Decimal | None = None
-    min_withdraw: Decimal | None = None
     inactivity_pending_confirmation_days: int | None = None
     inactivity_pending_cancellation_days: int | None = None
     max_active_services_per_user: int | None = None
@@ -2016,7 +2010,6 @@ class AdminSettingsUpdateIn(BaseModel):
 
     @field_validator(
         "deal_commission_percent",
-        "invoice_commission_percent",
         "vip_commission_percent",
     )
     @classmethod
@@ -2027,19 +2020,6 @@ class AdminSettingsUpdateIn(BaseModel):
         if d < -1 or d > 100:
             raise ValueError("Комиссия должна быть в диапазоне -1..100")
         return d.quantize(Decimal("0.01"))
-
-    @field_validator(
-        "min_deposit",
-        "min_withdraw",
-    )
-    @classmethod
-    def _min_ok(cls, v: Decimal | float | None) -> Decimal | None:
-        if v is None:
-            return v
-        d = _reject_non_finite_money(v)
-        if d is not None and d < 0:
-            raise ValueError("Значение не может быть отрицательным")
-        return d
 
     @field_validator(
         "inactivity_pending_confirmation_days",
