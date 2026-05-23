@@ -6,10 +6,16 @@ the unification two parallel inconsistencies leaked into responses
 and ledger writes:
 
 1. Four money columns lagged at ``Numeric(14, 2)`` —
-   ``Service.price``, ``Service.deposit``, ``AppSettings.min_deposit`` and
-   ``AppSettings.min_withdraw``. Writing a satoshi-scale value (8 fractional
-   digits) into those columns silently truncated the trailing six digits.
-   The companion migration widens all four to ``Numeric(28, 8)``.
+   ``Service.price``, ``Service.deposit``, and the (now-removed)
+   ``AppSettings.min_deposit`` / ``AppSettings.min_withdraw`` singletons.
+   Writing a satoshi-scale value (8 fractional digits) into those columns
+   silently truncated the trailing six digits. The companion migration
+   widened all four to ``Numeric(28, 8)``. The two ``AppSettings``
+   columns were later removed entirely (they were never read by any
+   wallet code path — see ``alembic/versions/d1b6e2g04c38_*.py``); the
+   per-currency overrides on ``Currency.min_deposit`` /
+   ``Currency.min_withdraw`` remain at ``Numeric(28, 8)`` and are the
+   actual enforcement point.
 2. Two near-identical ``_q`` helpers lived in
    ``services_deals.py`` and ``routers/admin/deals.py``. Both quantised via
    ``Decimal.quantize`` without an explicit ``rounding`` keyword, inheriting

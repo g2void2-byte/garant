@@ -37,7 +37,6 @@ from sqlalchemy import select
 
 from backend.app.db import async_session
 from backend.app.models import (
-    AppSettings,
     Category,
     Currency,
     Service,
@@ -206,24 +205,26 @@ async def test_currency_min_deposit_and_min_withdraw_round_trip_above_1e10():
     assert Decimal(str(fresh.min_withdraw)) == _HUGE
 
 
-# ── H-2 second wave: the five remaining lagging columns ─────────────────────
+# ── H-2 second wave: the remaining lagging columns ──────────────────────────
 #
 # The first H-2 migration (``9c3a4d2e1f08``) widened every per-currency
 # ledger column. The follow-up migration
-# (``m1d8e3f7a2b4_h2_widen_remaining_money_columns_to_28_8.py``) takes
+# (``m1d8e3f7a2b4_h2_widen_remaining_money_columns_to_28_8.py``) took
 # care of the columns that still lagged at ``Numeric(14, 2)``:
-# ``Service.price``, ``Service.deposit`` and
-# ``AppSettings.min_deposit`` / ``min_withdraw``. (The H-2 sweep
-# also widened ``User.deposit_total`` at the time; that column has
-# since been dropped — the public profile sources its ``deposit``
-# from ``trust_deposit_balance``, which has always been declared at
-# ``Numeric(28, 8)`` so it doesn't need a widening test of its own.)
-# The tests below pin
-# that each of them round-trips a value at the upper edge of the
-# wider shape (12-digit integer part, 8 fractional digits) — pre-fix
-# Postgres would have raised ``numeric field overflow`` because the
-# integer part exceeded ``Numeric(14, 2)``'s ``precision - scale = 12``
-# digit headroom.
+# ``Service.price``, ``Service.deposit`` and the (now-dropped)
+# ``AppSettings.min_deposit`` / ``AppSettings.min_withdraw``
+# singletons. (The H-2 sweep also widened ``User.deposit_total`` at
+# the time; that column has since been dropped — the public profile
+# sources its ``deposit`` from ``trust_deposit_balance``, which has
+# always been declared at ``Numeric(28, 8)`` so it doesn't need a
+# widening test of its own. The ``AppSettings`` singletons were
+# dropped in ``d1b6e2g04c38`` for the same reason — no wallet code
+# path ever read them; the per-currency ``Currency.min_deposit`` /
+# ``Currency.min_withdraw`` overrides are still tested above.)
+# The test below pins that the remaining widened columns round-trip a
+# value at the upper edge of ``Numeric(28, 8)`` (12-digit integer
+# part, 8 fractional digits) — pre-fix Postgres would have raised
+# ``numeric field overflow``.
 
 
 @pytest.mark.asyncio
@@ -260,30 +261,10 @@ async def test_service_price_and_deposit_round_trip_above_1e10():
     assert Decimal(str(fresh.deposit)) == _BIG
 
 
-@pytest.mark.asyncio
-async def test_app_settings_min_deposit_and_min_withdraw_round_trip_above_1e10():
-    """``AppSettings.min_deposit`` / ``min_withdraw`` (singleton row)
-    keep the full ``Numeric(28, 8)`` shape.
-
-    ``AppSettings`` is the legacy global default; the per-currency
-    overrides on ``Currency`` are what the wallet routers actually
-    enforce, but the singleton row is still surfaced to the admin
-    panel. Pre-H-2 the column was ``Numeric(14, 2)`` so a value the
-    per-currency record could hold would overflow the singleton.
-    """
-    async with async_session() as session:
-        row = (
-            await session.execute(select(AppSettings).where(AppSettings.id == 1))
-        ).scalar_one_or_none()
-        if row is None:
-            row = AppSettings(id=1, min_deposit=_BIG, min_withdraw=_BIG)
-            session.add(row)
-        else:
-            row.min_deposit = _BIG
-            row.min_withdraw = _BIG
-        await session.commit()
-
-        fresh = (await session.execute(select(AppSettings).where(AppSettings.id == 1))).scalar_one()
-
-    assert Decimal(str(fresh.min_deposit)) == _BIG
-    assert Decimal(str(fresh.min_withdraw)) == _BIG
+# NOTE: the ``AppSettings.min_deposit`` / ``min_withdraw`` singleton
+# round-trip test that used to live here was deleted alongside the
+# columns themselves in ``d1b6e2g04c38_drop_dead_app_settings_columns``
+# — the columns were never read by any wallet code path; the actual
+# enforcement points are ``Currency.min_deposit`` / ``Currency.min_withdraw``
+# (still covered by ``test_currency_min_deposit_and_min_withdraw_round_trip_above_1e10``
+# above).

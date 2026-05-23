@@ -665,16 +665,6 @@ class AppSettings(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     deal_commission_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=5.0)
-    invoice_commission_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0.0)
-    # H-2 — widened from ``Numeric(14, 2)`` to ``Numeric(28, 8)``. The
-    # per-currency overrides on ``Currency.min_deposit`` /
-    # ``Currency.min_withdraw`` (also ``Numeric(28, 8)``) are what the
-    # wallet routers actually enforce; these singleton rows are a
-    # global default kept around for admin display. Aligning the
-    # precision keeps the admin panel from rendering a value the
-    # underlying currency record can hold but the singleton can't.
-    min_deposit: Mapped[float] = mapped_column(Numeric(28, 8), default=1.0)
-    min_withdraw: Mapped[float] = mapped_column(Numeric(28, 8), default=1.0)
     # PR-3 — auto-cancel timeouts.
     inactivity_pending_confirmation_days: Mapped[int] = mapped_column(Integer, default=7)
     inactivity_pending_cancellation_days: Mapped[int] = mapped_column(Integer, default=3)

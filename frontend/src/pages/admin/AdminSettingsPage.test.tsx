@@ -63,10 +63,7 @@ function makeSettings(
 ): AdminSettingsDto {
   return {
     deal_commission_percent: 2,
-    invoice_commission_percent: 1,
     vip_commission_percent: -1,
-    min_deposit: 5,
-    min_withdraw: 10,
     inactivity_pending_confirmation_days: 7,
     inactivity_pending_cancellation_days: 14,
     max_active_services_per_user: 10,

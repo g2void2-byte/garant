@@ -114,9 +114,6 @@ async def seed_settings(session: AsyncSession) -> None:
         pg_insert(AppSettings)
         .values(
             deal_commission_percent=5.0,
-            invoice_commission_percent=0.0,
-            min_deposit=1.0,
-            min_withdraw=1.0,
         )
         .on_conflict_do_nothing()
     )

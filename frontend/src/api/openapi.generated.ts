@@ -3275,18 +3275,12 @@ export interface components {
             inactivity_pending_cancellation_days: number;
             /** Inactivity Pending Confirmation Days */
             inactivity_pending_confirmation_days: number;
-            /** Invoice Commission Percent */
-            invoice_commission_percent: number;
             /** Maintenance Enabled */
             maintenance_enabled: boolean;
             /** Maintenance Message */
             maintenance_message: string;
             /** Max Active Services Per User */
             max_active_services_per_user: number;
-            /** Min Deposit */
-            min_deposit: number;
-            /** Min Withdraw */
-            min_withdraw: number;
             /** Vip Commission Percent */
             vip_commission_percent: number;
         };
@@ -3306,18 +3300,12 @@ export interface components {
             inactivity_pending_cancellation_days?: number | null;
             /** Inactivity Pending Confirmation Days */
             inactivity_pending_confirmation_days?: number | null;
-            /** Invoice Commission Percent */
-            invoice_commission_percent?: number | string | null;
             /** Maintenance Enabled */
             maintenance_enabled?: boolean | null;
             /** Maintenance Message */
             maintenance_message?: string | null;
             /** Max Active Services Per User */
             max_active_services_per_user?: number | null;
-            /** Min Deposit */
-            min_deposit?: number | string | null;
-            /** Min Withdraw */
-            min_withdraw?: number | string | null;
             /** Vip Commission Percent */
             vip_commission_percent?: number | string | null;
         };

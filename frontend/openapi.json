@@ -2484,10 +2484,6 @@
             "title": "Inactivity Pending Confirmation Days",
             "type": "integer"
           },
-          "invoice_commission_percent": {
-            "title": "Invoice Commission Percent",
-            "type": "number"
-          },
           "maintenance_enabled": {
             "title": "Maintenance Enabled",
             "type": "boolean"
@@ -2500,14 +2496,6 @@
             "title": "Max Active Services Per User",
             "type": "integer"
           },
-          "min_deposit": {
-            "title": "Min Deposit",
-            "type": "number"
-          },
-          "min_withdraw": {
-            "title": "Min Withdraw",
-            "type": "number"
-          },
           "vip_commission_percent": {
             "title": "Vip Commission Percent",
             "type": "number"
@@ -2515,10 +2503,7 @@
         },
         "required": [
           "deal_commission_percent",
-          "invoice_commission_percent",
           "vip_commission_percent",
-          "min_deposit",
-          "min_withdraw",
           "inactivity_pending_confirmation_days",
           "inactivity_pending_cancellation_days",
           "max_active_services_per_user",
@@ -2580,21 +2565,6 @@
             ],
             "title": "Inactivity Pending Confirmation Days"
           },
-          "invoice_commission_percent": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Invoice Commission Percent"
-          },
           "maintenance_enabled": {
             "anyOf": [
               {
@@ -2627,36 +2597,6 @@
               }
             ],
             "title": "Max Active Services Per User"
-          },
-          "min_deposit": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min Deposit"
-          },
-          "min_withdraw": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min Withdraw"
           },
           "vip_commission_percent": {
             "anyOf": [

@@ -43,10 +43,7 @@ router = APIRouter(
 _EDITABLE_FIELDS: frozenset[str] = frozenset(
     {
         "deal_commission_percent",
-        "invoice_commission_percent",
         "vip_commission_percent",
-        "min_deposit",
-        "min_withdraw",
         "inactivity_pending_confirmation_days",
         "inactivity_pending_cancellation_days",
         "max_active_services_per_user",
@@ -70,10 +67,7 @@ def _to_out(row: AppSettings) -> AdminSettingsOut:
     # to Pydantic; ``PlainSerializer`` does the one (and only) cast.
     return AdminSettingsOut(
         deal_commission_percent=row.deal_commission_percent,
-        invoice_commission_percent=row.invoice_commission_percent,
         vip_commission_percent=row.vip_commission_percent,
-        min_deposit=row.min_deposit,
-        min_withdraw=row.min_withdraw,
         inactivity_pending_confirmation_days=row.inactivity_pending_confirmation_days,
         inactivity_pending_cancellation_days=row.inactivity_pending_cancellation_days,
         max_active_services_per_user=row.max_active_services_per_user,

@@ -717,10 +717,7 @@ export interface AdminTreasuryWithdrawDto {
 
 export interface AdminSettingsDto {
   deal_commission_percent: number;
-  invoice_commission_percent: number;
   vip_commission_percent: number;
-  min_deposit: number;
-  min_withdraw: number;
   inactivity_pending_confirmation_days: number;
   inactivity_pending_cancellation_days: number;
   max_active_services_per_user: number;
@@ -731,10 +728,7 @@ export interface AdminSettingsDto {
 
 export interface AdminSettingsUpdateBody {
   deal_commission_percent?: number;
-  invoice_commission_percent?: number;
   vip_commission_percent?: number;
-  min_deposit?: number;
-  min_withdraw?: number;
   inactivity_pending_confirmation_days?: number;
   inactivity_pending_cancellation_days?: number;
   max_active_services_per_user?: number;
