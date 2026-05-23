@@ -27,7 +27,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { confirmDialog } from "@/lib/dialog";
-import { api } from "@/api/client";
+import { UserPicker } from "@/components/domain/UserPicker";
 import {
   useAdminCreateReview,
   useAdminDeleteComment,
@@ -44,6 +44,7 @@ import type {
   AdminCommentItemDto,
   AdminReviewItemDto,
   AdminServiceItemDto,
+  UserCardDto,
 } from "@/api/types";
 
 interface SectionProps {
@@ -370,12 +371,12 @@ function ReviewCreateSheet({
 }) {
   const toast = useToast();
   const create = useAdminCreateReview(userId);
-  const [authorUsername, setAuthorUsername] = useState("");
+  const [author, setAuthor] = useState<UserCardDto | null>(null);
   const [rating, setRating] = useState("5");
   const [text, setText] = useState("");
 
   const close = () => {
-    setAuthorUsername("");
+    setAuthor(null);
     setRating("5");
     setText("");
     onClose();
@@ -387,26 +388,13 @@ function ReviewCreateSheet({
       toast.show({ kind: "error", title: "Рейтинг 0..5" });
       return;
     }
-    const handle = authorUsername.trim().replace(/^@/, "");
-    if (!handle) {
-      toast.show({ kind: "error", title: "Введите @username" });
+    if (!author) {
+      toast.show({ kind: "error", title: "Выберите автора" });
       return;
     }
     try {
-      // Lookup the author via the admin search endpoint (authenticated).
-      const list = await api
-        .get(`api/admin/users`, { searchParams: { q: handle } })
-        .json<{ items: Array<{ id: number; username: string | null }> }>();
-      const candidate = list.items.find(
-        (x) => (x.username ?? "").toLowerCase() === handle.toLowerCase(),
-      );
-      if (!candidate) {
-        toast.show({ kind: "error", title: "Автор не найден" });
-        return;
-      }
-      const author_id = candidate.id;
       await create.mutateAsync({
-        author_id,
+        author_id: author.id,
         target_id: userId,
         rating: r,
         text,
@@ -421,11 +409,17 @@ function ReviewCreateSheet({
   return (
     <Sheet open={open} onClose={close} title="Новый отзыв">
       <div className="space-y-3">
-        <Input
-          label="Автор (@username)"
+        <UserPicker
+          label="Автор"
           placeholder="@buyer1"
-          value={authorUsername}
-          onChange={(e) => setAuthorUsername(e.target.value)}
+          value={author?.username ?? ""}
+          onChange={() => {
+            /* selection is driven by onPick — the bare username text
+             * isn't enough to submit the review (we need the picked
+             * user's numeric id), so we intentionally ignore raw
+             * keystrokes here. */
+          }}
+          onPick={setAuthor}
         />
         <Input
           label="Рейтинг 0..5"
