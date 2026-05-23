@@ -3279,6 +3279,10 @@
             ],
             "title": "Rating Manual"
           },
+          "sessions_count": {
+            "title": "Sessions Count",
+            "type": "integer"
+          },
           "tg_user_id": {
             "title": "Tg User Id",
             "type": "integer"
@@ -3331,6 +3335,7 @@
           "last_ip",
           "last_login_at",
           "login_count",
+          "sessions_count",
           "created_at"
         ],
         "title": "AdminUserDetailOut",
@@ -3963,7 +3968,7 @@
           "amount": {
             "anyOf": [
               {
-                "exclusiveMinimum": 0.0,
+                "minimum": 1e-08,
                 "type": "number"
               },
               {
@@ -4385,6 +4390,28 @@
           "url"
         ],
         "title": "ForumIn",
+        "type": "object"
+      },
+      "ForumListOut": {
+        "description": "Public list of approved forum names served by ``GET /api/forums``.\n\nAudit v3 A-1 \u2014 single source of truth for the dropdown rendered\non ``AddForumPage.tsx``. Pre-fix the frontend hard-coded\n``FORUM_OPTIONS`` and drift between the two was caught only by\n``tests/test_forum_whitelist_sync.py``; with this endpoint the\nfrontend fetches the canonical list at runtime.\n\n``freeform_option`` is the marker name that the UI treats as\n\"pick this and type a custom URL\"; it is always one of the\nentries in ``forums``.",
+        "properties": {
+          "forums": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Forums",
+            "type": "array"
+          },
+          "freeform_option": {
+            "title": "Freeform Option",
+            "type": "string"
+          }
+        },
+        "required": [
+          "forums",
+          "freeform_option"
+        ],
+        "title": "ForumListOut",
         "type": "object"
       },
       "ForumOut": {
@@ -15011,6 +15038,28 @@
         ]
       }
     },
+    "/api/forums": {
+      "get": {
+        "description": "Approved forum names + the free-form ``\"\u0414\u0440\u0443\u0433\u043e\u0435\"`` option.\n\nOrder is lexicographic over the backend whitelist with the\n``\u0414\u0440\u0443\u0433\u043e\u0435`` catch-all appended last (mirrors the historical\nfrontend ordering so the migration is visually a no-op).",
+        "operationId": "list_forums_api_forums_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForumListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Forums",
+        "tags": [
+          "forums"
+        ]
+      }
+    },
     "/api/me": {
       "get": {
         "operationId": "get_me_api_me_get",
@@ -17423,6 +17472,79 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/media/deal/{filename}": {
+      "get": {
+        "description": "Serve a signed deal-attachment file.\n\nThe caller is the browser pulling ``MediaOut.url`` directly via\n``<img src>`` / ``<a href>`` \u2014 there is no ``Authorization``\nheader on the wire, so authentication is delegated to the HMAC\nsignature embedded in the URL.  The URL is minted at\nserialisation time by ``_signed_media_url`` (see\n:mod:`backend.app.routers.media` and\n:mod:`backend.app.routers.deal_messages`); only callers that\nalready passed the initData + chat-participant check can obtain a\nfresh signature.",
+        "operationId": "serve_deal_media_media_deal__filename__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exp",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exp"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sig",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sig"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Serve Deal Media",
+        "tags": [
+          "media"
+        ]
       }
     }
   }

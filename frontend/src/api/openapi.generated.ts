@@ -1727,6 +1727,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/forums": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Forums
+         * @description Approved forum names + the free-form ``"Другое"`` option.
+         *
+         *     Order is lexicographic over the backend whitelist with the
+         *     ``Другое`` catch-all appended last (mirrors the historical
+         *     frontend ordering so the migration is visually a no-op).
+         */
+        get: operations["list_forums_api_forums_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me": {
         parameters: {
             query?: never;
@@ -2329,6 +2353,36 @@ export interface paths {
          *     health checks and front-proxy readiness gates.
          */
         get: operations["health_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/media/deal/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve Deal Media
+         * @description Serve a signed deal-attachment file.
+         *
+         *     The caller is the browser pulling ``MediaOut.url`` directly via
+         *     ``<img src>`` / ``<a href>`` — there is no ``Authorization``
+         *     header on the wire, so authentication is delegated to the HMAC
+         *     signature embedded in the URL.  The URL is minted at
+         *     serialisation time by ``_signed_media_url`` (see
+         *     :mod:`backend.app.routers.media` and
+         *     :mod:`backend.app.routers.deal_messages`); only callers that
+         *     already passed the initData + chat-participant check can obtain a
+         *     fresh signature.
+         */
+        get: operations["serve_deal_media_media_deal__filename__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3536,6 +3590,8 @@ export interface components {
             rating_effective: number;
             /** Rating Manual */
             rating_manual: number | null;
+            /** Sessions Count */
+            sessions_count: number;
             /** Tg User Id */
             tg_user_id: number;
             /** Trust Deposit Balance */
@@ -3946,6 +4002,26 @@ export interface components {
             name: string;
             /** Url */
             url: string;
+        };
+        /**
+         * ForumListOut
+         * @description Public list of approved forum names served by ``GET /api/forums``.
+         *
+         *     Audit v3 A-1 — single source of truth for the dropdown rendered
+         *     on ``AddForumPage.tsx``. Pre-fix the frontend hard-coded
+         *     ``FORUM_OPTIONS`` and drift between the two was caught only by
+         *     ``tests/test_forum_whitelist_sync.py``; with this endpoint the
+         *     frontend fetches the canonical list at runtime.
+         *
+         *     ``freeform_option`` is the marker name that the UI treats as
+         *     "pick this and type a custom URL"; it is always one of the
+         *     entries in ``forums``.
+         */
+        ForumListOut: {
+            /** Forums */
+            forums: string[];
+            /** Freeform Option */
+            freeform_option: string;
         };
         /**
          * ForumOut
@@ -8027,6 +8103,26 @@ export interface operations {
             };
         };
     };
+    list_forums_api_forums_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForumListOut"];
+                };
+            };
+        };
+    };
     get_me_api_me_get: {
         parameters: {
             query?: never;
@@ -9297,6 +9393,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    serve_deal_media_media_deal__filename__get: {
+        parameters: {
+            query?: {
+                exp?: string | null;
+                sig?: string | null;
+            };
+            header?: never;
+            path: {
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
