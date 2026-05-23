@@ -66,6 +66,19 @@ _WITHDRAW_ADDRESS_FORBIDDEN_CHARS = frozenset(chr(b) for b in [*range(0, 32), 0x
 )
 
 
+def _truncate_address(addr: str, *, head: int = 6, tail: int = 6) -> str:
+    """Shorten an address for display in admin DM notifications.
+
+    For short addresses (≤ head + tail + 3) returns the full string.
+    Otherwise returns ``addr[:head]…addr[-tail:]`` so both the
+    beginning and the end are visible — useful for IBAN-style formats
+    where the first 12 characters alone carry little context.
+    """
+    if len(addr) <= head + tail + 3:
+        return addr
+    return f"{addr[:head]}…{addr[-tail:]}"
+
+
 def _sanitise_withdraw_address(raw: str) -> str:
     """Strip control bytes, backslashes and trailing whitespace.
 
@@ -1133,7 +1146,10 @@ async def create_withdrawal(
             admin.id,
             NotificationType.system,
             "Заявка на вывод",
-            f"@{user.username or user.tg_user_id}: {amount} {currency.code} → {address[:12]}…",
+            (
+                f"@{user.username or user.tg_user_id}: "
+                f"{amount} {currency.code} → {_truncate_address(address)}"
+            ),
             {"withdrawal_id": withdrawal.id},
         )
         pending_admin.append((notif, ws_payload))

@@ -28,7 +28,7 @@ export function ProfileFiatBalanceCard({ user }: { user: UserCardDto }) {
   const code = user.display_currency_code || "USD";
   const balance = data?.find((b) => b.currency.code === code);
   const decimals = balance?.currency.decimals ?? 2;
-  const amount = balance?.amount ?? 0;
+  const amount = balance?.amount_str ?? "0";
 
   return (
     <section className="bg-panel border border-border rounded-card p-4 space-y-3">
