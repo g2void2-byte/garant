@@ -95,9 +95,26 @@ async def _get_locked(session, deal_id: int) -> Deal:
     Used by every mutation endpoint so two concurrent calls on the
     same deal can't both pass the status guard and double-spend the
     locked balance.
+
+    ``populate_existing=True`` reloads the row's columns from the
+    locking SELECT result even when the Deal is already in the
+    session's identity map. Today every mutation endpoint calls
+    ``_get_locked`` as the first session operation for the deal, so
+    the row isn't yet cached and the option is a no-op — but if a
+    future endpoint adds an earlier ``session.get(Deal, …)`` (e.g.
+    for a pre-lock authorisation check), the ``FOR UPDATE`` would
+    still acquire correctly but the column data would come from the
+    stale cached instance, reopening the lost-update window the lock
+    is meant to close. Mirror the ``populate_existing=True`` pattern
+    already used in ``services_wallet`` for the same reason.
     """
     deal = (
-        await session.execute(select(Deal).where(Deal.id == deal_id).with_for_update())
+        await session.execute(
+            select(Deal)
+            .where(Deal.id == deal_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
     ).scalar_one_or_none()
     if not deal:
         raise HTTPException(404, "Сделка не найдена")
