@@ -555,6 +555,22 @@ class DealMessage(Base):
 
 class Review(Base):
     __tablename__ = "reviews"
+    __table_args__ = (
+        # Audit §1.1 — one review per (author, deal). ``post_review``
+        # already check-then-acts on this pair, but the check is racy:
+        # two parallel ``POST /api/reviews`` from the same author for
+        # the same deal can both see ``existing is None`` and both
+        # insert. The schema-level UNIQUE makes the second INSERT fail
+        # with ``IntegrityError`` instead of doubling the target's
+        # ``good`` / ``bad`` counters via the post-INSERT
+        # ``recompute_user_rating`` pass. Postgres treats NULLs as
+        # distinct, so the historical ``deal_id IS NULL`` rows that a
+        # cascaded ``ON DELETE SET NULL`` produces never collide with
+        # each other — the constraint only binds rows where both
+        # ``author_id`` and ``deal_id`` are NOT NULL, which matches
+        # ``post_review``'s ``deal_id is None → ValueError`` guard.
+        UniqueConstraint("author_id", "deal_id", name="uq_reviews_author_deal"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     author_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)

@@ -1085,11 +1085,25 @@ async def create_withdrawal(
             # naïve ``bal.locked = …`` write would emit
             # ``UPDATE user_balances SET amount=$1, locked=$2 …`` with
             # those stale values, overwriting any concurrent change.
+            #
+            # Audit §2.5 — both Phase 3 SELECTs use
+            # ``populate_existing=True``. The Phase 1 ``withdrawal``
+            # and ``bal`` rows are still in this session's identity
+            # map (the ``await session.commit()`` between phases
+            # expires them, but a subsequent attribute read would
+            # repopulate from the row's last cached state if the
+            # locking SELECT didn't refresh). Combining
+            # ``with_for_update()`` with ``populate_existing=True``
+            # guarantees the ORM-managed object reflects the values
+            # we now hold the row lock against, mirroring the same
+            # pattern the deposit-credit path already uses for
+            # identical reasons.
             w_locked = (
                 await session.execute(
                     select(WalletWithdrawal)
                     .where(WalletWithdrawal.id == withdrawal.id)
                     .with_for_update()
+                    .execution_options(populate_existing=True)
                 )
             ).scalar_one_or_none()
             if w_locked is None:
@@ -1136,6 +1150,7 @@ async def create_withdrawal(
                         UserBalance.currency_id == w_locked.currency_id,
                     )
                     .with_for_update()
+                    .execution_options(populate_existing=True)
                 )
             ).scalar_one_or_none()
             if bal_locked is not None:
