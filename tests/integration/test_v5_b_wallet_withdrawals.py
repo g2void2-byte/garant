@@ -388,7 +388,13 @@ async def test_deposit_polling_endpoint_is_throttled(client):
     # constant in sync with ``backend.app.rate_limit.RLWalletPoll``.
     limit = 20
     for i in range(limit):
-        r = await client.get(f"/api/wallet/deposits/{dep_id}", headers=auth_headers(init))
-        assert r.status_code == 200, f"request {i + 1} unexpectedly returned {r.status_code}: {r.text}"
-    r_over = await client.get(f"/api/wallet/deposits/{dep_id}", headers=auth_headers(init))
+        r = await client.get(
+            f"/api/wallet/deposits/{dep_id}", headers=auth_headers(init)
+        )
+        assert r.status_code == 200, (
+            f"request {i + 1} unexpectedly returned {r.status_code}: {r.text}"
+        )
+    r_over = await client.get(
+        f"/api/wallet/deposits/{dep_id}", headers=auth_headers(init)
+    )
     assert r_over.status_code == 429, r_over.text
