@@ -715,10 +715,17 @@ class DealCreateWithTopupOut(BaseModel):
     Bundles the new :class:`DealOut` row (status ``pending_topup``)
     with the :class:`DealTopupInvoiceOut` describing the invoice the
     buyer must pay before the deal can be activated.
+
+    P11-D1 — ``invoice`` is ``None`` when the buyer's balance fully
+    covers ``amount + commission``; the service short-circuits the
+    invoice path and debits the balance directly so the deal lands
+    in :data:`DealStatus.pending_confirmation` straight away. The
+    frontend uses ``invoice is None`` to skip the pay-the-invoice
+    UI and jump to the deal-detail page.
     """
 
     deal: DealOut
-    invoice: DealTopupInvoiceOut
+    invoice: DealTopupInvoiceOut | None
 
 
 class DealCancelRequest(BaseModel):
@@ -1019,7 +1026,13 @@ class WalletDepositOut(BaseModel):
 class WalletWithdrawCreateReq(BaseModel):
     currency_code: str
     amount: Decimal
-    address: str
+    # P11-W1 — optional so the CryptoBot Transfer payout (auto-mode +
+    # ``CRYPTOBOT_TOKEN`` configured) can omit the on-chain address;
+    # the recipient is identified by ``users.tg_user_id`` upstream.
+    # Whether the field is actually required is decided in
+    # ``services_wallet.create_withdrawal`` (auto-mode allows None;
+    # manual mode rejects an empty address with 400).
+    address: str | None = None
 
     @field_validator("amount")
     @classmethod
@@ -1031,10 +1044,12 @@ class WalletWithdrawCreateReq(BaseModel):
 
     @field_validator("address")
     @classmethod
-    def strip(cls, v: str) -> str:
+    def strip(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
         v = v.strip()
         if not v:
-            raise ValueError("Адрес не может быть пустым")
+            return None
         return v
 
 
@@ -1042,7 +1057,10 @@ class WalletWithdrawalOut(BaseModel):
     id: int
     currency: CurrencyOut
     amount: MoneyDecimal
-    address: str
+    # ``None`` when the withdrawal was created in CryptoBot Transfer
+    # auto-mode (the recipient is identified by ``users.tg_user_id``
+    # rather than an on-chain address).
+    address: str | None
     status: str
     admin_note: str
     created_at: datetime
@@ -1796,7 +1814,10 @@ class AdminWithdrawalOut(BaseModel):
     currency_code: str
     # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
     amount: Decimal
-    address: str
+    # ``None`` when the withdrawal was created in CryptoBot Transfer
+    # auto-mode (no on-chain address — recipient is the user's
+    # ``tg_user_id``). Manual-mode rows always carry the address.
+    address: str | None
     status: str
     admin_note: str
     created_at: datetime

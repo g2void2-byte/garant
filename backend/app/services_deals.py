@@ -400,8 +400,9 @@ async def create_deal_with_topup(
     amount: float | Decimal,
     description: str,
     payment_provider: str = "cryptobot",
-) -> tuple[Deal, WalletDeposit]:
-    """Create a deal that's funded by an outstanding deposit invoice.
+) -> tuple[Deal, WalletDeposit | None]:
+    """Create a deal that's funded by an outstanding deposit invoice
+    OR fully covered by the buyer's wallet balance.
 
     P10 — replaces the legacy ``create_deal`` HTTP entry point. The
     buyer no longer needs to pre-deposit funds; instead the platform
@@ -415,8 +416,18 @@ async def create_deal_with_topup(
     buyer's balance already covers ``amount``, ``topup_principal = 0``
     and the invoice charges only the commission.
 
-    The deal is created in :data:`DealStatus.pending_topup` and the
-    invoice is linked through ``Deal.topup_deposit_id`` /
+    P11-D1 — when the buyer's balance already covers
+    ``amount + commission``, we skip the invoice path entirely:
+    the principal moves to ``UserBalance.locked``, the commission
+    is debited from ``UserBalance.amount`` (the platform's share —
+    same accounting as the upstream-provider branch where CryptoBot
+    keeps the commission portion), the deal lands in
+    :data:`DealStatus.pending_confirmation` with ``commission_paid=True``,
+    and the return is ``(deal, None)`` so the router can skip the
+    pay-invoice UI.
+
+    Otherwise the deal is created in :data:`DealStatus.pending_topup`
+    and the invoice is linked through ``Deal.topup_deposit_id`` /
     ``WalletDeposit.linked_deal_id``. The webhook handler
     (:func:`complete_deal_topup_payment`) credits the deposit, locks
     the principal, and advances the deal to
@@ -446,16 +457,58 @@ async def create_deal_with_topup(
 
     rate = _resolve_commission_rate(settings, buyer, seller)
     commission = _commission(amt, rate, currency.decimals)
-    # ``commission`` may quantise to zero on a very small ``amt``
-    # against a non-zero rate (e.g. 0.01 USD × 0.5 %). Don't issue
-    # a zero-total invoice in that case — fall back to the legacy
-    # balance-funded path. The platform retains the right to drop
-    # sub-decimal commission below the currency precision.
+
     bal = await lock_user_balance(session, buyer.id, currency.id)
     balance_amount = Decimal(str(bal.amount))
+    needed = quantize_money(amt + commission, currency.decimals)
     topup_principal = max(Decimal(0), amt - balance_amount)
     topup_principal = quantize_money(topup_principal, currency.decimals)
     invoice_total = quantize_money(topup_principal + commission, currency.decimals)
+
+    # P11-D1 — balance-fully-covers branch. The buyer has enough on
+    # ``UserBalance.amount`` to cover both the principal and the
+    # commission, so the upstream invoice round-trip is pointless
+    # (and would either bounce on ``min_deposit`` for tiny
+    # commissions or just inconvenience the user with an extra
+    # CryptoBot tab). Move the principal to ``locked`` and burn the
+    # commission off ``amount`` — the platform's commission share is
+    # already accounted for the same way the invoice path does it
+    # (CryptoBot keeps the commission portion of the upstream
+    # invoice, so the user-side ledger never sees that money).
+    if balance_amount >= needed:
+        bal.amount = balance_amount - needed
+        bal.locked = Decimal(str(bal.locked)) + amt
+        deal = Deal(
+            buyer_id=buyer.id,
+            seller_id=seller.id,
+            amount=amt,
+            commission_amount=commission,
+            currency_id=currency.id,
+            description=description,
+            status=DealStatus.pending_confirmation,
+            payment_provider=payment_provider,
+            commission_paid=True,
+        )
+        session.add(deal)
+        await session.flush()
+        notif, ws_payload = await notifier.insert(
+            session,
+            seller.id,
+            NotificationType.deals,
+            "Новая сделка",
+            (
+                f"@{buyer.username or buyer.tg_user_id} создал сделку #{deal.id} "
+                f"на {amt} {currency.code}"
+            ),
+            {"deal_id": deal.id},
+        )
+        await session.commit()
+        await _safe_dispatch(session, [(notif, ws_payload)])
+        await notifier.publish_deal_update(
+            deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+        )
+        await session.refresh(deal, attribute_names=["buyer", "seller", "currency"])
+        return deal, None
 
     deal = Deal(
         buyer_id=buyer.id,
@@ -472,17 +525,14 @@ async def create_deal_with_topup(
     await session.flush()
 
     if invoice_total <= 0:
-        # Nothing to charge externally (commission rounded to zero
-        # AND balance ≥ amount). Promote the deal straight to
-        # pending_confirmation, locking the principal now. No
-        # deposit row is created; the caller still gets a (deal,
-        # synthetic deposit-like sentinel) tuple via a NULL deposit
-        # — but the public contract returns ``WalletDeposit`` so we
-        # take the small cost of a placeholder by lifting the
-        # debit + status flip into this branch and returning a
-        # never-paid row stub via a 1-token deposit. Cleaner: skip
-        # the with-topup path in the router when invoice_total<=0
-        # and use ``create_deal`` instead. We enforce that here.
+        # Edge case kept from the original P10 contract: ``amt`` is so
+        # small (vs. the commission rate) that ``commission``
+        # quantises to zero AND ``balance >= amt`` (otherwise the
+        # balance-fully-covers branch above would have fired).
+        # ``balance >= amt + 0`` would in fact land us in that
+        # branch, so this is mostly defensive — we keep the explicit
+        # raise to surface a developer error if someone widens the
+        # commission rate range later.
         raise ValueError("Сумма комиссии меньше точности валюты — используйте обычную сделку")
 
     # Issue the deposit invoice on the buyer's chosen provider. Note
@@ -490,6 +540,17 @@ async def create_deal_with_topup(
     # ``float`` because the upstream provider clients (CryptoBot,
     # Crystalpay) consume floats; the row itself stores the Decimal
     # back via ``Numeric(28,8)`` so no precision is lost on the way.
+    #
+    # P11-D1 — ``min_check=False`` is the escape hatch for the
+    # commission-only edge case: when the buyer's balance covers
+    # the principal but not ``commission`` (so the invoice charges
+    # JUST the commission, which can be smaller than the per-currency
+    # ``min_deposit``). The HTTP wallet-deposit endpoint still
+    # enforces ``min_deposit`` for direct top-ups; only this internal
+    # caller bypasses it because the deal flow has no UX way to ask
+    # the user to "top up at least 1 USD" when they only need to pay
+    # a 0.50 USD commission.
+    skip_min = invoice_total < Decimal(str(currency.min_deposit))
     deposit = await create_deposit_invoice(
         session,
         buyer,
@@ -497,6 +558,7 @@ async def create_deal_with_topup(
         float(invoice_total),
         purpose="deal_topup",
         provider=payment_provider,
+        min_check=not skip_min,
     )
     deposit.linked_deal_id = deal.id
     deal.topup_deposit_id = deposit.id

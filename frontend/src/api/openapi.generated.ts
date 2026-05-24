@@ -3461,7 +3461,7 @@ export interface components {
         /** AdminWithdrawalOut */
         AdminWithdrawalOut: {
             /** Address */
-            address: string;
+            address: string | null;
             /** Admin Note */
             admin_note: string;
             /** Amount */
@@ -3645,10 +3645,17 @@ export interface components {
          *     Bundles the new :class:`DealOut` row (status ``pending_topup``)
          *     with the :class:`DealTopupInvoiceOut` describing the invoice the
          *     buyer must pay before the deal can be activated.
+         *
+         *     P11-D1 — ``invoice`` is ``None`` when the buyer's balance fully
+         *     covers ``amount + commission``; the service short-circuits the
+         *     invoice path and debits the balance directly so the deal lands
+         *     in :data:`DealStatus.pending_confirmation` straight away. The
+         *     frontend uses ``invoice is None`` to skip the pay-the-invoice
+         *     UI and jump to the deal-detail page.
          */
         DealCreateWithTopupOut: {
             deal: components["schemas"]["DealOut"];
-            invoice: components["schemas"]["DealTopupInvoiceOut"];
+            invoice: components["schemas"]["DealTopupInvoiceOut"] | null;
         };
         /** DealMessageCreate */
         DealMessageCreate: {
@@ -4482,7 +4489,7 @@ export interface components {
         /** WalletWithdrawCreateReq */
         WalletWithdrawCreateReq: {
             /** Address */
-            address: string;
+            address?: string | null;
             /** Amount */
             amount: number | string;
             /** Currency Code */
@@ -4491,7 +4498,7 @@ export interface components {
         /** WalletWithdrawalOut */
         WalletWithdrawalOut: {
             /** Address */
-            address: string;
+            address: string | null;
             /** Admin Note */
             admin_note: string;
             /** Amount */

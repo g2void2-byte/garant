@@ -298,11 +298,12 @@ async def create_deal_with_topup_endpoint(
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
+    # P11-D1 — ``deposit`` is ``None`` when the buyer's balance fully
+    # covers ``amount + commission``: the service short-circuits the
+    # invoice path and the deal lands in ``pending_confirmation``
+    # straight away. The frontend uses ``invoice is None`` to skip
+    # the pay-invoice UI and jump to the deal-detail page.
     invoice = _topup_invoice_from_deposit(deal, deposit)
-    # ``invoice`` is None only if the deposit is already non-pending,
-    # which can't happen here — ``create_deal_with_topup`` just inserted
-    # it with ``status='pending'``.
-    assert invoice is not None
     return DealCreateWithTopupOut(
         deal=_deal_out(deal, user.id, topup_invoice=invoice), invoice=invoice
     )

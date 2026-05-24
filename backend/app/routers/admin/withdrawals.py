@@ -341,12 +341,13 @@ async def decide_withdrawal(
                     )
                 w_locked.status = WalletWithdrawStatus.sent
                 w_locked.processed_at = utcnow()
+                _dst = w_locked.address or "в @CryptoBot"
                 notif, ws_payload = await notifier.insert(
                     session,
                     user.id,
                     NotificationType.deposits,
                     "Вывод выполнен",
-                    f"-{w_locked.amount} {currency.code} отправлены на {w_locked.address}",
+                    f"-{w_locked.amount} {currency.code} отправлены на {_dst}",
                     {"withdrawal_id": w_locked.id},
                 )
                 pending.append((notif, ws_payload))
@@ -478,12 +479,13 @@ async def decide_withdrawal(
         w.admin_note = body.note or w.admin_note
         w.processed_at = utcnow()
         if currency and user:
+            _dst = w.address or "в @CryptoBot"
             notif, ws_payload = await notifier.insert(
                 session,
                 user.id,
                 NotificationType.deposits,
                 "Вывод выполнен",
-                f"-{w.amount} {currency.code} отправлены на {w.address}",
+                f"-{w.amount} {currency.code} отправлены на {_dst}",
                 {"withdrawal_id": w.id},
             )
             pending.append((notif, ws_payload))

@@ -3398,8 +3398,15 @@
       "AdminWithdrawalOut": {
         "properties": {
           "address": {
-            "title": "Address",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
           },
           "admin_note": {
             "title": "Admin Note",
@@ -3746,13 +3753,20 @@
         "type": "object"
       },
       "DealCreateWithTopupOut": {
-        "description": "P10 \u2014 response from ``POST /api/deals/with-topup``.\n\nBundles the new :class:`DealOut` row (status ``pending_topup``)\nwith the :class:`DealTopupInvoiceOut` describing the invoice the\nbuyer must pay before the deal can be activated.",
+        "description": "P10 \u2014 response from ``POST /api/deals/with-topup``.\n\nBundles the new :class:`DealOut` row (status ``pending_topup``)\nwith the :class:`DealTopupInvoiceOut` describing the invoice the\nbuyer must pay before the deal can be activated.\n\nP11-D1 \u2014 ``invoice`` is ``None`` when the buyer's balance fully\ncovers ``amount + commission``; the service short-circuits the\ninvoice path and debits the balance directly so the deal lands\nin :data:`DealStatus.pending_confirmation` straight away. The\nfrontend uses ``invoice is None`` to skip the pay-the-invoice\nUI and jump to the deal-detail page.",
         "properties": {
           "deal": {
             "$ref": "#/components/schemas/DealOut"
           },
           "invoice": {
-            "$ref": "#/components/schemas/DealTopupInvoiceOut"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DealTopupInvoiceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -6002,8 +6016,15 @@
       "WalletWithdrawCreateReq": {
         "properties": {
           "address": {
-            "title": "Address",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
           },
           "amount": {
             "anyOf": [
@@ -6024,8 +6045,7 @@
         },
         "required": [
           "currency_code",
-          "amount",
-          "address"
+          "amount"
         ],
         "title": "WalletWithdrawCreateReq",
         "type": "object"
@@ -6033,8 +6053,15 @@
       "WalletWithdrawalOut": {
         "properties": {
           "address": {
-            "title": "Address",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
           },
           "admin_note": {
             "title": "Admin Note",
