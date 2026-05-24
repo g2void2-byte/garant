@@ -10022,7 +10022,7 @@
     },
     "/api/admin/reviews": {
       "post": {
-        "description": "Admin creates a review on behalf of a user.\n\n``author_id`` and ``target_id`` are required and validated. If the\npair already has a review for the same deal, we still create a new\nrow \u2014 the platform's regular create endpoint enforces uniqueness,\nbut admin operations are deliberately unrestricted for cleanup.",
+        "description": "Admin creates a review on behalf of a user.\n\n``author_id`` and ``target_id`` are required and validated. The\nUNIQUE constraint ``uq_reviews_author_deal`` (audit \u00a71.1) binds\nadmin writes too: an attempt to create a second review for the\nsame ``(author_id, deal_id)`` pair is rejected with 409 instead\nof silently inflating the target's rating counters. Editing the\nexisting row via ``POST /admin/content/reviews/{review_id}`` is\nthe correct path for that case.",
         "operationId": "create_review_api_admin_reviews_post",
         "parameters": [
           {
