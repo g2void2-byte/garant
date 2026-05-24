@@ -282,6 +282,8 @@ async def create_deposit_invoice(
     amount: float,
     purpose: str = "wallet",
     provider: str = "cryptobot",
+    *,
+    min_check: bool = True,
 ) -> WalletDeposit:
     """Create a wallet-deposit invoice on the configured ``provider``.
 
@@ -291,9 +293,20 @@ async def create_deposit_invoice(
     ``settings.wallet_deposit_expiry_seconds`` so all three sides —
     the local ``WalletDeposit`` row, the upstream provider invoice,
     and the background sweep — agree on the terminal moment.
+
+    P11-D1 — ``min_check`` is an internal-only escape hatch for
+    callers that need to issue a tiny invoice below the per-currency
+    ``min_deposit``. The HTTP wallet-deposit endpoint always passes
+    the default (``True``) so the user-facing ``Wallet → Top up``
+    flow keeps the legacy minimum. The deal-creation flow
+    (:func:`backend.app.services_deals.create_deal_with_topup`)
+    passes ``False`` when the invoice charges only a commission
+    smaller than ``min_deposit`` — without the override, a $0.50
+    commission on a $10 deal would bounce against the $1 min_deposit
+    even though the buyer's balance already covers the principal.
     """
     currency = await get_currency_by_code(session, currency_code)
-    if amount < currency.min_deposit:
+    if min_check and amount < currency.min_deposit:
         raise HTTPException(
             400, f"Минимальная сумма пополнения: {currency.min_deposit} {currency.code}"
         )
@@ -930,7 +943,11 @@ _cryptopay_configured = is_cryptopay_configured
 
 
 async def create_withdrawal(
-    session: AsyncSession, user: User, currency_code: str, amount: Decimal, address: str
+    session: AsyncSession,
+    user: User,
+    currency_code: str,
+    amount: Decimal,
+    address: str | None,
 ) -> WalletWithdrawal:
     # Audit L2 — ``amount`` is a ``Decimal`` at the wire layer
     # (``WalletWithdrawCreateReq.amount: Decimal``). The previous
@@ -946,15 +963,33 @@ async def create_withdrawal(
             400, f"Минимальная сумма вывода: {currency.min_withdraw} {currency.code}"
         )
 
-    # Audit L-8 — strip control bytes / CR-LF / backslashes and clip
-    # to a sane width BEFORE the per-currency regex match. The
-    # ``WalletWithdrawal.address`` value ends up in admin DM
-    # templates, audit logs and email subjects; a smuggled ``\n``
-    # would split the message and a multi-megabyte input would
-    # bloat the DB row. The regex check below still gates whatever
-    # survives sanitisation, so a malformed-but-clean string fails
-    # the same way it used to.
-    address = _sanitise_withdraw_address(address)
+    # P11-W1 — CryptoBot Transfer auto-mode (``auto_withdraw_enabled``
+    # + a real ``CRYPTOBOT_TOKEN``) identifies the recipient by
+    # ``users.tg_user_id`` and therefore does not need an on-chain
+    # address. Manual-mode payouts (admin DM-driven) still require
+    # one — without it the operator has nowhere to send funds. We
+    # decide which mode is active up front so the regex check below
+    # can be skipped when the address is legitimately absent.
+    auto_mode = await _auto_withdraw_enabled(session) and _cryptopay_configured()
+    if address is not None:
+        # Audit L-8 — strip control bytes / CR-LF / backslashes and clip
+        # to a sane width BEFORE the per-currency regex match. The
+        # ``WalletWithdrawal.address`` value ends up in admin DM
+        # templates, audit logs and email subjects; a smuggled ``\n``
+        # would split the message and a multi-megabyte input would
+        # bloat the DB row. The regex check below still gates whatever
+        # survives sanitisation, so a malformed-but-clean string fails
+        # the same way it used to.
+        address = _sanitise_withdraw_address(address)
+        if not address:
+            address = None
+
+    if address is None and not auto_mode:
+        # Manual mode requires an address — there's no other channel
+        # to dispatch the payout. Refuse upfront so the frontend can
+        # surface a deterministic error instead of letting the row
+        # land in ``pending`` with nothing for the admin to action.
+        raise HTTPException(400, "Адрес кошелька обязателен")
 
     # per-currency anchored regex check. Anchored on both
     # ends because ``re.fullmatch`` already requires the whole string
@@ -967,7 +1002,7 @@ async def create_withdrawal(
     # ``re.compile`` here because the regex column rarely changes and
     # Python's regex cache caps at 512 patterns — well above the ~10
     # currencies we ship.
-    if currency.address_regex:
+    if address is not None and currency.address_regex:
         if not _safe_fullmatch(currency.address_regex, address):
             raise HTTPException(
                 400,
@@ -1230,7 +1265,8 @@ async def create_withdrawal(
             "Заявка на вывод",
             (
                 f"@{user.username or user.tg_user_id}: "
-                f"{amount} {currency.code} → {_truncate_address(address)}"
+                f"{amount} {currency.code} → "
+                f"{_truncate_address(address) if address else 'CryptoBot Transfer'}"
             ),
             {"withdrawal_id": withdrawal.id},
         )

@@ -972,7 +972,13 @@ class WalletWithdrawal(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
     amount: Mapped[float] = mapped_column(Numeric(28, 8))
-    address: Mapped[str] = mapped_column(String(256))
+    # P11-W1 — nullable so the CryptoBot Transfer payout path (auto-mode
+    # + ``CRYPTOBOT_TOKEN`` configured) can store a withdrawal that
+    # has no on-chain address: the recipient is identified by
+    # ``users.tg_user_id`` upstream. Manual/admin payouts still
+    # require a non-null address (enforced in
+    # ``services_wallet.create_withdrawal``).
+    address: Mapped[str | None] = mapped_column(String(256), nullable=True)
     status: Mapped[WalletWithdrawStatus] = mapped_column(
         Enum(WalletWithdrawStatus), default=WalletWithdrawStatus.pending
     )

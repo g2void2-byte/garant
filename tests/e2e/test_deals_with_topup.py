@@ -526,3 +526,109 @@ async def test_cancel_pending_topup_rejects_seller(client, _stub_cryptopay):
     )
     # Seller can't cancel the buyer's pending_topup deal.
     assert cancel.status_code == 400
+
+
+# ── §9 P11-D1: balance-fully-covers (no invoice) ────────────────
+
+
+async def test_with_topup_balance_fully_covers_skips_invoice(client, _stub_cryptopay):
+    """P11-D1 — buyer's balance ≥ amount + commission → no invoice.
+
+    Asserts the new short-circuit branch: the deal is created in
+    ``pending_confirmation`` straight away, ``commission_paid``
+    flips to ``True``, the principal is locked, the commission is
+    debited off ``UserBalance.amount``, and the response carries
+    ``invoice = None``.
+    """
+    from backend.app.db import async_session
+    from backend.app.models import Currency, Deal, DealStatus, UserBalance
+
+    buyer_init, _seller_init, buyer_pin = await _setup_pair(client, 30901, 30902)
+
+    async with async_session() as session:
+        buyer_id = await get_user_id_by_tg(session, 30901)
+        # 100 principal + 5 commission = 105 needed; give a little extra
+        # so the deduction is visible in the post-call assertion.
+        await credit_balance(session, buyer_id, "USDT", 200)
+
+    resp = await _create_with_topup(
+        client, buyer_init, buyer_pin, counterparty="seller30902", amount=100.0
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    deal_id = body["deal"]["id"]
+    # Short-circuit: deal lands in pending_confirmation, commission
+    # paid, no invoice attached.
+    assert body["deal"]["status"] == DealStatus.pending_confirmation.value
+    assert body["deal"]["commission_paid"] is True
+    assert body["deal"]["topup_deposit_id"] is None
+    assert body["invoice"] is None
+    assert body["deal"]["topup_invoice"] is None
+
+    async with async_session() as session:
+        deal = await session.get(Deal, deal_id)
+        assert deal is not None
+        assert deal.status == DealStatus.pending_confirmation
+        assert deal.commission_paid is True
+        assert deal.topup_deposit_id is None
+
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
+        buyer_id = await get_user_id_by_tg(session, 30901)
+        bal = (
+            await session.execute(
+                select(UserBalance).where(
+                    UserBalance.user_id == buyer_id,
+                    UserBalance.currency_id == usdt.id,
+                )
+            )
+        ).scalar_one()
+        # Started with 200; needed 105 (100 principal + 5 commission).
+        # 100 moves to locked, 5 burns off (platform's commission
+        # share — same accounting as the upstream-invoice path).
+        # Spendable should be 200 - 105 = 95.
+        assert Decimal(str(bal.amount)) == Decimal("95")
+        assert Decimal(str(bal.locked)) == Decimal("100")
+
+
+# ── §10 P11-D1: tiny commission below min_deposit ───────────────
+
+
+async def test_with_topup_commission_below_min_deposit_uses_skip_min(client, _stub_cryptopay):
+    """P11-D1 — commission-only invoice smaller than ``currency.min_deposit``.
+
+    Buyer's balance covers the principal but not the commission. The
+    invoice charges only the commission, which is below the USD
+    ``min_deposit`` of 1.0. The old code bounced this with HTTP 400
+    ("Минимальная сумма пополнения"); the new ``min_check=False``
+    escape hatch lets the deal-create path bypass that check.
+    """
+    from backend.app.db import async_session
+    from backend.app.models import DealStatus
+
+    buyer_init, _seller_init, buyer_pin = await _setup_pair(client, 31001, 31002)
+
+    async with async_session() as session:
+        buyer_id = await get_user_id_by_tg(session, 31001)
+        # 10 principal + 0.5 commission = 10.5 needed; give 10 so the
+        # buyer has the principal but not the commission.
+        await credit_balance(session, buyer_id, "USD", 10)
+
+    resp = await _create_with_topup(
+        client,
+        buyer_init,
+        buyer_pin,
+        counterparty="seller31002",
+        amount=10.0,
+        currency_code="USD",
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    invoice = body["invoice"]
+    assert invoice is not None
+    # invoice_total = 0 principal + 0.5 commission = 0.5 USD (below
+    # min_deposit=1.0 USD). The min_check=False escape hatch lets
+    # this through.
+    assert Decimal(invoice["topup_principal"]) == Decimal("0")
+    assert Decimal(invoice["commission"]) == Decimal("0.5")
+    assert Decimal(invoice["total"]) == Decimal("0.5")
+    assert body["deal"]["status"] == DealStatus.pending_topup.value
