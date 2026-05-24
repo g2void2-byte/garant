@@ -6,6 +6,7 @@ import {
   useCurrencies,
   useWalletBalances,
 } from "@/api/hooks";
+import { DepositStatusModal } from "@/components/wallet/DepositStatusModal";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/Button";
@@ -14,7 +15,8 @@ import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { formatCurrency } from "@/lib/format";
-import { haptic, openExternalLink, openTelegramLink } from "@/lib/tg";
+import { haptic } from "@/lib/tg";
+import type { WalletDepositDto } from "@/api/types";
 
 type DepositProvider = "cryptobot" | "crystalpay";
 
@@ -54,6 +56,11 @@ export default function WalletDepositPage() {
   const [code, setCode] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
   const [provider, setProvider] = useState<DepositProvider>("cryptobot");
+  // Track the freshly-created deposit so ``DepositStatusModal`` can
+  // poll its status, surface real-time updates from the WS push and
+  // auto-open the upstream invoice URL after a brief animation in.
+  const [activeDeposit, setActiveDeposit] = useState<WalletDepositDto | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   const fiatCurrencies = useMemo(
     () => (currencies.data ?? []).filter((c) => (c.kind ?? "crypto") === "fiat"),
@@ -116,16 +123,8 @@ export default function WalletDepositPage() {
         provider,
       });
       haptic("success");
-      if (dep.pay_url) {
-        // Telegram's ``openTelegramLink`` only accepts ``t.me/*`` URLs and
-        // raises ``WebAppTgUrlInvalid`` for anything else. CryptoBot returns
-        // a ``https://t.me/CryptoBot?start=...`` invoice which fits, but
-        // Crystalpay returns its own ``https://pay.crystalpay.io/...`` URL
-        // that has to go through ``openLink``/``openExternalLink`` instead.
-        const isTmeLink = /^https?:\/\/t\.me\//i.test(dep.pay_url);
-        if (isTmeLink) openTelegramLink(dep.pay_url);
-        else openExternalLink(dep.pay_url);
-      }
+      setActiveDeposit(dep);
+      setModalOpen(true);
       toast.show({
         kind: "success",
         title: "Счёт создан",
@@ -222,6 +221,11 @@ export default function WalletDepositPage() {
           приходят автоматически.
         </p>
       </div>
+      <DepositStatusModal
+        deposit={activeDeposit}
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+      />
     </Page>
   );
 }

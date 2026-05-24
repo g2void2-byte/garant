@@ -348,9 +348,10 @@ async def test_admin_withdrawals_counters_cover_every_status(client):
 
 @pytest.mark.asyncio
 async def test_deposit_polling_endpoint_is_throttled(client):
-    """``GET /api/wallet/deposits/{id}`` must enforce 2/30s per user —
-    the 3rd request within the window returns 429 instead of paying the
-    upstream CryptoBot quota for a hot-loop client."""
+    """``GET /api/wallet/deposits/{id}`` must enforce a per-user rate
+    limit — once the ``RLWalletPoll`` bucket is exhausted the next
+    request returns 429 instead of paying the upstream CryptoBot
+    quota for a hot-loop client."""
     init = signed_init_data(8501, "poll_throttle")
     await setup_pin(client, init)
 
@@ -380,10 +381,14 @@ async def test_deposit_polling_endpoint_is_throttled(client):
 
     reset_state_for_tests()
 
-    r1 = await client.get(f"/api/wallet/deposits/{dep_id}", headers=auth_headers(init))
-    r2 = await client.get(f"/api/wallet/deposits/{dep_id}", headers=auth_headers(init))
-    r3 = await client.get(f"/api/wallet/deposits/{dep_id}", headers=auth_headers(init))
-
-    assert r1.status_code == 200, r1.text
-    assert r2.status_code == 200, r2.text
-    assert r3.status_code == 429, r3.text
+    # ``RLWalletPoll`` is currently configured for 20 requests / 60 s
+    # so the real-time ``DepositStatusModal`` can keep polling every
+    # ~5 s while the invoice is pending. The contract under test is
+    # only that the *limit + 1*-th request returns 429 — keep this
+    # constant in sync with ``backend.app.rate_limit.RLWalletPoll``.
+    limit = 20
+    for i in range(limit):
+        r = await client.get(f"/api/wallet/deposits/{dep_id}", headers=auth_headers(init))
+        assert r.status_code == 200, f"request {i + 1} unexpectedly returned {r.status_code}: {r.text}"
+    r_over = await client.get(f"/api/wallet/deposits/{dep_id}", headers=auth_headers(init))
+    assert r_over.status_code == 429, r_over.text

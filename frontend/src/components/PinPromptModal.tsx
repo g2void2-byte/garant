@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useCheckPin } from "@/api/hooks";
 import { PinPad } from "@/components/ui/PinPad";
@@ -73,7 +74,12 @@ export function PinPromptModal({
 
   if (!mounted) return null;
 
-  return (
+  // V14-card — render via React portal so the modal escapes any
+  // ancestor with a non-``none`` transform (e.g. ``<Page>``'s
+  // ``animate-fadein``) which would otherwise turn ``fixed inset-0``
+  // into a containing block against the short Page div and clip the
+  // dialog off the top of the viewport.
+  const body = (
     <>
       <div
         className={cn(
@@ -131,4 +137,7 @@ export function PinPromptModal({
       </div>
     </>
   );
+
+  if (typeof document === "undefined") return body;
+  return createPortal(body, document.body);
 }

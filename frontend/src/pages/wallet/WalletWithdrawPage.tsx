@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { ArrowUpFromLine, CreditCard, Wallet, X } from "lucide-react";
 import {
@@ -354,7 +355,12 @@ function CardWithdrawModal({ open, onClose, admins }: CardWithdrawModalProps) {
 
   if (!mounted) return null;
 
-  return (
+  // V14-card — render via React portal so the modal is not subject
+  // to the parent ``<Page>``'s ``animate-fadein`` transform creating
+  // a fixed-position containing block (which made ``fixed inset-0``
+  // align to the short Page div instead of the viewport and clipped
+  // the dialog off the top of the screen on empty-balance views).
+  const body = (
     <div role="dialog" aria-modal="true" aria-labelledby="card-withdraw-title">
       <div
         className={cn(
@@ -432,4 +438,7 @@ function CardWithdrawModal({ open, onClose, admins }: CardWithdrawModalProps) {
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return body;
+  return createPortal(body, document.body);
 }

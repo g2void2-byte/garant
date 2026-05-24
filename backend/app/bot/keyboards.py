@@ -271,17 +271,23 @@ def notification_keyboard(
 
 
 def help_keyboard() -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
+    """Help / FAQ keyboard.
+
+    V14 — the help command no longer surfaces external admin /
+    community chat links (those were the path users took to ask
+    administrators for support manually). Instead, every entry point
+    is an in-app FAQ inside the Mini App. ``bot_docs_url`` /
+    ``bot_arbitration_url`` are still respected as optional bonus
+    rows for ops who configure an external rulebook URL, but they
+    are no longer required for the keyboard to be useful — the FAQ
+    button below always works as long as the Mini App is reachable.
+    """
+
+    rows: list[list[InlineKeyboardButton]] = [
+        [_webapp_button("📚 Открыть FAQ", "/support")],
+    ]
     if settings.bot_docs_url:
         rows.append([InlineKeyboardButton(text="📖 Инструкция", url=settings.bot_docs_url)])
-    if settings.bot_community_chat_url:
-        rows.append([InlineKeyboardButton(text="💬 Наш чат", url=settings.bot_community_chat_url)])
     if settings.bot_arbitration_url:
         rows.append([InlineKeyboardButton(text="⚖ Арбитраж", url=settings.bot_arbitration_url)])
-    if settings.bot_support_username:
-        uname = settings.bot_support_username.lstrip("@")
-        rows.append([InlineKeyboardButton(text="👤 Помощь", url=f"https://t.me/{uname}")])
-    # Always offer a way back to the TMA if everything else is empty.
-    if not rows:
-        rows.append([_webapp_button("🪄 Открыть приложение", "/")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
