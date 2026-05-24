@@ -39,6 +39,14 @@ interface DepositStatusModalProps {
   open: boolean;
   onClose: () => void;
   /**
+   * Optional callback invoked after the deposit transitions to
+   * ``paid`` (in place of ``onClose``). The host page typically
+   * navigates the user somewhere meaningful here — e.g. back to
+   * ``/profile`` where the credited balance is visible — instead of
+   * leaving them on the deposit-creation form.
+   */
+  onSuccess?: () => void;
+  /**
    * Delay before automatically opening the upstream invoice page so
    * the user has a beat to see the modal animate in. Default 1000 ms.
    */
@@ -104,6 +112,7 @@ export function DepositStatusModal({
   deposit,
   open,
   onClose,
+  onSuccess,
   autoOpenDelayMs = 1000,
 }: DepositStatusModalProps) {
   const toast = useToast();
@@ -129,18 +138,24 @@ export function DepositStatusModal({
 
   // Auto-close shortly after a successful payment so the user sees
   // the "Оплачено" state, the success haptic fires, and then they're
-  // dropped back on the wallet page with the credited balance.
+  // dropped back on the wallet page with the credited balance. Host
+  // pages that want to navigate elsewhere after the credit (e.g.
+  // ``/profile`` to show the new balance) can opt in via
+  // ``onSuccess`` — it replaces ``onClose`` only for the ``paid``
+  // transition; ``expired`` / ``refunded`` still fall through to the
+  // regular close path.
   const lastStatus = useRef<string | undefined>();
   useEffect(() => {
     if (!open || !current) return;
     if (lastStatus.current !== "paid" && current.status === "paid") {
       haptic("success");
-      const t = setTimeout(onClose, 1800);
+      const finish = onSuccess ?? onClose;
+      const t = setTimeout(finish, 1800);
       lastStatus.current = current.status;
       return () => clearTimeout(t);
     }
     lastStatus.current = current.status;
-  }, [open, current, onClose]);
+  }, [open, current, onClose, onSuccess]);
 
   // Reset the cached "auto-opened" + "last status" state whenever the
   // modal closes so a follow-up deposit starts from a clean slate.

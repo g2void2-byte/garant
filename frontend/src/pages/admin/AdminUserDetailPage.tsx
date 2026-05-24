@@ -72,7 +72,7 @@ export default function AdminUserDetailPage() {
 
   if (!Number.isFinite(userId)) {
     return (
-      <Page showBack onBack={() => navigate("/admin/users")}>
+      <Page showBack onBack={() => navigate(-1)}>
         <AdminHeader title="Пользователь" />
         <p className="px-4 text-sm text-text-muted">Неверный ID.</p>
       </Page>
@@ -80,7 +80,7 @@ export default function AdminUserDetailPage() {
   }
 
   return (
-    <Page showBack onBack={() => navigate("/admin/users")}>
+    <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader title="Пользователь" />
       {isLoading || !user ? (
         <div className="px-4 space-y-3">

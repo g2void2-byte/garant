@@ -581,6 +581,41 @@ async def test_callbacks_use_edit_caption_when_message_has_photo():
 
 
 @pytest.mark.asyncio
+async def test_cb_notification_back_clears_inline_keyboard():
+    """Bugfix-plan #9 — the "🔙 Назад" button on notification DMs now
+    fires this callback (instead of opening the Mini App root). The
+    handler must drop the inline keyboard in place so the
+    notification text stays visible without the now-irrelevant
+    buttons, and answer the callback so the user's tap isn't left
+    spinning.
+    """
+    cb = _fake_callback(5110)
+    cb.data = keyboards.CB_NOTIF_BACK
+    cb.message.edit_reply_markup = AsyncMock()
+
+    await handlers.cb_notification_back(cb)
+
+    cb.message.edit_reply_markup.assert_awaited_once_with(reply_markup=None)
+    cb.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cb_notification_back_swallows_edit_errors():
+    """If Telegram already cleared the keyboard (double-tap), the
+    ``edit_reply_markup`` call raises "message is not modified". The
+    handler must treat that as a no-op so the user doesn't see a
+    spinning button — it only needs to answer the callback.
+    """
+    cb = _fake_callback(5111)
+    cb.data = keyboards.CB_NOTIF_BACK
+    cb.message.edit_reply_markup = AsyncMock(side_effect=RuntimeError("not modified"))
+
+    await handlers.cb_notification_back(cb)
+
+    cb.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_cb_tma_unavailable_pops_up_alert_when_tapped():
     """When WEBAPP_URL is not HTTPS, ``_webapp_button`` emits a
     ``callback_data=bot:tma_unavail:<path>`` button instead of a

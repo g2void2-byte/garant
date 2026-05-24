@@ -97,7 +97,7 @@ export default function AdminDealDetailPage() {
 
   if (!Number.isFinite(dealId)) {
     return (
-      <Page showBack onBack={() => navigate("/admin/deals")}>
+      <Page showBack onBack={() => navigate(-1)}>
         <AdminHeader title="Сделка" />
         <p className="px-4 text-sm text-text-muted">Неверный ID.</p>
       </Page>

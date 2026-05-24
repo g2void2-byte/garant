@@ -53,6 +53,17 @@ vi.mock("@/lib/tg", () => ({
   showBackButton: () => () => {},
 }));
 
+const navigateSpy = vi.hoisted(() => vi.fn());
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual<typeof import("react-router-dom")>(
+    "react-router-dom",
+  );
+  return {
+    ...actual,
+    useNavigate: () => navigateSpy,
+  };
+});
+
 import WalletDepositPage from "./WalletDepositPage";
 
 function renderPage() {
@@ -103,6 +114,7 @@ beforeEach(() => {
   hapticSpy.mockClear();
   openTelegramLinkSpy.mockClear();
   openExternalLinkSpy.mockClear();
+  navigateSpy.mockClear();
   mockState.currenciesLoading = false;
   mockState.currencies = [
     makeCurrency({ id: 1, code: "USD", name: "US Dollar" }),
@@ -254,5 +266,31 @@ describe("<WalletDepositPage />", () => {
     renderPage();
     const btn = screen.getByRole("button", { name: /Создаю депозит/ });
     expect(btn).toBeDisabled();
+  });
+
+  it("navigates to /profile after the deposit transitions to paid", async () => {
+    // Bug 1 from garant-bugfix-plan — after a successful payment the
+    // user is redirected to ``/profile`` (where the credited balance
+    // is visible), not left on the deposit-creation form. The modal
+    // forwards the ``onSuccess`` prop after a short animation delay;
+    // we mock the deposit as already-paid so the modal's
+    // paid-transition effect fires immediately on mount.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockState.createMutation.mutateAsync.mockResolvedValue(
+      makeDeposit({ status: "paid", paid_at: "2026-01-02T00:00:00Z" }),
+    );
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderPage();
+    await user.click(screen.getByRole("button", { name: /Пополнить депозит/ }));
+    await waitFor(() => {
+      expect(screen.getByTestId("deposit-status-modal")).toBeInTheDocument();
+    });
+    // The modal waits 1800ms after spotting ``paid`` before firing
+    // ``onSuccess`` so the user sees the "Оплачено" frame land.
+    vi.advanceTimersByTime(2000);
+    await waitFor(() => {
+      expect(navigateSpy).toHaveBeenCalledWith("/profile");
+    });
+    vi.useRealTimers();
   });
 });
