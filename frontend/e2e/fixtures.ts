@@ -303,13 +303,13 @@ export async function mockApi(page: Page, overrides: MockOverrides = {}) {
   await routeApi("wallet/balances", (r) => {
     const url = new URL(r.request().url());
     const kind = url.searchParams.get("kind");
-    const filtered = kind ? walletBalances.filter((b) => b.currency.kind === kind) : walletBalances;
+    const filtered = kind ? (walletBalances as any[]).filter((b) => b.currency.kind === kind) : walletBalances;
     return json(r, filtered);
   });
   await routeApi("wallet/currencies", (r) => {
     const url = new URL(r.request().url());
     const kind = url.searchParams.get("kind");
-    const filtered = kind ? currencies.filter((c) => c.kind === kind) : currencies;
+    const filtered = kind ? (currencies as any[]).filter((c) => c.kind === kind) : currencies;
     return json(r, filtered);
   });
   await routeApi("wallet/deposits", (r) => json(r, []));
