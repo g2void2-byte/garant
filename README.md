@@ -6,7 +6,7 @@ Escrow-сервис для безопасных сделок между поль
 
 - **Backend**: Python 3.12, FastAPI, SQLAlchemy 2 (async + asyncpg), PostgreSQL 16, Alembic, Pydantic v2, aiogram 3
 - **Frontend**: React 18, TypeScript, Vite, TailwindCSS, Framer Motion, TanStack Query
-- **Payments**: AsyncPayments (CryptoBot SDK)
+- **Payments**: CryptoBot (AsyncPayments SDK) + Crystalpay v3 (alternative deposit provider)
 
 ## Quick start — Docker Compose (recommended)
 
@@ -169,6 +169,8 @@ rules, and the telemetry path through `/api/csp-report` — lives in
 |---|---|---|
 | `BOT_TOKEN` | — | Telegram Bot API token |
 | `CRYPTOBOT_TOKEN` | — | CryptoBot API token |
+| `CRYSTALPAY_LOGIN` | _empty_ | Crystalpay v3 cashbox login (merchant cabinet → Кассы → header). Both empty = provider disabled. |
+| `CRYSTALPAY_SECRET` | _empty_ | Crystalpay v3 cashbox API secret (Settings / API → generate). Same value signs webhook payloads via `sha1(invoice_id:secret)`. |
 | `WEBAPP_URL` | `http://localhost:5173` | Public URL of the frontend |
 | `WEBAPP_PORT` | `8080` | Backend listen port |
 | `ALLOWED_ORIGINS` | `http://localhost:5173` | CORS origins (comma-separated) |
@@ -176,6 +178,11 @@ rules, and the telemetry path through `/api/csp-report` — lives in
 | `REDIS_URL` | _empty_ | Optional. When set (e.g. `redis://localhost:6379/0`), WebSocket broadcasts go through Redis pub/sub and the rate limiter uses Redis counters. Empty keeps everything in-process. |
 | `RUN_BOT` | `1` | Start aiogram polling (set `0` to disable) |
 | `ALLOW_UNSIGNED_INIT_DATA` | `0` | Accept unsigned initData (dev only!) |
+| `BOT_FORUMS_URL` | _empty_ | URL for "🏛 Форумы" button on the bot /profile keyboard. Empty hides the button. |
+| `BOT_COMMUNITY_CHAT_URL` | _empty_ | URL for "💬 Наш чат" button on the bot /help keyboard. |
+| `BOT_ARBITRATION_URL` | _empty_ | URL for "⚖ Арбитраж" button on the bot /help keyboard. |
+| `BOT_DOCS_URL` | _empty_ | URL for "📖 Инструкция" button on the bot /help keyboard. |
+| `BOT_SUPPORT_USERNAME` | _empty_ | Telegram username (without `@`) for "👤 Помощь" → `https://t.me/<value>`. |
 
 ## Project structure
 
