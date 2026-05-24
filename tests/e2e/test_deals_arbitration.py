@@ -202,11 +202,11 @@ async def test_resolve_requires_admin_or_arbiter(client):
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
     )
 
-    # A random non-admin user trying to resolve → 400.
+    # A random non-admin user trying to resolve → 403.
     resp = await client.post(
         f"/api/deals/{deal_id}/resolve",
         json={"winner": "buyer"},
         headers={**auth_headers(rando_init), "X-Pin-Token": rando_pin},
     )
-    assert resp.status_code == 400
-    assert "администратор" in resp.json()["detail"].lower()
+    assert resp.status_code == 403
+    assert "запрещён" in resp.json()["detail"].lower()
