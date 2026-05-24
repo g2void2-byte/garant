@@ -43,10 +43,6 @@ import type {
   AdminSettingsDto,
   AdminSettingsUpdateBody,
   AdminSystemStatusDto,
-  AdminTreasuryMarkSentBody,
-  AdminTreasuryOverviewDto,
-  AdminTreasuryWithdrawBody,
-  AdminTreasuryWithdrawDto,
   AdminUserBalanceDto,
   AdminUserDetailDto,
   AdminUserListDto,
@@ -466,7 +462,6 @@ export function useAdminAdjustBalance(userId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.admin.wallets.all() });
       qc.invalidateQueries({ queryKey: qk.admin.userWallet.forUser(userId) });
-      qc.invalidateQueries({ queryKey: qk.admin.treasury() });
       // V5-F-3: invalidate user detail + audit caches.
       qc.invalidateQueries({ queryKey: qk.admin.user.detail(userId) });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
@@ -540,68 +535,10 @@ export function useAdminDecideWithdrawal() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.admin.withdrawals.all() });
       qc.invalidateQueries({ queryKey: qk.admin.wallets.all() });
-      // V5-F-2: invalidate wallet detail + treasury + audit caches.
+      // V5-F-2: invalidate wallet detail + audit caches.
       qc.invalidateQueries({ queryKey: qk.admin.userWallet.all() });
       qc.invalidateQueries({ queryKey: qk.admin.user.all() });
-      qc.invalidateQueries({ queryKey: qk.admin.treasury() });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
-    },
-  });
-}
-
-// ── Treasury ─────────────────────────────────────────────────────────────
-
-export function useAdminTreasury() {
-  return useQuery<AdminTreasuryOverviewDto>({
-    queryKey: qk.admin.treasury(),
-    queryFn: () => api.get("api/admin/treasury").json(),
-  });
-}
-
-export function useAdminTreasuryWithdrawals() {
-  return useQuery<AdminTreasuryWithdrawDto[]>({
-    queryKey: qk.admin.treasuryHistory(),
-    queryFn: () => api.get("api/admin/treasury/withdrawals").json(),
-  });
-}
-
-export function useAdminTreasuryWithdraw() {
-  const qc = useQueryClient();
-  return useMutation<AdminTreasuryWithdrawDto, Error, AdminTreasuryWithdrawBody>({
-    // The 24h ``X-Totp-Session`` JWT is attached transparently by
-    // the ``ky`` ``beforeRequest`` hook in ``api/client.ts``; the
-    // global ``TotpGate`` intercepts the ``401 "Введите код 2FA"``
-    // and prompts the operator for one fresh code. The hook itself
-    // no longer takes a per-call code argument.
-    mutationFn: (body) =>
-      api.post("api/admin/treasury/withdraw", { json: body }).json(),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.admin.treasury() });
-      qc.invalidateQueries({ queryKey: qk.admin.treasuryHistory() });
-    },
-  });
-}
-
-export function useAdminTreasuryMarkSent() {
-  // Manual reconciliation for a ``pending`` treasury row when
-  // Phase 2 (CryptoBot HTTP) succeeded but Phase 3 (DB commit)
-  // crashed. Same TOTP gate as ``useAdminTreasuryWithdraw`` — the
-  // session JWT is attached by ``api/client.ts``. Invalidates both
-  // the per-currency balance overview and the history list so the
-  // ``available`` projection reflects the now-``sent`` row.
-  const qc = useQueryClient();
-  return useMutation<
-    AdminTreasuryWithdrawDto,
-    Error,
-    { id: number; body: AdminTreasuryMarkSentBody }
-  >({
-    mutationFn: ({ id, body }) =>
-      api
-        .post(`api/admin/treasury/${id}/mark_sent`, { json: body })
-        .json(),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.admin.treasury() });
-      qc.invalidateQueries({ queryKey: qk.admin.treasuryHistory() });
     },
   });
 }

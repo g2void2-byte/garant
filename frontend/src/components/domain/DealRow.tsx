@@ -13,6 +13,7 @@ const STATUS_LABEL: Record<string, { text: string; cls: string; icon: string }> 
     icon: "⏳",
   },
   pending_payment: { text: "Ожидает оплаты", cls: "bg-[#48390F] text-accent", icon: "💳" },
+  pending_topup: { text: "Ожидает инвойс", cls: "bg-[#48390F] text-accent", icon: "💳" },
   in_progress: { text: "В работе", cls: "bg-success/15 text-success", icon: "▶️" },
   completed: { text: "Завершена", cls: "bg-success/15 text-success", icon: "🎉" },
   cancelled: { text: "Отменена", cls: "bg-danger/15 text-danger", icon: "❌" },

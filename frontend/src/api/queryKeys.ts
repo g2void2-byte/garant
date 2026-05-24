@@ -260,8 +260,6 @@ export const qk = {
         ["admin", "withdrawals", params] as const,
     },
 
-    treasury: () => ["admin", "treasury"] as const,
-    treasuryHistory: () => ["admin", "treasury-history"] as const,
 
     settings: () => ["admin", "settings"] as const,
     categories: () => ["admin", "categories"] as const,

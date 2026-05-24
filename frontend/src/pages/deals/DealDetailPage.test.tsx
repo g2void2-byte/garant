@@ -15,12 +15,17 @@ const actionStub = vi.hoisted(() => () => ({
   mutateAsync: vi.fn(),
   isPending: false,
 }));
+const cancelTopupState = vi.hoisted(() => ({
+  mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
+  isPending: false,
+}));
 
 vi.mock("@/api/hooks", () => ({
   useDeal: () => dealState,
   useMe: () => meState,
   useReviews: () => reviewsState,
   useDealAction: () => actionStub(),
+  useCancelPendingTopup: () => cancelTopupState,
   useCreateReview: () => actionStub(),
 }));
 
@@ -43,7 +48,6 @@ function makeDeal(overrides: Partial<DealDto> = {}): DealDto {
     buyer: "alice",
     seller: "bob",
     description: "Лендинг под ключ",
-    pay_comission: "buyer",
     status: "in_progress",
     confirm_buyer: true,
     confirm_seller: true,
@@ -62,6 +66,10 @@ function makeDeal(overrides: Partial<DealDto> = {}): DealDto {
     arbitration_resolved_by: null,
     arbitration_resolution: null,
     arbitration_resolved_at: null,
+    commission_paid: true,
+    topup_deposit_id: null,
+    topup_invoice: null,
+    payment_provider: "cryptobot",
     ...overrides,
   };
 }
@@ -112,6 +120,8 @@ beforeEach(() => {
   dealState.isLoading = false;
   meState.data = makeUser({ username: "alice" });
   reviewsState.data = [];
+  cancelTopupState.mutateAsync = vi.fn().mockResolvedValue(makeDeal({ status: "cancelled" }));
+  cancelTopupState.isPending = false;
 });
 
 describe("<DealDetailPage />", () => {
@@ -127,13 +137,37 @@ describe("<DealDetailPage />", () => {
     expect(screen.getByRole("heading", { name: /Сделка #42/ })).toBeInTheDocument();
     expect(screen.getByText("@bob")).toBeInTheDocument();
     expect(screen.getByText("Лендинг под ключ")).toBeInTheDocument();
-    expect(screen.getByText("Покупатель")).toBeInTheDocument();
+    expect(screen.getByText("Комиссия оплачена")).toBeInTheDocument();
   });
 
   it("shows the 'confirm execution' CTA for buyer on an in-progress deal", () => {
     dealState.data = makeDeal({ status: "in_progress", role: "buyer" });
     renderAt(42);
     expect(screen.getByRole("button", { name: /Подтвердить исполнение/i })).toBeInTheDocument();
+  });
+
+  it("shows a topup invoice banner and cancel CTA for buyer on pending_topup", () => {
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      commission_paid: false,
+      topup_deposit_id: 501,
+      topup_invoice: {
+        deposit_id: 501,
+        pay_url: "https://pay.example/invoice/501",
+        total: "105",
+        topup_principal: "100",
+        commission: "5",
+        currency_code: "USD",
+        provider: "cryptobot",
+        expires_at: null,
+      },
+    });
+    renderAt(42);
+    expect(screen.getByText("Ожидается оплата инвойса")).toBeInTheDocument();
+    expect(screen.getByText("105 USD")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Открыть инвойс/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Отменить$/i })).toBeInTheDocument();
   });
 
   it("shows the accept/decline CTAs for seller on a pending_confirmation deal", () => {

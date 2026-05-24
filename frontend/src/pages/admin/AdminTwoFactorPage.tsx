@@ -22,8 +22,8 @@ import { useAdminRedirect } from "@/hooks/useAdminRedirect";
  * / 1Password / Aegis, types in the 6-digit code; backend verifies
  * before persisting ``users.totp_secret``.
  *
- * 2FA is required for ``/api/admin/treasury/withdraw`` (the external
- * payout endpoint) — `require_totp` checks ``X-Totp-Code``.
+ * 2FA protects dangerous admin mutations (for example manual wallet
+ * adjustments) — `require_totp` checks ``X-Totp-Code``.
  */
 export default function AdminTwoFactorPage() {
   const navigate = useNavigate();
@@ -68,8 +68,8 @@ export default function AdminTwoFactorPage() {
                 : "2FA не настроена"}
             </div>
             <div className="text-xs text-text-muted">
-              Требуется для вывода комиссий на внешний адрес
-              (/admin/treasury) и других опасных операций.
+              Требуется для опасных админ-действий: ручных корректировок
+              баланса, решений по выводам и системных операций.
             </div>
           </div>
         </div>

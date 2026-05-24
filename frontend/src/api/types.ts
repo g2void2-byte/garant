@@ -106,6 +106,7 @@ export type DealStatus =
   | "cancelled"
   | "pending_confirmation"
   | "pending_payment"
+  | "pending_topup"
   | "in_progress"
   | "completed"
   | "arbitration"
@@ -122,8 +123,9 @@ export interface DealDto {
   buyer_photo_url?: string | null;
   seller_photo_url?: string | null;
   description: string;
-  pay_comission: string;
-  pay_commission?: string;
+  topup_deposit_id?: number | null;
+  commission_paid?: boolean;
+  topup_invoice?: DealTopupInvoiceDto | null;
   status: DealStatus | string;
   confirm_buyer: boolean;
   confirm_seller: boolean;
@@ -146,6 +148,22 @@ export interface DealDto {
   // time. ``"cryptobot"`` (default) keeps legacy rows backwards-
   // compatible.
   payment_provider?: "cryptobot" | "crystalpay" | string;
+}
+
+export interface DealTopupInvoiceDto {
+  deposit_id: number;
+  pay_url: string;
+  total: string | number;
+  topup_principal: string | number;
+  commission: string | number;
+  currency_code: string;
+  provider: string;
+  expires_at?: string | null;
+}
+
+export interface DealCreateWithTopupResponseDto {
+  deal: DealDto;
+  invoice: DealTopupInvoiceDto;
 }
 
 export interface ReviewDto {
@@ -417,7 +435,6 @@ export interface AdminDealListItemDto {
   buyer_username: string | null;
   seller_id: number;
   seller_username: string | null;
-  pay_commission: string;
   created_at: string;
   in_progress_at: string | null;
   completed_at: string | null;
@@ -456,7 +473,8 @@ export interface AdminDealDetailDto {
   currency_code: string | null;
   amount: string;
   commission_amount: string | null;
-  pay_commission: string;
+  commission_paid: boolean;
+  topup_deposit_id?: number | null;
   buyer: AdminBalanceSnapshotDto;
   seller: AdminBalanceSnapshotDto;
   created_at: string;
@@ -674,52 +692,12 @@ export interface AdminWithdrawalDecisionBody {
   note?: string;
 }
 
-export interface AdminTreasuryBalanceDto {
-  currency_id: number;
-  currency_code: string;
-  currency_name: string;
-  decimals: number;
-  accrued: string;
-  withdrawn: string;
-  available: string;
-}
-
-export interface AdminTreasuryOverviewDto {
-  balances: AdminTreasuryBalanceDto[];
-  total_withdrawals: number;
-}
-
-export interface AdminTreasuryWithdrawBody {
-  currency_code: string;
-  amount: number;
-  address: string;
-  confirm: boolean;
-  note?: string;
-}
-
-export interface AdminTreasuryMarkSentBody {
-  confirm: boolean;
-  cryptobot_transfer_id?: string | null;
-  note?: string;
-}
-
-export interface AdminTreasuryWithdrawDto {
-  id: number;
-  actor_id: number;
-  currency_code: string;
-  amount: string;
-  address: string;
-  status: string;
-  note: string;
-  cryptobot_transfer_id: string | null;
-  created_at: string;
-}
-
 export interface AdminSettingsDto {
   deal_commission_percent: number;
   vip_commission_percent: number;
   inactivity_pending_confirmation_days: number;
   inactivity_pending_cancellation_days: number;
+  pending_topup_expiry_hours: number;
   max_active_services_per_user: number;
   maintenance_enabled: boolean;
   maintenance_message: string;
@@ -731,6 +709,7 @@ export interface AdminSettingsUpdateBody {
   vip_commission_percent?: number;
   inactivity_pending_confirmation_days?: number;
   inactivity_pending_cancellation_days?: number;
+  pending_topup_expiry_hours?: number;
   max_active_services_per_user?: number;
   maintenance_enabled?: boolean;
   maintenance_message?: string;

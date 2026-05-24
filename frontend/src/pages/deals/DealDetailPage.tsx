@@ -9,6 +9,7 @@ import {
   Star,
   Undo2,
   ShieldCheck,
+  ExternalLink,
 } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
@@ -18,6 +19,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Textarea } from "@/components/ui/Textarea";
 import { DealChatPanel } from "./DealChatPanel";
 import {
+  useCancelPendingTopup,
   useCreateReview,
   useDeal,
   useDealAction,
@@ -33,6 +35,7 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   cancelled: { text: "Отменена", cls: "text-danger" },
   pending_confirmation: { text: "Ожидает подтверждения", cls: "text-accent" },
   pending_payment: { text: "Ожидает оплаты", cls: "text-accent" },
+  pending_topup: { text: "Ожидает оплаты инвойса", cls: "text-accent" },
   in_progress: { text: "В работе", cls: "text-success" },
   completed: { text: "Завершена", cls: "text-success" },
   arbitration: { text: "В арбитраже", cls: "text-accent" },
@@ -43,6 +46,25 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
 };
 
 type WinnerSide = "buyer" | "seller";
+
+function TopupInvoiceRow({
+  label,
+  value,
+  currency,
+  strong = false,
+}: {
+  label: string;
+  value: string | number;
+  currency: string;
+  strong?: boolean;
+}) {
+  return (
+    <div className={"flex items-center justify-between " + (strong ? "font-semibold" : "")}>
+      <span>{label}</span>
+      <span>{value} {currency}</span>
+    </div>
+  );
+}
 
 export default function DealDetailPage() {
   const navigate = useNavigate();
@@ -60,6 +82,7 @@ export default function DealDetailPage() {
   const cancelAccept = useDealAction("cancel_request/accept");
   const debate = useDealAction("debate");
   const resolve = useDealAction("resolve");
+  const cancelTopup = useCancelPendingTopup();
 
   const [debateOpen, setDebateOpen] = useState(false);
   const [debateReason, setDebateReason] = useState("");
@@ -177,6 +200,20 @@ export default function DealDetailPage() {
     }
   };
 
+  const cancelPendingTopup = async () => {
+    try {
+      await cancelTopup.mutateAsync(dealId);
+      haptic("success");
+      toast.show({ kind: "success", title: "Инвойс отменён" });
+    } catch (e: unknown) {
+      haptic("error");
+      toast.show({
+        kind: "error",
+        title: (e as Error)?.message || "Не удалось отменить инвойс",
+      });
+    }
+  };
+
   const submitReview = async () => {
     if (!otherUser) return;
     try {
@@ -240,10 +277,8 @@ export default function DealDetailPage() {
         <div className="bg-panel border border-border rounded-card p-4 space-y-2">
           <div className="text-sm text-text-muted">Условия</div>
           <div className="flex items-center justify-between text-sm">
-            <span>Комиссию платит</span>
-            <span className="font-semibold">
-              {deal.pay_comission === "buyer" ? "Покупатель" : "Продавец"}
-            </span>
+            <span>Комиссия оплачена</span>
+            <span className="font-semibold">{deal.commission_paid ? "Да" : "Нет"}</span>
           </div>
           {deal.commission_amount !== null && deal.commission_amount > 0 && (
             <div className="flex items-center justify-between text-sm">
@@ -254,6 +289,46 @@ export default function DealDetailPage() {
             </div>
           )}
         </div>
+
+        {deal.status === "pending_topup" && (
+          <div className="rounded-card border border-accent/40 bg-accent/10 p-4 space-y-3">
+            <div>
+              <div className="text-sm font-semibold text-accent">Ожидается оплата инвойса</div>
+              <div className="text-xs text-text-muted">
+                После оплаты сделка перейдёт на подтверждение продавцом.
+              </div>
+            </div>
+            {deal.topup_invoice ? (
+              <>
+                <div className="space-y-1 text-sm">
+                  <TopupInvoiceRow label="Недостающая сумма" value={deal.topup_invoice.topup_principal} currency={deal.topup_invoice.currency_code} />
+                  <TopupInvoiceRow label="Комиссия" value={deal.topup_invoice.commission} currency={deal.topup_invoice.currency_code} />
+                  <TopupInvoiceRow label="Итого" value={deal.topup_invoice.total} currency={deal.topup_invoice.currency_code} strong />
+                </div>
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={() => openTelegramLink(deal.topup_invoice!.pay_url)}
+                >
+                  <ExternalLink className="size-4" /> Открыть инвойс
+                </Button>
+              </>
+            ) : (
+              <div className="text-sm text-text-muted">Инвойс недоступен или уже истёк.</div>
+            )}
+            {deal.role === "buyer" && (
+              <Button
+                type="button"
+                className="w-full"
+                variant="danger"
+                onClick={cancelPendingTopup}
+                disabled={cancelTopup.isPending}
+              >
+                {cancelTopup.isPending ? "Отменяю..." : "Отменить"}
+              </Button>
+            )}
+          </div>
+        )}
 
         {deal.status === "pending_cancellation" && deal.cancellation_reason && (
           <div className="bg-panel border border-border rounded-card p-4 space-y-1">
