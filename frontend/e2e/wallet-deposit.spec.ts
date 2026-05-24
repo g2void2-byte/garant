@@ -29,26 +29,43 @@ test.describe("Wallet deposit", () => {
     await mockApi(page);
 
     // Method-aware override so the POST returns a proper
-    // ``WalletDepositDto`` while GET keeps the default empty list.
-    // Registered after ``mockApi`` so it wins per the
-    // last-registered contract used elsewhere in the e2e suite.
+    // ``WalletDepositDto`` while the list GET keeps the default empty
+    // list. The polling GET ``/api/wallet/deposits/{id}`` issued by
+    // ``DepositStatusModal`` returns the same DTO so the modal's
+    // ``query.data`` matches the freshly-created deposit instead of
+    // landing on the catchall ``[]``. Registered after ``mockApi``
+    // so it wins per the last-registered contract used elsewhere in
+    // the e2e suite.
+    const depositDto = {
+      id: 99,
+      currency: USD_CURRENCY,
+      amount: 5,
+      status: "pending",
+      pay_url: "",
+      invoice_id: "invoice-stub",
+      provider: "cryptobot",
+      purpose: "wallet",
+      created_at: new Date().toISOString(),
+      paid_at: null,
+    };
     await page.route(
-      /^https?:\/\/[^/]+\/api\/wallet\/deposits(?:\?.*)?$/,
+      /^https?:\/\/[^/]+\/api\/wallet\/deposits(?:\/\d+)?(?:\?.*)?$/,
       async (route) => {
+        const url = new URL(route.request().url());
+        const isById = /\/api\/wallet\/deposits\/\d+$/.test(url.pathname);
         if (route.request().method() === "POST") {
           await route.fulfill({
             status: 200,
             contentType: "application/json",
-            body: JSON.stringify({
-              id: 99,
-              currency: USD_CURRENCY,
-              amount: 5,
-              status: "pending",
-              pay_url: "",
-              invoice_id: "invoice-stub",
-              created_at: new Date().toISOString(),
-              paid_at: null,
-            }),
+            body: JSON.stringify(depositDto),
+          });
+          return;
+        }
+        if (isById) {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(depositDto),
           });
           return;
         }

@@ -19,6 +19,21 @@ import { formatCurrency } from "@/lib/format";
 import { haptic, openExternalLink, openTelegramLink } from "@/lib/tg";
 import type { WalletDepositDto } from "@/api/types";
 
+// ``useWalletDeposit`` pulls the polled DTO into ``query.data`` but a
+// malformed / empty payload (e.g. catchall ``[]`` in e2e mocks, or a
+// transient backend hiccup) would otherwise crash the render on
+// ``current.currency.decimals``. Treat anything that doesn't look
+// like a DTO as "no fresh data" and fall back to ``initial``.
+function isValidDeposit(value: unknown): value is WalletDepositDto {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    "currency" in value &&
+    !!(value as WalletDepositDto).currency
+  );
+}
+
 interface DepositStatusModalProps {
   deposit: WalletDepositDto | null;
   open: boolean;
@@ -95,7 +110,7 @@ export function DepositStatusModal({
   const { mounted, visible } = usePresence(open, 200);
   const initial = deposit ?? null;
   const query = useWalletDeposit(open ? initial?.id : undefined);
-  const current = query.data ?? initial;
+  const current = isValidDeposit(query.data) ? query.data : initial;
 
   // Track which deposit we've already auto-opened so reopening the
   // modal for a different deposit fires the timer again, but a
