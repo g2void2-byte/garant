@@ -100,6 +100,7 @@ export const qk = {
   me: () => ["me"] as const,
   categories: () => ["categories"] as const,
   maintenance: () => ["maintenance"] as const,
+  publicSettings: () => ["public-settings"] as const,
   // Audit v3 A-1 — public list of approved forum names. The
   // backend is the single source of truth; the AddForumPage
   // dropdown fetches this list so the frontend cannot drift from

@@ -31,6 +31,11 @@ const mockState = vi.hoisted(() => ({
     isPending: false,
   },
   admins: [] as { id: number; username: string }[],
+  // Bug-10 — drive the auto-withdraw conditional in the page from a
+  // test-controllable toggle. Default ``false`` so the existing
+  // manual-mode tests (which assert the address input is present)
+  // continue to pass.
+  autoWithdrawEnabled: false,
 }));
 
 vi.mock("@/api/hooks", () => ({
@@ -47,6 +52,16 @@ vi.mock("@/api/hooks", () => ({
   // withdrawal POST is fired; resolve immediately so we don't have
   // to spin up a real PIN endpoint.
   useCheckPin: () => mockState.checkPinMutation,
+  // Bug-10 — the page reads ``auto_withdraw_enabled`` from the
+  // public-settings endpoint to decide whether to render the
+  // address input. Stub it so tests don't hit the network.
+  usePublicSettings: () => ({
+    data: {
+      deal_commission_percent: 5,
+      vip_commission_percent: -1,
+      auto_withdraw_enabled: mockState.autoWithdrawEnabled,
+    },
+  }),
 }));
 
 const hapticSpy = vi.hoisted(() => vi.fn());
@@ -122,6 +137,7 @@ beforeEach(() => {
     isPending: false,
   };
   mockState.admins = [{ id: 1, username: "admin" }];
+  mockState.autoWithdrawEnabled = false;
 });
 
 async function enterPin(user: ReturnType<typeof userEvent.setup>) {
@@ -232,6 +248,32 @@ describe("<WalletWithdrawPage />", () => {
     await enterPin(user);
     await waitFor(() => {
       expect(hapticSpy).toHaveBeenCalledWith("error");
+    });
+  });
+
+  it("auto-withdraw mode: hides the address input and submits without 'address'", async () => {
+    mockState.autoWithdrawEnabled = true;
+    mockState.balances = [makeBalance(100, "USDT")];
+    mockState.createMutation.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    // Address input must not render in auto mode — instead the
+    // page shows the @CryptoBot hint.
+    expect(screen.queryByPlaceholderText("Адрес USDT")).toBeNull();
+    expect(screen.getByTestId("withdraw-autoinfo")).toBeInTheDocument();
+
+    const amount = document.querySelector('input[type="number"]') as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: "25" } });
+    await user.click(screen.getByRole("button", { name: /Запросить вывод/ }));
+    await enterPin(user);
+    await waitFor(() => {
+      expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "USDT",
+        amount: "25",
+        // No ``address`` — the backend resolves the recipient by
+        // ``users.tg_user_id`` in CryptoBot Transfer auto-mode.
+      });
     });
   });
 

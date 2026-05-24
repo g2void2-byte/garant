@@ -106,6 +106,28 @@ async def test_public_maintenance_endpoint_open(client):
     assert "message" in body
 
 
+# Bug-7/10/11 (PR C) — frontend reads ``deal_commission_percent``,
+# ``vip_commission_percent`` and ``auto_withdraw_enabled`` from this
+# endpoint *before login* so ``CreateDealPage`` can preview the
+# commission and ``WalletWithdrawPage`` can decide whether to render
+# the address input. The endpoint must:
+#   * be accessible without auth (no ``initData`` header),
+#   * tolerate a missing ``app_settings`` row (defaults),
+#   * never expose admin-only knobs (e.g. ``maintenance_enabled``).
+async def test_public_settings_endpoint_open(client):
+    resp = await client.get("/api/settings/public")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body.keys()) == {
+        "deal_commission_percent",
+        "vip_commission_percent",
+        "auto_withdraw_enabled",
+    }
+    assert isinstance(body["deal_commission_percent"], (int, float))
+    assert isinstance(body["vip_commission_percent"], (int, float))
+    assert isinstance(body["auto_withdraw_enabled"], bool)
+
+
 async def test_maintenance_blocks_non_admin_writes(client):
     admin_init, _ = await _make_admin(client, tg=1)
     init = signed_init_data(10, "alice")

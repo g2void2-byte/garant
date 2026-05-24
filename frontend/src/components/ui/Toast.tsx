@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -9,6 +10,27 @@ import {
 } from "react";
 import { Bell, CheckCircle2, XCircle, Info } from "lucide-react";
 import { cn } from "@/lib/cn";
+
+// Bug-12 — global toast bridge. Modules without React context (e.g.
+// the ``ky`` ``beforeError`` hook in ``api/client.ts``) emit this
+// event; the provider mounted at the root translates it into a real
+// toast. Using a CustomEvent keeps the bridge zero-dep and works on
+// every browser the TMA supports.
+export const GLOBAL_TOAST_EVENT = "garant:toast";
+
+export function emitGlobalToast(input: ToastInput): void {
+  try {
+    window.dispatchEvent(
+      new CustomEvent<ToastInput>(GLOBAL_TOAST_EVENT, { detail: input }),
+    );
+  } catch {
+    // DOM unavailable (jsdom in some test paths) — fall back to
+    // console so we still surface the message somewhere.
+    if (typeof console !== "undefined") {
+      console.info("[toast]", input.title, input.body ?? "");
+    }
+  }
+}
 
 export type ToastKind = "success" | "error" | "info";
 
@@ -69,6 +91,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const dismiss = useCallback((id: number) => {
     setItems((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  // Bug-12 — bridge global ``garant:toast`` events emitted from
+  // outside React context (e.g. the ky client's 429 handler) into
+  // the in-context provider so they surface in the same toast lane
+  // as everything else.
+  useEffect(() => {
+    const onGlobalToast = (e: Event) => {
+      const detail = (e as CustomEvent<ToastInput>).detail;
+      if (detail && detail.title) {
+        show(detail);
+      }
+    };
+    window.addEventListener(GLOBAL_TOAST_EVENT, onGlobalToast);
+    return () => window.removeEventListener(GLOBAL_TOAST_EVENT, onGlobalToast);
+  }, [show]);
 
   const value = useMemo(() => ({ show }), [show]);
 

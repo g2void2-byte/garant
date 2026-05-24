@@ -5,6 +5,7 @@ import { ArrowUpFromLine, CreditCard, Wallet, X } from "lucide-react";
 import {
   useAdmins,
   useCreateWalletWithdrawal,
+  usePublicSettings,
   useWalletBalances,
 } from "@/api/hooks";
 import { Page } from "@/components/layout/Page";
@@ -21,16 +22,20 @@ import { cn } from "@/lib/cn";
 import { formatCurrency } from "@/lib/format";
 import { haptic, openTelegramLink } from "@/lib/tg";
 
-type WithdrawMethod = "crypto" | "card";
+type WithdrawMethod = "cryptobot" | "card";
 
 /**
  * Continental "Вывести депозит" page.
  *
  * Two withdrawal methods:
- *   * **Криптокошелёк** — drives ``POST /api/wallet/withdrawals``
- *     (the original on-chain flow). Only currencies with a non-zero
- *     balance are offered. Submitting the form re-prompts for the
- *     user's PIN before firing the mutation.
+ *   * **🤖 CryptoBot** — drives ``POST /api/wallet/withdrawals``.
+ *     When the admin has wired CryptoBot Transfer
+ *     (``auto_withdraw_enabled`` is ``true`` *and* ``CRYPTOBOT_TOKEN``
+ *     is configured) the payout is delivered straight to the user's
+ *     Telegram identity, so the on-chain address input is hidden
+ *     and the request omits the ``address`` field. Otherwise (manual
+ *     mode) the address input is rendered as before.
+ *     Submitting the form re-prompts for the user's PIN.
  *   * **Карта** — there is no automated card-payout integration yet;
  *     selecting this method opens an animated info dialog explaining
  *     the manual process and exposes a "Написать админу" button
@@ -43,12 +48,19 @@ export default function WalletWithdrawPage() {
   const create = useCreateWalletWithdrawal();
   const toast = useToast();
   const { data: admins } = useAdmins();
+  // Bug-10 — when the admin has wired CryptoBot Transfer the
+  // recipient is identified by ``users.tg_user_id`` upstream, so the
+  // on-chain address input is hidden and the request body omits the
+  // ``address`` field entirely. Manual mode (no token / flag off)
+  // falls back to the legacy address-input UX.
+  const { data: publicSettings } = usePublicSettings();
+  const autoWithdraw = publicSettings?.auto_withdraw_enabled === true;
   // Item 13 — ProfilePage's "Вывести" CTA can hint at a preferred
   // currency code via ``?currency=USD``; we honour it on first paint.
   const [searchParams] = useSearchParams();
   const initialCode = (searchParams.get("currency") ?? "").toUpperCase();
 
-  const [method, setMethod] = useState<WithdrawMethod>("crypto");
+  const [method, setMethod] = useState<WithdrawMethod>("cryptobot");
   const [cardOpen, setCardOpen] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
   const [code, setCode] = useState<string>("");
@@ -107,7 +119,7 @@ export default function WalletWithdrawPage() {
           open={cardOpen}
           onClose={() => {
             setCardOpen(false);
-            setMethod("crypto");
+            setMethod("cryptobot");
           }}
           admins={admins ?? []}
         />
@@ -134,7 +146,7 @@ export default function WalletWithdrawPage() {
       toast.show({ kind: "error", title: "Введите корректную сумму" });
       return false;
     }
-    if (!address.trim()) {
+    if (!autoWithdraw && !address.trim()) {
       haptic("error");
       toast.show({ kind: "error", title: "Введите адрес кошелька" });
       return false;
@@ -158,13 +170,22 @@ export default function WalletWithdrawPage() {
       await create.mutateAsync({
         currency_code: current.currency.code,
         amount: value,
-        address: address.trim(),
+        // Bug-10 — omit ``address`` in auto-mode; the backend
+        // ``WalletWithdrawCreateReq.address`` is ``str | None`` and
+        // ``services_wallet.create_withdrawal`` routes the payout via
+        // CryptoBot Transfer (recipient = ``users.tg_user_id``) when
+        // both ``auto_withdraw_enabled`` and ``CRYPTOBOT_TOKEN`` are
+        // set. Sending an unused address string would just be dead
+        // data on the row.
+        ...(autoWithdraw ? {} : { address: address.trim() }),
       });
       haptic("success");
       toast.show({
         kind: "success",
-        title: "Заявка отправлена",
-        body: "Администратор обработает её в ближайшее время.",
+        title: autoWithdraw ? "Вывод отправлен" : "Заявка отправлена",
+        body: autoWithdraw
+          ? "Средства поступят в @CryptoBot автоматически."
+          : "Администратор обработает её в ближайшее время.",
       });
       setAmount("");
       setAddress("");
@@ -174,6 +195,11 @@ export default function WalletWithdrawPage() {
         kind: "error",
         title: (e as Error)?.message || "Ошибка при выводе средств",
       });
+    } finally {
+      // Bug-11c (analogue) — mirror the deal-create fix: ensure the
+      // PIN modal is closed even when the mutation throws so the
+      // create button reliably re-enables.
+      setPinOpen(false);
     }
   }
 
@@ -232,12 +258,23 @@ export default function WalletWithdrawPage() {
           inputMode="decimal"
           placeholder={current ? String(current.currency.min_withdraw) : "0"}
         />
-        <Input
-          label="Адрес кошелька"
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          placeholder={current ? `Адрес ${current.currency.code}` : "Адрес"}
-        />
+        {autoWithdraw ? (
+          <div
+            className="rounded-card border border-accent/30 bg-accent/5 px-3 py-2 text-[12px] text-text leading-snug"
+            data-testid="withdraw-autoinfo"
+          >
+            Вывод придёт автоматически в{" "}
+            <span className="font-semibold">@CryptoBot</span> на ваш Telegram-аккаунт.
+            Адрес кошелька указывать не нужно.
+          </div>
+        ) : (
+          <Input
+            label="Адрес кошелька"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder={current ? `Адрес ${current.currency.code}` : "Адрес"}
+          />
+        )}
         <Button
           fullWidth
           onClick={requestSubmit}
@@ -265,7 +302,7 @@ export default function WalletWithdrawPage() {
         open={cardOpen}
         onClose={() => {
           setCardOpen(false);
-          setMethod("crypto");
+          setMethod("cryptobot");
         }}
         admins={admins ?? []}
       />
@@ -285,9 +322,9 @@ function MethodSwitcher({ value, onChange }: MethodSwitcherProps) {
       <div className="grid grid-cols-2 gap-2">
         <MethodTile
           icon={<Wallet className="size-5" />}
-          label="Криптокошелёк"
-          active={value === "crypto"}
-          onClick={() => onChange("crypto")}
+          label="🤖 CryptoBot"
+          active={value === "cryptobot"}
+          onClick={() => onChange("cryptobot")}
         />
         <MethodTile
           icon={<CreditCard className="size-5" />}

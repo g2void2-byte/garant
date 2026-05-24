@@ -10,6 +10,7 @@ from ..deps import CurrentUser, SessionDep
 from ..models import Notification, NotificationType
 from ..rate_limit import RLMarkAllRead
 from ..schemas import NotificationCountersOut, NotificationOut
+from ..ws import manager as ws_manager
 
 logger = logging.getLogger(__name__)
 
@@ -159,20 +160,76 @@ async def mark_read(notif_id: int, user: CurrentUser, session: SessionDep):
     notif = await session.get(Notification, notif_id)
     if not notif or notif.recipient_id != user.id:
         raise HTTPException(404, "Уведомление не найдено")
+    already_read = notif.is_read
+    notif_type = notif.type.value
     notif.is_read = True
     await session.commit()
+    if not already_read:
+        await _publish_read(user.id, ids=[notif_id], all=False, type_=notif_type)
     return {"ok": True}
 
 
 @router.post("/read-all")
 async def mark_all_read(user: CurrentUser, session: SessionDep, _rl: RLMarkAllRead):
-    await session.execute(
-        update(Notification)
-        .where(
-            Notification.recipient_id == user.id,
-            Notification.is_read.is_(False),
+    # Capture the ids being flipped so the WS event below can carry a
+    # precise list — the frontend uses it to splice ``is_read=true``
+    # into its TanStack cache without invalidating the whole list.
+    rows = (
+        (
+            await session.execute(
+                select(Notification.id).where(
+                    Notification.recipient_id == user.id,
+                    Notification.is_read.is_(False),
+                )
+            )
         )
-        .values(is_read=True)
+        .scalars()
+        .all()
     )
-    await session.commit()
+    if rows:
+        await session.execute(
+            update(Notification)
+            .where(
+                Notification.recipient_id == user.id,
+                Notification.is_read.is_(False),
+            )
+            .values(is_read=True)
+        )
+        await session.commit()
+        await _publish_read(user.id, ids=list(rows), all=True, type_=None)
     return {"ok": True}
+
+
+async def _publish_read(
+    recipient_id: int,
+    *,
+    ids: list[int],
+    all: bool,
+    type_: str | None,
+) -> None:
+    """Best-effort WS push of a ``notification.read`` cache-bust.
+
+    Used by both ``mark_read`` and ``mark_all_read`` so a tab open on
+    another device flips the notification list / counters without
+    waiting for the next 30-second poll. Failures are swallowed and
+    logged — a missing socket or a Redis publish error must never
+    bubble up and turn a successful state mutation into a 500.
+    """
+    try:
+        await ws_manager.publish(
+            recipient_id,
+            {
+                "event": "notification.read",
+                "data": {"ids": ids, "all": all, "type": type_},
+            },
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "notification.read publish failed for recipient_id=%s",
+            recipient_id,
+            extra={
+                "event": "notifications.read.publish.failed",
+                "recipient_id": recipient_id,
+                "ids_count": len(ids),
+            },
+        )
