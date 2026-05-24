@@ -1,23 +1,30 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import or_, select
 
 from ..deps import CurrentUser, PinUser, SessionDep
-from ..models import Deal, DealStatus, User
+from ..models import Deal, DealStatus, User, WalletDeposit, WalletDepositStatus
 from ..rate_limit import RLDealCreate
 from ..schemas import (
     DealArbitrationRequest,
     DealCancelRequest,
     DealCreate,
+    DealCreateWithTopup,
+    DealCreateWithTopupOut,
     DealOut,
     DealResolveRequest,
+    DealTopupInvoiceOut,
 )
 from ..services_deals import (
     InsufficientFundsError,
     accept_cancel,
     accept_deal,
+    cancel_pending_topup,
     create_deal,
+    create_deal_with_topup,
     decline_deal,
     finish_deal,
     request_cancel,
@@ -29,7 +36,34 @@ from ..services_deals import (
 router = APIRouter(prefix="/api/deals", tags=["deals"])
 
 
-def _deal_out(deal: Deal, user_id: int) -> DealOut:
+def _topup_invoice_from_deposit(
+    deal: Deal, deposit: WalletDeposit | None
+) -> DealTopupInvoiceOut | None:
+    if deposit is None or deposit.status != WalletDepositStatus.pending:
+        return None
+    commission = Decimal(str(deal.commission_amount or 0))
+    total = Decimal(str(deposit.amount))
+    topup_principal = max(Decimal(0), total - commission)
+    return DealTopupInvoiceOut(
+        deposit_id=deposit.id,
+        pay_url=deposit.pay_url or "",
+        total=total,
+        topup_principal=topup_principal,
+        commission=commission,
+        currency_code=deposit.currency.code if deposit.currency else "",
+        provider=(
+            deposit.provider.value if hasattr(deposit.provider, "value") else str(deposit.provider)
+        ),
+        expires_at=None,
+    )
+
+
+def _deal_out(
+    deal: Deal,
+    user_id: int,
+    *,
+    topup_invoice: DealTopupInvoiceOut | None = None,
+) -> DealOut:
     role = "buyer" if deal.buyer_id == user_id else "seller"
     currency_code = deal.currency.code if deal.currency else None
 
@@ -40,8 +74,6 @@ def _deal_out(deal: Deal, user_id: int) -> DealOut:
         buyer_photo_url=deal.buyer.photo_url if deal.buyer else None,
         seller_photo_url=deal.seller.photo_url if deal.seller else None,
         description=deal.description,
-        pay_commission=deal.pay_commission.value,
-        pay_comission=deal.pay_commission.value,
         status=deal.status.value,
         confirm_buyer=deal.confirm_buyer,
         confirm_seller=deal.confirm_seller,
@@ -61,7 +93,23 @@ def _deal_out(deal: Deal, user_id: int) -> DealOut:
         arbitration_resolution=deal.arbitration_resolution,
         arbitration_resolved_at=deal.arbitration_resolved_at,
         payment_provider=deal.payment_provider or "cryptobot",
+        topup_deposit_id=deal.topup_deposit_id,
+        commission_paid=bool(deal.commission_paid),
+        topup_invoice=topup_invoice,
     )
+
+
+async def _hydrate_topup_invoice(session, deal: Deal) -> DealTopupInvoiceOut | None:
+    """Look up the deal's pending top-up invoice (P10).
+
+    Returns ``None`` when the deal has no linked ``WalletDeposit``,
+    the deposit row is no longer ``pending`` (i.e. paid / expired),
+    or the deal isn't in ``pending_topup`` anymore.
+    """
+    if deal.status != DealStatus.pending_topup or deal.topup_deposit_id is None:
+        return None
+    deposit = await session.get(WalletDeposit, deal.topup_deposit_id)
+    return _topup_invoice_from_deposit(deal, deposit)
 
 
 def _role_for(deal: Deal, user_id: int | None) -> str | None:
@@ -140,14 +188,17 @@ async def list_deals(
             pass
     stmt = stmt.order_by(Deal.created_at.desc())
     result = await session.execute(stmt)
-    return [_deal_out(d, user.id) for d in result.scalars().all()]
+    deals = result.scalars().all()
+    return [
+        _deal_out(d, user.id, topup_invoice=await _hydrate_topup_invoice(session, d)) for d in deals
+    ]
 
 
 @router.get("/{deal_id}", response_model=DealOut)
 async def get_deal(deal_id: int, user: CurrentUser, session: SessionDep):
     deal = await _get(session, deal_id)
     _participant_or_admin(deal, user)
-    return _deal_out(deal, user.id)
+    return _deal_out(deal, user.id, topup_invoice=await _hydrate_topup_invoice(session, deal))
 
 
 @router.post("", response_model=DealOut, status_code=201)
@@ -181,7 +232,6 @@ async def create_deal_endpoint(
             body.currency_code,
             body.amount,
             body.description,
-            body.pay_commission,
             payment_provider=body.payment_provider,
         )
     except InsufficientFundsError as e:
@@ -201,6 +251,75 @@ async def create_deal_endpoint(
                 "currency_code": e.currency_code,
             },
         ) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return _deal_out(deal, user.id)
+
+
+@router.post(
+    "/with-topup",
+    response_model=DealCreateWithTopupOut,
+    status_code=201,
+)
+async def create_deal_with_topup_endpoint(
+    body: DealCreateWithTopup,
+    user: PinUser,
+    session: SessionDep,
+    _rl: RLDealCreate,
+):
+    """P10 — create a deal funded by a deposit-invoice top-up.
+
+    Replaces the balance-only :func:`create_deal_endpoint` for the
+    happy-path frontend flow. The endpoint always issues a deposit
+    invoice covering ``max(0, amount - buyer.balance) + commission``;
+    the deal is born in :data:`DealStatus.pending_topup` and only
+    advances to :data:`DealStatus.pending_confirmation` once the
+    webhook lands a payment large enough to cover the principal.
+    """
+    if body.role != "buyer":  # pragma: no cover — schema rejects it first
+        raise HTTPException(400, "Создавать сделку может только покупатель")
+    stmt = select(User).where(User.username == body.counterparty)
+    result = await session.execute(stmt)
+    counterparty = result.scalar_one_or_none()
+    if not counterparty:
+        raise HTTPException(404, "Пользователь не найден")
+    buyer, seller = user, counterparty
+
+    try:
+        deal, deposit = await create_deal_with_topup(
+            session,
+            buyer,
+            seller,
+            body.currency_code,
+            body.amount,
+            body.description,
+            payment_provider=body.payment_provider,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+    invoice = _topup_invoice_from_deposit(deal, deposit)
+    # ``invoice`` is None only if the deposit is already non-pending,
+    # which can't happen here — ``create_deal_with_topup`` just inserted
+    # it with ``status='pending'``.
+    assert invoice is not None
+    return DealCreateWithTopupOut(
+        deal=_deal_out(deal, user.id, topup_invoice=invoice), invoice=invoice
+    )
+
+
+@router.post("/{deal_id}/cancel-topup", response_model=DealOut)
+async def cancel_topup_endpoint(deal_id: int, user: PinUser, session: SessionDep):
+    """P10 — buyer aborts a deal stuck in ``pending_topup``.
+
+    The buyer is the only role allowed to call this; the deal must
+    still be in ``pending_topup`` (no half-paid in-flight states).
+    The linked deposit invoice is flipped to ``expired`` so the
+    wallet pending list stops surfacing it.
+    """
+    deal = await _get_locked(session, deal_id)
+    try:
+        deal = await cancel_pending_topup(session, deal, user)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     return _deal_out(deal, user.id)

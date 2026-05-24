@@ -37,7 +37,6 @@ async def test_sweep_cancels_stale_pending_confirmation(client):
                 "role": "buyer",
                 "amount": 30,
                 "currency_code": "USDT",
-                "pay_comission": "buyer",
             },
             headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
         )
@@ -67,8 +66,8 @@ async def test_sweep_cancels_stale_pending_confirmation(client):
                 )
             )
         ).scalar_one()
-        # Buyer is refunded the 30 principal; the 1.5 commission is
-        # retained by the platform per spec (commission charged on every
-        # terminal deal including inactivity sweeps).
-        assert float(bal.amount) == 98.5
+        # P10 — commission is no longer locked on the legacy
+        # ``POST /api/deals`` path, so the inactivity sweep refunds
+        # the buyer the full 30 principal 1:1.
+        assert float(bal.amount) == 100.0
         assert float(bal.locked) == 0.0

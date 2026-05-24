@@ -91,6 +91,12 @@ export default function AdminSettingsPage() {
               }
             />
           </Row>
+          <Row label="Истечение pending topup (часы)">
+            <NumberField
+              value={form.pending_topup_expiry_hours}
+              onChange={(v) => setForm({ ...form, pending_topup_expiry_hours: v })}
+            />
+          </Row>
           <Row label="Максимум активных услуг на юзера">
             <NumberField
               value={form.max_active_services_per_user}

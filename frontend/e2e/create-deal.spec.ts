@@ -5,10 +5,9 @@ import { enterPinPromptDigits, expect, mockApi, seedSession } from "./fixtures";
  * V12-M5 — happy-path e2e for ``/deals/new``.
  *
  * ``CreateDealPage`` reads the currency list, lets the user pick a
- * role, counterparty, amount, description and commission split, and
- * POSTs ``/api/deals`` to mint a new deal. On success it
- * ``navigate(`/deals/${id}`)`` so the user lands on the brand-new
- * deal detail page. The unit suite covers form validation in
+ * counterparty, amount, description and payment provider, and POSTs
+ * ``/api/deals/with-topup`` to mint a pending-topup deal plus invoice.
+ * On success it renders the invoice preview. The unit suite covers form validation in
  * isolation; this spec exercises the full Vite-mounted flow.
  */
 
@@ -18,8 +17,7 @@ const NEW_DEAL = {
   seller: "alice",
   sum: 150,
   description: "Custom illustration",
-  pay_comission: "buyer",
-  status: "pending_confirmation",
+  status: "pending_topup",
   confirm_buyer: false,
   confirm_seller: false,
   role: "buyer" as const,
@@ -27,6 +25,18 @@ const NEW_DEAL = {
   currency_code: "USD",
   amount: 150,
   commission_amount: 7.5,
+  commission_paid: false,
+  topup_deposit_id: 777,
+  topup_invoice: {
+    deposit_id: 777,
+    pay_url: "https://pay.example/invoice/777",
+    total: "157.50",
+    topup_principal: "150.00",
+    commission: "7.50",
+    currency_code: "USD",
+    provider: "cryptobot",
+    expires_at: null,
+  },
   in_progress_at: null,
   completed_at: null,
   cancellation_initiator: null,
@@ -44,14 +54,14 @@ test.describe("Create-deal page", () => {
     await seedSession(page);
   });
 
-  test("submits the form, posts /api/deals and navigates to the new deal", async ({
+  test("submits the form, posts /api/deals/with-topup and shows the invoice", async ({
     page,
   }) => {
     await mockApi(page);
 
     let postedBody: Record<string, unknown> | null = null;
     await page.route(
-      /^https?:\/\/[^/]+\/api\/deals(?:\?.*)?$/,
+      /^https?:\/\/[^/]+\/api\/deals\/with-topup(?:\?.*)?$/,
       async (route) => {
         const req = route.request();
         if (req.method() === "POST") {
@@ -63,7 +73,7 @@ test.describe("Create-deal page", () => {
           return route.fulfill({
             status: 200,
             contentType: "application/json",
-            body: JSON.stringify(NEW_DEAL),
+            body: JSON.stringify({ deal: NEW_DEAL, invoice: NEW_DEAL.topup_invoice }),
           });
         }
         return route.fulfill({
@@ -72,41 +82,6 @@ test.describe("Create-deal page", () => {
           body: JSON.stringify([]),
         });
       },
-    );
-    // ``useCreateDeal``'s ``onSuccess`` invalidates the deal-detail
-    // query; serve the new deal so the post-navigation page renders.
-    await page.route(
-      /^https?:\/\/[^/]+\/api\/deals\/4242(?:\?.*)?$/,
-      (r) =>
-        r.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(NEW_DEAL),
-        }),
-    );
-    // ``DealDetailPage`` reads ``useReviews(otherUser)`` and renders
-    // ``DealChatPanel`` (``useDealMessages(id)``) once it lands on
-    // /deals/4242; the catch-all returns ``{}`` for unknown endpoints
-    // and the hooks would then call ``.some(...)`` / ``.map(...)`` on
-    // an object — ``?.`` doesn't short-circuit on ``{}`` — throwing
-    // and tripping the ErrorBoundary before the heading renders.
-    await page.route(
-      /^https?:\/\/[^/]+\/api\/reviews(?:\?.*)?$/,
-      (r) =>
-        r.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify([]),
-        }),
-    );
-    await page.route(
-      /^https?:\/\/[^/]+\/api\/deals\/\d+\/messages(?:\?.*)?$/,
-      (r) =>
-        r.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify([]),
-        }),
     );
 
     await page.goto("/deals/new");
@@ -133,11 +108,8 @@ test.describe("Create-deal page", () => {
     // (see fixtures) returns a fresh token and the deal POST fires.
     await enterPinPromptDigits(page);
 
-    // Reached the new deal detail page.
-    await expect(page).toHaveURL(/\/deals\/4242$/);
-    await expect(
-      page.getByRole("heading", { name: "Сделка #4242" }),
-    ).toBeVisible();
+    await expect(page.getByTestId("topup-invoice-preview")).toBeVisible();
+    await expect(page.getByText("157.50 USD")).toBeVisible();
 
     // POST payload matches what the form collected — keep this loose
     // (only the fields under test) so future fields don't break the
@@ -147,7 +119,6 @@ test.describe("Create-deal page", () => {
       role: "buyer",
       amount: 150,
       description: "Custom illustration",
-      pay_comission: "buyer",
       currency_code: "USD",
     });
   });
@@ -157,7 +128,7 @@ test.describe("Create-deal page", () => {
 
     let postCalled = false;
     await page.route(
-      /^https?:\/\/[^/]+\/api\/deals(?:\?.*)?$/,
+      /^https?:\/\/[^/]+\/api\/deals\/with-topup(?:\?.*)?$/,
       async (route) => {
         if (route.request().method() === "POST") {
           postCalled = true;

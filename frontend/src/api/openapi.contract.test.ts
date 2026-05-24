@@ -22,6 +22,7 @@ import openapi from "../../openapi.json";
 import type { components } from "./openapi.generated";
 import type {
   CurrencyDto,
+  DealCreateWithTopupResponseDto,
   DealDto,
   PinStatusDto,
   UserCardDto,
@@ -30,6 +31,7 @@ import type {
 
 type Schemas = components["schemas"];
 type DealOutSchema = Schemas["DealOut"];
+type DealCreateWithTopupOutSchema = Schemas["DealCreateWithTopupOut"];
 type CurrencyOutSchema = Schemas["CurrencyOut"];
 type WalletBalanceOutSchema = Schemas["WalletBalanceOut"];
 type PinStatusOutSchema = Schemas["PinStatusOut"];
@@ -81,8 +83,6 @@ const dealFixture = {
   buyer: "testbuyer",
   seller: "alice",
   description: "Logo design package",
-  pay_comission: "buyer",
-  pay_commission: "buyer",
   status: "in_progress",
   confirm_buyer: false,
   confirm_seller: false,
@@ -91,6 +91,9 @@ const dealFixture = {
   currency_code: "USDT",
   amount: 100,
   commission_amount: 5,
+  commission_paid: true,
+  topup_deposit_id: null,
+  topup_invoice: null,
   in_progress_at: null,
   completed_at: null,
   cancellation_initiator: null,
@@ -103,6 +106,35 @@ const dealFixture = {
   arbitration_resolved_at: null,
   payment_provider: "cryptobot",
 } as const satisfies DealOutSchema;
+
+const topupResponseFixture = {
+  deal: {
+    ...dealFixture,
+    status: "pending_topup",
+    commission_paid: false,
+    topup_deposit_id: 501,
+    topup_invoice: {
+      deposit_id: 501,
+      pay_url: "https://pay.example/invoice/501",
+      total: 105,
+      topup_principal: 100,
+      commission: 5,
+      currency_code: "USD",
+      provider: "cryptobot",
+      expires_at: null,
+    },
+  },
+  invoice: {
+    deposit_id: 501,
+    pay_url: "https://pay.example/invoice/501",
+    total: 105,
+    topup_principal: 100,
+    commission: 5,
+    currency_code: "USD",
+    provider: "cryptobot",
+    expires_at: null,
+  },
+} as const satisfies DealCreateWithTopupOutSchema;
 
 const usdtFixture = {
   id: 1,
@@ -146,6 +178,7 @@ const pinStatusFixture = {
 
 const _meDto: UserCardDto = meFixture;
 const _dealDto: DealDto = dealFixture;
+const _topupResponseDto: DealCreateWithTopupResponseDto = topupResponseFixture;
 const _currencyDto: CurrencyDto = usdtFixture;
 const _balanceDto: WalletBalanceDto = walletBalanceFixture;
 const _pinDto: PinStatusDto = pinStatusFixture;
@@ -154,6 +187,7 @@ const _pinDto: PinStatusDto = pinStatusFixture;
 // compile-time bridge above out of the bundle.
 void _meDto;
 void _dealDto;
+void _topupResponseDto;
 void _currencyDto;
 void _balanceDto;
 void _pinDto;
@@ -180,6 +214,8 @@ describe("OpenAPI contract", () => {
     "NotificationCountersOut",
     "TransferStatusOut",
     "TransferConfirmOut",
+    "DealCreateWithTopupOut",
+    "DealTopupInvoiceOut",
   ])("OpenAPI schema declares %s", (name) => {
     expect(openapi.components.schemas).toHaveProperty(name);
   });
@@ -195,7 +231,6 @@ describe("OpenAPI contract", () => {
         "seller",
         "amount",
         "description",
-        "pay_comission",
         "status",
         "confirm_buyer",
         "confirm_seller",

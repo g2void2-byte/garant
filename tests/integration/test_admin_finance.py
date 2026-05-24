@@ -1,4 +1,4 @@
-"""Admin PR-CDE — finance routers (wallets / deposits / withdrawals / treasury).
+"""Admin PR-CDE — finance routers (wallets / deposits / withdrawals).
 
 Coverage:
 
@@ -7,8 +7,11 @@ Coverage:
   log, transactional (no partial state).
 * Deposits list filtering and ``mark_paid`` idempotency.
 * Withdrawals decide: approve / reject / mark_sent with audit row.
-* Treasury overview: accrued minus withdrawn equals available.
 * RBAC: every endpoint returns 403 to a non-admin.
+
+P5 — the treasury overview / withdrawal flow has been removed; the
+commission is now charged via the buyer's deposit invoice at deal
+creation time (see ``services_deals.create_deal_with_topup``).
 """
 
 from __future__ import annotations
@@ -22,8 +25,6 @@ from backend.app.db import async_session
 from backend.app.models import (
     AdminAuditLog,
     Currency,
-    Deal,
-    DealStatus,
     User,
     UserBalance,
     WalletDeposit,
@@ -89,13 +90,6 @@ async def test_withdrawals_rbac_non_admin(client):
     init = signed_init_data(10, "alice")
     await _bootstrap(client, tg_user_id=10, username="alice")
     resp = await client.get("/api/admin/withdrawals", headers=auth_headers(init))
-    assert resp.status_code == 403
-
-
-async def test_treasury_rbac_non_admin(client):
-    init = signed_init_data(10, "alice")
-    await _bootstrap(client, tg_user_id=10, username="alice")
-    resp = await client.get("/api/admin/treasury", headers=auth_headers(init))
     assert resp.status_code == 403
 
 
@@ -289,33 +283,3 @@ async def test_withdrawals_counters_per_status(client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["counters"].get("pending", 0) >= 2
-
-
-# ── Treasury ────────────────────────────────────────────────────────────
-
-
-async def test_treasury_overview_matches_completed_deals(client):
-    admin_init, _ = await _make_admin(client, tg=1)
-    seller_id = await _bootstrap(client, tg_user_id=2, username="seller")
-    buyer_id = await _bootstrap(client, tg_user_id=3, username="buyer")
-    cur = await _currency("USDT")
-
-    async with async_session() as session:
-        d = Deal(
-            buyer_id=buyer_id,
-            seller_id=seller_id,
-            currency_id=cur.id,
-            amount=Decimal("100"),
-            commission_amount=Decimal("5"),
-            status=DealStatus.completed,
-            description="test deal",
-        )
-        session.add(d)
-        await session.commit()
-
-    resp = await client.get("/api/admin/treasury", headers=auth_headers(admin_init))
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    usdt = next(b for b in body["balances"] if b["currency_code"] == "USDT")
-    assert float(usdt["accrued"]) == pytest.approx(5.0)
-    assert float(usdt["available"]) == pytest.approx(5.0)

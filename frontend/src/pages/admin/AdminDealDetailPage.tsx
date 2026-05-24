@@ -45,6 +45,7 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "Отменена",
   pending_confirmation: "Подтверждение",
   pending_payment: "Ожидание оплаты",
+  pending_topup: "Ожидание инвойса",
   in_progress: "В работе",
   completed: "Завершена",
   arbitration: "Арбитраж",
@@ -118,7 +119,14 @@ export default function AdminDealDetailPage() {
       ) : (
         <div className="px-4 space-y-4 pb-8">
           <StatusBanner deal={deal} />
-          <BalanceSnapshotCard buyer={deal.buyer} seller={deal.seller} amount={deal.amount} commission={deal.commission_amount} />
+          <BalanceSnapshotCard
+            buyer={deal.buyer}
+            seller={deal.seller}
+            amount={deal.amount}
+            commission={deal.commission_amount}
+            commissionPaid={deal.commission_paid}
+            topupDepositId={deal.topup_deposit_id}
+          />
           {me?.is_admin && <ActionPanel deal={deal} />}
           <EventsTimeline deal={deal} />
           <MessagesFeed deal={deal} />
@@ -165,11 +173,15 @@ function BalanceSnapshotCard({
   seller,
   amount,
   commission,
+  commissionPaid,
+  topupDepositId,
 }: {
   buyer: AdminBalanceSnapshotDto;
   seller: AdminBalanceSnapshotDto;
   amount: string;
   commission: string | null;
+  commissionPaid: boolean;
+  topupDepositId?: number | null;
 }) {
   return (
     <section className="grid grid-cols-2 gap-3">
@@ -186,7 +198,13 @@ function BalanceSnapshotCard({
           <div className="flex items-center gap-2">
             <Lock size={14} className="text-text-muted" /> Комиссия
           </div>
-          <div className="font-semibold">{parseDecimal(commission).toFixed(2)}</div>
+          <div className="text-right">
+            <div className="font-semibold">{parseDecimal(commission).toFixed(2)}</div>
+            <div className="text-[11px] text-text-muted">
+              {commissionPaid ? "оплачена" : "ожидает оплаты"}
+              {topupDepositId ? ` · депозит #${topupDepositId}` : ""}
+            </div>
+          </div>
         </div>
       )}
     </section>

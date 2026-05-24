@@ -18,6 +18,7 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "Отменена",
   pending_confirmation: "Подтверждение",
   pending_payment: "Ожидание оплаты",
+  pending_topup: "Ожидание инвойса",
   in_progress: "В работе",
   completed: "Завершена",
   arbitration: "Арбитраж",

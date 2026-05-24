@@ -67,7 +67,6 @@ const AdminArbitrationPage = lazyWithRetry(() => import("@/pages/admin/AdminArbi
 const AdminWalletsPage = lazyWithRetry(() => import("@/pages/admin/AdminWalletsPage"), "AdminWalletsPage");
 const AdminDepositsPage = lazyWithRetry(() => import("@/pages/admin/AdminDepositsPage"), "AdminDepositsPage");
 const AdminWithdrawalsPage = lazyWithRetry(() => import("@/pages/admin/AdminWithdrawalsPage"), "AdminWithdrawalsPage");
-const AdminTreasuryPage = lazyWithRetry(() => import("@/pages/admin/AdminTreasuryPage"), "AdminTreasuryPage");
 const AdminSettingsPage = lazyWithRetry(() => import("@/pages/admin/AdminSettingsPage"), "AdminSettingsPage");
 const AdminBroadcastsPage = lazyWithRetry(() => import("@/pages/admin/AdminBroadcastsPage"), "AdminBroadcastsPage");
 const AdminAnalyticsPage = lazyWithRetry(() => import("@/pages/admin/AdminAnalyticsPage"), "AdminAnalyticsPage");
@@ -219,7 +218,6 @@ export function App() {
                     <Route path="/admin/wallets" element={<AdminWalletsPage />} />
                     <Route path="/admin/deposits" element={<AdminDepositsPage />} />
                     <Route path="/admin/withdrawals" element={<AdminWithdrawalsPage />} />
-                    <Route path="/admin/treasury" element={<AdminTreasuryPage />} />
                     <Route path="/admin/settings" element={<AdminSettingsPage />} />
                     <Route path="/admin/broadcasts" element={<AdminBroadcastsPage />} />
                     <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />

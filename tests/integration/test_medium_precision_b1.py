@@ -24,7 +24,6 @@ from backend.app.models import (
     Currency,
     Deal,
     DealStatus,
-    PayCommission,
     User,
     UserBalance,
 )
@@ -144,13 +143,13 @@ async def _seed_btc_deal_in_progress(buyer_tg: int, seller_tg: int) -> int:
             buyer_id=buyer_id,
             seller_id=seller_id,
             description="precision regression fixture",
-            pay_commission=PayCommission.seller,
             status=DealStatus.in_progress,
             confirm_buyer=False,
             confirm_seller=False,
             currency_id=btc.id,
             amount=_BTC_LOSSY,
             commission_amount=Decimal(0),
+            commission_paid=True,
         )
         session.add(deal)
         await session.commit()

@@ -51,7 +51,6 @@ from backend.app.models import (
     Currency,
     Deal,
     DealStatus,
-    PayCommission,
     Review,
     User,
 )
@@ -97,10 +96,10 @@ async def _seed_arbitration_board(client, *, n: int) -> list[int]:
                 buyer_id=buyer.id,
                 seller_id=seller.id,
                 description=f"arb #{i}",
-                pay_commission=PayCommission.buyer,
                 status=DealStatus.arbitration,
                 currency_id=usdt.id,
                 amount=10.0 + i,
+                commission_paid=True,
             )
             session.add(deal)
             await session.flush()

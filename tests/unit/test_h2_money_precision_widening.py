@@ -14,7 +14,7 @@ would happen before we ever saw the row.
 The widening migration (``9c3a4d2e1f08``) brings every
 per-currency money column up to ``Numeric(28,8)``: ``UserBalance``
 (``amount`` / ``locked``), ``WalletDeposit.amount``,
-``WalletWithdrawal.amount``, ``TreasuryWithdrawal.amount`` and
+``WalletWithdrawal.amount`` and
 ``Currency.min_deposit`` / ``min_withdraw``. This file pins the new
 contract: a value that previously *would* have overflowed
 ``Numeric(18,8)`` now round-trips byte-for-byte.
@@ -40,7 +40,6 @@ from backend.app.models import (
     Category,
     Currency,
     Service,
-    TreasuryWithdrawal,
     User,
     UserBalance,
     WalletDeposit,
@@ -150,32 +149,12 @@ async def test_wallet_withdrawal_amount_round_trips_above_1e10():
     assert Decimal(str(fresh.amount)) == _HUGE
 
 
-@pytest.mark.asyncio
-async def test_treasury_withdrawal_amount_round_trips_above_1e10():
-    """A ``TreasuryWithdrawal`` row at the 10¹² scale is stored exactly."""
-    async with async_session() as session:
-        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
-        actor = User(tg_user_id=49004, username="h2_treasury", display_name="h2t")
-        session.add(actor)
-        await session.flush()
-
-        tw = TreasuryWithdrawal(
-            actor_id=actor.id,
-            currency_id=usdt.id,
-            amount=_BIG,
-            address="UQAh2treasury",
-            status="sent",
-        )
-        session.add(tw)
-        await session.commit()
-
-        fresh = (
-            await session.execute(
-                select(TreasuryWithdrawal).where(TreasuryWithdrawal.actor_id == actor.id)
-            )
-        ).scalar_one()
-
-    assert Decimal(str(fresh.amount)) == _BIG
+# NOTE: the ``TreasuryWithdrawal.amount`` round-trip test that used to
+# live here was deleted in P5 alongside the ``treasury_withdrawals``
+# table and the on-platform commission accrual. Per-deal commission is
+# now charged via the buyer's ``WalletDeposit`` (purpose=``deal_topup``)
+# whose ``amount`` column is exercised by
+# ``test_wallet_deposit_amount_round_trips_above_1e10`` above.
 
 
 @pytest.mark.asyncio

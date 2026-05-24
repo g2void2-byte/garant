@@ -86,7 +86,6 @@ async def test_create_deal_emits_deal_updated_to_both_parties(client, capture_pu
             "role": "buyer",
             "amount": 10,
             "currency_code": "USDT",
-            "pay_comission": "buyer",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
     )
@@ -118,7 +117,6 @@ async def test_finish_deal_emits_deal_updated_to_both_parties(client, capture_pu
             "role": "buyer",
             "amount": 10,
             "currency_code": "USDT",
-            "pay_comission": "buyer",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
     )
@@ -168,7 +166,6 @@ async def test_accept_deal_emits_deal_updated_to_both_parties(client, capture_pu
             "role": "buyer",
             "amount": 10,
             "currency_code": "USDT",
-            "pay_comission": "buyer",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
     )
@@ -200,7 +197,6 @@ async def test_decline_deal_emits_deal_updated_to_both_parties(client, capture_p
             "role": "buyer",
             "amount": 10,
             "currency_code": "USDT",
-            "pay_comission": "buyer",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
     )
@@ -234,7 +230,6 @@ async def test_request_cancel_emits_deal_updated_to_both_parties(client, capture
             "role": "buyer",
             "amount": 10,
             "currency_code": "USDT",
-            "pay_comission": "buyer",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
     )
@@ -317,7 +312,6 @@ async def test_sweep_inactivity_emits_deal_updated_to_both_parties(client, captu
             "role": "buyer",
             "amount": 10,
             "currency_code": "USDT",
-            "pay_comission": "buyer",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
     )

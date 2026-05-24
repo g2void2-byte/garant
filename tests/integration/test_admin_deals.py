@@ -59,7 +59,6 @@ async def _make_deal(client) -> tuple[int, str, str, str, str]:
             "role": "buyer",
             "amount": 100,
             "description": "for admin testing",
-            "pay_comission": "buyer",
             "currency_code": "USDT",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
@@ -162,8 +161,11 @@ async def test_admin_deal_detail_balance_snapshot(client):
     assert detail["id"] == deal_id
     assert detail["status"] == DealStatus.in_progress.value
     assert detail["buyer"]["currency_code"] == "USDT"
-    # buyer-pays commission ⇒ locked = 100 + 5% = 105
-    assert Decimal(detail["buyer"]["locked"]) == Decimal("105")
+    # P10 — the legacy ``POST /api/deals`` path locks only the
+    # principal (100); commission rides on the deposit invoice in
+    # ``create_deal_with_topup`` and is no longer added to
+    # ``UserBalance.locked``.
+    assert Decimal(detail["buyer"]["locked"]) == Decimal("100")
     assert any(ev["kind"] == "in_progress" for ev in detail["events"])
 
 
@@ -214,7 +216,9 @@ async def test_admin_force_refund(client):
     detail = resp.json()["deal"]
     assert detail["status"] == DealStatus.resolved_for_buyer.value
     assert Decimal(detail["buyer"]["locked"]) == Decimal(0)
-    # buyer got the principal back, commission (5) retained by platform.
+    # P10 — commission is no longer locked on the legacy path so the
+    # refund returns the full principal (100) and the buyer ends back
+    # at the pre-deal balance.
     async with async_session() as session:
         usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         buyer_id = await get_user_id_by_tg(session, 2001)
@@ -226,9 +230,9 @@ async def test_admin_force_refund(client):
                 )
             )
         ).scalar_one()
-        # started with 1000, locked 105 (100 + 5 commission). Refund returns
-        # only the 100 principal; the 5 commission stays on the platform.
-        assert float(bal.amount) == 995.0
+        # started with 1000, locked 100. Refund returns the full
+        # principal; commission was never charged on this path.
+        assert float(bal.amount) == 1000.0
 
 
 async def test_admin_split_deal(client):
@@ -357,7 +361,9 @@ async def test_admin_delete_deal_refunds_buyer(client):
     body = resp.json()
     assert body["deleted"] is True
     assert body["deal_id"] == deal_id
-    assert Decimal(body["refunded"]) == Decimal("105")
+    # P10 — commission is no longer locked on the legacy path so
+    # ``refunded`` returns just the principal (100).
+    assert Decimal(body["refunded"]) == Decimal("100")
 
     async with async_session() as session:
         assert await session.get(Deal, deal_id) is None
@@ -386,5 +392,7 @@ async def test_admin_delete_deal_writes_audit(client):
     # so JSONB keeps full ``Numeric`` precision. ``refunded`` is quantised
     # to currency.decimals (USDT=2), ``amount`` reads back at the column's
     # full ``Numeric(28,8)`` scale.
-    assert payload["refunded"] == "105.00"
+    # P10 — commission is no longer locked on the legacy path so
+    # the audit-logged ``refunded`` is just the principal (100).
+    assert payload["refunded"] == "100.00"
     assert payload["amount"] == "100.00000000"

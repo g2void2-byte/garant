@@ -47,7 +47,6 @@ from ...models import (
     Media,
     Notification,
     NotificationType,
-    PayCommission,
     User,
 )
 from ...money import quantize_money
@@ -299,7 +298,8 @@ async def _to_detail(session: AsyncSession, deal: Deal) -> AdminDealDetailOut:
         currency_code=currency.code if currency else None,
         amount=amount_q,
         commission_amount=commission_q,
-        pay_commission=deal.pay_commission.value,
+        commission_paid=bool(deal.commission_paid),
+        topup_deposit_id=deal.topup_deposit_id,
         buyer=buyer_snap,
         seller=seller_snap,
         created_at=deal.created_at,
@@ -340,7 +340,6 @@ def _to_list_item(deal: Deal) -> AdminDealListItem:
         buyer_username=deal.buyer.username if deal.buyer else None,
         seller_id=deal.seller_id,
         seller_username=deal.seller.username if deal.seller else None,
-        pay_commission=deal.pay_commission.value,
         created_at=deal.created_at,
         in_progress_at=deal.in_progress_at,
         completed_at=deal.completed_at,
@@ -534,15 +533,14 @@ async def _release_locked_to_seller(
 
     Returns ``(locked_pot, payout)`` for the audit record.
     """
+    # P10 — commission is collected on the platform via the deposit
+    # invoice path and never enters ``UserBalance.locked``. The
+    # locked pot equals the deal principal; the seller's payout is
+    # the same principal (no commission deduction here).
     decimals = currency.decimals
     amt = quantize_money(Decimal(str(deal.amount or 0)), decimals)
-    commission = quantize_money(Decimal(str(deal.commission_amount or 0)), decimals)
-    if deal.pay_commission == PayCommission.buyer:
-        locked = amt + commission
-        payout = amt
-    else:
-        locked = amt
-        payout = amt - commission
+    locked = amt
+    payout = amt
 
     # CRIT #1 — ``FOR UPDATE`` row lock on both balances so an admin
     # force-release racing with the buyer's own ``finish_deal`` (or a
@@ -565,15 +563,12 @@ async def _refund_locked_to_buyer(
     so a buyer-paid commission stays in the platform pool on refund.
     Returns ``(locked_pot, refunded_principal)``.
     """
+    # P10 — commission no longer rides on ``UserBalance.locked``;
+    # refund the entire locked principal back to the buyer 1:1.
     decimals = currency.decimals
     amt = quantize_money(Decimal(str(deal.amount or 0)), decimals)
-    commission = quantize_money(Decimal(str(deal.commission_amount or 0)), decimals)
-    if deal.pay_commission == PayCommission.buyer:
-        locked = amt + commission
-        refunded = amt
-    else:
-        locked = amt
-        refunded = amt
+    locked = amt
+    refunded = amt
 
     # CRIT #1 — ``FOR UPDATE`` lock; see ``_release_locked_to_seller``.
     buyer_balance = await lock_user_balance(session, deal.buyer_id, currency.id)
@@ -592,12 +587,12 @@ async def _split_locked(
 
     Returns ``(locked_pot, buyer_share, seller_share)``.
     """
+    # P10 — the split operates on the locked principal only; the
+    # platform's commission was already collected via the deposit
+    # invoice (and is not refundable per spec).
     decimals = currency.decimals
     amt = quantize_money(Decimal(str(deal.amount or 0)), decimals)
-    commission = quantize_money(Decimal(str(deal.commission_amount or 0)), decimals)
-    locked = amt + commission if deal.pay_commission == PayCommission.buyer else amt
-    # ``amt`` already excludes commission; split principal between
-    # parties. The buyer-paid commission portion stays on the platform.
+    locked = amt
     buyer_share = quantize_money(amt * Decimal(str(buyer_percent)) / Decimal(100), decimals)
     seller_share = amt - buyer_share
 
@@ -963,7 +958,7 @@ async def delete_deal(
         "commission_amount": (
             str(deal.commission_amount) if deal.commission_amount is not None else None
         ),
-        "pay_commission": deal.pay_commission.value,
+        "commission_paid": bool(deal.commission_paid),
         "created_at": deal.created_at.isoformat() if deal.created_at else None,
     }
     refunded: Decimal | None = None
@@ -974,11 +969,8 @@ async def delete_deal(
         # one path that does NOT retain commission.
         decimals = currency.decimals
         amt = quantize_money(Decimal(str(deal.amount or 0)), decimals)
-        commission = quantize_money(Decimal(str(deal.commission_amount or 0)), decimals)
-        if deal.pay_commission == PayCommission.buyer:
-            locked_pot = amt + commission
-        else:
-            locked_pot = amt
+        # P10 — ``UserBalance.locked`` carries only the principal.
+        locked_pot = amt
         # CRIT #1 — ``FOR UPDATE`` lock so the refund branch can’t
         # be read-modify-written by a concurrent admin/user action
         # on the same buyer balance.

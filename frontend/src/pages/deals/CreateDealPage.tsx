@@ -1,17 +1,17 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMemo, useState } from "react";
+import type { DealCreateWithTopupResponseDto } from "@/api/types";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
 import { PinPromptModal } from "@/components/PinPromptModal";
-import { ToggleTabs } from "@/components/ui/ToggleTabs";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
 import { UserPicker } from "@/components/domain/UserPicker";
-import { useCreateDeal, useCurrencies } from "@/api/hooks";
-import { haptic } from "@/lib/tg";
+import { useCreateDealWithTopup, useCurrencies } from "@/api/hooks";
+import { haptic, openTelegramLink } from "@/lib/tg";
 
 // Item 18 — backend can return a structured ``insufficient_funds``
 // payload on the create-deal 400. The ky ``beforeError`` hook
@@ -40,10 +40,29 @@ function parseInsufficientFunds(err: unknown): InsufficientFundsDetail | null {
   return null;
 }
 
+function InvoiceRow({
+  label,
+  value,
+  currency,
+  strong = false,
+}: {
+  label: string;
+  value: string | number;
+  currency: string;
+  strong?: boolean;
+}) {
+  return (
+    <div className={"flex items-center justify-between " + (strong ? "font-semibold" : "")}>
+      <span>{label}</span>
+      <span>{value} {currency}</span>
+    </div>
+  );
+}
+
 export default function CreateDealPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const create = useCreateDeal();
+  const create = useCreateDealWithTopup();
   const toast = useToast();
   const { data: currencies } = useCurrencies();
   const [counterparty, setCounterparty] = useState(params.get("to") ?? "");
@@ -53,9 +72,6 @@ export default function CreateDealPage() {
   // for days. The role is fixed at ``buyer`` here and on the backend.
   const [sum, setSum] = useState("");
   const [description, setDescription] = useState("");
-  const [comissionFrom, setComissionFrom] = useState<"buyer" | "seller">(
-    "buyer",
-  );
   const [currencyCode, setCurrencyCode] = useState("USD");
   // V13 — buyer's preferred upstream invoice provider, persisted
   // on the deal row (``Deal.payment_provider``). Defaults to
@@ -65,6 +81,7 @@ export default function CreateDealPage() {
   >("cryptobot");
   const [pinOpen, setPinOpen] = useState(false);
   const [insufficient, setInsufficient] = useState<InsufficientFundsDetail | null>(null);
+  const [created, setCreated] = useState<DealCreateWithTopupResponseDto | null>(null);
 
   // Per the deposit-flow plan, deals are funded from the buyer's
   // fiat balance — the dropdown therefore surfaces only fiat
@@ -99,12 +116,12 @@ export default function CreateDealPage() {
         role: "buyer",
         amount,
         description,
-        pay_comission: comissionFrom,
         currency_code: currencyCode,
         payment_provider: paymentProvider,
       });
+      setCreated(deal);
       haptic("success");
-      navigate(`/deals/${deal.id}`);
+      toast.show({ kind: "success", title: "Инвойс создан" });
     } catch (e: unknown) {
       haptic("error");
       const lowFunds = parseInsufficientFunds(e);
@@ -160,16 +177,10 @@ export default function CreateDealPage() {
             if (insufficient) setInsufficient(null);
           }}
         />
-        {/* Item 18 — make it explicit that the buyer-pays-commission
-            mode locks more than the deal amount. Pre-fix the toggle
-            label was the only hint and users hit "Недостаточно средств"
-            with a balance exactly equal to the typed amount. */}
-        {comissionFrom === "buyer" && (
-          <div className="rounded-card border border-border bg-panel-2 px-3 py-2 text-[12px] text-text-muted leading-snug">
-            Покупатель платит сумму + комиссию платформы (~5%, для VIP ниже).
-            Убедитесь, что на балансе хватает на сумму вместе с комиссией.
-          </div>
-        )}
+        <div className="rounded-card border border-border bg-panel-2 px-3 py-2 text-[12px] text-text-muted leading-snug">
+          После создания покупатель оплачивает единый инвойс: недостающая сумма
+          для эскроу + комиссия платформы. Сделка активируется после оплаты.
+        </div>
         {insufficient && (
           <div
             role="alert"
@@ -182,7 +193,7 @@ export default function CreateDealPage() {
               Не хватает {insufficient.deficit} {insufficient.currency_code ?? ""}.
             </div>
             <div className="mt-1">
-              Уменьшите сумму или переключите комиссию на продавца.
+              Уменьшите сумму или пополните баланс через инвойс сделки.
             </div>
           </div>
         )}
@@ -191,14 +202,6 @@ export default function CreateDealPage() {
           placeholder="Что покупаете/продаёте, условия"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-        />
-        <ToggleTabs
-          value={comissionFrom}
-          options={[
-            { value: "buyer", label: "Комиссию платит покупатель" },
-            { value: "seller", label: "Комиссию платит продавец" },
-          ]}
-          onChange={setComissionFrom}
         />
         <div>
           <div className="mb-1 text-[14px] font-medium">Платёжная система</div>
@@ -233,6 +236,39 @@ export default function CreateDealPage() {
             })}
           </div>
         </div>
+        {created && (
+          <div
+            className="rounded-card border border-accent/40 bg-accent/10 p-4 space-y-3"
+            data-testid="topup-invoice-preview"
+          >
+            <div>
+              <div className="text-sm font-semibold text-accent">Инвойс на оплату</div>
+              <div className="text-xs text-text-muted">
+                Оплатите инвойс, чтобы сделка #{created.deal.id} перешла на подтверждение продавцом.
+              </div>
+            </div>
+            <div className="space-y-1 text-sm">
+              <InvoiceRow label="Недостающая сумма" value={created.invoice.topup_principal} currency={created.invoice.currency_code} />
+              <InvoiceRow label="Комиссия" value={created.invoice.commission} currency={created.invoice.currency_code} />
+              <InvoiceRow label="Итого" value={created.invoice.total} currency={created.invoice.currency_code} strong />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                onClick={() => openTelegramLink(created.invoice.pay_url)}
+              >
+                Открыть инвойс
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => navigate(`/deals/${created.deal.id}`)}
+              >
+                К сделке
+              </Button>
+            </div>
+          </div>
+        )}
         <Button fullWidth onClick={requestSubmit} disabled={create.isPending}>
           {create.isPending ? "Создаю..." : "Создать сделку"}
         </Button>

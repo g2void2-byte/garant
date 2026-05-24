@@ -39,7 +39,6 @@ async def _escalate_to_arbitration(
             "role": "buyer",
             "amount": sum_,
             "description": "test arbitration",
-            "pay_comission": "buyer",
             "currency_code": "USDT",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},

@@ -122,6 +122,25 @@ ALLOWED_SITES: frozenset[tuple[str, str, str, tuple[str, ...]]] = frozenset(
             "deal",
             ("buyer", "currency", "seller"),
         ),
+        # P10 — ``create_deal_with_topup`` mirrors ``create_deal``'s
+        # rationale: a freshly-inserted ``Deal`` whose
+        # ``buyer`` / ``seller`` / ``currency`` relationships the
+        # ``_deal_out`` serialiser dereferences on the way out, and
+        # whose attendant ``WalletDeposit`` row likewise needs its
+        # ``currency`` populated for the ``DealTopupInvoiceOut``
+        # response. Same reasoning as ``create_deal`` — see above.
+        (
+            "backend/app/services_deals.py",
+            "create_deal_with_topup",
+            "deal",
+            ("buyer", "currency", "seller"),
+        ),
+        (
+            "backend/app/services_deals.py",
+            "create_deal_with_topup",
+            "deposit",
+            ("currency",),
+        ),
     }
 )
 

@@ -10,8 +10,6 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, PlainSerializer, field_validator, model_validator
 
-from .models import PayCommission
-
 
 def _validate_https_or_media_url(v: str, *, what: str, max_len: int = 1024) -> str:
     """Audit L-3 — strict URL validator for user-supplied avatar/banner/forum links.
@@ -660,38 +658,14 @@ class DealCreate(BaseModel):
     # L-1 / M-5: ``ge=Decimal("0.00000001")`` matches the smallest
     # representable amount our 8-fractional-digit ``Numeric(28, 8)``
     # money columns support — i.e. one satoshi for BTC-scale assets.
-    # Pre-fix ``gt=0`` accepted ``Decimal("1e-20")`` which quantises
-    # straight to ``0`` inside ``services_deals.create_deal`` and only
-    # then trips the ``amt <= 0`` guard; using ``ge=1e-8`` rejects the
-    # dust at the schema layer so the deal-create path never even
-    # reaches the DB lock for a sub-satoshi amount. The validator below
-    # additionally rejects ``NaN``/``±inf`` JSON values that bypass the
-    # bound comparison entirely (``NaN`` comparisons return ``False``
-    # against any number, so ``Field(ge=...)`` would happily admit it,
-    # and ``+inf`` would slip through and break the downstream
-    # ``Decimal(str(amount))`` round-trip).
     amount: Decimal = Field(ge=Decimal("0.00000001"))
     description: str = ""
-    # H-2: canonical field with correct spelling.
-    pay_commission: PayCommission = PayCommission.buyer
-    # H-2: deprecated alias for backward-compatible JSON input.
-    pay_comission: PayCommission | None = Field(default=None, exclude=True)
     currency_code: str = "USDT"
     # Buyer's preferred upstream invoice provider; persisted on the
-    # :class:`backend.app.models.Deal` row for future invoice-driven
-    # escrow flows. ``"cryptobot"`` keeps legacy clients (no
+    # :class:`backend.app.models.Deal` row for the invoice-driven
+    # escrow flow. ``"cryptobot"`` keeps legacy clients (no
     # ``payment_provider`` on the wire) backwards-compatible.
     payment_provider: Literal["cryptobot", "crystalpay"] = "cryptobot"
-
-    @model_validator(mode="before")
-    @classmethod
-    def _migrate_pay_comission(cls, values: dict) -> dict:  # type: ignore[override]
-        """Accept the legacy ``pay_comission`` key and copy it to ``pay_commission``."""
-        if isinstance(values, dict):
-            legacy = values.get("pay_comission")
-            if legacy is not None and "pay_commission" not in values:
-                values["pay_commission"] = legacy
-        return values
 
     @field_validator("amount")
     @classmethod
@@ -703,6 +677,48 @@ class DealCreate(BaseModel):
     @classmethod
     def _description_ok(cls, v: str) -> str:
         return _validate_description(v) or ""
+
+
+class DealCreateWithTopup(DealCreate):
+    """P10 — input for ``POST /api/deals/with-topup``.
+
+    Exactly the same shape as :class:`DealCreate` but routed through
+    the commission-via-invoice service entry point. Kept as a
+    separate class so the OpenAPI surface stays explicit and the
+    legacy ``POST /api/deals`` (balance-only) path can be removed
+    independently in a follow-up.
+    """
+
+
+class DealTopupInvoiceOut(BaseModel):
+    """P10 — deposit-invoice descriptor returned from the with-topup endpoint.
+
+    Mirrors the shape the frontend already consumes for wallet
+    top-ups (``WalletDepositOut``) but renames the fields to match
+    the spec's vocabulary (``topup_principal`` + ``commission`` +
+    ``total``).
+    """
+
+    deposit_id: int
+    pay_url: str
+    total: MoneyDecimal
+    topup_principal: MoneyDecimal
+    commission: MoneyDecimal
+    currency_code: str
+    provider: str
+    expires_at: datetime | None = None
+
+
+class DealCreateWithTopupOut(BaseModel):
+    """P10 — response from ``POST /api/deals/with-topup``.
+
+    Bundles the new :class:`DealOut` row (status ``pending_topup``)
+    with the :class:`DealTopupInvoiceOut` describing the invoice the
+    buyer must pay before the deal can be activated.
+    """
+
+    deal: DealOut
+    invoice: DealTopupInvoiceOut
 
 
 class DealCancelRequest(BaseModel):
@@ -753,10 +769,6 @@ class DealOut(BaseModel):
     buyer_photo_url: str | None = None
     seller_photo_url: str | None = None
     description: str
-    # H-2: both spellings emitted for backward compat; canonical is
-    # ``pay_commission``.
-    pay_commission: str
-    pay_comission: str  # deprecated alias
     status: str
     confirm_buyer: bool
     confirm_seller: bool
@@ -780,6 +792,18 @@ class DealOut(BaseModel):
     # deal-create time. Surfaced on the wire so the deal detail page
     # can render the right provider badge without an extra lookup.
     payment_provider: str = "cryptobot"
+    # P10 — commission-via-invoice flow.
+    topup_deposit_id: int | None = None
+    commission_paid: bool = False
+    # P10 — inline copy of the deposit invoice so the frontend can
+    # resume the pay flow after a reload of an existing
+    # ``pending_topup`` deal without a separate ``GET`` round-trip.
+    # Populated by ``routers/deals._deal_out`` only when the deal is
+    # still in ``pending_topup`` AND the linked deposit row is
+    # ``pending``; otherwise it stays ``None`` (deal has already been
+    # paid, expired, or never had a topup invoice in the first place
+    # — i.e. the legacy ``POST /api/deals`` balance-only path).
+    topup_invoice: DealTopupInvoiceOut | None = None
 
 
 # ── Reviews ────────────────────────────────────────────
@@ -1313,7 +1337,6 @@ class AdminDealListItem(BaseModel):
     buyer_username: str | None
     seller_id: int
     seller_username: str | None
-    pay_commission: str
     created_at: datetime
     in_progress_at: datetime | None
     completed_at: datetime | None
@@ -1375,7 +1398,8 @@ class AdminDealDetailOut(BaseModel):
     # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
     amount: Decimal
     commission_amount: Decimal | None
-    pay_commission: str
+    commission_paid: bool = False
+    topup_deposit_id: int | None = None
     buyer: AdminBalanceSnapshot
     seller: AdminBalanceSnapshot
     created_at: datetime
@@ -1427,10 +1451,10 @@ class AdminDealSplitIn(BaseModel):
     """Body for ``POST /api/admin/deals/:id/split``.
 
     ``buyer_percent`` is the share returned to the buyer; the seller
-    gets ``100 - buyer_percent`` of the same locked pot. The commission
-    component (when ``pay_commission=buyer``) is *always* retained by
-    the platform regardless of split — admin-forced splits do not give
-    commission back to either party.
+    gets ``100 - buyer_percent`` of the same locked pot. Commission
+    is collected on the platform via the deposit invoice (P10) and
+    is *never* refunded — admin-forced splits operate only on the
+    locked principal.
     """
 
     buyer_percent: Decimal
@@ -1803,179 +1827,18 @@ class AdminWithdrawalDecisionIn(BaseModel):
         return v
 
 
-# ── Admin: treasury (PR-CDE) ───────────────────────────
-
-
-class AdminTreasuryBalanceOut(BaseModel):
-    """Per-currency commission accumulator.
-
-    ``accrued`` sums up ``commission_amount`` on every completed deal in
-    this currency; ``withdrawn`` subtracts the sum of successful
-    ``treasury_withdrawals`` rows. ``available`` is the diff and the
-    only amount the admin can withdraw.
-    """
-
-    currency_id: int
-    currency_code: str
-    currency_name: str
-    decimals: int
-    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
-    accrued: Decimal
-    withdrawn: Decimal
-    available: Decimal
-
-
-class AdminTreasuryOverviewOut(BaseModel):
-    balances: list[AdminTreasuryBalanceOut]
-    total_withdrawals: int
-
-
-class AdminTreasuryWithdrawIn(BaseModel):
-    """Body for ``POST /api/admin/treasury/withdraw``.
-
-    Requires the ``X-Totp-Code`` header (validated by a dependency) and
-    ``confirm=true`` to satisfy the double-confirm gate.
-    """
-
-    currency_code: str
-    amount: Decimal
-    address: str
-    confirm: bool = False
-    note: str | None = None
-
-    @field_validator("currency_code")
-    @classmethod
-    def _code_ok(cls, v: str) -> str:
-        v = (v or "").strip().upper()
-        if not v or len(v) > 16:
-            raise ValueError("Некорректный код валюты")
-        return v
-
-    @field_validator("amount")
-    @classmethod
-    def _amount_ok(cls, v: Decimal | float) -> Decimal:
-        d = _reject_non_finite_money(v)
-        if d is None or d <= 0:
-            raise ValueError("Сумма должна быть положительной")
-        return d
-
-    @field_validator("address")
-    @classmethod
-    def _address_ok(cls, v: str) -> str:
-        # ``CryptoPay.transfer`` only accepts a Telegram ``user_id`` (a
-        # signed 64-bit integer); wallet addresses are not a thing on
-        # the CryptoBot side. Pre-fix this validator accepted any
-        # non-empty ≤256-char string, which let the handler silently
-        # fall back to ``admin.tg_user_id`` when ``isdigit()`` was
-        # false — see the comment on the call site in
-        # ``routers/admin/treasury.py``. Force-rejecting non-digit
-        # input at the schema makes the silent self-payout codepath
-        # unreachable.
-        v = (v or "").strip()
-        if not v:
-            raise ValueError("Адрес не может быть пустым")
-        if len(v) > 32:
-            # 19 digits is enough for the full signed-int64 range,
-            # 32 leaves slack for a sign / formatting quirk without
-            # accepting arbitrary blobs.
-            raise ValueError("user_id слишком длинный (≤32 символов)")
-        if not v.isdigit():
-            raise ValueError(
-                "Адрес должен быть Telegram user_id (только цифры). "
-                "CryptoBot не поддерживает wallet-адреса в transfer API."
-            )
-        try:
-            n = int(v)
-        except ValueError as e:
-            raise ValueError("user_id должен быть числом") from e
-        if n <= 0:
-            raise ValueError("user_id должен быть положительным")
-        if n > (1 << 63) - 1:
-            raise ValueError("user_id вне диапазона int64")
-        return v
-
-
-class AdminTreasuryWithdrawOut(BaseModel):
-    id: int
-    actor_id: int
-    currency_code: str
-    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
-    amount: Decimal
-    address: str
-    status: str
-    note: str
-    cryptobot_transfer_id: str | None
-    created_at: datetime
-
-
-class AdminTreasuryMarkSentIn(BaseModel):
-    """Body for ``POST /api/admin/treasury/{withdrawal_id}/mark_sent``.
-
-    Manual reconciliation path for treasury rows stuck at ``pending``:
-    the CryptoBot transfer actually went through in Phase 2 of
-    ``treasury_withdraw`` but Phase 3 failed to commit (network glitch,
-    crash, etc.), leaving the row mid-flight. The operator verifies
-    the transfer succeeded on CryptoBot's side (via their dashboard
-    or the ``spend_id=treas:{row.id}`` lookup), then calls this
-    endpoint to advance the row to ``status="sent"``.
-
-    Mirrors ``WalletWithdrawAdminDecideIn(action="mark_sent")`` in
-    ``routers/admin/withdrawals.py``.
-    """
-
-    confirm: bool = False
-    cryptobot_transfer_id: str | None = None
-    note: str | None = None
-
-    @field_validator("cryptobot_transfer_id")
-    @classmethod
-    def _transfer_id_ok(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        v = v.strip()
-        if not v:
-            return None
-        # CryptoBot returns a numeric ``transfer_id`` (its own auto-
-        # increment id, currently fits int64). Reject anything that
-        # isn't a string of digits so the audit row stays grep-able
-        # and the reconciliation never silently records garbage.
-        if not v.isdigit():
-            raise ValueError("cryptobot_transfer_id должен быть числом")
-        if len(v) > 32:
-            raise ValueError("cryptobot_transfer_id слишком длинный")
-        return v
-
-
-class AdminTreasuryReconcileIn(BaseModel):
-    """Body for ``POST /api/admin/treasury/{withdrawal_id}/reconcile``.
-
-    Audit §4.19 — automated reconciliation path for ``pending`` rows
-    stuck after a Phase 2 → Phase 3 crash. Unlike ``mark_sent`` (which
-    trusts the operator's claim that CryptoBot processed the
-    transfer), this endpoint queries CryptoBot's ``getTransfers``
-    API by the row's ``spend_id`` and updates the status from the
-    authoritative source — flipping to ``sent`` if the transfer
-    landed and surfacing a 404 (without mutating the row) if it
-    didn't, so the operator can choose whether to retry by issuing
-    a fresh withdrawal or close the row out manually.
-    """
-
-    confirm: bool = False
-    note: str | None = None
-
-
-class AdminTreasuryReconcileOut(BaseModel):
-    """Response for the treasury reconcile endpoint.
-
-    ``status`` mirrors the row's new value (always ``sent`` on the
-    success path; the endpoint 404s instead of returning ``failed``
-    so a missing CryptoBot transfer never silently buries the row).
-    ``withdrawal`` carries the canonical ``TreasuryWithdrawal`` shape
-    so the admin UI can refresh from the same payload.
-    """
-
-    withdrawal: AdminTreasuryWithdrawOut
-    cryptobot_transfer_id: str | None
+# ── Admin: treasury (REMOVED P5) ───────────────────────
+#
+# P5 — the treasury withdrawal flow and the on-platform commission
+# accumulator have been removed entirely. Commission is now collected
+# at deal-create time through the wallet provider's invoice (see
+# ``services_deals.create_deal_with_topup`` and the P10 flow): the
+# platform's CryptoBot / Crystalpay merchant account is now the
+# canonical home of accumulated commission, so the per-deal
+# ``commission_amount`` accumulator and the ``treasury_withdrawals``
+# admin queue are no longer needed. All ``AdminTreasury*`` schemas
+# that lived here were dropped; the migration in
+# ``backend/alembic/versions/`` drops the corresponding tables.
 
 
 # ── Admin: settings (PR-CDE) ───────────────────────────
@@ -1990,6 +1853,7 @@ class AdminSettingsOut(BaseModel):
     maintenance_enabled: bool
     maintenance_message: str
     auto_withdraw_enabled: bool
+    pending_topup_expiry_hours: int
 
 
 class AdminSettingsUpdateIn(BaseModel):
@@ -2007,6 +1871,7 @@ class AdminSettingsUpdateIn(BaseModel):
     maintenance_enabled: bool | None = None
     maintenance_message: str | None = None
     auto_withdraw_enabled: bool | None = None
+    pending_topup_expiry_hours: int | None = None
 
     @field_validator(
         "deal_commission_percent",
@@ -2025,6 +1890,7 @@ class AdminSettingsUpdateIn(BaseModel):
         "inactivity_pending_confirmation_days",
         "inactivity_pending_cancellation_days",
         "max_active_services_per_user",
+        "pending_topup_expiry_hours",
     )
     @classmethod
     def _int_ok(cls, v: int | None) -> int | None:

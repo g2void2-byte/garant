@@ -3,14 +3,14 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { CurrencyDto, DealDto } from "@/api/types";
+import type { CurrencyDto, DealCreateWithTopupResponseDto, DealDto } from "@/api/types";
 
 /**
  * Tests for the "Создать сделку" page. Covers:
  *   - rendering with the prefilled ``?to=`` query param
  *   - currency dropdown sourced from ``useCurrencies``
  *   - validation: blocks empty / invalid amounts and toggles haptic("error")
- *   - happy-path POST + navigation to ``/deals/:id``
+ *   - happy-path POST + invoice preview
  *   - error path swallows the rejection and fires haptic("error")
  */
 
@@ -28,7 +28,7 @@ const mockState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/api/hooks", () => ({
-  useCreateDeal: () => mockState.createMutation,
+  useCreateDealWithTopup: () => mockState.createMutation,
   useCurrencies: () => ({ data: mockState.currencies }),
   // ``UserPicker`` (used inside ``CreateDealPage``) consumes
   // ``useUsers`` to render the autosuggest dropdown — return an
@@ -45,6 +45,7 @@ vi.mock("@/api/hooks", () => ({
 const hapticSpy = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/tg", () => ({
   haptic: hapticSpy,
+  openTelegramLink: vi.fn(),
   showBackButton: () => () => {},
 }));
 
@@ -90,14 +91,26 @@ function makeCurrency(over: Partial<CurrencyDto> = {}): CurrencyDto {
   };
 }
 
+function makeInvoice() {
+  return {
+    deposit_id: 501,
+    pay_url: "https://pay.example/invoice/501",
+    total: "105.25",
+    topup_principal: "100.25",
+    commission: "5.00",
+    currency_code: "USD",
+    provider: "cryptobot",
+    expires_at: null,
+  };
+}
+
 function makeDeal(over: Partial<DealDto> = {}): DealDto {
   return {
     id: 42,
     buyer: "alice",
     seller: "me",
     description: "Test",
-    pay_comission: "buyer",
-    status: "wait_confirm",
+    status: "pending_topup",
     confirm_buyer: false,
     confirm_seller: false,
     role: "seller",
@@ -116,7 +129,18 @@ function makeDeal(over: Partial<DealDto> = {}): DealDto {
     arbitration_resolution: null,
     arbitration_resolved_at: null,
     payment_provider: "cryptobot",
+    commission_paid: false,
+    topup_deposit_id: 501,
+    topup_invoice: makeInvoice(),
     ...over,
+  };
+}
+
+function makeTopupResponse(over: Partial<DealDto> = {}): DealCreateWithTopupResponseDto {
+  const deal = makeDeal(over);
+  return {
+    deal,
+    invoice: deal.topup_invoice ?? makeInvoice(),
   };
 }
 
@@ -213,8 +237,8 @@ describe("<CreateDealPage />", () => {
     expect(hapticSpy).toHaveBeenCalledWith("error");
   });
 
-  it("submits and navigates to /deals/:id on success", async () => {
-    mockState.createMutation.mutateAsync.mockResolvedValue(makeDeal({ id: 77 }));
+  it("submits and shows the invoice preview on success", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(makeTopupResponse({ id: 77 }));
     const user = userEvent.setup();
     renderPage();
     await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
@@ -232,14 +256,15 @@ describe("<CreateDealPage />", () => {
           role: "buyer",
           amount: 100.25,
           description: "deal description",
-          pay_comission: "buyer",
           currency_code: "USD",
           payment_provider: "cryptobot",
         }),
       );
     });
     expect(hapticSpy).toHaveBeenCalledWith("success");
-    expect(await screen.findByTestId("deal-detail")).toBeInTheDocument();
+    expect(await screen.findByTestId("topup-invoice-preview")).toBeInTheDocument();
+    expect(screen.getByText("105.25 USD")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Открыть инвойс/i })).toBeInTheDocument();
   });
 
   it("fires haptic('error') when the API rejects", async () => {
@@ -263,7 +288,7 @@ describe("<CreateDealPage />", () => {
   });
 
   it("submits payment_provider='crystalpay' when the Crystalpay tile is selected", async () => {
-    mockState.createMutation.mutateAsync.mockResolvedValue(makeDeal({ id: 88 }));
+    mockState.createMutation.mutateAsync.mockResolvedValue(makeTopupResponse({ id: 88 }));
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByTestId("provider-crystalpay"));
