@@ -7762,7 +7762,6 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                "X-Pin-Token"?: string | null;
                 authorization?: string | null;
             };
             path: {
