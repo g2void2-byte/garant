@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from sqlalchemy import select
 
+import backend.app.services_wallet as services_wallet
 from backend.app.config import settings
 from backend.app.db import async_session
 from backend.app.models import (
@@ -33,8 +34,6 @@ from backend.app.models import (
     WalletDepositStatus,
 )
 from backend.app.services_deals import complete_deal_topup_payment
-import backend.app.services_wallet as services_wallet
-
 from tests.helpers import (
     auth_headers,
     credit_balance,
