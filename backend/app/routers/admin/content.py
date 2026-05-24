@@ -21,6 +21,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...admin_audit import log_admin_action
@@ -393,10 +394,13 @@ async def create_review(
 ) -> AdminReviewItemOut:
     """Admin creates a review on behalf of a user.
 
-    ``author_id`` and ``target_id`` are required and validated. If the
-    pair already has a review for the same deal, we still create a new
-    row — the platform's regular create endpoint enforces uniqueness,
-    but admin operations are deliberately unrestricted for cleanup.
+    ``author_id`` and ``target_id`` are required and validated. The
+    UNIQUE constraint ``uq_reviews_author_deal`` (audit §1.1) binds
+    admin writes too: an attempt to create a second review for the
+    same ``(author_id, deal_id)`` pair is rejected with 409 instead
+    of silently inflating the target's rating counters. Editing the
+    existing row via ``POST /admin/content/reviews/{review_id}`` is
+    the correct path for that case.
     """
     if body.author_id is None or body.target_id is None:
         raise HTTPException(400, "author_id и target_id обязательны")
@@ -414,7 +418,39 @@ async def create_review(
         text=body.text,
     )
     session.add(review)
-    await session.flush()
+    # Audit §1.1 — ``uq_reviews_author_deal`` rejects a duplicate
+    # ``(author_id, deal_id)`` pair at flush time. Translate the
+    # raw ``IntegrityError`` into a clean 409 so the admin UI gets a
+    # usable message instead of a 500 stack trace.
+    #
+    # ``admin.id`` is snapshotted into a plain ``int`` *before* the
+    # flush so the rejection logger never touches an expired ORM
+    # attribute. Inside the ``except`` block the session is in
+    # "must-rollback" state — a re-read of ``admin.id`` would fire a
+    # synchronous SELECT (the ``_consume_totp`` upstream issued a
+    # ``session.add(user)`` that nudges the attributes onto a
+    # post-flush refresh path) and raise ``PendingRollbackError``
+    # against the live request. Explicit ``session.rollback()`` is
+    # left to the dep teardown; calling it here would expire
+    # ``admin`` *after* the read which is the same race in reverse.
+    actor_id = admin.id
+    try:
+        await session.flush()
+    except IntegrityError as e:
+        logger.warning(
+            "admin review.create rejected: duplicate (author_id, deal_id)",
+            extra={
+                "event": "admin.review.create.duplicate",
+                "actor_id": actor_id,
+                "author_id": body.author_id,
+                "target_id": body.target_id,
+                "deal_id": body.deal_id,
+            },
+        )
+        raise HTTPException(
+            409,
+            "Отзыв по этой сделке от данного автора уже существует",
+        ) from e
 
     # Item 14 — keep ``target.good`` / ``target.bad`` in sync with the
     # ``reviews`` table the same way ``services.post_review`` does for

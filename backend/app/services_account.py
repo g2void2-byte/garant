@@ -301,6 +301,17 @@ async def _has_tradable_data(session: AsyncSession, user: User) -> bool:
     if user.pin_hash:
         return True
 
+    # Audit §2.4 — a non-zero ``trust_deposit_balance`` is real funds
+    # the user paid in via the ``deposit_credit`` flow. The balance has
+    # no spend / withdraw path by design (lock-in), so when
+    # ``confirm_transfer`` calls ``session.delete(target)`` below it
+    # would silently zero the trust deposit out without a refund.
+    # Gate the transfer so the user (or admin) has to drain or
+    # reassign the deposit first, mirroring how a non-zero
+    # ``UserBalance`` already blocks the confirm path.
+    if Decimal(str(user.trust_deposit_balance or 0)) > 0:
+        return True
+
     deal = (
         await session.execute(
             select(Deal.id).where(or_(Deal.buyer_id == user.id, Deal.seller_id == user.id)).limit(1)

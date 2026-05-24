@@ -18,6 +18,7 @@ import logging
 from datetime import timedelta
 
 from sqlalchemy import case, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import notifier
@@ -158,7 +159,25 @@ async def post_review(
         text=text,
     )
     session.add(review)
-    await session.flush()
+    # Audit §1.1 — the SELECT above is a non-locking check-then-act
+    # and two parallel callers can both observe ``existing is None``
+    # before either INSERTs. The ``uq_reviews_author_deal`` UNIQUE
+    # constraint on ``reviews(author_id, deal_id)`` makes the
+    # racing INSERT abort here with ``IntegrityError``; we translate
+    # it to the same ``ValueError`` the SELECT-guard raises so the
+    # API surface (HTTP 400 + "Вы уже оставили отзыв по этой сделке")
+    # stays consistent regardless of which side won the race. The
+    # ``ValueError`` propagates to the FastAPI 400 handler in
+    # ``routers/reviews.py``; the per-request session is rolled
+    # back by the dep teardown, so we deliberately do NOT call
+    # ``await session.rollback()`` here — doing so would expire the
+    # ORM objects the router still reads (``author.id`` /
+    # ``target.id``) and trigger a ``MissingGreenlet`` on the
+    # synchronous attribute access in the router's logger.
+    try:
+        await session.flush()
+    except IntegrityError as e:
+        raise ValueError("Вы уже оставили отзыв по этой сделке") from e
 
     # Audit H-5 — lock the target users row so the INSERT-then-
     # recompute critical section serialises against any concurrent

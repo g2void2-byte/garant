@@ -684,10 +684,13 @@ export interface paths {
          * Create Review
          * @description Admin creates a review on behalf of a user.
          *
-         *     ``author_id`` and ``target_id`` are required and validated. If the
-         *     pair already has a review for the same deal, we still create a new
-         *     row — the platform's regular create endpoint enforces uniqueness,
-         *     but admin operations are deliberately unrestricted for cleanup.
+         *     ``author_id`` and ``target_id`` are required and validated. The
+         *     UNIQUE constraint ``uq_reviews_author_deal`` (audit §1.1) binds
+         *     admin writes too: an attempt to create a second review for the
+         *     same ``(author_id, deal_id)`` pair is rejected with 409 instead
+         *     of silently inflating the target's rating counters. Editing the
+         *     existing row via ``POST /admin/content/reviews/{review_id}`` is
+         *     the correct path for that case.
          */
         post: operations["create_review_api_admin_reviews_post"];
         delete?: never;
