@@ -3,6 +3,8 @@
  * `index.html`. Keeps the rest of the app decoupled from the global.
  */
 
+import { useEffect, useState } from "react";
+
 type HapticStyle = "light" | "medium" | "heavy" | "soft" | "rigid";
 type HapticNotification = "error" | "success" | "warning";
 
@@ -32,6 +34,13 @@ interface TelegramWebApp {
   expand: () => void;
   close: () => void;
   isExpanded: boolean;
+  // V13.2 — in Telegram Desktop the iframe is fixed-height; ``100dvh``
+  // does not match the real Mini App viewport until ``expand()`` is
+  // called AND ``viewportChanged`` fires. ``Sheet`` reads these via
+  // ``useTelegramViewport`` so the bottom-sheet never overflows the
+  // iframe and disappears off-screen.
+  viewportHeight?: number;
+  viewportStableHeight?: number;
   isFullscreen?: boolean;
   requestFullscreen?: () => void;
   exitFullscreen?: () => void;
@@ -322,4 +331,78 @@ export function showMainButton(text: string, onClick: () => void) {
     tg.MainButton.offClick(onClick);
     tg.MainButton.hide();
   };
+}
+
+/**
+ * Returns the live Telegram Mini App viewport height in CSS pixels.
+ *
+ * V13.2 — in Telegram Desktop the Mini App is hosted in an iframe
+ * whose height does not match ``window.innerHeight`` and is NOT
+ * what CSS ``100dvh`` resolves to until the Mini App calls
+ * ``WebApp.expand()`` AND Telegram fires ``viewportChanged``. Using
+ * ``min-h-[80dvh]`` on a bottom sheet there produces a sheet
+ * taller than the iframe — the bottom-anchored sheet renders above
+ * the visible area and the user sees an empty grey strip.
+ *
+ * This hook:
+ *
+ * * Returns ``null`` in environments without Telegram WebApp (Vite
+ *   dev server, jsdom tests). Callers fall back to a static CSS
+ *   max-height (``min(92dvh, 92vh)``) in that case.
+ * * Calls ``WebApp.expand()`` once at mount so the viewport jumps
+ *   to its real max immediately, before the sheet animates in.
+ * * Subscribes to ``viewportChanged`` so the sheet shrinks when
+ *   Telegram itself shrinks the iframe (mobile keyboard, app
+ *   minimize), then unsubscribes on unmount via
+ *   ``offEvent`` when available — older clients without ``offEvent``
+ *   leak the listener but Telegram's dispatcher is keyed by
+ *   reference and the same handler being re-installed by a remount
+ *   is a no-op.
+ */
+export function useTelegramViewport(): number | null {
+  // Read ``window.Telegram`` lazily here rather than reusing the
+  // module-level ``tg`` constant: ``tg`` is evaluated at module load
+  // time, so in jsdom-based tests where ``window.Telegram`` is set
+  // BEFORE render but AFTER the module is imported the constant
+  // would still be ``undefined`` and the hook would never engage.
+  // Reading at call time also lets the legacy ``initTelegram`` /
+  // ``lockToFullscreen`` paths (which run before any React render)
+  // settle ``isExpanded`` first.
+  const getApp = (): TelegramWebApp | undefined =>
+    typeof window !== "undefined" ? window.Telegram?.WebApp : undefined;
+
+  const [vh, setVh] = useState<number | null>(() => {
+    const app = getApp();
+    if (!app) return null;
+    return app.viewportStableHeight ?? app.viewportHeight ?? null;
+  });
+
+  useEffect(() => {
+    const app = getApp();
+    if (!app) return;
+    try {
+      app.expand();
+    } catch {
+      // Older Telegram clients can throw on ``expand`` if the Mini App
+      // is already fullscreen / closed. Best-effort.
+    }
+    const handler = () => {
+      setVh(app.viewportStableHeight ?? app.viewportHeight ?? null);
+    };
+    try {
+      app.onEvent("viewportChanged", handler);
+    } catch {
+      // ``onEvent`` is a no-op on very old Telegram clients; the
+      // initial ``setVh`` from ``useState`` covers the static case.
+    }
+    return () => {
+      try {
+        app.offEvent?.("viewportChanged", handler);
+      } catch {
+        // see ``onEvent`` comment.
+      }
+    };
+  }, []);
+
+  return vh;
 }

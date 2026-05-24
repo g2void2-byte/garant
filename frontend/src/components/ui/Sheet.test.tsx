@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Sheet } from "./Sheet";
 
@@ -76,5 +76,91 @@ describe("<Sheet />", () => {
     );
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  describe("Telegram viewport (V13.2)", () => {
+    afterEach(() => {
+      // Tests below mutate ``window.Telegram``; clean up so the next
+      // test (or test file) starts from a pristine non-Telegram
+      // environment matching the regular jsdom default.
+      delete (window as unknown as { Telegram?: unknown }).Telegram;
+    });
+
+    it("falls back to CSS dvh classes outside Telegram", () => {
+      render(
+        <Sheet open onClose={() => {}}>
+          <div>body</div>
+        </Sheet>,
+      );
+      const sheet = screen.getByTestId("sheet");
+      // No Telegram → ``style`` is empty, the dvh fallback classes
+      // are present so a plain browser tab still renders sensibly.
+      expect(sheet.getAttribute("style") ?? "").toBe("");
+      expect(sheet.className).toMatch(/max-h-\[min\(92dvh,92vh\)\]/);
+    });
+
+    it("derives style.maxHeight/minHeight from Telegram viewport", () => {
+      // Minimal stub: only the bits ``useTelegramViewport`` touches.
+      // ``viewportStableHeight`` takes precedence so the sheet
+      // doesn't flicker between the soft-keyboard-open and
+      // soft-keyboard-closed measurements on mobile.
+      const expand = vi.fn();
+      (window as unknown as { Telegram: { WebApp: unknown } }).Telegram = {
+        WebApp: {
+          viewportHeight: 600,
+          viewportStableHeight: 800,
+          expand,
+          onEvent: vi.fn(),
+          offEvent: vi.fn(),
+          // Stub the rest of the surface that ``Sheet``'s imports
+          // pull through — they're not exercised here but the
+          // TypeScript shape demands their presence at runtime when
+          // jsdom evaluates the module.
+          BackButton: { show: vi.fn(), hide: vi.fn(), onClick: vi.fn(), offClick: vi.fn() },
+          MainButton: {
+            setText: vi.fn(),
+            show: vi.fn(),
+            hide: vi.fn(),
+            onClick: vi.fn(),
+            offClick: vi.fn(),
+            enable: vi.fn(),
+            disable: vi.fn(),
+            showProgress: vi.fn(),
+            hideProgress: vi.fn(),
+            setParams: vi.fn(),
+          },
+          HapticFeedback: {
+            impactOccurred: vi.fn(),
+            notificationOccurred: vi.fn(),
+            selectionChanged: vi.fn(),
+          },
+          initDataUnsafe: {},
+          themeParams: {},
+          ready: vi.fn(),
+          close: vi.fn(),
+          isExpanded: true,
+          openTelegramLink: vi.fn(),
+          openLink: vi.fn(),
+        },
+      };
+
+      render(
+        <Sheet open onClose={() => {}}>
+          <div>body</div>
+        </Sheet>,
+      );
+      const sheet = screen.getByTestId("sheet");
+      // 800 * 0.92 = 736, 800 * 0.5 = 400. Sheet must use the
+      // ``viewportStableHeight`` value, not ``viewportHeight``.
+      expect(sheet.style.maxHeight).toBe("736px");
+      expect(sheet.style.minHeight).toBe("400px");
+      // Calling ``expand`` once at mount is what unfreezes the
+      // iframe height in Telegram Desktop.
+      expect(expand).toHaveBeenCalled();
+      // The CSS dvh fallback must NOT also be applied — otherwise
+      // a stale ``100dvh`` class would race the inline style and
+      // re-introduce the original "sheet floats off-screen" bug.
+      expect(sheet.className).not.toMatch(/max-h-\[min\(92dvh,92vh\)\]/);
+    });
   });
 });

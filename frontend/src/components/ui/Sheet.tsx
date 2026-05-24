@@ -1,6 +1,7 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { usePresence, useVerticalDrag } from "@/lib/animate";
+import { useTelegramViewport } from "@/lib/tg";
 
 interface SheetProps {
   open: boolean;
@@ -19,6 +20,22 @@ export function Sheet({
 }: SheetProps) {
   const { mounted, visible } = usePresence(open, 300);
   const drag = useVerticalDrag(onClose);
+  // V13.2 — read the real Telegram WebApp viewport (px) so the
+  // sheet never overflows the iframe on Telegram Desktop where
+  // ``100dvh`` does not match the Mini App container until
+  // ``WebApp.expand()`` AND ``viewportChanged`` fires. Outside of
+  // Telegram (dev browser, jsdom) the hook returns ``null`` and we
+  // fall back to a CSS ``min(92dvh, 92vh)`` ceiling that behaves
+  // correctly in a normal browser tab. Fixes the "empty grey sheet
+  // floats at the top of the screen" bug seen in items 2/5/6.
+  const tgViewport = useTelegramViewport();
+  const tgSheetStyle: CSSProperties | undefined =
+    tgViewport != null
+      ? {
+          maxHeight: Math.round(tgViewport * 0.92),
+          minHeight: Math.round(tgViewport * 0.5),
+        }
+      : undefined;
 
   useEffect(() => {
     if (!open) return;
@@ -49,15 +66,20 @@ export function Sheet({
         ref={drag.elRef}
         data-testid="sheet"
         data-state={visible ? "open" : "closed"}
+        style={tgSheetStyle}
         className={cn(
           "fixed z-50 left-0 right-0 bottom-0 flex flex-col",
-          // V13 — bump the floor to ``min-h-[80dvh]`` so longer
-          // bottom-sheet forms (filter sheet, broadcast editor) no
-          // longer require an obvious scroll on first paint. The
-          // ceiling stays at ``max-h-[92dvh]`` so a small slice of
-          // the page peeks above the sheet, signalling that the
-          // backdrop is still tappable to dismiss.
-          "min-h-[80dvh] max-h-[92dvh] bg-panel border-t border-border rounded-t-3xl",
+          // V13.2 — in Telegram we drive height from ``tgSheetStyle``
+          // (computed from ``WebApp.viewportStableHeight``). Outside
+          // of Telegram (dev browser, screenshot tests) we keep the
+          // CSS fallback so the sheet still renders sensibly in
+          // a plain browser tab. ``min(92dvh,92vh)`` defends against
+          // the iOS Safari ``dvh`` / ``vh`` divergence; without it
+          // the sheet could exceed the visible area on a 100% zoom
+          // page when ``dvh`` reports a value larger than the
+          // physical viewport.
+          tgViewport == null && "min-h-[50vh] max-h-[min(92dvh,92vh)]",
+          "bg-panel border-t border-border rounded-t-3xl",
           // V13 — spring-like easing matches the Continental
           // Telegram aesthetic better than the default ease-in-out.
           "transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",

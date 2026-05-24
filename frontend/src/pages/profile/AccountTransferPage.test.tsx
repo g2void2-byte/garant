@@ -48,6 +48,7 @@ vi.mock("@/lib/pin", () => ({
 
 const hapticSpy = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/tg", () => ({
+  useTelegramViewport: () => null,
   haptic: hapticSpy,
   showBackButton: () => () => {},
 }));

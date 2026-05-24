@@ -18,6 +18,7 @@ const pinState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/tg", () => ({
+  useTelegramViewport: () => null,
   getInitData: () => tgState.initData,
 }));
 

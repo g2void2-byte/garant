@@ -71,6 +71,7 @@ class FakeSocket {
 }
 
 vi.mock("@/lib/tg", () => ({
+  useTelegramViewport: () => null,
   getInitData: () => "user=%7B%22id%22%3A1%7D&hash=dev",
 }));
 

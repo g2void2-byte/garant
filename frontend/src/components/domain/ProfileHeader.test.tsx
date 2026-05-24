@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import type { UserCardDto } from "@/api/types";
 
 vi.mock("@/lib/tg", () => ({
+  useTelegramViewport: () => null,
   getTelegramUser: () => undefined,
 }));
 

@@ -61,6 +61,7 @@ vi.mock("@/components/ui/Toast", () => ({
 }));
 
 vi.mock("@/lib/tg", () => ({
+  useTelegramViewport: () => null,
   haptic: () => {},
   showBackButton: () => () => {},
   // L-15 — ``confirmDialog`` reads ``tg.showConfirm``; ``undefined``

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MinimizeButton } from "./MinimizeButton";
 
 vi.mock("@/lib/tg", () => ({
+  useTelegramViewport: () => null,
   isMobile: vi.fn(),
   minimizeApp: vi.fn(),
   haptic: vi.fn(),
