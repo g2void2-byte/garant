@@ -70,7 +70,6 @@ async def _bootstrap_deal_with_pair(client, *, suffix: str) -> tuple[int, str, i
             "role": "buyer",
             "amount": 10,
             "description": f"H2 chat {suffix}",
-            "pay_comission": "buyer",
             "currency_code": "USDT",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},

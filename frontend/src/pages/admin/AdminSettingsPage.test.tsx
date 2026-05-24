@@ -66,6 +66,7 @@ function makeSettings(
     vip_commission_percent: -1,
     inactivity_pending_confirmation_days: 7,
     inactivity_pending_cancellation_days: 14,
+    pending_topup_expiry_hours: 24,
     max_active_services_per_user: 10,
     maintenance_enabled: false,
     maintenance_message: "Сервис на ТО",

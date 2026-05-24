@@ -7,6 +7,7 @@ import type {
   AccountTransferStatusDto,
   CategoryDto,
   CurrencyDto,
+  DealCreateWithTopupResponseDto,
   DealDto,
   NotificationCountersDto,
   NotificationDto,
@@ -418,26 +419,46 @@ export function useDealAction(action: DealActionPath) {
 export function useCreateDeal() {
   const qc = useQueryClient();
   return useMutation({
-    // Audit C1 — ``role`` is fixed to ``buyer`` server-side; we still
-    // type it as a literal here so any call site that omits / mistypes
-    // it is caught at compile time. The previous ``"buyer" | "seller"``
-    // union allowed the legacy "I'm the seller" flow which is gone.
     mutationFn: (body: {
       counterparty: string;
       role: "buyer";
       amount: number;
       description: string;
-      pay_comission: "buyer" | "seller";
       currency_code: string;
-      // Optional on the wire; the backend defaults to
-      // ``"cryptobot"`` when omitted. ``"crystalpay"`` switches the
-      // upstream invoice provider the buyer originally picked at
-      // deal-create time — persisted on the Deal row but does not
-      // affect today's pre-deposited escrow funding path.
       payment_provider?: "cryptobot" | "crystalpay";
     }) => api.post("api/deals", { json: body }).json<DealDto>(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.deals.all() });
+      qc.invalidateQueries({ queryKey: qk.wallet.all() });
+    },
+  });
+}
+
+export function useCreateDealWithTopup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      counterparty: string;
+      role: "buyer";
+      amount: number;
+      description: string;
+      currency_code: string;
+      payment_provider?: "cryptobot" | "crystalpay";
+    }) => api.post("api/deals/with-topup", { json: body }).json<DealCreateWithTopupResponseDto>(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.deals.all() });
+      qc.invalidateQueries({ queryKey: qk.wallet.all() });
+    },
+  });
+}
+
+export function useCancelPendingTopup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.post(`api/deals/${id}/cancel-topup`).json<DealDto>(),
+    onSuccess: (_deal, id) => {
+      qc.invalidateQueries({ queryKey: qk.deals.all() });
+      qc.invalidateQueries({ queryKey: qk.deal.detail(id) });
       qc.invalidateQueries({ queryKey: qk.wallet.all() });
     },
   });

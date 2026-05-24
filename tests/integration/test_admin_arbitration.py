@@ -57,7 +57,6 @@ async def _make_arbitration_deal(client) -> int:
             "role": "buyer",
             "amount": 100,
             "description": "",
-            "pay_comission": "buyer",
             "currency_code": "USDT",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},

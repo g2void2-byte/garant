@@ -23,7 +23,6 @@ from ...models import (
     Currency,
     Deal,
     Service,
-    TreasuryWithdrawal,
     UserBalance,
     WalletDeposit,
     WalletWithdrawal,
@@ -277,7 +276,6 @@ _CURRENCY_REFERENCES: tuple[tuple[type, str, str], ...] = (
     (UserBalance, "currency_id", "user_balances"),
     (WalletDeposit, "currency_id", "wallet_deposits"),
     (WalletWithdrawal, "currency_id", "wallet_withdrawals"),
-    (TreasuryWithdrawal, "currency_id", "treasury_withdrawals"),
 )
 
 
@@ -293,8 +291,8 @@ async def delete_currency(
     Audit §3.4 — closes the ``ПУСТЫШКА`` gap (no DELETE route existed
     for currencies even though categories had one). The guard mirrors
     ``delete_category``: any referencing row in deals / services /
-    balances / wallet deposits / wallet withdrawals / treasury
-    withdrawals turns the call into a 409 so we never orphan a FK.
+    balances / wallet deposits / wallet withdrawals turns the call
+    into a 409 so we never orphan a FK.
     """
     c = await session.get(Currency, currency_id)
     if c is None:

@@ -76,7 +76,6 @@ function makeDeal(
     buyer_username: "buyer",
     seller_id: 2,
     seller_username: "seller",
-    pay_commission: "buyer",
     created_at: "2026-01-01T00:00:00Z",
     in_progress_at: null,
     completed_at: null,

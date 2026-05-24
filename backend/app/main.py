@@ -36,6 +36,7 @@ if not logging.getLogger().handlers:
 
 _bot_task: asyncio.Task | None = None
 _inactivity_task: asyncio.Task | None = None
+_pending_topup_task: asyncio.Task | None = None
 _deposit_expiry_task: asyncio.Task | None = None
 _last_ip_purge_task: asyncio.Task | None = None
 # Audit (continuation) H-2 — background reconciler for the
@@ -143,6 +144,16 @@ async def _inactivity_work() -> int | None:
         return await sweep_inactivity(session)
 
 
+async def _pending_topup_work() -> int | None:
+    # P10 — expire deals stuck in ``DealStatus.pending_topup`` whose
+    # linked deposit was never paid. Runs on the same backoff /
+    # logging plumbing as the other sweeps via ``_make_sweep_loop``.
+    from .services_deals import sweep_pending_topup
+
+    async with async_session() as session:
+        return await sweep_pending_topup(session)
+
+
 async def _deposit_expiry_work() -> int | None:
     from .services_wallet import sweep_expired_deposits
 
@@ -177,6 +188,11 @@ _inactivity_loop = _make_sweep_loop(
     _inactivity_work,
     "inactivity sweep: cancelled %d deal(s)",
 )
+_pending_topup_loop = _make_sweep_loop(
+    "pending-topup",
+    _pending_topup_work,
+    "pending-topup sweep: cancelled %d deal(s)",
+)
 _deposit_expiry_loop = _make_sweep_loop(
     "deposit-expiry",
     _deposit_expiry_work,
@@ -196,8 +212,8 @@ _last_ip_purge_loop = _make_sweep_loop(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _bot_task, _inactivity_task, _deposit_expiry_task, _last_ip_purge_task
-    global _withdrawal_stale_task
+    global _bot_task, _inactivity_task, _pending_topup_task, _deposit_expiry_task
+    global _last_ip_purge_task, _withdrawal_stale_task
 
     # M-8 — Redis-backed rate limit is the only way to share counters
     # across uvicorn workers / replicas. With ``REDIS_URL`` empty the
@@ -342,6 +358,12 @@ async def lifespan(app: FastAPI):
 
     if settings.inactivity_sweep_seconds > 0:
         _inactivity_task = asyncio.create_task(_inactivity_loop(settings.inactivity_sweep_seconds))
+        # The pending_topup sweep reuses the same cadence as the
+        # generic inactivity sweep — both walk ``Deal`` rows and the
+        # frequency knob is operationally interchangeable.
+        _pending_topup_task = asyncio.create_task(
+            _pending_topup_loop(settings.inactivity_sweep_seconds)
+        )
 
     if settings.wallet_deposit_sweep_seconds > 0:
         _deposit_expiry_task = asyncio.create_task(
@@ -370,6 +392,7 @@ async def lifespan(app: FastAPI):
     for task in (
         _bot_task,
         _inactivity_task,
+        _pending_topup_task,
         _deposit_expiry_task,
         _last_ip_purge_task,
         _withdrawal_stale_task,

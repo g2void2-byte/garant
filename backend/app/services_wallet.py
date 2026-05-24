@@ -302,7 +302,7 @@ async def create_deposit_invoice(
     # we still belt-and-suspenders here so non-HTTP callers (admin
     # tooling, tests) can't smuggle an invalid value through the
     # service layer.
-    if purpose not in ("wallet", "trust"):
+    if purpose not in ("wallet", "trust", "deal_topup"):
         raise HTTPException(400, f"Неизвестный тип депозита: {purpose}")
 
     if provider == "crystalpay":
@@ -507,7 +507,12 @@ async def _create_crystalpay_deposit(
     return deposit
 
 
-async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> WalletDeposit:
+async def credit_deposit(
+    session: AsyncSession,
+    deposit: WalletDeposit,
+    *,
+    paid_amount: Decimal | float | None = None,
+) -> WalletDeposit:
     """Mark a deposit ``paid`` and credit the user balance. Idempotent.
 
     Branches on ``deposit.purpose``:
@@ -533,6 +538,16 @@ async def credit_deposit(session: AsyncSession, deposit: WalletDeposit) -> Walle
         return deposit
 
     purpose = deposit.purpose or "wallet"
+
+    # P10 — ``deal_topup`` deposits drive the commission-via-invoice
+    # flow. The settlement logic (lock the deal principal, advance
+    # the deal to ``pending_confirmation``, handle under/overpayment)
+    # lives next to the rest of the deal state machine, so import
+    # lazily to avoid a services_wallet ↔ services_deals cycle.
+    if purpose == "deal_topup":
+        from .services_deals import complete_deal_topup_payment
+
+        return await complete_deal_topup_payment(session, deposit, paid_amount=paid_amount)
 
     if purpose == "trust":
         # ``populate_existing`` reloads the row's columns from the

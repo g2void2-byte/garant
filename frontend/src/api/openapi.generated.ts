@@ -436,8 +436,8 @@ export interface paths {
          *     Audit §3.4 — closes the ``ПУСТЫШКА`` gap (no DELETE route existed
          *     for currencies even though categories had one). The guard mirrors
          *     ``delete_category``: any referencing row in deals / services /
-         *     balances / wallet deposits / wallet withdrawals / treasury
-         *     withdrawals turns the call into a 409 so we never orphan a FK.
+         *     balances / wallet deposits / wallet withdrawals turns the call
+         *     into a 409 so we never orphan a FK.
          */
         delete: operations["delete_currency_api_admin_currencies__currency_id__delete"];
         options?: never;
@@ -880,184 +880,6 @@ export interface paths {
         get: operations["status_api_admin_system_status_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/treasury": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Treasury Overview */
-        get: operations["treasury_overview_api_admin_treasury_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/treasury/withdraw": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Treasury Withdraw
-         * @description Withdraw accumulated commission to an external Telegram user_id.
-         *
-         *     Guards:
-         *       * 2FA via ``X-Totp-Code`` header.
-         *       * ``confirm=true`` — explicit second click.
-         *       * Per-currency advisory lock taken only for the ``available``
-         *         check + ``pending`` row insert. The lock is **released by
-         *         the commit at the end of Phase 1**, so the CryptoBot HTTP
-         *         roundtrip in Phase 2 is not blocking any other admin or any
-         *         other ``available`` calculation. A second admin attempting
-         *         a payout on the same currency while Phase 2 is in flight
-         *         sees the ``pending`` row counted in ``_OUTSTANDING_STATUSES``
-         *         and gets a "недостаточно комиссии" 400 — not a queued lock
-         *         wait.
-         *       * Insert a ``pending`` row before the CryptoBot call so the
-         *         ``spend_id`` is deterministic (``treas:{row.id}``). A retry
-         *         from the admin produces a fresh row with its own id and its
-         *         own spend_id; an in-flight crash leaves the ``pending`` row
-         *         counted against ``available`` so the balance can't be
-         *         double-spent until someone reconciles.
-         *
-         *     Audit follow-up (2026-05-19) — T1/T2:
-         *
-         *       * T1: ``body.address`` is validated to be a digit-only Telegram
-         *         ``user_id`` by ``AdminTreasuryWithdrawIn._address_ok``, so the
-         *         pre-fix ``int(body.address) if body.address.isdigit() else
-         *         admin.tg_user_id`` silent self-payout fallback is gone.
-         *       * T2: the per-currency advisory lock is no longer held across
-         *         the CryptoBot HTTP call. See the three-phase comment above.
-         */
-        post: operations["treasury_withdraw_api_admin_treasury_withdraw_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/treasury/withdrawals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Treasury Withdrawals */
-        get: operations["list_treasury_withdrawals_api_admin_treasury_withdrawals_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/treasury/{withdrawal_id}/mark_sent": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Treasury Mark Sent
-         * @description Manually flip a stuck ``pending`` treasury row to ``sent``.
-         *
-         *     Recovery path for the Phase 2 → Phase 3 gap in
-         *     :func:`treasury_withdraw`: CryptoBot processed the transfer, but the
-         *     final ``commit()`` never landed (network blip / crash), so the row
-         *     is still ``pending`` and counted against ``available``. The operator
-         *     verifies the transfer on CryptoBot's side (``spend_id=treas:{id}``
-         *     or the dashboard), then calls this endpoint to advance the row.
-         *
-         *     Guards:
-         *       * 2FA via ``X-Totp-Code`` header.
-         *       * ``confirm=true`` — explicit second click.
-         *       * Row must be in ``pending``: ``sent`` rows are idempotent
-         *         no-ops (we'd otherwise log duplicate audit rows), ``failed``
-         *         rows are deliberately terminal and must be re-issued as a
-         *         fresh withdrawal if the operator wants to retry.
-         *       * ``with_for_update()`` row lock during the flip so a concurrent
-         *         Phase 3 retry of the original ``treasury_withdraw`` (e.g. from
-         *         a delayed-but-not-dead async task) doesn't race us.
-         *
-         *     There is **no** new CryptoBot HTTP call here — by contract the
-         *     transfer already happened. We only record what the operator
-         *     observed.
-         */
-        post: operations["treasury_mark_sent_api_admin_treasury__withdrawal_id__mark_sent_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/treasury/{withdrawal_id}/reconcile": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Treasury Reconcile
-         * @description Reconcile a stuck ``pending`` treasury row against CryptoBot.
-         *
-         *     Audit §4.19 — recovery path for the Phase 2 → Phase 3 gap that
-         *     does NOT rely on operator hearsay. ``treasury_mark_sent`` takes
-         *     the operator's word that the transfer succeeded; this endpoint
-         *     queries CryptoBot's ``getTransfers`` API by the row's
-         *     ``spend_id`` (``treas:{withdrawal_id}``) and updates the row
-         *     from the authoritative source:
-         *
-         *       * **Transfer present on CryptoBot side** — flip the row to
-         *         ``status="sent"`` and record the returned ``transfer_id``,
-         *         matching what ``treasury_withdraw``'s Phase 3 would have
-         *         written. Idempotent — re-running just returns the row.
-         *       * **No matching transfer** — return 404 *without* mutating
-         *         the row, so the operator can decide whether to retry
-         *         (issue a fresh withdrawal — the ``pending`` row already
-         *         counts against ``available``, so a retry needs the operator
-         *         to either delete the row or wait for the audit log to
-         *         explain it) or close it out manually with ``mark_sent``
-         *         based on out-of-band evidence.
-         *
-         *     Guards:
-         *       * 2FA via ``X-Totp-Code`` header (same surface as
-         *         ``mark_sent`` — the action moves money on the ledger).
-         *       * ``confirm=true`` — explicit second click.
-         *       * Row must be in ``pending``; ``sent`` rows return the
-         *         existing payload (idempotent no-op), ``failed`` rows 409
-         *         (the operator already saw the failure and should issue a
-         *         fresh withdrawal instead of resurrecting a failed one).
-         *
-         *     Pre-fix this hole was an explicit accepted trade-off (audit
-         *     §4.19): the only recovery was operator-driven ``mark_sent``,
-         *     which silently trusted the operator. Now there is a code path
-         *     that closes the row from the same source of truth that
-         *     ``treasury_withdraw`` would have used had Phase 3 not crashed.
-         */
-        post: operations["treasury_reconcile_api_admin_treasury__withdrawal_id__reconcile_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1541,6 +1363,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/deals/with-topup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Deal With Topup Endpoint
+         * @description P10 — create a deal funded by a deposit-invoice top-up.
+         *
+         *     Replaces the balance-only :func:`create_deal_endpoint` for the
+         *     happy-path frontend flow. The endpoint always issues a deposit
+         *     invoice covering ``max(0, amount - buyer.balance) + commission``;
+         *     the deal is born in :data:`DealStatus.pending_topup` and only
+         *     advances to :data:`DealStatus.pending_confirmation` once the
+         *     webhook lands a payment large enough to cover the principal.
+         */
+        post: operations["create_deal_with_topup_endpoint_api_deals_with_topup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/deals/{deal_id}": {
         parameters: {
             query?: never;
@@ -1569,6 +1418,31 @@ export interface paths {
         put?: never;
         /** Accept Deal Endpoint */
         post: operations["accept_deal_endpoint_api_deals__deal_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deals/{deal_id}/cancel-topup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Topup Endpoint
+         * @description P10 — buyer aborts a deal stuck in ``pending_topup``.
+         *
+         *     The buyer is the only role allowed to call this; the deal must
+         *     still be in ``pending_topup`` (no half-paid in-flight states).
+         *     The linked deposit invoice is flipped to ``expired`` so the
+         *     wallet pending list stops surfacing it.
+         */
+        post: operations["cancel_topup_endpoint_api_deals__deal_id__cancel_topup_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2895,6 +2769,11 @@ export interface components {
             cancellation_requested_at: string | null;
             /** Commission Amount */
             commission_amount: string | null;
+            /**
+             * Commission Paid
+             * @default false
+             */
+            commission_paid: boolean;
             /** Completed At */
             completed_at: string | null;
             /** Confirm Buyer */
@@ -2918,11 +2797,11 @@ export interface components {
             in_progress_at: string | null;
             /** Messages */
             messages: components["schemas"]["DealMessageOut"][];
-            /** Pay Commission */
-            pay_commission: string;
             seller: components["schemas"]["AdminBalanceSnapshot"];
             /** Status */
             status: string;
+            /** Topup Deposit Id */
+            topup_deposit_id?: number | null;
         };
         /**
          * AdminDealEventItem
@@ -2989,8 +2868,6 @@ export interface components {
             id: number;
             /** In Progress At */
             in_progress_at: string | null;
-            /** Pay Commission */
-            pay_commission: string;
             /** Seller Id */
             seller_id: number;
             /** Seller Username */
@@ -3014,10 +2891,10 @@ export interface components {
          * @description Body for ``POST /api/admin/deals/:id/split``.
          *
          *     ``buyer_percent`` is the share returned to the buyer; the seller
-         *     gets ``100 - buyer_percent`` of the same locked pot. The commission
-         *     component (when ``pay_commission=buyer``) is *always* retained by
-         *     the platform regardless of split — admin-forced splits do not give
-         *     commission back to either party.
+         *     gets ``100 - buyer_percent`` of the same locked pot. Commission
+         *     is collected on the platform via the deposit invoice (P10) and
+         *     is *never* refunded — admin-forced splits operate only on the
+         *     locked principal.
          */
         AdminDealSplitIn: {
             /** Buyer Percent */
@@ -3284,6 +3161,8 @@ export interface components {
             maintenance_message: string;
             /** Max Active Services Per User */
             max_active_services_per_user: number;
+            /** Pending Topup Expiry Hours */
+            pending_topup_expiry_hours: number;
             /** Vip Commission Percent */
             vip_commission_percent: number;
         };
@@ -3309,6 +3188,8 @@ export interface components {
             maintenance_message?: string | null;
             /** Max Active Services Per User */
             max_active_services_per_user?: number | null;
+            /** Pending Topup Expiry Hours */
+            pending_topup_expiry_hours?: number | null;
             /** Vip Commission Percent */
             vip_commission_percent?: number | string | null;
         };
@@ -3332,148 +3213,6 @@ export interface components {
             started_at: string | null;
             /** Uptime Seconds */
             uptime_seconds: number;
-        };
-        /**
-         * AdminTreasuryBalanceOut
-         * @description Per-currency commission accumulator.
-         *
-         *     ``accrued`` sums up ``commission_amount`` on every completed deal in
-         *     this currency; ``withdrawn`` subtracts the sum of successful
-         *     ``treasury_withdrawals`` rows. ``available`` is the diff and the
-         *     only amount the admin can withdraw.
-         */
-        AdminTreasuryBalanceOut: {
-            /** Accrued */
-            accrued: string;
-            /** Available */
-            available: string;
-            /** Currency Code */
-            currency_code: string;
-            /** Currency Id */
-            currency_id: number;
-            /** Currency Name */
-            currency_name: string;
-            /** Decimals */
-            decimals: number;
-            /** Withdrawn */
-            withdrawn: string;
-        };
-        /**
-         * AdminTreasuryMarkSentIn
-         * @description Body for ``POST /api/admin/treasury/{withdrawal_id}/mark_sent``.
-         *
-         *     Manual reconciliation path for treasury rows stuck at ``pending``:
-         *     the CryptoBot transfer actually went through in Phase 2 of
-         *     ``treasury_withdraw`` but Phase 3 failed to commit (network glitch,
-         *     crash, etc.), leaving the row mid-flight. The operator verifies
-         *     the transfer succeeded on CryptoBot's side (via their dashboard
-         *     or the ``spend_id=treas:{row.id}`` lookup), then calls this
-         *     endpoint to advance the row to ``status="sent"``.
-         *
-         *     Mirrors ``WalletWithdrawAdminDecideIn(action="mark_sent")`` in
-         *     ``routers/admin/withdrawals.py``.
-         */
-        AdminTreasuryMarkSentIn: {
-            /**
-             * Confirm
-             * @default false
-             */
-            confirm: boolean;
-            /** Cryptobot Transfer Id */
-            cryptobot_transfer_id?: string | null;
-            /** Note */
-            note?: string | null;
-        };
-        /** AdminTreasuryOverviewOut */
-        AdminTreasuryOverviewOut: {
-            /** Balances */
-            balances: components["schemas"]["AdminTreasuryBalanceOut"][];
-            /** Total Withdrawals */
-            total_withdrawals: number;
-        };
-        /**
-         * AdminTreasuryReconcileIn
-         * @description Body for ``POST /api/admin/treasury/{withdrawal_id}/reconcile``.
-         *
-         *     Audit §4.19 — automated reconciliation path for ``pending`` rows
-         *     stuck after a Phase 2 → Phase 3 crash. Unlike ``mark_sent`` (which
-         *     trusts the operator's claim that CryptoBot processed the
-         *     transfer), this endpoint queries CryptoBot's ``getTransfers``
-         *     API by the row's ``spend_id`` and updates the status from the
-         *     authoritative source — flipping to ``sent`` if the transfer
-         *     landed and surfacing a 404 (without mutating the row) if it
-         *     didn't, so the operator can choose whether to retry by issuing
-         *     a fresh withdrawal or close the row out manually.
-         */
-        AdminTreasuryReconcileIn: {
-            /**
-             * Confirm
-             * @default false
-             */
-            confirm: boolean;
-            /** Note */
-            note?: string | null;
-        };
-        /**
-         * AdminTreasuryReconcileOut
-         * @description Response for the treasury reconcile endpoint.
-         *
-         *     ``status`` mirrors the row's new value (always ``sent`` on the
-         *     success path; the endpoint 404s instead of returning ``failed``
-         *     so a missing CryptoBot transfer never silently buries the row).
-         *     ``withdrawal`` carries the canonical ``TreasuryWithdrawal`` shape
-         *     so the admin UI can refresh from the same payload.
-         */
-        AdminTreasuryReconcileOut: {
-            /** Cryptobot Transfer Id */
-            cryptobot_transfer_id: string | null;
-            withdrawal: components["schemas"]["AdminTreasuryWithdrawOut"];
-        };
-        /**
-         * AdminTreasuryWithdrawIn
-         * @description Body for ``POST /api/admin/treasury/withdraw``.
-         *
-         *     Requires the ``X-Totp-Code`` header (validated by a dependency) and
-         *     ``confirm=true`` to satisfy the double-confirm gate.
-         */
-        AdminTreasuryWithdrawIn: {
-            /** Address */
-            address: string;
-            /** Amount */
-            amount: number | string;
-            /**
-             * Confirm
-             * @default false
-             */
-            confirm: boolean;
-            /** Currency Code */
-            currency_code: string;
-            /** Note */
-            note?: string | null;
-        };
-        /** AdminTreasuryWithdrawOut */
-        AdminTreasuryWithdrawOut: {
-            /** Actor Id */
-            actor_id: number;
-            /** Address */
-            address: string;
-            /** Amount */
-            amount: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Cryptobot Transfer Id */
-            cryptobot_transfer_id: string | null;
-            /** Currency Code */
-            currency_code: string;
-            /** Id */
-            id: number;
-            /** Note */
-            note: string;
-            /** Status */
-            status: string;
         };
         /**
          * AdminUserBalanceOut
@@ -3848,9 +3587,6 @@ export interface components {
              * @default
              */
             description: string;
-            pay_comission?: components["schemas"]["PayCommission"] | null;
-            /** @default buyer */
-            pay_commission: components["schemas"]["PayCommission"];
             /**
              * Payment Provider
              * @default cryptobot
@@ -3863,6 +3599,56 @@ export interface components {
              * @constant
              */
             role: "buyer";
+        };
+        /**
+         * DealCreateWithTopup
+         * @description P10 — input for ``POST /api/deals/with-topup``.
+         *
+         *     Exactly the same shape as :class:`DealCreate` but routed through
+         *     the commission-via-invoice service entry point. Kept as a
+         *     separate class so the OpenAPI surface stays explicit and the
+         *     legacy ``POST /api/deals`` (balance-only) path can be removed
+         *     independently in a follow-up.
+         */
+        DealCreateWithTopup: {
+            /** Amount */
+            amount: number | string;
+            /** Counterparty */
+            counterparty: string;
+            /**
+             * Currency Code
+             * @default USDT
+             */
+            currency_code: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Payment Provider
+             * @default cryptobot
+             * @enum {string}
+             */
+            payment_provider: "cryptobot" | "crystalpay";
+            /**
+             * Role
+             * @default buyer
+             * @constant
+             */
+            role: "buyer";
+        };
+        /**
+         * DealCreateWithTopupOut
+         * @description P10 — response from ``POST /api/deals/with-topup``.
+         *
+         *     Bundles the new :class:`DealOut` row (status ``pending_topup``)
+         *     with the :class:`DealTopupInvoiceOut` describing the invoice the
+         *     buyer must pay before the deal can be activated.
+         */
+        DealCreateWithTopupOut: {
+            deal: components["schemas"]["DealOut"];
+            invoice: components["schemas"]["DealTopupInvoiceOut"];
         };
         /** DealMessageCreate */
         DealMessageCreate: {
@@ -3923,6 +3709,11 @@ export interface components {
             cancellation_requested_at?: string | null;
             /** Commission Amount */
             commission_amount?: number | null;
+            /**
+             * Commission Paid
+             * @default false
+             */
+            commission_paid: boolean;
             /** Completed At */
             completed_at?: string | null;
             /** Confirm Buyer */
@@ -3939,10 +3730,6 @@ export interface components {
             id: number;
             /** In Progress At */
             in_progress_at?: string | null;
-            /** Pay Comission */
-            pay_comission: string;
-            /** Pay Commission */
-            pay_commission: string;
             /**
              * Payment Provider
              * @default cryptobot
@@ -3956,6 +3743,9 @@ export interface components {
             seller_photo_url?: string | null;
             /** Status */
             status: string;
+            /** Topup Deposit Id */
+            topup_deposit_id?: number | null;
+            topup_invoice?: components["schemas"]["DealTopupInvoiceOut"] | null;
         };
         /** DealResolveRequest */
         DealResolveRequest: {
@@ -3966,6 +3756,33 @@ export interface components {
             note: string;
             /** Winner */
             winner: string;
+        };
+        /**
+         * DealTopupInvoiceOut
+         * @description P10 — deposit-invoice descriptor returned from the with-topup endpoint.
+         *
+         *     Mirrors the shape the frontend already consumes for wallet
+         *     top-ups (``WalletDepositOut``) but renames the fields to match
+         *     the spec's vocabulary (``topup_principal`` + ``commission`` +
+         *     ``total``).
+         */
+        DealTopupInvoiceOut: {
+            /** Commission */
+            commission: number;
+            /** Currency Code */
+            currency_code: string;
+            /** Deposit Id */
+            deposit_id: number;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Pay Url */
+            pay_url: string;
+            /** Provider */
+            provider: string;
+            /** Topup Principal */
+            topup_principal: number;
+            /** Total */
+            total: number;
         };
         /**
          * ForumIn
@@ -4081,11 +3898,6 @@ export interface components {
             /** Type */
             type: string;
         };
-        /**
-         * PayCommission
-         * @enum {string}
-         */
-        PayCommission: "buyer" | "seller";
         /** PinChangeIn */
         PinChangeIn: {
             /** New Pin */
@@ -6563,191 +6375,6 @@ export interface operations {
             };
         };
     };
-    treasury_overview_api_admin_treasury_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-                "X-Totp-Code"?: string | null;
-                "X-Totp-Session"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminTreasuryOverviewOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    treasury_withdraw_api_admin_treasury_withdraw_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-                "X-Totp-Code"?: string | null;
-                "X-Totp-Session"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AdminTreasuryWithdrawIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminTreasuryWithdrawOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_treasury_withdrawals_api_admin_treasury_withdrawals_get: {
-        parameters: {
-            query?: {
-                page?: number;
-                page_size?: number;
-                status?: ("pending" | "sent" | "failed") | null;
-            };
-            header?: {
-                authorization?: string | null;
-                "X-Totp-Code"?: string | null;
-                "X-Totp-Session"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminTreasuryWithdrawOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    treasury_mark_sent_api_admin_treasury__withdrawal_id__mark_sent_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-                "X-Totp-Code"?: string | null;
-                "X-Totp-Session"?: string | null;
-            };
-            path: {
-                withdrawal_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AdminTreasuryMarkSentIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminTreasuryWithdrawOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    treasury_reconcile_api_admin_treasury__withdrawal_id__reconcile_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-                "X-Totp-Code"?: string | null;
-                "X-Totp-Session"?: string | null;
-            };
-            path: {
-                withdrawal_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AdminTreasuryReconcileIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminTreasuryReconcileOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_users_api_admin_users_get: {
         parameters: {
             query?: {
@@ -7662,6 +7289,42 @@ export interface operations {
             };
         };
     };
+    create_deal_with_topup_endpoint_api_deals_with_topup_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Pin-Token"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DealCreateWithTopup"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DealCreateWithTopupOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_deal_api_deals__deal_id__get: {
         parameters: {
             query?: never;
@@ -7696,6 +7359,40 @@ export interface operations {
         };
     };
     accept_deal_endpoint_api_deals__deal_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Pin-Token"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                deal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DealOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_topup_endpoint_api_deals__deal_id__cancel_topup_post: {
         parameters: {
             query?: never;
             header?: {

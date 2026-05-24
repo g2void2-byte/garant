@@ -16,7 +16,6 @@ import {
   ShieldCheck,
   Tags,
   Users,
-  Vault,
   X,
 } from "lucide-react";
 import { staggerDelay } from "@/lib/animate";
@@ -47,10 +46,9 @@ const ITEMS: AdminMenuItem[] = [
   { to: "/admin/users", label: "Пользователи", icon: <Users size={18} /> },
   { to: "/admin/deals", label: "Сделки", icon: <Briefcase size={18} /> },
   { to: "/admin/arbitration", label: "Арбитраж", icon: <Gavel size={18} /> },
-  { to: "/admin/wallets", label: "Кошельки", icon: <Vault size={18} /> },
+  { to: "/admin/wallets", label: "Кошельки", icon: <Coins size={18} /> },
   { to: "/admin/deposits", label: "Депозиты", icon: <ArrowDownToLine size={18} /> },
   { to: "/admin/withdrawals", label: "Выводы", icon: <ArrowUpFromLine size={18} /> },
-  { to: "/admin/treasury", label: "Treasury", icon: <Vault size={18} /> },
   { to: "/admin/broadcasts", label: "Рассылки", icon: <Bell size={18} /> },
   { to: "/admin/analytics", label: "Аналитика", icon: <LineChart size={18} /> },
   { to: "/admin/taxonomy", label: "Таксономия", icon: <Tags size={18} /> },

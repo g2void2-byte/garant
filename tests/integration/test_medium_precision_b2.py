@@ -9,9 +9,11 @@ Coverage:
   ``float(...)`` — a round-trip that silently dropped trailing satoshi
   on large BTC amounts.
 * Endpoints covered: ``/api/admin/wallets/{user_id}``,
-  ``/api/admin/deposits``, ``/api/admin/withdrawals``,
-  ``/api/admin/treasury``. The frontend has a matching
-  ``parseDecimal`` helper that accepts ``string | number``.
+  ``/api/admin/deposits``, ``/api/admin/withdrawals``. The frontend
+  has a matching ``parseDecimal`` helper that accepts
+  ``string | number``. The legacy ``/api/admin/treasury`` overview
+  was removed by P5 — commission accrual is now per-deal via the
+  buyer's deposit invoice (see ``services_deals.create_deal_with_topup``).
 """
 
 from __future__ import annotations
@@ -150,25 +152,3 @@ async def test_admin_withdrawals_amount_is_json_string(client):
     item = next(it for it in parsed["items"] if it["address"] == "TXyz-precision-fixture")
     assert isinstance(item["amount"], str)
     assert Decimal(item["amount"]) == Decimal("7.42")
-
-
-# ── /api/admin/treasury ────────────────────────────────────────────────────
-
-
-async def test_admin_treasury_balances_amounts_are_json_strings(client):
-    """Treasury overview ``accrued`` / ``withdrawn`` / ``available``
-    are JSON strings so admin sees full commission precision.
-    """
-    admin_init = await _make_admin(client)
-    resp = await client.get("/api/admin/treasury", headers=auth_headers(admin_init))
-    assert resp.status_code == 200, resp.text
-    parsed = json.loads(resp.content)
-    assert parsed["balances"], "expected at least one currency in treasury overview"
-    for b in parsed["balances"]:
-        assert isinstance(b["accrued"], str), b
-        assert isinstance(b["withdrawn"], str), b
-        assert isinstance(b["available"], str), b
-        # Each value must round-trip back to a Decimal cleanly.
-        Decimal(b["accrued"])
-        Decimal(b["withdrawn"])
-        Decimal(b["available"])
