@@ -897,6 +897,18 @@ export interface AdminAuditLogListDto {
   page_size: number;
 }
 
+/**
+ * Subset of ``AppSettings`` exposed via ``GET /api/settings/public``
+ * for unauthenticated / pre-login consumption. The frontend uses
+ * these to render the commission preview on ``CreateDealPage`` and
+ * to drive the address-field visibility on ``WalletWithdrawPage``.
+ */
+export interface PublicSettingsDto {
+  deal_commission_percent: number;
+  vip_commission_percent: number;
+  auto_withdraw_enabled: boolean;
+}
+
 export interface MaintenanceStatusDto {
   enabled: boolean;
   message: string;

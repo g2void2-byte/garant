@@ -6,7 +6,42 @@ import {
 } from "@/lib/totp";
 import { queryClient } from "@/lib/queryClient";
 import { getInitData } from "@/lib/tg";
+import { emitGlobalToast } from "@/components/ui/Toast";
 import { qk } from "./queryKeys";
+
+// Bug-12 — coalesce 429 toasts so a runaway component / scraper
+// doesn't stack 50 identical "Слишком часто" cards on top of each
+// other while the rate-limit window resets. We track the last toast
+// timestamp per ``URL.pathname`` bucket so distinct endpoints can
+// each surface their own message but rapid repeats from the same
+// endpoint are throttled to one toast every 5 s.
+const _RATE_LIMIT_TOAST_WINDOW_MS = 5000;
+const _rateLimitToastLast: Map<string, number> = new Map();
+
+function _rateLimitBucket(url: string): string {
+  try {
+    return new URL(url).pathname || url;
+  } catch {
+    return url;
+  }
+}
+
+function _maybeShowRateLimitToast(url: string, retryAfter: number) {
+  const bucket = _rateLimitBucket(url);
+  const now = Date.now();
+  const last = _rateLimitToastLast.get(bucket) ?? 0;
+  if (now - last < _RATE_LIMIT_TOAST_WINDOW_MS) {
+    return;
+  }
+  _rateLimitToastLast.set(bucket, now);
+  const seconds = Number.isFinite(retryAfter) && retryAfter > 0
+    ? Math.max(1, Math.round(retryAfter))
+    : 5;
+  emitGlobalToast({
+    kind: "error",
+    title: `Слишком часто, попробуйте через ${seconds} сек.`,
+  });
+}
 
 const baseURL = import.meta.env.VITE_API_URL || "";
 
@@ -99,6 +134,16 @@ export const api = ky.create({
   // requests. ky still enforces a finite timeout — we don't disable
   // it — so a hung backend won't leave the UI spinning forever.
   timeout: 30_000,
+  // Bug-12 — silently retrying a 429 is what kept the UI "stuck"
+  // looking like it was loading when the user was actually being
+  // rate-limited. Drop 429 from the retry list and let the
+  // ``beforeError`` hook below surface a user-visible toast instead.
+  // 408/500/502/503/504 stay on the default ky retry list (set via
+  // ``methods``/``statusCodes`` defaults).
+  retry: {
+    limit: 2,
+    statusCodes: [408, 500, 502, 503, 504],
+  },
   hooks: {
     beforeRequest: [attachAuthHeaders],
     beforeError: [
@@ -162,6 +207,17 @@ export const api = ky.create({
           } catch {
             /* noop */
           }
+        }
+        // Bug-12 — surface a single throttled "Слишком часто" toast
+        // when the backend rate-limits us. The retry list above
+        // already excludes 429, so the failing request just bubbles
+        // up to the calling component — no silent retry loop, no
+        // wedged spinner.
+        if (err.response.status === 429) {
+          const retryAfter = parseFloat(
+            err.response.headers.get("Retry-After") ?? "",
+          );
+          _maybeShowRateLimitToast(err.request.url, retryAfter);
         }
         // Item 24 — fan out a lockout event so the root app can swap
         // to the dedicated ban gate. We dispatch regardless of which

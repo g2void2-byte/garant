@@ -124,6 +124,69 @@ async def test_ws_rejects_forged_init_data(ws_server):
             assert exc.code == 4001
 
 
+async def test_ws_fanout_notification_read_after_mark_read(ws_server):
+    """Bug-13 — marking a notification read pushes ``notification.read``.
+
+    The WS event is what lets a second browser tab (or the user's
+    other device) update its bell badge in real time without
+    waiting for the next 30-second poll. Drain the auth ACK + the
+    "notification" frame from the initial push, then ``POST
+    /api/notifications/{id}/read`` and assert the fan-out frame
+    arrives with the expected payload shape.
+    """
+    import httpx
+
+    from backend.app.db import async_session
+    from backend.app.models import NotificationType
+    from backend.app.notifier import push
+    from tests.helpers import auth_headers
+
+    init_data = signed_init_data(4002, "alice5")
+    ws = await _connect_and_auth(ws_server, init_data)
+    try:
+        async with async_session() as session:
+            user_id = await get_user_id_by_tg(session, 4002)
+            await push(
+                session,
+                user_id,
+                NotificationType.system,
+                "T",
+                "B",
+                {},
+            )
+            # ``notifier.push`` only flushes — commit explicitly so the
+            # subsequent HTTP read in ``mark_read`` sees the row.
+            await session.commit()
+
+        # Drain the live ``notification`` frame so the next recv()
+        # blocks on the ``notification.read`` event we're testing.
+        msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
+        notif_event = json.loads(msg)
+        assert notif_event["event"] == "notification"
+        notif_id = notif_event["data"]["id"]
+
+        async with httpx.AsyncClient(
+            base_url=f"http://127.0.0.1:{ws_server}",
+            timeout=5.0,
+        ) as http:
+            resp = await http.post(
+                f"/api/notifications/{notif_id}/read",
+                headers=auth_headers(init_data),
+            )
+            assert resp.status_code == 200, resp.text
+
+        read_msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
+        read_event = json.loads(read_msg)
+        assert read_event["event"] == "notification.read"
+        assert read_event["data"]["ids"] == [notif_id]
+        assert read_event["data"]["all"] is False
+        # ``type`` is the NotificationType label so the frontend can
+        # target only the matching counter when "all" is False.
+        assert read_event["data"]["type"] == "system"
+    finally:
+        await ws.close()
+
+
 async def test_ws_auth_times_out(ws_server, monkeypatch):
     """If the client never sends an auth frame, the server closes."""
     import backend.app.routers.ws as ws_router

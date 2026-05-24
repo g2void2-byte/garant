@@ -24,7 +24,18 @@ describe("queryClient", () => {
     // Item 22 — focus refetch is the fallback that catches WS frames
     // we missed while the TMA was backgrounded.
     expect(defaults?.refetchOnWindowFocus).toBe(true);
-    expect(defaults?.retry).toBe(1);
+    // Bug-12 — ``retry`` is now a predicate that grants exactly one
+    // retry on transient failures *but* refuses to retry 429 so the
+    // rate-limit window isn't burned through by silent retries.
+    expect(typeof defaults?.retry).toBe("function");
+    type RetryFn = (failureCount: number, error: unknown) => boolean;
+    const retry = defaults?.retry as RetryFn;
+    expect(retry(0, new Error("boom"))).toBe(true);
+    expect(retry(1, new Error("boom"))).toBe(false);
+    // 429 must never retry, regardless of failure count.
+    const rateLimited = { response: { status: 429 } } as unknown;
+    expect(retry(0, rateLimited)).toBe(false);
+    expect(retry(1, rateLimited)).toBe(false);
   });
 
   it("supports manual cache invalidation (used by ky 401 interceptor)", async () => {

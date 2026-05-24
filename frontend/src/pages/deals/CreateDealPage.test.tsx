@@ -21,6 +21,25 @@ const mockState = vi.hoisted(() => ({
   },
   currencies: undefined as CurrencyDto[] | undefined,
   users: [] as unknown[],
+  // Bug-11a — surface the buyer's fiat balances; the page picks the
+  // first row with a positive amount as the default currency.
+  balances: [] as Array<{
+    currency: CurrencyDto;
+    amount: number;
+    locked: number;
+    total: number;
+    updated_at: null;
+    amount_str: string;
+    locked_str: string;
+    total_str: string;
+  }>,
+  me: { is_vip: false } as { is_vip?: boolean } | undefined,
+  // Bug-11d — drives the commission preview block.
+  publicSettings: {
+    deal_commission_percent: 5,
+    vip_commission_percent: -1,
+    auto_withdraw_enabled: false,
+  },
   checkPinMutation: {
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
@@ -34,6 +53,9 @@ vi.mock("@/api/hooks", () => ({
   // ``useUsers`` to render the autosuggest dropdown — return an
   // empty list so the form behaviour mirrors a stable network.
   useUsers: () => ({ data: mockState.users, isLoading: false }),
+  useWalletBalances: () => ({ data: mockState.balances, isLoading: false }),
+  useMe: () => ({ data: mockState.me }),
+  usePublicSettings: () => ({ data: mockState.publicSettings }),
   // ``PinPromptModal`` consumes ``useCheckPin`` to validate the PIN
   // before the deal POST is fired. We resolve immediately so the
   // PIN-pad path is a no-op friction layer in tests; the actual
@@ -159,6 +181,13 @@ beforeEach(() => {
     isPending: false,
   };
   mockState.users = [];
+  mockState.balances = [];
+  mockState.me = { is_vip: false };
+  mockState.publicSettings = {
+    deal_commission_percent: 5,
+    vip_commission_percent: -1,
+    auto_withdraw_enabled: false,
+  };
   mockState.currencies = [
     makeCurrency({ id: 1, code: "USD", name: "US Dollar" }),
     makeCurrency({ id: 2, code: "UAH", name: "Українська гривня" }),

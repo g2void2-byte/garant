@@ -284,6 +284,13 @@ export async function mockApi(page: Page, overrides: MockOverrides = {}) {
   await routeApi("settings/maintenance", (r) =>
     json(r, { enabled: false, message: null }),
   );
+  await routeApi("settings/public", (r) =>
+    json(r, {
+      deal_commission_percent: 5,
+      vip_commission_percent: 2,
+      auto_withdraw_enabled: false,
+    }),
+  );
   await routeApi("notifications/counters", (r) =>
     json(r, { unread: 0, by_type: {} }),
   );
@@ -293,8 +300,18 @@ export async function mockApi(page: Page, overrides: MockOverrides = {}) {
   await routeApi("categories", (r) =>
     json(r, [{ id: 1, slug: "design", name: "Design", icon_key: "design", services_count: 1 }]),
   );
-  await routeApi("wallet/balances", (r) => json(r, walletBalances));
-  await routeApi("wallet/currencies", (r) => json(r, currencies));
+  await routeApi("wallet/balances", (r) => {
+    const url = new URL(r.request().url());
+    const kind = url.searchParams.get("kind");
+    const filtered = kind ? (walletBalances as any[]).filter((b) => b.currency.kind === kind) : walletBalances;
+    return json(r, filtered);
+  });
+  await routeApi("wallet/currencies", (r) => {
+    const url = new URL(r.request().url());
+    const kind = url.searchParams.get("kind");
+    const filtered = kind ? (currencies as any[]).filter((c) => c.kind === kind) : currencies;
+    return json(r, filtered);
+  });
   await routeApi("wallet/deposits", (r) => json(r, []));
   await routeApi("wallet/withdrawals", (r) => json(r, []));
   // ``WalletWithdrawPage`` reads ``useAdmins`` to power the

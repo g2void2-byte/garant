@@ -16144,6 +16144,23 @@
         "summary": "Public Maintenance Status"
       }
     },
+    "/api/settings/public": {
+      "get": {
+        "description": "Read-only subset of :class:`AppSettings` exposed to the TMA.\n\nThe frontend needs a handful of admin-tunable fields before any\nuser is logged in / before any sensitive endpoint is touched:\n\n* ``deal_commission_percent`` / ``vip_commission_percent`` \u2014\n  so :doc:`CreateDealPage <frontend/src/pages/deals/CreateDealPage.tsx>`\n  can render a \"\u0421\u0443\u043c\u043c\u0430 + \u041a\u043e\u043c\u0438\u0441\u0441\u0438\u044f = \u0418\u0442\u043e\u0433\u043e\" preview block before\n  the user submits, instead of revealing the commission only via\n  the post-create invoice.\n* ``auto_withdraw_enabled`` \u2014 drives the withdraw form's address\n  field: when the admin has wired CryptoBot Transfer the recipient\n  is identified by ``users.tg_user_id`` and the on-chain address\n  input is hidden.\n\nReturned values are floats (not ``Decimal``) so the JSON wire\nformat matches what the admin GET endpoint returns. Missing row\n(fresh DB before seed) returns the same defaults the seed would\ninstall.",
+        "operationId": "public_settings_api_settings_public_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Public Settings"
+      }
+    },
     "/api/support/admins": {
       "get": {
         "operationId": "list_admins_api_support_admins_get",

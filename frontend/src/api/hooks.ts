@@ -14,6 +14,7 @@ import type {
   PinResetRequestDto,
   PinStatusDto,
   PinTokenDto,
+  PublicSettingsDto,
   ReviewDto,
   ServiceCommentDto,
   ServiceDetailDto,
@@ -98,6 +99,25 @@ export function useCategories() {
     queryKey: qk.categories(),
     queryFn: () => api.get("api/categories").json(),
     staleTime: 5 * 60_000,
+  });
+}
+
+/**
+ * ``GET /api/settings/public`` — read-only AppSettings subset. Used by
+ * the deal-create form (commission preview) and the withdraw form
+ * (auto-mode address-field toggle). The endpoint is unauth so we
+ * intentionally do not retry; a network blip simply falls back to
+ * the conservative defaults the consumer encodes locally.
+ */
+export function usePublicSettings() {
+  return useQuery<PublicSettingsDto>({
+    queryKey: qk.publicSettings(),
+    queryFn: () => api.get("api/settings/public").json(),
+    // The values rarely change (admin tunable) — a 5-minute stale
+    // window is plenty and avoids hammering the endpoint on every
+    // page mount.
+    staleTime: 5 * 60_000,
+    retry: false,
   });
 }
 
@@ -509,11 +529,93 @@ export function useNotificationCounters() {
   });
 }
 
+// Bug-13 — folds a notification into its cached representations.
+// Walks every ``["notifications", ...]`` query and either flips a
+// single id's ``is_read`` (single mark-read) or every unread one
+// (mark-all). Counters are recomputed from the seen unread ids so the
+// pill in ``BottomNav`` updates without waiting for the next refetch.
+function applyReadToCaches(
+  qc: ReturnType<typeof useQueryClient>,
+  predicate: (n: NotificationDto) => boolean,
+): { flippedByType: Record<string, number>; flippedTotal: number } {
+  const flippedByType: Record<string, number> = {};
+  let flippedTotal = 0;
+  qc.setQueriesData<NotificationDto[] | undefined>(
+    { queryKey: qk.notifications.all() },
+    (prev) => {
+      if (!Array.isArray(prev)) return prev;
+      let changed = false;
+      const next = prev.map((n) => {
+        if (n.is_read || !predicate(n)) return n;
+        changed = true;
+        flippedByType[n.type] = (flippedByType[n.type] ?? 0) + 1;
+        flippedTotal += 1;
+        return { ...n, is_read: true };
+      });
+      return changed ? next : prev;
+    },
+  );
+  return { flippedByType, flippedTotal };
+}
+
+function applyCountersDelta(
+  qc: ReturnType<typeof useQueryClient>,
+  flippedByType: Record<string, number>,
+  flippedTotal: number,
+) {
+  qc.setQueryData<NotificationCountersDto | undefined>(
+    qk.notifications.counters(),
+    (prev) => {
+      if (!prev) return prev;
+      const dec = (key: keyof NotificationCountersDto) => {
+        const delta = flippedByType[key as string] ?? 0;
+        return Math.max(0, (prev[key] ?? 0) - delta);
+      };
+      return {
+        ...prev,
+        all: prev.all,
+        deals: dec("deals"),
+        deposits: dec("deposits"),
+        system: dec("system"),
+        unread: Math.max(0, (prev.unread ?? 0) - flippedTotal),
+      };
+    },
+  );
+}
+
 export function useMarkNotificationRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => api.post(`api/notifications/${id}/read`).json(),
-    onSuccess: () => {
+    // Bug-13 — optimistic update: flip the row + decrement counters
+    // immediately so the bell badge in ``BottomNav`` and the unread
+    // pip on the row disappear on click. ``onSettled`` re-invalidates
+    // for consistency in case the optimistic delta drifted.
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: qk.notifications.all() });
+      const listsSnapshot = qc.getQueriesData<NotificationDto[] | undefined>({
+        queryKey: qk.notifications.all(),
+      });
+      const countersSnapshot = qc.getQueryData<NotificationCountersDto | undefined>(
+        qk.notifications.counters(),
+      );
+      const { flippedByType, flippedTotal } = applyReadToCaches(
+        qc,
+        (n) => n.id === id,
+      );
+      applyCountersDelta(qc, flippedByType, flippedTotal);
+      return { listsSnapshot, countersSnapshot };
+    },
+    onError: (_err, _id, ctx) => {
+      if (!ctx) return;
+      for (const [key, value] of ctx.listsSnapshot) {
+        qc.setQueryData(key, value);
+      }
+      if (ctx.countersSnapshot) {
+        qc.setQueryData(qk.notifications.counters(), ctx.countersSnapshot);
+      }
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: qk.notifications.all() });
     },
   });
@@ -523,8 +625,47 @@ export function useMarkAllRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.post("api/notifications/read-all").json(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.notifications.all() }),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: qk.notifications.all() });
+      const listsSnapshot = qc.getQueriesData<NotificationDto[] | undefined>({
+        queryKey: qk.notifications.all(),
+      });
+      const countersSnapshot = qc.getQueryData<NotificationCountersDto | undefined>(
+        qk.notifications.counters(),
+      );
+      const { flippedByType, flippedTotal } = applyReadToCaches(qc, () => true);
+      applyCountersDelta(qc, flippedByType, flippedTotal);
+      return { listsSnapshot, countersSnapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (!ctx) return;
+      for (const [key, value] of ctx.listsSnapshot) {
+        qc.setQueryData(key, value);
+      }
+      if (ctx.countersSnapshot) {
+        qc.setQueryData(qk.notifications.counters(), ctx.countersSnapshot);
+      }
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.notifications.all() }),
   });
+}
+
+/**
+ * Bug-13 — shared helper used by ``useLiveNotifications`` to mirror
+ * a ``notification.read`` WS event from the backend into the local
+ * cache. Exported so the WS hook does not have to duplicate the
+ * same splice logic.
+ */
+export function applyServerNotificationRead(
+  qc: ReturnType<typeof useQueryClient>,
+  payload: { ids?: number[]; all?: boolean },
+): void {
+  const idSet = new Set(payload.ids ?? []);
+  const predicate = payload.all
+    ? () => true
+    : (n: NotificationDto) => idSet.has(n.id);
+  const { flippedByType, flippedTotal } = applyReadToCaches(qc, predicate);
+  applyCountersDelta(qc, flippedByType, flippedTotal);
 }
 
 export function useAdmins() {
@@ -742,8 +883,17 @@ export function useCreateWalletWithdrawal() {
   // ``Number`` truncates the last 2-3 base-10 digits at the 10^10
   // scale that USDT can hit, so ``parseFloat(amount)`` was leaking
   // user money on big balances.
+  // Bug-10 — ``address`` is optional because the CryptoBot Transfer
+  // auto-mode payout identifies the recipient by ``users.tg_user_id``
+  // and omits the field entirely. Manual mode still requires a real
+  // string; the validation lives client-side in ``WalletWithdrawPage``
+  // and server-side in ``services_wallet.create_withdrawal``.
   return useMutation({
-    mutationFn: (body: { currency_code: string; amount: string; address: string }) =>
+    mutationFn: (body: {
+      currency_code: string;
+      amount: string;
+      address?: string;
+    }) =>
       api.post("api/wallet/withdrawals", { json: body }).json<WalletWithdrawalDto>(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.wallet.withdrawals() });

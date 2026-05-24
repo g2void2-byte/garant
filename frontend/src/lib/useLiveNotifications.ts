@@ -6,7 +6,7 @@ import { clearPinToken } from "@/lib/pin";
 import { useToast } from "@/components/ui/Toast";
 import { qk } from "@/api/queryKeys";
 import type { NotificationDto } from "@/api/types";
-import type { DealMessageDto } from "@/api/hooks";
+import { applyServerNotificationRead, type DealMessageDto } from "@/api/hooks";
 
 export function useLiveNotifications() {
   const qc = useQueryClient();
@@ -48,6 +48,19 @@ export function useLiveNotifications() {
           }
           qc.invalidateQueries({ queryKey: qk.deals.all() });
           qc.invalidateQueries({ queryKey: qk.deal.all() });
+          return;
+        }
+        if (event.event === "notification.read") {
+          // Bug-13 — another tab / device marked notifications read.
+          // Splice ``is_read=true`` into our local list cache and
+          // decrement counters in place so the bell badge updates
+          // without waiting for the next 30-second poll.
+          const data = event.data as
+            | { ids?: number[]; all?: boolean }
+            | undefined;
+          if (data) {
+            applyServerNotificationRead(qc, data);
+          }
           return;
         }
         if (event.event === "pin.reset") {

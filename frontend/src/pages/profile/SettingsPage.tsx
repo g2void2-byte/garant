@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Switch } from "@/components/ui/Switch";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
+import { BannerCropModal } from "@/components/BannerCropModal";
 import { useCurrencies, useMe, useUpdateMe, useUploadMedia } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
 import { COUNTRIES, countryFromCode } from "@/lib/countries";
@@ -54,6 +55,9 @@ export default function SettingsPage() {
   const [country, setCountry] = useState<string>("");
   const [profileError, setProfileError] = useState<string | null>(null);
   const [seeded, setSeeded] = useState(false);
+  // Bug-7 — banner crop editor: hold the picked file while the
+  // ``BannerCropModal`` is open. ``null`` keeps the modal closed.
+  const [pendingBannerFile, setPendingBannerFile] = useState<File | null>(null);
 
   if (!seeded && me) {
     setDisplayName(me.display_name || "");
@@ -99,12 +103,22 @@ export default function SettingsPage() {
     }
   };
 
-  const onPickBanner = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Bug-7 — intercept the file picker output and hand the file to
+  // the crop modal instead of uploading directly. The modal calls
+  // back into ``uploadCroppedBanner`` with the user-chosen crop.
+  const onPickBanner = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    setPendingBannerFile(file);
+  };
+
+  const uploadCroppedBanner = async (cropped: File) => {
     try {
-      const uploaded = await uploadMedia.mutateAsync({ kind: "banner", file });
+      const uploaded = await uploadMedia.mutateAsync({
+        kind: "banner",
+        file: cropped,
+      });
       // V12-UI — patch the banner URL onto the user row first, *then*
       // sync the local input. Doing the network call first means the
       // toast / cache update only fires on success; if the PATCH fails
@@ -113,6 +127,7 @@ export default function SettingsPage() {
       setBannerUrl(uploaded.url);
       haptic("success");
       toast.show({ kind: "success", title: "Баннер обновлён" });
+      setPendingBannerFile(null);
     } catch (err) {
       haptic("error");
       toast.show({ kind: "error", title: await extractApiError(err) });
@@ -339,6 +354,12 @@ export default function SettingsPage() {
           </div>
         </section>
       </div>
+      <BannerCropModal
+        open={pendingBannerFile !== null}
+        file={pendingBannerFile}
+        onCancel={() => setPendingBannerFile(null)}
+        onApply={uploadCroppedBanner}
+      />
     </Page>
   );
 }

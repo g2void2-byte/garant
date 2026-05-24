@@ -109,7 +109,9 @@ test.describe("Create-deal page", () => {
     await enterPinPromptDigits(page);
 
     await expect(page.getByTestId("topup-invoice-preview")).toBeVisible();
-    await expect(page.getByText("157.50 USD")).toBeVisible();
+    await expect(
+      page.getByTestId("topup-invoice-preview").getByText("157.50 USD"),
+    ).toBeVisible();
 
     // POST payload matches what the form collected — keep this loose
     // (only the fields under test) so future fields don't break the

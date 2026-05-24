@@ -634,6 +634,49 @@ async def public_maintenance_status():
     return {"enabled": enabled, "message": message}
 
 
+@app.get("/api/settings/public")
+async def public_settings():
+    """Read-only subset of :class:`AppSettings` exposed to the TMA.
+
+    The frontend needs a handful of admin-tunable fields before any
+    user is logged in / before any sensitive endpoint is touched:
+
+    * ``deal_commission_percent`` / ``vip_commission_percent`` —
+      so :doc:`CreateDealPage <frontend/src/pages/deals/CreateDealPage.tsx>`
+      can render a "Сумма + Комиссия = Итого" preview block before
+      the user submits, instead of revealing the commission only via
+      the post-create invoice.
+    * ``auto_withdraw_enabled`` — drives the withdraw form's address
+      field: when the admin has wired CryptoBot Transfer the recipient
+      is identified by ``users.tg_user_id`` and the on-chain address
+      input is hidden.
+
+    Returned values are floats (not ``Decimal``) so the JSON wire
+    format matches what the admin GET endpoint returns. Missing row
+    (fresh DB before seed) returns the same defaults the seed would
+    install.
+    """
+    from sqlalchemy import select
+
+    from .models import AppSettings
+
+    async with async_session() as session:
+        row = (
+            await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
+        ).scalar_one_or_none()
+    if row is None:
+        return {
+            "deal_commission_percent": 5.0,
+            "vip_commission_percent": -1.0,
+            "auto_withdraw_enabled": False,
+        }
+    return {
+        "deal_commission_percent": float(row.deal_commission_percent),
+        "vip_commission_percent": float(row.vip_commission_percent),
+        "auto_withdraw_enabled": bool(row.auto_withdraw_enabled),
+    }
+
+
 @app.get("/health")
 async def health():
     """Liveness + DB readiness check.
