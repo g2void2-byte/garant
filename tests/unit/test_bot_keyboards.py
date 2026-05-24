@@ -10,6 +10,7 @@ structured payload fields, and unrelated buckets fall through to
 from __future__ import annotations
 
 from backend.app.bot.keyboards import (
+    CB_NOTIF_BACK,
     CB_TMA_UNAVAILABLE_PREFIX,
     notification_keyboard,
 )
@@ -41,7 +42,29 @@ def test_notification_keyboard_deposit_returns_keyboard():
     assert kb is not None
     assert len(kb.inline_keyboard) == 2
     first = kb.inline_keyboard[0][0]
-    assert "/deposit" in _button_payload(first)
+    # Deposit-credited DMs land the user on /profile (where the
+    # freshly credited balance is visible) — not on /deposit, which
+    # is the deposit-creation form.
+    assert "/profile" in _button_payload(first)
+    assert "Открыть профиль" in first.text
+
+
+def test_notification_keyboard_back_button_uses_callback():
+    # Bugfix-plan #9 — the "🔙 Назад" button used to deep-link the
+    # Mini App root (``/``), which forced a full TMA launch just to
+    # dismiss the keyboard. It now uses a ``callback_data=`` button
+    # that the bot handles by stripping the inline keyboard in place.
+    for notif_type, payload in (
+        ("deals", {"deal_id": 1}),
+        ("deposits", {"deposit_id": 1}),
+    ):
+        kb = notification_keyboard(notif_type, payload)
+        assert kb is not None
+        back = kb.inline_keyboard[1][0]
+        assert back.web_app is None
+        assert back.url is None
+        assert back.callback_data == CB_NOTIF_BACK
+        assert "Назад" in back.text
 
 
 def test_notification_keyboard_deposit_missing_payload_returns_none():

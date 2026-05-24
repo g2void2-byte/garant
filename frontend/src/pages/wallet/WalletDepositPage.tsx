@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowDownToLine } from "lucide-react";
 import {
   useCreateWalletDeposit,
@@ -47,6 +47,7 @@ export default function WalletDepositPage() {
   const balances = useWalletBalances({ kind: "fiat" });
   const create = useCreateWalletDeposit();
   const toast = useToast();
+  const navigate = useNavigate();
   // Item 13 — ProfilePage's "Пополнить" CTA navigates here with
   // ``?currency=USD``; honour the URL hint so the dropdown lands on
   // the user's preferred fiat code without a manual click.
@@ -225,6 +226,10 @@ export default function WalletDepositPage() {
         deposit={activeDeposit}
         open={modalOpen}
         onClose={() => setModalOpen(false)}
+        onSuccess={() => {
+          setModalOpen(false);
+          navigate("/profile");
+        }}
       />
     </Page>
   );

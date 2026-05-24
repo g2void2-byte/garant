@@ -54,6 +54,13 @@ CB_PROFILE = "bot:profile"
 CB_SETTINGS = "bot:settings"
 CB_TOGGLE_ANON = "bot:tog:anon"
 CB_TOGGLE_HIDDEN = "bot:tog:hidden"
+# Tapped on the "🔙 Назад" button attached to DM notifications.
+# Notification messages are one-off DMs — there's no logical previous
+# section to navigate back into, so the handler just drops the inline
+# keyboard via ``edit_reply_markup(reply_markup=None)``. The previous
+# implementation pointed at the Mini App root ``/`` which forced the
+# user through a full TMA launch just to dismiss the keyboard.
+CB_NOTIF_BACK = "bot:notif:back"
 # Tapped when the bot is running with a non-HTTPS ``WEBAPP_URL`` and the
 # inline Mini App button has been replaced with this callback so the
 # section message still goes through. The handler surfaces a single,
@@ -251,20 +258,22 @@ def notification_keyboard(
         return InlineKeyboardMarkup(
             inline_keyboard=[
                 [_webapp_button("👁 Посмотреть сделку", f"/deals/{deal_id}")],
-                [_webapp_button("🔙 Назад", "/")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data=CB_NOTIF_BACK)],
             ]
         )
     if notif_type == "deposits":
         deposit_id = payload.get("deposit_id")
         if not isinstance(deposit_id, int):
             return None
-        # Wallet deposit pages don't take an id in the URL — the list
-        # at ``/deposit`` is keyed by ``WalletDepositOut.id`` server-
-        # side, so the button only needs to deep-link the section.
+        # "Deposit credited" DMs land the user on /profile where the
+        # freshly credited balance is visible. The historical
+        # "💼 Открыть депозит" button routed back to the deposit-
+        # creation form, which is the opposite of what someone who
+        # just topped up wants to see.
         return InlineKeyboardMarkup(
             inline_keyboard=[
-                [_webapp_button("💼 Открыть депозит", "/deposit")],
-                [_webapp_button("🔙 Назад", "/")],
+                [_webapp_button("👤 Открыть профиль", "/profile")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data=CB_NOTIF_BACK)],
             ]
         )
     return None

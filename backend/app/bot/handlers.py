@@ -107,6 +107,31 @@ async def cb_back_to_profile(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(F.data == keyboards.CB_NOTIF_BACK)
+async def cb_notification_back(callback: CallbackQuery) -> None:
+    """Drop the inline keyboard from a notification DM.
+
+    Notification messages (see ``notification_keyboard``) are one-off
+    DMs that don't have a logical "previous" section to navigate back
+    to — the user either wants to open the deep link (deal / profile)
+    or dismiss the buttons. Tapping "🔙 Назад" should therefore just
+    clear the inline keyboard so the notification text stays visible
+    without the now-irrelevant buttons.
+    """
+    message = callback.message
+    if message is None:
+        await callback.answer()
+        return
+    try:
+        await message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        # ``edit_reply_markup`` raises "message is not modified" if the
+        # keyboard was already cleared (e.g. double-tap). Treat as a
+        # no-op rather than surfacing the error to the user.
+        logger.debug("bot: notification back: edit_reply_markup no-op", exc_info=True)
+    await callback.answer()
+
+
 @router.callback_query(F.data == keyboards.CB_TOGGLE_ANON)
 async def cb_toggle_anon(callback: CallbackQuery) -> None:
     if callback.from_user is None or callback.message is None:
