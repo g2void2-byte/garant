@@ -2032,6 +2032,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/public": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public Settings
+         * @description Read-only subset of :class:`AppSettings` exposed to the TMA.
+         *
+         *     The frontend needs a handful of admin-tunable fields before any
+         *     user is logged in / before any sensitive endpoint is touched:
+         *
+         *     * ``deal_commission_percent`` / ``vip_commission_percent`` —
+         *       so :doc:`CreateDealPage <frontend/src/pages/deals/CreateDealPage.tsx>`
+         *       can render a "Сумма + Комиссия = Итого" preview block before
+         *       the user submits, instead of revealing the commission only via
+         *       the post-create invoice.
+         *     * ``auto_withdraw_enabled`` — drives the withdraw form's address
+         *       field: when the admin has wired CryptoBot Transfer the recipient
+         *       is identified by ``users.tg_user_id`` and the on-chain address
+         *       input is hidden.
+         *
+         *     Returned values are floats (not ``Decimal``) so the JSON wire
+         *     format matches what the admin GET endpoint returns. Missing row
+         *     (fresh DB before seed) returns the same defaults the seed would
+         *     install.
+         */
+        get: operations["public_settings_api_settings_public_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/support/admins": {
         parameters: {
             query?: never;
@@ -8674,6 +8712,26 @@ export interface operations {
         };
     };
     public_maintenance_status_api_settings_maintenance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    public_settings_api_settings_public_get: {
         parameters: {
             query?: never;
             header?: never;
