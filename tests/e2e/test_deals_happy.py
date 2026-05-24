@@ -28,7 +28,12 @@ async def test_happy_path_deal(client):
         seller_id = await get_user_id_by_tg(session, 1002)
         await credit_balance(session, buyer_id, "USDT", 100)
 
-    # Buyer creates the deal — buyer pays commission, so locked = amount + 5%.
+    # Buyer creates the deal. P10 — the legacy ``POST /api/deals``
+    # path locks only the principal in ``UserBalance.locked``;
+    # commission is the deposit-invoice's job (see
+    # ``create_deal_with_topup``). Spot-checking that this legacy
+    # path still drives the in-progress → completed transition keeps
+    # the existing rollback tests green while P10 is the new default.
     create_resp = await client.post(
         "/api/deals",
         json={
@@ -36,7 +41,6 @@ async def test_happy_path_deal(client):
             "role": "buyer",
             "amount": 10,
             "description": "test happy path",
-            "pay_comission": "buyer",
             "currency_code": "USDT",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
@@ -83,7 +87,10 @@ async def test_happy_path_deal(client):
                 )
             )
         ).scalar_one()
-        assert float(buyer_bal.amount) == 89.5  # 100 - 10 - 0.5 commission
+        # P10 — commission is no longer locked on the legacy
+        # balance-only path; buyer just loses the 10 principal
+        # they transferred to the seller.
+        assert float(buyer_bal.amount) == 90.0  # 100 - 10
         assert float(buyer_bal.locked) == 0.0
 
 
@@ -107,7 +114,6 @@ async def test_decline_refunds_buyer(client):
             "role": "buyer",
             "amount": 20,
             "currency_code": "USDT",
-            "pay_comission": "buyer",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
     )
@@ -130,10 +136,10 @@ async def test_decline_refunds_buyer(client):
                 )
             )
         ).scalar_one()
-        # Commission (5% of 20 = 1) is retained even on decline per spec;
-        # buyer gets back only the 20 principal => 30 + 20 = 50, but the 1
-        # commission stays on the platform, so final spendable = 49.
-        assert float(buyer_bal.amount) == 49.0
+        # P10 — commission is no longer locked when the legacy
+        # balance-only ``POST /api/deals`` path runs, so a decline
+        # refunds the buyer 1:1.
+        assert float(buyer_bal.amount) == 50.0
         assert float(buyer_bal.locked) == 0.0
 
 
@@ -151,7 +157,6 @@ async def test_insufficient_balance_rejected(client):
             "role": "buyer",
             "amount": 1,
             "currency_code": "USDT",
-            "pay_comission": "buyer",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
     )
@@ -162,8 +167,9 @@ async def test_insufficient_balance_rejected(client):
     assert detail["code"] == "insufficient_funds"
     assert "Недостаточно" in detail["message"]
     assert detail["currency_code"] == "USDT"
-    # Required = amount (1) + 5% commission = 1.05 when buyer pays;
-    # balance is 0 so deficit equals required.
-    assert float(detail["required"]) == 1.05
+    # P10 — commission is no longer locked on the legacy
+    # balance-only path, so the required amount is just the
+    # principal (1). Balance is 0 so deficit equals required.
+    assert float(detail["required"]) == 1.0
     assert float(detail["balance"]) == 0.0
-    assert float(detail["deficit"]) == 1.05
+    assert float(detail["deficit"]) == 1.0

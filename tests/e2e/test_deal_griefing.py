@@ -58,7 +58,6 @@ async def _create_deal(client, *, buyer_tg: int, seller_tg: int) -> tuple[int, s
             "role": "buyer",
             "amount": 10,
             "description": "anti-grief regression",
-            "pay_comission": "buyer",
             "currency_code": "USDT",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},

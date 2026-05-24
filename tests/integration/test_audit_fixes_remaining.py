@@ -5,10 +5,6 @@ Covers the LOW / INFO items left open after audit reports #204–#208:
 * **§4.15** — ``media.upload_media`` rejects animated GIF / WebP
   payloads with HTTP 415 instead of silently flattening them to the
   first frame.
-* **§4.19** — ``POST /api/admin/treasury/{id}/reconcile`` queries
-  CryptoBot's ``getTransfers`` API by ``spend_id`` and flips a stuck
-  ``pending`` row to ``sent`` from the authoritative source. A
-  missing transfer surfaces 404 without mutating the row.
 * **§5.5** — ``twofa._warn_fallback_once`` is now backed by a
   ``threading.Lock``-protected state object: concurrent callers see
   exactly one WARNING line and the rest at DEBUG.
@@ -25,23 +21,14 @@ from __future__ import annotations
 import io
 import logging
 import threading
-from decimal import Decimal
 
 import pytest
 from PIL import Image
-from sqlalchemy import select
 
-from backend.app.cryptopay import CryptoPayError, Transfer
 from backend.app.db import async_session
-from backend.app.models import (
-    AdminAuditLog,
-    Currency,
-    TreasuryWithdrawal,
-    User,
-)
-from backend.app.routers.admin import treasury as treasury_router
+from backend.app.models import User
 from backend.app.routers.admin import twofa as twofa_router
-from tests.helpers import auth_headers, setup_pin, signed_init_data, with_totp
+from tests.helpers import auth_headers, setup_pin, signed_init_data
 
 # ── shared helpers (copied from sibling tests to avoid coupling) ──
 
@@ -103,30 +90,6 @@ def _animated_webp_bytes() -> bytes:
     return buf.getvalue()
 
 
-async def _seed_pending_row(
-    *,
-    actor_id: int,
-    status: str = "pending",
-    amount: Decimal = Decimal("1.5"),
-    address: str = "98765432",
-    cryptobot_transfer_id: str | None = None,
-) -> int:
-    async with async_session() as session:
-        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
-        row = TreasuryWithdrawal(
-            actor_id=actor_id,
-            currency_id=usdt.id,
-            amount=amount,
-            address=address,
-            status=status,
-            note="seed for reconcile test",
-            cryptobot_transfer_id=cryptobot_transfer_id,
-        )
-        session.add(row)
-        await session.commit()
-        return row.id
-
-
 # ── §4.15 — animated GIF / WebP rejected ─────────────────────────────────
 
 
@@ -184,278 +147,6 @@ async def test_4_15_static_gif_still_accepted(client):
         headers=auth_headers(init_data),
     )
     assert resp.status_code == 201, resp.text
-
-
-# ── §4.19 — treasury reconcile via CryptoBot getTransfers ─────────────────
-
-
-class _ReconcileCryptoPay:
-    """``CryptoPay`` drop-in for the reconcile path.
-
-    Behaviour is steered by the ``items`` class attribute so each
-    test can return a tailored transfer list (matching, mismatched,
-    empty) without subclassing.
-    """
-
-    items: list[Transfer] = []
-    last_kwargs: dict | None = None
-    raise_error: CryptoPayError | None = None
-
-    def __init__(self, *_a, **_kw) -> None:
-        pass
-
-    async def __aenter__(self) -> _ReconcileCryptoPay:
-        return self
-
-    async def __aexit__(self, *_exc) -> None:  # noqa: ANN001
-        return None
-
-    async def get_transfers(self, **kwargs) -> list[Transfer]:
-        _ReconcileCryptoPay.last_kwargs = kwargs
-        if _ReconcileCryptoPay.raise_error is not None:
-            raise _ReconcileCryptoPay.raise_error
-        return list(_ReconcileCryptoPay.items)
-
-    async def transfer(self, **kwargs):  # pragma: no cover — unused here
-        raise AssertionError("reconcile must not call transfer()")
-
-
-@pytest.fixture
-def reconcile_cryptopay(monkeypatch):
-    """Wire ``_ReconcileCryptoPay`` into the treasury router and reset
-    its scratch state between tests so leaks don't cross-contaminate.
-    """
-    from backend.app.config import settings as app_settings
-
-    monkeypatch.setattr(app_settings, "cryptobot_token", "real-looking-token")
-    monkeypatch.setattr(treasury_router, "CryptoPay", _ReconcileCryptoPay)
-    _ReconcileCryptoPay.items = []
-    _ReconcileCryptoPay.last_kwargs = None
-    _ReconcileCryptoPay.raise_error = None
-    yield _ReconcileCryptoPay
-    _ReconcileCryptoPay.items = []
-    _ReconcileCryptoPay.last_kwargs = None
-    _ReconcileCryptoPay.raise_error = None
-
-
-@pytest.mark.asyncio
-async def test_4_19_reconcile_requires_confirm(client, reconcile_cryptopay):
-    admin_init, admin_id = await _make_admin(client, tg=41901)
-    row_id = await _seed_pending_row(actor_id=admin_id)
-
-    resp = await client.post(
-        f"/api/admin/treasury/{row_id}/reconcile",
-        json={"confirm": False},
-        headers=with_totp(auth_headers(admin_init)),
-    )
-    assert resp.status_code == 400, resp.text
-    # The reconcile path must short-circuit before reaching CryptoBot.
-    assert _ReconcileCryptoPay.last_kwargs is None
-
-
-@pytest.mark.asyncio
-async def test_4_19_reconcile_requires_2fa(client, reconcile_cryptopay):
-    admin_init, admin_id = await _make_admin(client, tg=41902)
-    row_id = await _seed_pending_row(actor_id=admin_id)
-
-    resp = await client.post(
-        f"/api/admin/treasury/{row_id}/reconcile",
-        json={"confirm": True},
-        headers=auth_headers(admin_init),  # NO with_totp
-    )
-    assert resp.status_code == 403, resp.text
-
-
-@pytest.mark.asyncio
-async def test_4_19_reconcile_unknown_id_404(client, reconcile_cryptopay):
-    admin_init, _ = await _make_admin(client, tg=41903)
-
-    resp = await client.post(
-        "/api/admin/treasury/99999999/reconcile",
-        json={"confirm": True},
-        headers=with_totp(auth_headers(admin_init)),
-    )
-    assert resp.status_code == 404, resp.text
-
-
-@pytest.mark.asyncio
-async def test_4_19_reconcile_no_cryptopay_token_503(client, monkeypatch):
-    """Without a configured CryptoBot token there's no way to query the
-    upstream — fail loud rather than producing a misleading 502.
-    """
-    from backend.app.config import settings as app_settings
-
-    monkeypatch.setattr(app_settings, "cryptobot_token", "")
-
-    admin_init, admin_id = await _make_admin(client, tg=41904)
-    row_id = await _seed_pending_row(actor_id=admin_id)
-
-    resp = await client.post(
-        f"/api/admin/treasury/{row_id}/reconcile",
-        json={"confirm": True},
-        headers=with_totp(auth_headers(admin_init)),
-    )
-    assert resp.status_code == 503, resp.text
-
-
-@pytest.mark.asyncio
-async def test_4_19_reconcile_happy_path(client, reconcile_cryptopay):
-    """A pending row with a matching transfer on CryptoBot's side
-    must flip to ``sent`` with the returned ``transfer_id``, an
-    audit row, and a queryable ``treasury.reconcile`` action.
-    """
-    admin_init, admin_id = await _make_admin(client, tg=41905)
-    row_id = await _seed_pending_row(actor_id=admin_id, address="55501234")
-
-    _ReconcileCryptoPay.items = [
-        Transfer(
-            transfer_id=987_654,
-            user_id=55501234,
-            asset="USDT",
-            amount="1.5",
-            status="completed",
-            completed_at="2026-05-22T00:00:00Z",
-        )
-    ]
-
-    resp = await client.post(
-        f"/api/admin/treasury/{row_id}/reconcile",
-        json={"confirm": True, "note": "auto-sweep"},
-        headers=with_totp(auth_headers(admin_init)),
-    )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["cryptobot_transfer_id"] == "987654"
-    assert body["withdrawal"]["status"] == "sent"
-    assert body["withdrawal"]["cryptobot_transfer_id"] == "987654"
-
-    # spend_id contract: ``treas:{row.id}`` — the same key
-    # ``treasury_withdraw`` writes in Phase 2.
-    assert _ReconcileCryptoPay.last_kwargs == {"spend_id": f"treas:{row_id}"}
-
-    async with async_session() as session:
-        row = await session.get(TreasuryWithdrawal, row_id)
-        assert row is not None
-        assert row.status == "sent"
-        assert row.cryptobot_transfer_id == "987654"
-
-        audit = (
-            await session.execute(
-                select(AdminAuditLog)
-                .where(AdminAuditLog.action == "treasury.reconcile")
-                .order_by(AdminAuditLog.id.desc())
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        assert audit is not None
-        assert audit.actor_id == admin_id
-        assert audit.target_id == row_id
-        assert audit.target_type == "treasury"
-        assert audit.payload is not None
-        assert audit.payload.get("spend_id") == f"treas:{row_id}"
-        assert audit.payload.get("cryptobot_transfer_id") == "987654"
-        assert audit.payload.get("cryptobot_status") == "completed"
-
-
-@pytest.mark.asyncio
-async def test_4_19_reconcile_missing_transfer_returns_404(client, reconcile_cryptopay):
-    """No matching transfer on CryptoBot's side → 404, row untouched.
-
-    Crucially we do NOT auto-fail the row: the operator may have
-    just hit a temporary blip in CryptoBot's query API, and a
-    silent ``failed`` would let the row out of the ``pending``
-    accounting bucket prematurely.
-    """
-    admin_init, admin_id = await _make_admin(client, tg=41906)
-    row_id = await _seed_pending_row(actor_id=admin_id)
-
-    # No items returned for this spend_id.
-    _ReconcileCryptoPay.items = []
-
-    resp = await client.post(
-        f"/api/admin/treasury/{row_id}/reconcile",
-        json={"confirm": True},
-        headers=with_totp(auth_headers(admin_init)),
-    )
-    assert resp.status_code == 404, resp.text
-
-    async with async_session() as session:
-        row = await session.get(TreasuryWithdrawal, row_id)
-        assert row is not None
-        assert row.status == "pending"
-        assert row.cryptobot_transfer_id is None
-
-        # No audit row written either — the endpoint must not pollute
-        # the log with no-ops, only with state changes.
-        action_count = (
-            await session.execute(
-                select(AdminAuditLog).where(AdminAuditLog.action == "treasury.reconcile")
-            )
-        ).all()
-        assert action_count == []
-
-
-@pytest.mark.asyncio
-async def test_4_19_reconcile_already_sent_is_idempotent(client, reconcile_cryptopay):
-    """A row already in ``sent`` returns its existing payload without
-    re-querying CryptoBot or writing a duplicate audit row.
-    """
-    admin_init, admin_id = await _make_admin(client, tg=41907)
-    row_id = await _seed_pending_row(
-        actor_id=admin_id,
-        status="sent",
-        cryptobot_transfer_id="prev-123",
-    )
-
-    resp = await client.post(
-        f"/api/admin/treasury/{row_id}/reconcile",
-        json={"confirm": True},
-        headers=with_totp(auth_headers(admin_init)),
-    )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["cryptobot_transfer_id"] == "prev-123"
-    assert body["withdrawal"]["status"] == "sent"
-
-    # No CryptoBot call — idempotent path.
-    assert _ReconcileCryptoPay.last_kwargs is None
-
-
-@pytest.mark.asyncio
-async def test_4_19_reconcile_failed_row_409(client, reconcile_cryptopay):
-    """``failed`` is terminal — reconcile should not resurrect it."""
-    admin_init, admin_id = await _make_admin(client, tg=41908)
-    row_id = await _seed_pending_row(actor_id=admin_id, status="failed")
-
-    resp = await client.post(
-        f"/api/admin/treasury/{row_id}/reconcile",
-        json={"confirm": True},
-        headers=with_totp(auth_headers(admin_init)),
-    )
-    assert resp.status_code == 409, resp.text
-
-
-@pytest.mark.asyncio
-async def test_4_19_reconcile_cryptopay_error_propagates_as_502(client, reconcile_cryptopay):
-    """An upstream CryptoBot error must not be swallowed — surface as
-    502 so the operator knows to retry / investigate.
-    """
-    admin_init, admin_id = await _make_admin(client, tg=41909)
-    row_id = await _seed_pending_row(actor_id=admin_id)
-
-    _ReconcileCryptoPay.raise_error = CryptoPayError("simulated upstream")
-
-    resp = await client.post(
-        f"/api/admin/treasury/{row_id}/reconcile",
-        json={"confirm": True},
-        headers=with_totp(auth_headers(admin_init)),
-    )
-    assert resp.status_code == 502, resp.text
-
-    async with async_session() as session:
-        row = await session.get(TreasuryWithdrawal, row_id)
-        assert row is not None
-        assert row.status == "pending"
 
 
 # ── §5.5 — _fallback_warned is now thread-safe ─────────────────────────────

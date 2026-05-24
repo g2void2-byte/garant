@@ -12,30 +12,27 @@ Maps 1:1 to ``audit-status-v9.md §2.A`` after PR #91 landed:
 * **Comment 44** — ``PATCH /api/me`` with a ``forums`` replace returns
   the post-commit forum list (no stale ``Forum`` rows surviving the
   selectin cache).
-* **Comment 48** — ``POST /api/admin/treasury/withdraw`` rejects with
-  HTTP 503 when ``cryptobot_token`` is unset/placeholder, *before*
-  inserting any ``TreasuryWithdrawal`` row.
+
+P5 — Comment 48 covered the legacy ``POST /api/admin/treasury/withdraw``
+endpoint, which was deleted alongside the platform treasury surface.
+The 503-when-CryptoBot-token-missing guard now lives in
+``services_wallet`` / ``routers/admin/withdrawals`` and is exercised by
+``test_admin_finance``; the treasury-specific case has no analogue.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import timedelta
-from decimal import Decimal
-from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import func, select
 
-from backend.app.config import settings as app_settings
 from backend.app.db import async_session
 from backend.app.models import (
     AccountTransferCode,
-    Currency,
     Notification,
     NotificationType,
-    TreasuryWithdrawal,
     User,
 )
 from backend.app.notifier import NOTIFICATION_PAYLOAD_MAX_BYTES, push
@@ -49,7 +46,6 @@ from backend.app.time_utils import utcnow
 from tests.helpers import (
     auth_headers,
     signed_init_data,
-    with_totp,
 )
 
 
@@ -331,129 +327,3 @@ async def test_patch_me_forums_replace_returns_post_commit_state(client):
     assert fetched.status_code == 200, fetched.text
     fetched_urls = {f["url"] for f in fetched.json()["forums"]}
     assert fetched_urls == new_urls
-
-
-# ── Comment 48 — treasury_withdraw 503 when CryptoBot token missing ─────
-
-
-@pytest.mark.asyncio
-async def test_treasury_withdraw_503_when_cryptobot_token_empty(client, monkeypatch):
-    """An admin who fires ``/api/admin/treasury/withdraw`` against an
-    unconfigured CryptoBot must get a loud HTTP 503 — *before* a
-    ``TreasuryWithdrawal`` row is inserted. Pre-fix the row was
-    silently created with ``status="sent"`` and zero transfer id, so
-    the accounting ledger believed a payout had happened.
-
-    Covers both the empty-string case (uninitialised env) and the
-    well-known ``000…`` placeholder we ship in conftest as a sentinel
-    for unconfigured environments."""
-
-    admin_init, _ = await _make_admin(client, tg=9501)
-
-    async def _withdraw(token_value: str) -> int:
-        monkeypatch.setattr(app_settings, "cryptobot_token", token_value)
-        resp = await client.post(
-            "/api/admin/treasury/withdraw",
-            json={
-                "currency_code": "USDT",
-                "amount": 1.0,
-                # T1 (audit follow-up 2026-05-19) — ``address`` is a
-                # Telegram ``user_id`` (digits only); the legacy
-                # wallet-string fixture is now rejected at the
-                # schema level.
-                "address": "50000001",
-                "confirm": True,
-                "note": "test",
-            },
-            headers=with_totp(auth_headers(admin_init)),
-        )
-        return resp.status_code
-
-    assert await _withdraw("") == 503
-    assert await _withdraw("000-placeholder") == 503
-
-    async with async_session() as session:
-        count = (await session.execute(select(func.count(TreasuryWithdrawal.id)))).scalar_one()
-        assert count == 0, "no TreasuryWithdrawal row may exist after a 503 rejection"
-
-
-@pytest.mark.asyncio
-async def test_treasury_withdraw_proceeds_when_token_configured(client, monkeypatch):
-    """Mirror of the negative test — with a non-placeholder token the
-    handler reaches the CryptoBot transfer call. Stub the transfer so
-    no network IO leaks out of the test process, then assert the row
-    lands as ``status="sent"``."""
-
-    admin_init, _ = await _make_admin(client, tg=9502)
-
-    monkeypatch.setattr(app_settings, "cryptobot_token", "real-looking-token")
-
-    class _FakeTransfer:
-        transfer_id = 4242
-
-    class _FakeCryptoPay:
-        def __init__(self, *_a, **_kw):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_exc):
-            return None
-
-        async def transfer(self, **_kw):
-            return _FakeTransfer()
-
-    import backend.app.routers.admin.treasury as treasury_router
-
-    monkeypatch.setattr(treasury_router, "CryptoPay", _FakeCryptoPay)
-
-    # Avoid hitting the per-currency advisory lock with a real
-    # connection — the test PG has it but a no-op keeps the assertion
-    # focused on the new 503 branch.
-    async def _noop_lock(session, currency_id):  # noqa: ARG001
-        return None
-
-    monkeypatch.setattr(treasury_router, "_lock_treasury", _noop_lock)
-
-    # Pre-seed accrual so ``available`` is positive (the handler
-    # checks ``accrued − withdrawn ≥ amount`` before transferring).
-    async def _fake_accrued(session):  # noqa: ARG001
-        async with async_session() as s:
-            usdt = (await s.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
-            return {usdt.id: Decimal("10")}
-
-    async def _fake_withdrawn(session):  # noqa: ARG001
-        return {}
-
-    monkeypatch.setattr(treasury_router, "_accrued_by_currency", _fake_accrued)
-    monkeypatch.setattr(treasury_router, "_withdrawn_by_currency", _fake_withdrawn)
-
-    resp = await client.post(
-        "/api/admin/treasury/withdraw",
-        json={
-            "currency_code": "USDT",
-            "amount": 1.0,
-            # T1 (audit follow-up 2026-05-19) — ``address`` is a
-            # Telegram ``user_id`` (digits only).
-            "address": "50000002",
-            "confirm": True,
-            "note": "smoke",
-        },
-        headers=with_totp(auth_headers(admin_init)),
-    )
-    assert resp.status_code == 200, resp.text
-
-    async with async_session() as session:
-        row = (
-            await session.execute(
-                select(TreasuryWithdrawal).order_by(TreasuryWithdrawal.id.desc()).limit(1)
-            )
-        ).scalar_one()
-        assert row.status == "sent"
-        assert row.cryptobot_transfer_id == "4242"
-
-
-# Silence unused-import warning — keep ``asyncio``/``AsyncMock`` in the
-# module so future fixtures can reuse the imports without re-adding.
-_ = (asyncio, AsyncMock)

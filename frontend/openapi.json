@@ -1473,6 +1473,11 @@
             ],
             "title": "Commission Amount"
           },
+          "commission_paid": {
+            "default": false,
+            "title": "Commission Paid",
+            "type": "boolean"
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -1543,16 +1548,23 @@
             "title": "Messages",
             "type": "array"
           },
-          "pay_commission": {
-            "title": "Pay Commission",
-            "type": "string"
-          },
           "seller": {
             "$ref": "#/components/schemas/AdminBalanceSnapshot"
           },
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "topup_deposit_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topup Deposit Id"
           }
         },
         "required": [
@@ -1562,7 +1574,6 @@
           "currency_code",
           "amount",
           "commission_amount",
-          "pay_commission",
           "buyer",
           "seller",
           "created_at",
@@ -1727,10 +1738,6 @@
             ],
             "title": "In Progress At"
           },
-          "pay_commission": {
-            "title": "Pay Commission",
-            "type": "string"
-          },
           "seller_id": {
             "title": "Seller Id",
             "type": "integer"
@@ -1761,7 +1768,6 @@
           "buyer_username",
           "seller_id",
           "seller_username",
-          "pay_commission",
           "created_at",
           "in_progress_at",
           "completed_at",
@@ -1803,7 +1809,7 @@
         "type": "object"
       },
       "AdminDealSplitIn": {
-        "description": "Body for ``POST /api/admin/deals/:id/split``.\n\n``buyer_percent`` is the share returned to the buyer; the seller\ngets ``100 - buyer_percent`` of the same locked pot. The commission\ncomponent (when ``pay_commission=buyer``) is *always* retained by\nthe platform regardless of split \u2014 admin-forced splits do not give\ncommission back to either party.",
+        "description": "Body for ``POST /api/admin/deals/:id/split``.\n\n``buyer_percent`` is the share returned to the buyer; the seller\ngets ``100 - buyer_percent`` of the same locked pot. Commission\nis collected on the platform via the deposit invoice (P10) and\nis *never* refunded \u2014 admin-forced splits operate only on the\nlocked principal.",
         "properties": {
           "buyer_percent": {
             "anyOf": [
@@ -2496,6 +2502,10 @@
             "title": "Max Active Services Per User",
             "type": "integer"
           },
+          "pending_topup_expiry_hours": {
+            "title": "Pending Topup Expiry Hours",
+            "type": "integer"
+          },
           "vip_commission_percent": {
             "title": "Vip Commission Percent",
             "type": "number"
@@ -2509,7 +2519,8 @@
           "max_active_services_per_user",
           "maintenance_enabled",
           "maintenance_message",
-          "auto_withdraw_enabled"
+          "auto_withdraw_enabled",
+          "pending_topup_expiry_hours"
         ],
         "title": "AdminSettingsOut",
         "type": "object"
@@ -2597,6 +2608,17 @@
               }
             ],
             "title": "Max Active Services Per User"
+          },
+          "pending_topup_expiry_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Topup Expiry Hours"
           },
           "vip_commission_percent": {
             "anyOf": [
@@ -2690,266 +2712,6 @@
           "uptime_seconds"
         ],
         "title": "AdminSystemStatusOut",
-        "type": "object"
-      },
-      "AdminTreasuryBalanceOut": {
-        "description": "Per-currency commission accumulator.\n\n``accrued`` sums up ``commission_amount`` on every completed deal in\nthis currency; ``withdrawn`` subtracts the sum of successful\n``treasury_withdrawals`` rows. ``available`` is the diff and the\nonly amount the admin can withdraw.",
-        "properties": {
-          "accrued": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Accrued",
-            "type": "string"
-          },
-          "available": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Available",
-            "type": "string"
-          },
-          "currency_code": {
-            "title": "Currency Code",
-            "type": "string"
-          },
-          "currency_id": {
-            "title": "Currency Id",
-            "type": "integer"
-          },
-          "currency_name": {
-            "title": "Currency Name",
-            "type": "string"
-          },
-          "decimals": {
-            "title": "Decimals",
-            "type": "integer"
-          },
-          "withdrawn": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Withdrawn",
-            "type": "string"
-          }
-        },
-        "required": [
-          "currency_id",
-          "currency_code",
-          "currency_name",
-          "decimals",
-          "accrued",
-          "withdrawn",
-          "available"
-        ],
-        "title": "AdminTreasuryBalanceOut",
-        "type": "object"
-      },
-      "AdminTreasuryMarkSentIn": {
-        "description": "Body for ``POST /api/admin/treasury/{withdrawal_id}/mark_sent``.\n\nManual reconciliation path for treasury rows stuck at ``pending``:\nthe CryptoBot transfer actually went through in Phase 2 of\n``treasury_withdraw`` but Phase 3 failed to commit (network glitch,\ncrash, etc.), leaving the row mid-flight. The operator verifies\nthe transfer succeeded on CryptoBot's side (via their dashboard\nor the ``spend_id=treas:{row.id}`` lookup), then calls this\nendpoint to advance the row to ``status=\"sent\"``.\n\nMirrors ``WalletWithdrawAdminDecideIn(action=\"mark_sent\")`` in\n``routers/admin/withdrawals.py``.",
-        "properties": {
-          "confirm": {
-            "default": false,
-            "title": "Confirm",
-            "type": "boolean"
-          },
-          "cryptobot_transfer_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cryptobot Transfer Id"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          }
-        },
-        "title": "AdminTreasuryMarkSentIn",
-        "type": "object"
-      },
-      "AdminTreasuryOverviewOut": {
-        "properties": {
-          "balances": {
-            "items": {
-              "$ref": "#/components/schemas/AdminTreasuryBalanceOut"
-            },
-            "title": "Balances",
-            "type": "array"
-          },
-          "total_withdrawals": {
-            "title": "Total Withdrawals",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "balances",
-          "total_withdrawals"
-        ],
-        "title": "AdminTreasuryOverviewOut",
-        "type": "object"
-      },
-      "AdminTreasuryReconcileIn": {
-        "description": "Body for ``POST /api/admin/treasury/{withdrawal_id}/reconcile``.\n\nAudit \u00a74.19 \u2014 automated reconciliation path for ``pending`` rows\nstuck after a Phase 2 \u2192 Phase 3 crash. Unlike ``mark_sent`` (which\ntrusts the operator's claim that CryptoBot processed the\ntransfer), this endpoint queries CryptoBot's ``getTransfers``\nAPI by the row's ``spend_id`` and updates the status from the\nauthoritative source \u2014 flipping to ``sent`` if the transfer\nlanded and surfacing a 404 (without mutating the row) if it\ndidn't, so the operator can choose whether to retry by issuing\na fresh withdrawal or close the row out manually.",
-        "properties": {
-          "confirm": {
-            "default": false,
-            "title": "Confirm",
-            "type": "boolean"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          }
-        },
-        "title": "AdminTreasuryReconcileIn",
-        "type": "object"
-      },
-      "AdminTreasuryReconcileOut": {
-        "description": "Response for the treasury reconcile endpoint.\n\n``status`` mirrors the row's new value (always ``sent`` on the\nsuccess path; the endpoint 404s instead of returning ``failed``\nso a missing CryptoBot transfer never silently buries the row).\n``withdrawal`` carries the canonical ``TreasuryWithdrawal`` shape\nso the admin UI can refresh from the same payload.",
-        "properties": {
-          "cryptobot_transfer_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cryptobot Transfer Id"
-          },
-          "withdrawal": {
-            "$ref": "#/components/schemas/AdminTreasuryWithdrawOut"
-          }
-        },
-        "required": [
-          "withdrawal",
-          "cryptobot_transfer_id"
-        ],
-        "title": "AdminTreasuryReconcileOut",
-        "type": "object"
-      },
-      "AdminTreasuryWithdrawIn": {
-        "description": "Body for ``POST /api/admin/treasury/withdraw``.\n\nRequires the ``X-Totp-Code`` header (validated by a dependency) and\n``confirm=true`` to satisfy the double-confirm gate.",
-        "properties": {
-          "address": {
-            "title": "Address",
-            "type": "string"
-          },
-          "amount": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              }
-            ],
-            "title": "Amount"
-          },
-          "confirm": {
-            "default": false,
-            "title": "Confirm",
-            "type": "boolean"
-          },
-          "currency_code": {
-            "title": "Currency Code",
-            "type": "string"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          }
-        },
-        "required": [
-          "currency_code",
-          "amount",
-          "address"
-        ],
-        "title": "AdminTreasuryWithdrawIn",
-        "type": "object"
-      },
-      "AdminTreasuryWithdrawOut": {
-        "properties": {
-          "actor_id": {
-            "title": "Actor Id",
-            "type": "integer"
-          },
-          "address": {
-            "title": "Address",
-            "type": "string"
-          },
-          "amount": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Amount",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "cryptobot_transfer_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cryptobot Transfer Id"
-          },
-          "currency_code": {
-            "title": "Currency Code",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "integer"
-          },
-          "note": {
-            "title": "Note",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "actor_id",
-          "currency_code",
-          "amount",
-          "address",
-          "status",
-          "note",
-          "cryptobot_transfer_id",
-          "created_at"
-        ],
-        "title": "AdminTreasuryWithdrawOut",
         "type": "object"
       },
       "AdminUserBalanceOut": {
@@ -3907,20 +3669,6 @@
             "title": "Description",
             "type": "string"
           },
-          "pay_comission": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PayCommission"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "pay_commission": {
-            "$ref": "#/components/schemas/PayCommission",
-            "default": "buyer"
-          },
           "payment_provider": {
             "default": "cryptobot",
             "enum": [
@@ -3942,6 +3690,76 @@
           "amount"
         ],
         "title": "DealCreate",
+        "type": "object"
+      },
+      "DealCreateWithTopup": {
+        "description": "P10 \u2014 input for ``POST /api/deals/with-topup``.\n\nExactly the same shape as :class:`DealCreate` but routed through\nthe commission-via-invoice service entry point. Kept as a\nseparate class so the OpenAPI surface stays explicit and the\nlegacy ``POST /api/deals`` (balance-only) path can be removed\nindependently in a follow-up.",
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "minimum": 1e-08,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
+          },
+          "counterparty": {
+            "title": "Counterparty",
+            "type": "string"
+          },
+          "currency_code": {
+            "default": "USDT",
+            "title": "Currency Code",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "payment_provider": {
+            "default": "cryptobot",
+            "enum": [
+              "cryptobot",
+              "crystalpay"
+            ],
+            "title": "Payment Provider",
+            "type": "string"
+          },
+          "role": {
+            "const": "buyer",
+            "default": "buyer",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "counterparty",
+          "amount"
+        ],
+        "title": "DealCreateWithTopup",
+        "type": "object"
+      },
+      "DealCreateWithTopupOut": {
+        "description": "P10 \u2014 response from ``POST /api/deals/with-topup``.\n\nBundles the new :class:`DealOut` row (status ``pending_topup``)\nwith the :class:`DealTopupInvoiceOut` describing the invoice the\nbuyer must pay before the deal can be activated.",
+        "properties": {
+          "deal": {
+            "$ref": "#/components/schemas/DealOut"
+          },
+          "invoice": {
+            "$ref": "#/components/schemas/DealTopupInvoiceOut"
+          }
+        },
+        "required": [
+          "deal",
+          "invoice"
+        ],
+        "title": "DealCreateWithTopupOut",
         "type": "object"
       },
       "DealMessageCreate": {
@@ -4146,6 +3964,11 @@
             ],
             "title": "Commission Amount"
           },
+          "commission_paid": {
+            "default": false,
+            "title": "Commission Paid",
+            "type": "boolean"
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -4209,14 +4032,6 @@
             ],
             "title": "In Progress At"
           },
-          "pay_comission": {
-            "title": "Pay Comission",
-            "type": "string"
-          },
-          "pay_commission": {
-            "title": "Pay Commission",
-            "type": "string"
-          },
           "payment_provider": {
             "default": "cryptobot",
             "title": "Payment Provider",
@@ -4251,6 +4066,27 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "topup_deposit_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topup Deposit Id"
+          },
+          "topup_invoice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DealTopupInvoiceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -4258,8 +4094,6 @@
           "buyer",
           "seller",
           "description",
-          "pay_commission",
-          "pay_comission",
           "status",
           "confirm_buyer",
           "confirm_seller",
@@ -4286,6 +4120,62 @@
           "winner"
         ],
         "title": "DealResolveRequest",
+        "type": "object"
+      },
+      "DealTopupInvoiceOut": {
+        "description": "P10 \u2014 deposit-invoice descriptor returned from the with-topup endpoint.\n\nMirrors the shape the frontend already consumes for wallet\ntop-ups (``WalletDepositOut``) but renames the fields to match\nthe spec's vocabulary (``topup_principal`` + ``commission`` +\n``total``).",
+        "properties": {
+          "commission": {
+            "title": "Commission",
+            "type": "number"
+          },
+          "currency_code": {
+            "title": "Currency Code",
+            "type": "string"
+          },
+          "deposit_id": {
+            "title": "Deposit Id",
+            "type": "integer"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "pay_url": {
+            "title": "Pay Url",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "topup_principal": {
+            "title": "Topup Principal",
+            "type": "number"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "deposit_id",
+          "pay_url",
+          "total",
+          "topup_principal",
+          "commission",
+          "currency_code",
+          "provider"
+        ],
+        "title": "DealTopupInvoiceOut",
         "type": "object"
       },
       "ForumIn": {
@@ -4496,14 +4386,6 @@
         ],
         "title": "NotificationOut",
         "type": "object"
-      },
-      "PayCommission": {
-        "enum": [
-          "buyer",
-          "seller"
-        ],
-        "title": "PayCommission",
-        "type": "string"
       },
       "PinChangeIn": {
         "properties": {
@@ -8545,7 +8427,7 @@
     },
     "/api/admin/currencies/{currency_id}": {
       "delete": {
-        "description": "Delete a currency that no other row references.\n\nAudit \u00a73.4 \u2014 closes the ``\u041f\u0423\u0421\u0422\u042b\u0428\u041a\u0410`` gap (no DELETE route existed\nfor currencies even though categories had one). The guard mirrors\n``delete_category``: any referencing row in deals / services /\nbalances / wallet deposits / wallet withdrawals / treasury\nwithdrawals turns the call into a 409 so we never orphan a FK.",
+        "description": "Delete a currency that no other row references.\n\nAudit \u00a73.4 \u2014 closes the ``\u041f\u0423\u0421\u0422\u042b\u0428\u041a\u0410`` gap (no DELETE route existed\nfor currencies even though categories had one). The guard mirrors\n``delete_category``: any referencing row in deals / services /\nbalances / wallet deposits / wallet withdrawals turns the call\ninto a 409 so we never orphan a FK.",
         "operationId": "delete_currency_api_admin_currencies__currency_id__delete",
         "parameters": [
           {
@@ -11161,510 +11043,6 @@
         ]
       }
     },
-    "/api/admin/treasury": {
-      "get": {
-        "operationId": "treasury_overview_api_admin_treasury_get",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Totp-Code",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Code"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Totp-Session",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Session"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminTreasuryOverviewOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Treasury Overview",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/api/admin/treasury/withdraw": {
-      "post": {
-        "description": "Withdraw accumulated commission to an external Telegram user_id.\n\nGuards:\n  * 2FA via ``X-Totp-Code`` header.\n  * ``confirm=true`` \u2014 explicit second click.\n  * Per-currency advisory lock taken only for the ``available``\n    check + ``pending`` row insert. The lock is **released by\n    the commit at the end of Phase 1**, so the CryptoBot HTTP\n    roundtrip in Phase 2 is not blocking any other admin or any\n    other ``available`` calculation. A second admin attempting\n    a payout on the same currency while Phase 2 is in flight\n    sees the ``pending`` row counted in ``_OUTSTANDING_STATUSES``\n    and gets a \"\u043d\u0435\u0434\u043e\u0441\u0442\u0430\u0442\u043e\u0447\u043d\u043e \u043a\u043e\u043c\u0438\u0441\u0441\u0438\u0438\" 400 \u2014 not a queued lock\n    wait.\n  * Insert a ``pending`` row before the CryptoBot call so the\n    ``spend_id`` is deterministic (``treas:{row.id}``). A retry\n    from the admin produces a fresh row with its own id and its\n    own spend_id; an in-flight crash leaves the ``pending`` row\n    counted against ``available`` so the balance can't be\n    double-spent until someone reconciles.\n\nAudit follow-up (2026-05-19) \u2014 T1/T2:\n\n  * T1: ``body.address`` is validated to be a digit-only Telegram\n    ``user_id`` by ``AdminTreasuryWithdrawIn._address_ok``, so the\n    pre-fix ``int(body.address) if body.address.isdigit() else\n    admin.tg_user_id`` silent self-payout fallback is gone.\n  * T2: the per-currency advisory lock is no longer held across\n    the CryptoBot HTTP call. See the three-phase comment above.",
-        "operationId": "treasury_withdraw_api_admin_treasury_withdraw_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Totp-Code",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Code"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Totp-Session",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Session"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AdminTreasuryWithdrawIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminTreasuryWithdrawOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Treasury Withdraw",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/api/admin/treasury/withdrawals": {
-      "get": {
-        "operationId": "list_treasury_withdrawals_api_admin_treasury_withdrawals_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "page",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "minimum": 1,
-              "title": "Page",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "page_size",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 200,
-              "minimum": 1,
-              "title": "Page Size",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "enum": [
-                    "pending",
-                    "sent",
-                    "failed"
-                  ],
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
-          },
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Totp-Code",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Code"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Totp-Session",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Session"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminTreasuryWithdrawOut"
-                  },
-                  "title": "Response List Treasury Withdrawals Api Admin Treasury Withdrawals Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Treasury Withdrawals",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/api/admin/treasury/{withdrawal_id}/mark_sent": {
-      "post": {
-        "description": "Manually flip a stuck ``pending`` treasury row to ``sent``.\n\nRecovery path for the Phase 2 \u2192 Phase 3 gap in\n:func:`treasury_withdraw`: CryptoBot processed the transfer, but the\nfinal ``commit()`` never landed (network blip / crash), so the row\nis still ``pending`` and counted against ``available``. The operator\nverifies the transfer on CryptoBot's side (``spend_id=treas:{id}``\nor the dashboard), then calls this endpoint to advance the row.\n\nGuards:\n  * 2FA via ``X-Totp-Code`` header.\n  * ``confirm=true`` \u2014 explicit second click.\n  * Row must be in ``pending``: ``sent`` rows are idempotent\n    no-ops (we'd otherwise log duplicate audit rows), ``failed``\n    rows are deliberately terminal and must be re-issued as a\n    fresh withdrawal if the operator wants to retry.\n  * ``with_for_update()`` row lock during the flip so a concurrent\n    Phase 3 retry of the original ``treasury_withdraw`` (e.g. from\n    a delayed-but-not-dead async task) doesn't race us.\n\nThere is **no** new CryptoBot HTTP call here \u2014 by contract the\ntransfer already happened. We only record what the operator\nobserved.",
-        "operationId": "treasury_mark_sent_api_admin_treasury__withdrawal_id__mark_sent_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "withdrawal_id",
-            "required": true,
-            "schema": {
-              "title": "Withdrawal Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Totp-Code",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Code"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Totp-Session",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Session"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AdminTreasuryMarkSentIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminTreasuryWithdrawOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Treasury Mark Sent",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/api/admin/treasury/{withdrawal_id}/reconcile": {
-      "post": {
-        "description": "Reconcile a stuck ``pending`` treasury row against CryptoBot.\n\nAudit \u00a74.19 \u2014 recovery path for the Phase 2 \u2192 Phase 3 gap that\ndoes NOT rely on operator hearsay. ``treasury_mark_sent`` takes\nthe operator's word that the transfer succeeded; this endpoint\nqueries CryptoBot's ``getTransfers`` API by the row's\n``spend_id`` (``treas:{withdrawal_id}``) and updates the row\nfrom the authoritative source:\n\n  * **Transfer present on CryptoBot side** \u2014 flip the row to\n    ``status=\"sent\"`` and record the returned ``transfer_id``,\n    matching what ``treasury_withdraw``'s Phase 3 would have\n    written. Idempotent \u2014 re-running just returns the row.\n  * **No matching transfer** \u2014 return 404 *without* mutating\n    the row, so the operator can decide whether to retry\n    (issue a fresh withdrawal \u2014 the ``pending`` row already\n    counts against ``available``, so a retry needs the operator\n    to either delete the row or wait for the audit log to\n    explain it) or close it out manually with ``mark_sent``\n    based on out-of-band evidence.\n\nGuards:\n  * 2FA via ``X-Totp-Code`` header (same surface as\n    ``mark_sent`` \u2014 the action moves money on the ledger).\n  * ``confirm=true`` \u2014 explicit second click.\n  * Row must be in ``pending``; ``sent`` rows return the\n    existing payload (idempotent no-op), ``failed`` rows 409\n    (the operator already saw the failure and should issue a\n    fresh withdrawal instead of resurrecting a failed one).\n\nPre-fix this hole was an explicit accepted trade-off (audit\n\u00a74.19): the only recovery was operator-driven ``mark_sent``,\nwhich silently trusted the operator. Now there is a code path\nthat closes the row from the same source of truth that\n``treasury_withdraw`` would have used had Phase 3 not crashed.",
-        "operationId": "treasury_reconcile_api_admin_treasury__withdrawal_id__reconcile_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "withdrawal_id",
-            "required": true,
-            "schema": {
-              "title": "Withdrawal Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Totp-Code",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Code"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Totp-Session",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Session"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AdminTreasuryReconcileIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminTreasuryReconcileOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Treasury Reconcile",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
     "/api/admin/users": {
       "get": {
         "operationId": "list_users_api_admin_users_get",
@@ -14077,6 +13455,82 @@
         ]
       }
     },
+    "/api/deals/with-topup": {
+      "post": {
+        "description": "P10 \u2014 create a deal funded by a deposit-invoice top-up.\n\nReplaces the balance-only :func:`create_deal_endpoint` for the\nhappy-path frontend flow. The endpoint always issues a deposit\ninvoice covering ``max(0, amount - buyer.balance) + commission``;\nthe deal is born in :data:`DealStatus.pending_topup` and only\nadvances to :data:`DealStatus.pending_confirmation` once the\nwebhook lands a payment large enough to cover the principal.",
+        "operationId": "create_deal_with_topup_endpoint_api_deals_with_topup_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Pin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Pin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DealCreateWithTopup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DealCreateWithTopupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Deal With Topup Endpoint",
+        "tags": [
+          "deals"
+        ]
+      }
+    },
     "/api/deals/{deal_id}": {
       "get": {
         "operationId": "get_deal_api_deals__deal_id__get",
@@ -14204,6 +13658,81 @@
           }
         },
         "summary": "Accept Deal Endpoint",
+        "tags": [
+          "deals"
+        ]
+      }
+    },
+    "/api/deals/{deal_id}/cancel-topup": {
+      "post": {
+        "description": "P10 \u2014 buyer aborts a deal stuck in ``pending_topup``.\n\nThe buyer is the only role allowed to call this; the deal must\nstill be in ``pending_topup`` (no half-paid in-flight states).\nThe linked deposit invoice is flipped to ``expired`` so the\nwallet pending list stops surfacing it.",
+        "operationId": "cancel_topup_endpoint_api_deals__deal_id__cancel_topup_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deal_id",
+            "required": true,
+            "schema": {
+              "title": "Deal Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Pin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Pin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DealOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Topup Endpoint",
         "tags": [
           "deals"
         ]

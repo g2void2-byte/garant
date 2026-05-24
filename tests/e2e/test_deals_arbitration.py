@@ -41,7 +41,6 @@ async def test_arbitration_resolved_for_buyer_refunds(client):
                 "role": "buyer",
                 "amount": 20,
                 "currency_code": "USDT",
-                "pay_comission": "buyer",
             },
             headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
         )
@@ -69,8 +68,11 @@ async def test_arbitration_resolved_for_buyer_refunds(client):
     assert resolve_resp.status_code == 200, resolve_resp.text
     assert resolve_resp.json()["status"] == DealStatus.resolved_for_buyer.value
 
-    # Buyer refunded the 20 principal; the 1 commission is retained by
-    # the platform per spec (commission charged on every terminal deal).
+    # Buyer refunded the 20 principal 1:1. P10 — the legacy
+    # ``create_deal`` path never locks commission in ``UserBalance``
+    # (commission rides on the deposit invoice via
+    # ``create_deal_with_topup``), so the refund returns the full
+    # principal and the buyer ends at their pre-deal balance.
     async with async_session() as session:
         usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         bal = (
@@ -81,7 +83,7 @@ async def test_arbitration_resolved_for_buyer_refunds(client):
                 )
             )
         ).scalar_one()
-        assert float(bal.amount) == 99.0
+        assert float(bal.amount) == 100.0
         assert float(bal.locked) == 0.0
 
 
@@ -126,7 +128,6 @@ async def test_arbitration_resolution_bumps_winner_and_loser_counters(client):
                 "role": "buyer",
                 "amount": 20,
                 "currency_code": "USDT",
-                "pay_comission": "buyer",
             },
             headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
         )
@@ -187,7 +188,6 @@ async def test_resolve_requires_admin_or_arbiter(client):
                 "role": "buyer",
                 "amount": 10,
                 "currency_code": "USDT",
-                "pay_comission": "buyer",
             },
             headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
         )

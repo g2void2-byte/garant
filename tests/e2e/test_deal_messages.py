@@ -40,7 +40,6 @@ async def _create_deal(client) -> tuple[int, str, str, str, str]:
             "role": "buyer",
             "amount": 10,
             "currency_code": "USDT",
-            "pay_comission": "buyer",
             "description": "chat e2e",
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},

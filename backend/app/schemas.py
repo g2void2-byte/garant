@@ -795,6 +795,15 @@ class DealOut(BaseModel):
     # P10 — commission-via-invoice flow.
     topup_deposit_id: int | None = None
     commission_paid: bool = False
+    # P10 — inline copy of the deposit invoice so the frontend can
+    # resume the pay flow after a reload of an existing
+    # ``pending_topup`` deal without a separate ``GET`` round-trip.
+    # Populated by ``routers/deals._deal_out`` only when the deal is
+    # still in ``pending_topup`` AND the linked deposit row is
+    # ``pending``; otherwise it stays ``None`` (deal has already been
+    # paid, expired, or never had a topup invoice in the first place
+    # — i.e. the legacy ``POST /api/deals`` balance-only path).
+    topup_invoice: DealTopupInvoiceOut | None = None
 
 
 # ── Reviews ────────────────────────────────────────────

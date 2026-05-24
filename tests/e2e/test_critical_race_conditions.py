@@ -110,9 +110,12 @@ async def test_concurrent_deal_creation_cannot_overdraw(client):
     """C2 — two parallel ``create_deal`` requests must not overspend.
 
     Buyer has 100 USDT; two simultaneous deals of 70 USDT each are
-    submitted. Each costs 70 + 5% commission = 73.5 locked. Without the
-    ``FOR UPDATE`` lock on ``_debit`` both pass the balance check; with
-    the lock one returns 400 ("Недостаточно средств").
+    submitted. Each costs 70 locked principal (P10 — commission is
+    charged via the deposit invoice in ``create_deal_with_topup`` and
+    is not added to ``UserBalance.locked`` on this legacy
+    balance-only path). Without the ``FOR UPDATE`` lock on ``_debit``
+    both pass the balance check; with the lock one returns 400
+    ("Недостаточно средств").
     """
     from backend.app.db import async_session
     from backend.app.models import Currency, UserBalance
@@ -132,7 +135,6 @@ async def test_concurrent_deal_creation_cannot_overdraw(client):
         "role": "buyer",
         "amount": 70.0,
         "description": "race test",
-        "pay_comission": "buyer",
         "currency_code": "USDT",
     }
 
@@ -154,11 +156,12 @@ async def test_concurrent_deal_creation_cannot_overdraw(client):
                 )
             )
         ).scalar_one()
-        # Only one deal got debited: 100 − 73.5 = 26.5 spendable,
-        # 73.5 locked. The balance must never go negative.
+        # Only one deal got debited: 100 − 70 = 30 spendable,
+        # 70 locked (principal only — see docstring). The balance
+        # must never go negative.
         assert float(bal.amount) >= 0
-        assert float(bal.amount) == pytest.approx(26.5)
-        assert float(bal.locked) == pytest.approx(73.5)
+        assert float(bal.amount) == pytest.approx(30.0)
+        assert float(bal.locked) == pytest.approx(70.0)
 
 
 # ── V5-B-1 / V5-B-2: parallel-webhook double-credit ────────────────────

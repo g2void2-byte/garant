@@ -50,6 +50,7 @@ _EDITABLE_FIELDS: frozenset[str] = frozenset(
         "maintenance_enabled",
         "maintenance_message",
         "auto_withdraw_enabled",
+        "pending_topup_expiry_hours",
     }
 )
 
@@ -74,6 +75,7 @@ def _to_out(row: AppSettings) -> AdminSettingsOut:
         maintenance_enabled=bool(row.maintenance_enabled),
         maintenance_message=row.maintenance_message,
         auto_withdraw_enabled=bool(row.auto_withdraw_enabled),
+        pending_topup_expiry_hours=int(row.pending_topup_expiry_hours or 24),
     )
 
 

@@ -784,6 +784,54 @@ async def sweep_pending_topup(session: AsyncSession) -> int:
     return len(rows)
 
 
+async def cancel_pending_topup(session: AsyncSession, deal: Deal, user: User) -> Deal:
+    """P10 — buyer-side cancel for a deal still in ``pending_topup``.
+
+    Mirrors :func:`sweep_pending_topup` but acts on a single deal
+    surfaced through the buyer-initiated cancel button on the deal
+    detail page. Only the buyer can call this; the deal must still
+    be in ``pending_topup`` (no half-paid in-flight states). Linked
+    deposit row is flipped to ``expired`` so the upstream invoice
+    stops surfacing in the wallet pending list; nothing is refunded
+    from ``UserBalance`` because nothing was ever locked.
+    """
+    if user.id != deal.buyer_id:
+        raise ValueError("Отменить ожидающую оплату сделку может только покупатель")
+    if deal.status != DealStatus.pending_topup:
+        raise ValueError("Сделку нельзя отменить в текущем статусе")
+
+    if deal.topup_deposit_id is not None:
+        deposit = (
+            await session.execute(
+                select(WalletDeposit)
+                .where(WalletDeposit.id == deal.topup_deposit_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if deposit is not None and deposit.status == WalletDepositStatus.pending:
+            deposit.status = WalletDepositStatus.expired
+
+    deal.status = DealStatus.cancelled
+    deal.completed_at = utcnow()
+
+    pending: list[tuple[Notification, dict[str, Any] | None]] = []
+    notif, ws_payload = await notifier.insert(
+        session,
+        deal.seller_id,
+        NotificationType.deals,
+        "Сделка отменена покупателем",
+        f"Сделка #{deal.id} отменена — оплата не поступила.",
+        {"deal_id": deal.id},
+    )
+    pending.append((notif, ws_payload))
+    await session.commit()
+    await _safe_dispatch(session, pending)
+    await notifier.publish_deal_update(
+        deal.id, [deal.buyer_id, deal.seller_id], status=deal.status.value
+    )
+    return deal
+
+
 async def accept_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
     if user.id != deal.seller_id:
         raise ValueError("Принять сделку может только продавец")
