@@ -144,6 +144,9 @@ services:
       WEBAPP_PORT: "8080"
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
       RUN_BOT: ${RUN_BOT:-0}
+      # Crystalpay v3 credentials. Empty = provider disabled (safe default).
+      CRYSTALPAY_LOGIN: ${CRYSTALPAY_LOGIN:-}
+      CRYSTALPAY_SECRET: ${CRYSTALPAY_SECRET:-}
       # V12-H2 — fail closed: require a signed Telegram initData by
       # default. Pre-fix the compose default was ``1`` which silently
       # accepted any forged payload as soon as a developer ran
