@@ -989,6 +989,48 @@ async def delete_deal(
         snapshot["refunded"] = str(refunded)
 
     # Clean up dependent rows: messages reference the deal via FK.
+    # Gather media files attached to messages to clean them up from DB and disk
+    messages = (
+        await session.execute(
+            select(DealMessage.attachments_json).where(DealMessage.deal_id == deal.id)
+        )
+    ).scalars().all()
+
+    all_media_ids: set[int] = set()
+    from ..deal_messages import _parse_attachment_ids
+    for attachments_json in messages:
+        all_media_ids.update(_parse_attachment_ids(attachments_json))
+
+    if all_media_ids:
+        media_rows = (
+            await session.execute(
+                select(Media).where(Media.id.in_(all_media_ids))
+            )
+        ).scalars().all()
+
+        import asyncio
+        from pathlib import Path
+
+        from ...config import settings
+
+        media_root = Path(settings.media_root).expanduser().resolve()
+        paths_to_delete = []
+        for m in media_rows:
+            filename = m.url.split("/")[-1]
+            file_path = media_root / m.kind / filename
+            paths_to_delete.append(file_path)
+
+        await session.execute(Media.__table__.delete().where(Media.id.in_(all_media_ids)))
+
+        def delete_files(paths):
+            for p in paths:
+                try:
+                    p.unlink(missing_ok=True)
+                except Exception:
+                    logger.exception("Failed to delete orphaned media file: %s", p)
+
+        await asyncio.to_thread(delete_files, paths_to_delete)
+
     await session.execute(DealMessage.__table__.delete().where(DealMessage.deal_id == deal.id))
 
     buyer_id = deal.buyer_id
