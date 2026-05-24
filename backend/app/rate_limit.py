@@ -290,10 +290,13 @@ RLMarkAllRead = Annotated[None, Depends(rate_limit("mark-all-read", limit=10, wi
 # balance. Pre-throttle a logged-in client could spin the endpoint at
 # arbitrary rate per deposit_id — wasting our CryptoBot quota and
 # producing constant lock-contention with the canonical webhook
-# path. 2/30s per user is generous enough for the DepositPage's
-# refresh-on-mount + a single user-initiated refresh, while pinning
-# the upstream API rate to ≤4/min/user even under attack.
-RLWalletPoll = Annotated[None, Depends(rate_limit("wallet-poll", limit=2, window=30))]
+# path. The real-time ``DepositStatusModal`` background-polls every
+# ~5 s while the invoice is still ``pending`` (and a user can hit
+# "Проверить" once on top of that), so 20/60s gives a comfortable
+# margin for the open-modal case (~12 auto-polls/min + a few manual
+# refreshes) while still pinning the upstream API rate well below
+# any provider quota.
+RLWalletPoll = Annotated[None, Depends(rate_limit("wallet-poll", limit=20, window=60))]
 
 # V11-H-4 — ``POST /api/wallet/deposits`` is the *creation* side of
 # the same CryptoBot integration. Unlike withdrawals it isn't

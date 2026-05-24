@@ -433,6 +433,18 @@ async def _create_crystalpay_deposit(
     else:
         lifetime_minutes = max(1, (expiry_seconds + 59) // 60)
 
+    # V14-D-1 — wire Crystalpay's webhook back to our own
+    # ``/api/payments/webhook/crystalpay`` endpoint so a paid invoice
+    # is credited in near real time instead of relying on the
+    # ``poll_deposit_status`` fallback (which only fires when the
+    # user re-opens the deposit detail page). Only sent when the
+    # configured ``WEBAPP_URL`` is HTTPS — Crystalpay refuses to fire
+    # callbacks at non-public hosts and we'd otherwise leak the
+    # localhost URL into the invoice metadata.
+    base = settings.webapp_url.rstrip("/")
+    callback_url: str | None = None
+    if base.lower().startswith("https://"):
+        callback_url = base + "/api/payments/webhook/crystalpay"
     try:
         async with Crystalpay(settings.crystalpay_login, settings.crystalpay_secret) as cp:
             # Audit (continuation) L-6 — pre-fix the Crystalpay
@@ -453,6 +465,7 @@ async def _create_crystalpay_deposit(
                 lifetime=lifetime_minutes,
                 description="Garant wallet top-up",
                 extra=f"user:{user.id}",
+                callback_url=callback_url,
             )
     except CrystalpayError as e:
         logger.error(

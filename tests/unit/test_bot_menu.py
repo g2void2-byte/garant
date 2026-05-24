@@ -206,16 +206,19 @@ def test_search_keyboard_falls_back_to_callback_when_webapp_not_https(
     assert all(len(b.callback_data.encode("utf-8")) <= 64 for b in flat)
 
 
-def test_help_keyboard_falls_back_to_open_app_when_unconfigured(
+def test_help_keyboard_surfaces_in_app_faq_button(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    # In tests no BOT_* URL env vars are set — config defaults are empty,
-    # so the keyboard should still surface at least one usable button.
+    # V14 — the help keyboard always shows a Mini App FAQ button as
+    # its first row; external admin / community chat links were
+    # removed. The remaining optional URL rows (docs / arbitration)
+    # depend on operator-supplied env vars which are empty in tests.
     monkeypatch.setattr(settings, "webapp_url", "https://example.com/app")
     kb = keyboards.help_keyboard()
     flat = [b for row in kb.inline_keyboard for b in row]
     assert len(flat) == 1
     assert flat[0].web_app is not None
+    assert flat[0].web_app.url.endswith("/support")
 
 
 def test_webapp_url_is_https_detects_protocol(monkeypatch: pytest.MonkeyPatch):

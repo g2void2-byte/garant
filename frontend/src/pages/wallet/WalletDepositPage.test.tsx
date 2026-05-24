@@ -31,6 +31,16 @@ vi.mock("@/api/hooks", () => ({
   }),
   useWalletBalances: () => ({ data: mockState.balances }),
   useCreateWalletDeposit: () => mockState.createMutation,
+  // ``DepositStatusModal`` polls the live deposit row via
+  // ``useWalletDeposit``; the wallet page test only cares that the
+  // modal opens with the freshly-created deposit data, so stub the
+  // hook to a no-op in idle state and let the component fall back to
+  // the ``initial`` deposit it was handed.
+  useWalletDeposit: () => ({
+    data: undefined,
+    isLoading: false,
+    refetch: vi.fn().mockResolvedValue({ data: undefined }),
+  }),
 }));
 
 const hapticSpy = vi.hoisted(() => vi.fn());
@@ -162,11 +172,12 @@ describe("<WalletDepositPage />", () => {
     expect(hapticSpy).toHaveBeenCalledWith("error");
   });
 
-  it("happy path: creates the deposit + opens the CryptoBot invoice URL", async () => {
+  it("happy path: opens the realtime-status modal + auto-opens the CryptoBot invoice URL", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     mockState.createMutation.mutateAsync.mockResolvedValue(
       makeDeposit({ pay_url: "https://t.me/CryptoBot?start=ok", amount: 10 }),
     );
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderPage();
     const amount = screen.getByDisplayValue("5") as HTMLInputElement;
     fireEvent.change(amount, { target: { value: "10" } });
@@ -179,13 +190,21 @@ describe("<WalletDepositPage />", () => {
         provider: "cryptobot",
       });
     });
+    // Modal mounts immediately on success and surfaces realtime state.
+    await waitFor(() => {
+      expect(screen.getByTestId("deposit-status-modal")).toBeInTheDocument();
+    });
+    // The upstream invoice opens shortly after the modal animates in.
+    vi.advanceTimersByTime(1100);
     expect(openTelegramLinkSpy).toHaveBeenCalledWith(
       "https://t.me/CryptoBot?start=ok",
     );
     expect(hapticSpy).toHaveBeenCalledWith("success");
+    vi.useRealTimers();
   });
 
-  it("submits provider='crystalpay' when the Crystalpay tile is selected", async () => {
+  it("submits provider='crystalpay' and surfaces the Crystalpay invoice via openExternalLink", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     mockState.createMutation.mutateAsync.mockResolvedValue(
       makeDeposit({
         pay_url: "https://pay.crystalpay.io/cp-1",
@@ -193,7 +212,7 @@ describe("<WalletDepositPage />", () => {
         provider: "crystalpay",
       }),
     );
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderPage();
     await user.click(screen.getByTestId("provider-crystalpay"));
     const amount = screen.getByDisplayValue("5") as HTMLInputElement;
@@ -207,10 +226,15 @@ describe("<WalletDepositPage />", () => {
         provider: "crystalpay",
       });
     });
+    await waitFor(() => {
+      expect(screen.getByTestId("deposit-status-modal")).toBeInTheDocument();
+    });
+    vi.advanceTimersByTime(1100);
     expect(openExternalLinkSpy).toHaveBeenCalledWith(
       "https://pay.crystalpay.io/cp-1",
     );
     expect(openTelegramLinkSpy).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it("error path: surfaces server error via haptic('error')", async () => {
