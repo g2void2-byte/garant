@@ -410,7 +410,7 @@ async def debate_endpoint(
 async def resolve_endpoint(
     deal_id: int,
     body: DealResolveRequest,
-    user: PinUser,
+    user: CurrentUser,
     session: SessionDep,
 ):
     if not (user.is_admin or user.is_arbiter):

@@ -14,6 +14,7 @@ import hashlib
 import io
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from sqlalchemy import select
 
@@ -32,8 +33,11 @@ from backend.app.models import (
     WalletDepositStatus,
 )
 from backend.app.services_deals import complete_deal_topup_payment
+import backend.app.services_wallet as services_wallet
+
 from tests.helpers import (
     auth_headers,
+    credit_balance,
     get_user_id_by_tg,
     setup_pin,
     signed_init_data,
@@ -161,6 +165,11 @@ async def test_admin_delete_deal_cleans_media_files(client):
     buyer_pin = await setup_pin(client, buyer_init)
     await setup_pin(client, seller_init)
 
+    # Fund buyer's balance so deal creation doesn't fail with insufficient_funds
+    async with async_session() as session:
+        buyer_id = await get_user_id_by_tg(session, 6031)
+        await credit_balance(session, buyer_id, "USDT", 200.0)
+
     create = await client.post(
         "/api/deals",
         json={
@@ -233,22 +242,45 @@ async def test_late_payment_credits_buyer_balance_instead_of_deal_resurrection(c
     buyer_pin = await setup_pin(client, buyer_init)
     await setup_pin(client, seller_init)
 
-    # 1. Create a deal with topup
-    resp = await client.post(
-        "/api/deals/with-topup",
-        json={
-            "counterparty": "seller_late",
-            "role": "buyer",
-            "amount": 100,
-            "description": "late payment test",
-            "currency_code": "USDT",
-        },
-        headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
-    )
-    assert resp.status_code == 201, resp.text
-    body = resp.json()
-    deal_id = body["deal"]["id"]
-    deposit_id = body["deal"]["topup_deposit_id"]
+    # Stub CryptoPay so create_deal_with_topup doesn't hit real API
+    _counter = [0]
+
+    async def _fake_create_invoice(**_kwargs):
+        _counter[0] += 1
+        inv = MagicMock()
+        inv.invoice_id = _counter[0]
+        inv.pay_url = f"https://pay.crypt.bot/$cb-{_counter[0]}"
+        inv.bot_invoice_url = inv.pay_url
+        inv.mini_app_invoice_url = ""
+        inv.web_app_invoice_url = ""
+        return inv
+
+    fake_cp = MagicMock()
+    fake_cp.__aenter__ = AsyncMock(return_value=fake_cp)
+    fake_cp.__aexit__ = AsyncMock(return_value=None)
+    fake_cp.create_invoice = _fake_create_invoice
+
+    fake_cp_class = MagicMock(return_value=fake_cp)
+
+    with patch.object(services_wallet, "CryptoPay", fake_cp_class), \
+         patch.object(services_wallet, "is_cryptopay_configured", return_value=True):
+
+        # 1. Create a deal with topup
+        resp = await client.post(
+            "/api/deals/with-topup",
+            json={
+                "counterparty": "seller_late",
+                "role": "buyer",
+                "amount": 100,
+                "description": "late payment test",
+                "currency_code": "USDT",
+            },
+            headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        deal_id = body["deal"]["id"]
+        deposit_id = body["deal"]["topup_deposit_id"]
 
     # 2. Simulate that the deal is completed (or cancelled)
     async with async_session() as session:
