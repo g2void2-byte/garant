@@ -108,4 +108,5 @@ async def create_review(body: ReviewCreate, author: CurrentUser, session: Sessio
             },
         )
         raise HTTPException(400, str(e))  # noqa: B904
+    await session.commit()
     return _review_out(review)

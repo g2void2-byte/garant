@@ -14405,22 +14405,6 @@
           },
           {
             "in": "header",
-            "name": "X-Pin-Token",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Pin-Token"
-            }
-          },
-          {
-            "in": "header",
             "name": "authorization",
             "required": false,
             "schema": {

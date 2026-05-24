@@ -221,7 +221,7 @@ def verify_webhook_signature(invoice_id: str, salt: str | None, signature: str |
     expected = hashlib.sha1(  # noqa: S324  # nosec B324
         f"{invoice_id}:{salt}".encode()
     ).hexdigest()
-    return hmac.compare_digest(expected, signature)
+    return hmac.compare_digest(expected, signature.lower())
 
 
 __all__ = [

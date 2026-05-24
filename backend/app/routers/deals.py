@@ -410,12 +410,16 @@ async def debate_endpoint(
 async def resolve_endpoint(
     deal_id: int,
     body: DealResolveRequest,
-    user: PinUser,
+    user: CurrentUser,
     session: SessionDep,
 ):
+    if not (user.is_admin or user.is_arbiter):
+        raise HTTPException(403, "Доступ запрещён")
     deal = await _get_locked(session, deal_id)
     try:
         deal = await resolve_arbitration(session, deal, user, body.winner, body.note)
     except ValueError as e:
+        if "Только администратор или арбитр" in str(e):
+            raise HTTPException(403, str(e)) from e
         raise HTTPException(400, str(e)) from e
     return _deal_out(deal, user.id)

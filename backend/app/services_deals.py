@@ -663,6 +663,34 @@ async def complete_deal_topup_payment(
 
     paid = Decimal(str(paid_amount)) if paid_amount is not None else Decimal(str(deposit.amount))
     paid = quantize_money(paid, currency.decimals)
+
+    if deal.status != DealStatus.pending_topup:
+        bal = await lock_user_balance(session, deal.buyer_id, currency.id)
+        bal.amount = Decimal(str(bal.amount)) + paid
+        deposit.status = WalletDepositStatus.paid
+        deposit.paid_at = utcnow()
+        deposit.paid_amount = paid
+        notif, ws_payload = await notifier.insert(
+            session,
+            deal.buyer_id,
+            NotificationType.deposits,
+            "Позднее зачисление",
+            f"Поступила оплата {paid} {currency.code} по закрытой сделке #{deal.id}. "
+            "Средства зачислены на баланс.",
+            {"deposit_id": deposit.id, "currency": currency.code, "deal_id": deal.id},
+        )
+        await session.commit()
+        try:
+            await notifier.dispatch_after_commit(session, notif, ws_payload)
+        except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+            logger.exception(
+                "complete_deal_topup_payment: late-payment post-commit dispatch "
+                "failed for notif id=%s",
+                notif.id,
+                extra={"event": "deal_topup.late_payment.dispatch.failed", "notif_id": notif.id},
+            )
+        return deposit
+
     amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
     commission = quantize_money(Decimal(str(deal.commission_amount or 0)), currency.decimals)
 
