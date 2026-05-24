@@ -32,6 +32,7 @@ vi.mock("@/api/hooks", () => ({
 }));
 
 vi.mock("@/lib/tg", () => ({
+  useTelegramViewport: () => null,
   openTelegramLink: vi.fn(),
   showBackButton: () => () => {},
   haptic: vi.fn(),

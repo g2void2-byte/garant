@@ -52,6 +52,7 @@ vi.mock("@/api/hooks", () => ({
 const hapticSpy = vi.hoisted(() => vi.fn());
 const openTelegramSpy = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/tg", () => ({
+  useTelegramViewport: () => null,
   haptic: hapticSpy,
   openTelegramLink: openTelegramSpy,
   showBackButton: () => () => {},

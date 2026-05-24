@@ -170,22 +170,32 @@ function AdjustForm({
     <div className="space-y-3">
       <div>
         <label className="block text-xs text-text-muted mb-1">Валюта</label>
-        <div className="flex flex-wrap gap-1.5">
-          {allCurrencies.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setCurrency(c.code)}
-              className={`rounded-button px-3 py-1.5 text-sm transition ${
-                c.code === currency
-                  ? "bg-accent text-accent-fg font-medium"
-                  : "bg-panel-2 text-text-muted"
-              }`}
-            >
-              {c.code}
-            </button>
-          ))}
-        </div>
+        {allCurrencies.length === 0 ? (
+          // V13.2 — without currencies the form has no submit path
+          // (the ``currency`` field is required server-side). Show
+          // an explicit message rather than a row of empty pill
+          // buttons that look like a broken Sheet.
+          <div className="rounded-card border border-border bg-panel-2 px-3 py-2 text-xs text-text-muted">
+            Валюты не загружены. Обновите страницу или проверьте раздел «Валюты».
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {allCurrencies.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setCurrency(c.code)}
+                className={`rounded-button px-3 py-1.5 text-sm transition ${
+                  c.code === currency
+                    ? "bg-accent text-accent-fg font-medium"
+                    : "bg-panel-2 text-text-muted"
+                }`}
+              >
+                {c.code}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <div>
         <label className="block text-xs text-text-muted mb-1">

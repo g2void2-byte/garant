@@ -20,6 +20,7 @@ vi.mock("@/api/hooks", () => ({
 }));
 
 vi.mock("@/lib/tg", () => ({
+  useTelegramViewport: () => null,
   openTelegramLink: vi.fn(),
   openExternalLink: vi.fn(),
   showBackButton: () => () => {},
