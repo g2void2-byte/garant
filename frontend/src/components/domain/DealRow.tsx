@@ -1,29 +1,67 @@
-import { motion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { DealDto } from "@/api/types";
-import { formatMoney, relativeTime } from "@/lib/format";
+import { Avatar } from "@/components/ui/Avatar";
+import { formatAmount, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { staggerDelay } from "@/lib/animate";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string; icon: string }> = {
-  WAIT_CONFIRM: { text: "Ожидает подтверждения", cls: "bg-[#48390F] text-accent", icon: "⏳" },
-  CONFIRMED: { text: "Подтверждена", cls: "bg-success/15 text-success", icon: "✅" },
-  SUCCESS: { text: "Успех", cls: "bg-success/15 text-success", icon: "🎉" },
-  FAILED: { text: "Отменена", cls: "bg-danger/15 text-danger", icon: "❌" },
-  ARBITRAGE: { text: "Арбитраж", cls: "bg-accent/15 text-accent", icon: "⚖️" },
-  WAIT_FINAL_CONFIRM: { text: "Финальное подтверждение", cls: "bg-accent/15 text-accent", icon: "⏳" },
+  pending_confirmation: {
+    text: "Ожидает подтверждения",
+    cls: "bg-[#48390F] text-accent",
+    icon: "⏳",
+  },
+  pending_payment: { text: "Ожидает оплаты", cls: "bg-[#48390F] text-accent", icon: "💳" },
+  pending_topup: { text: "Ожидает инвойс", cls: "bg-[#48390F] text-accent", icon: "💳" },
+  in_progress: { text: "В работе", cls: "bg-success/15 text-success", icon: "▶️" },
+  completed: { text: "Завершена", cls: "bg-success/15 text-success", icon: "🎉" },
+  cancelled: { text: "Отменена", cls: "bg-danger/15 text-danger", icon: "❌" },
+  cancelled_for_inactivity: {
+    text: "Отмена за неактивность",
+    cls: "bg-danger/15 text-danger",
+    icon: "⏱️",
+  },
+  arbitration: { text: "Арбитраж", cls: "bg-accent/15 text-accent", icon: "⚖️" },
+  resolved_for_buyer: {
+    text: "В пользу покупателя",
+    cls: "bg-success/15 text-success",
+    icon: "🛒",
+  },
+  resolved_for_seller: {
+    text: "В пользу продавца",
+    cls: "bg-success/15 text-success",
+    icon: "🏷️",
+  },
+  pending_cancellation: {
+    text: "Запрошена отмена",
+    cls: "bg-accent/15 text-accent",
+    icon: "⏸️",
+  },
 };
 
 export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) {
   const status = STATUS_LABEL[deal.status] ?? { text: deal.status, cls: "bg-panel-2 text-text-muted", icon: "•" };
+  // Item 21 — show the counterparty (i.e. the other side of the deal)
+  // avatar + a "Профиль" deep-link. The seller's row in the buyer's
+  // list and vice-versa.
+  const counterpartyUsername = deal.role === "buyer" ? deal.seller : deal.buyer;
+  const counterpartyPhotoUrl =
+    deal.role === "buyer" ? deal.seller_photo_url : deal.buyer_photo_url;
+  const counterpartyLabel = deal.role === "buyer" ? "Продавец" : "Покупатель";
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.025, 0.25), duration: 0.2 }}
+    <div
+      className="animate-fadein"
+      style={staggerDelay(index, 25, 250)}
     >
       <Link to={`/deals/${deal.id}`} className="block bg-panel border border-border rounded-card p-3 active:scale-[.99] transition-transform">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <Avatar
+            name={counterpartyUsername}
+            src={counterpartyPhotoUrl}
+            size={40}
+            className="mt-0.5"
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold", status.cls)}>
@@ -34,7 +72,7 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
             </div>
             <div className="mt-2 font-semibold line-clamp-1">{deal.description}</div>
             <div className="mt-1 flex items-center gap-2 text-xs text-text-muted">
-              <span>{deal.role === "buyer" ? `Продавец: @${deal.seller}` : `Покупатель: @${deal.buyer}`}</span>
+              <span className="truncate">{counterpartyLabel}: @{counterpartyUsername}</span>
               {deal.created_at && (
                 <>
                   <span>·</span>
@@ -42,15 +80,31 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
                 </>
               )}
             </div>
+            {counterpartyUsername && (
+              <div className="mt-2">
+                <Link
+                  to={`/users/${counterpartyUsername}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-button bg-panel-2 border border-border text-[11px] text-text hover:bg-secondary active:scale-95 transition"
+                >
+                  Профиль
+                </Link>
+              </div>
+            )}
           </div>
           <div className="text-right shrink-0">
-            <div className="text-accent font-bold">{formatMoney(deal.sum)}</div>
+            <div className="text-accent font-bold">
+              {formatAmount(deal.amount, deal.currency_code ?? "USDT")}{" "}
+              <span className="text-text-muted text-xs font-normal">
+                {deal.currency_code ?? ""}
+              </span>
+            </div>
             <div className="mt-1 inline-flex items-center text-text-muted text-xs">
               {deal.role === "buyer" ? "Покупка" : "Продажа"} <ChevronRight className="size-3" />
             </div>
           </div>
         </div>
       </Link>
-    </motion.div>
+    </div>
   );
 }

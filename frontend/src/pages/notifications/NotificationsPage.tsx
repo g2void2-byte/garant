@@ -6,27 +6,40 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { NotificationRow } from "@/components/domain/NotificationRow";
 import { Button } from "@/components/ui/Button";
+import { Switch } from "@/components/ui/Switch";
 import {
   useMarkAllRead,
   useMarkNotificationRead,
+  useMe,
   useNotificationCounters,
   useNotifications,
+  useUpdateMe,
 } from "@/api/hooks";
 import { dayKey } from "@/lib/format";
+import { haptic } from "@/lib/tg";
 
-const TABS: { value: "all" | "deals" | "deposits" | "system"; label: string }[] = [
+type CounterTab = "all" | "deals" | "deposits" | "system";
+
+const TABS: { value: CounterTab; label: string }[] = [
   { value: "all", label: "Все" },
   { value: "deals", label: "Сделки" },
   { value: "deposits", label: "Депозиты" },
-  { value: "system", label: "Система" },
+  { value: "system", label: "Системные" },
 ];
 
 export default function NotificationsPage() {
-  const [tab, setTab] = useState<"all" | "deals" | "deposits" | "system">("all");
+  const [tab, setTab] = useState<CounterTab>("all");
   const { data: counters } = useNotificationCounters();
   const { data, isLoading } = useNotifications(tab === "all" ? undefined : tab);
+  const { data: me } = useMe();
+  const updateMe = useUpdateMe();
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllRead();
+
+  const toggleDm = (key: "dm_deals" | "dm_deposits" | "dm_system", value: boolean) => {
+    haptic("light");
+    updateMe.mutate({ [key]: value });
+  };
 
   const grouped = useMemo(() => {
     const map = new Map<string, typeof data>();
@@ -43,7 +56,7 @@ export default function NotificationsPage() {
     <Page>
       <Header
         title="Оповещения"
-        subtitle={counters ? `${counters.unread} непрочитанных` : undefined}
+        subtitle={counters && counters.unread > 0 ? `${counters.unread} непрочитанных` : undefined}
         right={
           counters && counters.unread > 0 ? (
             <Button size="sm" variant="ghost" onClick={() => markAll.mutate()}>
@@ -53,15 +66,41 @@ export default function NotificationsPage() {
         }
       />
       <div className="px-4 space-y-3">
+        {me && (
+          <details className="bg-panel border border-border rounded-card">
+            <summary className="cursor-pointer px-3 py-2 text-sm font-medium select-none">
+              Присылать в Telegram
+            </summary>
+            <div className="px-3 pb-3 space-y-3">
+              <Switch
+                checked={me.dm_deals !== false}
+                onChange={(v) => toggleDm("dm_deals", v)}
+                label="Сделки"
+                description="События ваших сделок (создание, принятие, арбитраж)"
+              />
+              <Switch
+                checked={me.dm_deposits !== false}
+                onChange={(v) => toggleDm("dm_deposits", v)}
+                label="Депозиты"
+                description="Пополнения и выводы"
+              />
+              <Switch
+                checked={me.dm_system !== false}
+                onChange={(v) => toggleDm("dm_system", v)}
+                label="Системные"
+                description="Отзывы, объявления, безопасность"
+              />
+            </div>
+          </details>
+        )}
         <ToggleTabs
           value={tab}
           options={TABS.map((t) => ({
             value: t.value,
             label: t.label,
-            count: counters ? (counters as any)[t.value] : undefined,
+            count: counters ? counters[t.value] : undefined,
           }))}
           onChange={setTab}
-          layoutId="notif-tabs"
         />
 
         {isLoading ? (
@@ -71,7 +110,7 @@ export default function NotificationsPage() {
             ))}
           </div>
         ) : !data || data.length === 0 ? (
-          <EmptyState title="Пока тихо" description="Сюда придут уведомления по сделкам и депозитам" />
+          <EmptyState title="Уведомлений нет" description="Уведомления будут появляться здесь" />
         ) : (
           <div className="space-y-4">
             {grouped.map(([day, items]) => (

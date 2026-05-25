@@ -1,114 +1,120 @@
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
-import { Plus, Wallet, Settings as SettingsIcon, Star, Link2 } from "lucide-react";
+import {
+  Pause,
+  Play,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  Wallet,
+  Settings as SettingsIcon,
+  Star,
+  Link2,
+} from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Button } from "@/components/ui/Button";
 import { ToggleTabs } from "@/components/ui/ToggleTabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { Sheet } from "@/components/ui/Sheet";
-import { Input } from "@/components/ui/Input";
-import { Textarea } from "@/components/ui/Textarea";
 import { ProfileHeader } from "@/components/domain/ProfileHeader";
 import { ProfileStatsGrid } from "@/components/domain/ProfileStatsGrid";
+import { ProfileForumsCard } from "@/components/domain/ProfileForumsCard";
+import { ProfileFiatBalanceCard } from "@/components/domain/ProfileFiatBalanceCard";
 import { ServiceCard } from "@/components/domain/ServiceCard";
 import {
-  useCreateDepositInvoice,
+  useDeleteService,
   useMe,
   useReviews,
   useServices,
-  useUpdateMe,
+  useUpdateService,
 } from "@/api/hooks";
-import { haptic, openTelegramLink } from "@/lib/tg";
-import { formatMoney, relativeTime } from "@/lib/format";
+import { haptic } from "@/lib/tg";
+import { confirmDialog } from "@/lib/dialog";
+import { parseDecimal, relativeTime } from "@/lib/format";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { data: me, isLoading } = useMe();
   const [tab, setTab] = useState<"services" | "reviews">("services");
-  const { data: services } = useServices({ owner: me?.username });
+  // Audit (continuation) L-2 — gate the services query on having a
+  // resolved ``owner`` so the first render (while ``useMe`` is still
+  // loading) doesn't issue a list-all request and pollute the
+  // TanStack Query cache with someone else's data. ``useReviews``
+  // already does this via its own ``enabled`` guard.
+  const { data: services } = useServices(
+    { owner: me?.username },
+    { enabled: !!me?.username },
+  );
   const { data: reviews } = useReviews(me?.username);
 
-  const [depositOpen, setDepositOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [forumsOpen, setForumsOpen] = useState(false);
-
-  const updateMe = useUpdateMe();
-  const createInvoice = useCreateDepositInvoice();
-
-  const [depositAmount, setDepositAmount] = useState("50");
-  const [description, setDescription] = useState("");
-  const [forumName, setForumName] = useState("");
-  const [forumUrl, setForumUrl] = useState("");
+  const updateService = useUpdateService();
+  const deleteService = useDeleteService();
 
   if (isLoading || !me) {
     return (
       <Page>
         <div className="px-4 space-y-3 pt-3">
-          <Skeleton className="h-44" />
+          <Skeleton className="h-64" />
           <Skeleton className="h-32" />
         </div>
       </Page>
     );
   }
 
-  const handleDeposit = async () => {
-    const amount = parseFloat(depositAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      haptic("error");
-      return;
-    }
-    try {
-      const invoice = await createInvoice.mutateAsync(amount);
-      haptic("success");
-      if (invoice.pay_url) openTelegramLink(invoice.pay_url);
-      setDepositOpen(false);
-    } catch {
-      haptic("error");
-    }
-  };
-
-  const saveDescription = async () => {
-    await updateMe.mutateAsync({ description });
-    haptic("success");
-    setSettingsOpen(false);
-  };
-
-  const addForum = async () => {
-    const forums = [...(me.forums || [])];
-    forums.push({ name: forumName, url: forumUrl });
-    await updateMe.mutateAsync({ forums });
-    setForumName("");
-    setForumUrl("");
-    haptic("success");
-  };
-
   return (
     <Page>
       <ProfileHeader user={me} />
 
       <div className="px-4 mt-3 space-y-3">
+        {/* Балансовая карточка теперь первой под шапкой — пользователь
+            видит текущий баланс выбранной фиатной валюты сразу, без
+            прокрутки, и оттуда же попадает в Пополнить / Вывести.
+            Соответственно дубликат «Вывести» из верхней сетки удалён —
+            единственная точка входа в withdraw теперь живёт здесь
+            (как и до Item-23). */}
+        <ProfileFiatBalanceCard user={me} />
+
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="primary" onClick={() => navigate("/profile/services/new")}>
-            <Plus className="size-4" /> Услуга
+          <Button variant="primary" onClick={() => navigate("/profile/add-service")}>
+            <Plus className="size-4" /> Добавить услугу
           </Button>
-          <Button variant="secondary" onClick={() => navigate("/profile/deposit")}>
+          <Button variant="primary" onClick={() => navigate("/wallet")}>
             <Wallet className="size-4" /> Депозит
           </Button>
-          <Button variant="secondary" onClick={() => setSettingsOpen(true)}>
+          <Button
+            variant="secondary"
+            onClick={() => navigate("/profile/settings")}
+          >
             <SettingsIcon className="size-4" /> Настройки
           </Button>
-          <Button variant="ghost" onClick={() => setForumsOpen(true)}>
-            <Link2 className="size-4" /> Форумы
+          <Button
+            variant="secondary"
+            onClick={() => navigate("/profile/add-forum")}
+          >
+            <Link2 className="size-4" /> Добавить форумы
           </Button>
+          {me.is_admin ? (
+            <Button
+              variant="primary"
+              onClick={() => navigate("/admin")}
+              className="col-span-2"
+            >
+              <ShieldCheck className="size-4" /> Админ-панель
+            </Button>
+          ) : me.is_arbiter ? (
+            <Button
+              variant="primary"
+              onClick={() => navigate("/admin/arbitration")}
+              className="col-span-2"
+            >
+              <ShieldCheck className="size-4" /> Очередь арбитража
+            </Button>
+          ) : null}
         </div>
 
-        <ProfileStatsGrid user={me} onDepositClick={() => setDepositOpen(true)} />
+        <ProfileStatsGrid user={me} onDepositClick={() => navigate("/wallet/trust-deposit")} />
 
-        <div className="bg-panel border border-border rounded-card p-3 text-sm">
-          <div className="text-text-muted">Баланс</div>
-          <div className="mt-1 text-2xl font-bold text-accent">{formatMoney(me.balance)}</div>
-        </div>
+        <ProfileForumsCard user={me} />
 
         <ToggleTabs
           value={tab}
@@ -117,14 +123,59 @@ export default function ProfilePage() {
             { value: "reviews", label: "Отзывы", count: reviews?.length ?? 0 },
           ]}
           onChange={setTab}
-          layoutId="profile-self-tabs"
         />
 
         {tab === "services" &&
           (!services || services.length === 0 ? (
-            <EmptyState title="Услуги отсутствуют" description="Нажмите «Услуга» чтобы добавить первую" />
+            <EmptyState title="Услуги отсутствуют" description="Нажмите «Добавить услугу», чтобы добавить первую" />
           ) : (
-            services.map((s, i) => <ServiceCard key={s.id} service={s} index={i} />)
+            services.map((s, i) => (
+              <ServiceCard
+                key={s.id}
+                service={s}
+                index={i}
+                rightSlot={
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    {s.status !== "banned" && (
+                      <button
+                        type="button"
+                        className="size-8 grid place-items-center rounded-full bg-panel-2 text-text-muted active:scale-95"
+                        aria-label={s.status === "active" ? "Поставить на паузу" : "Сделать активной"}
+                        onClick={() => {
+                          haptic("light");
+                          updateService.mutate({
+                            id: s.id,
+                            body: { status: s.status === "active" ? "paused" : "active" },
+                          });
+                        }}
+                      >
+                        {s.status === "active" ? (
+                          <Pause className="size-4" />
+                        ) : (
+                          <Play className="size-4" />
+                        )}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="size-8 grid place-items-center rounded-full bg-panel-2 text-danger active:scale-95"
+                      aria-label="Удалить"
+                      onClick={async () => {
+                        // Audit L-15 — ``confirmDialog`` uses Telegram’s
+                        // native ``showConfirm`` when available and falls
+                        // back to ``window.confirm`` outside Telegram.
+                        if (await confirmDialog(`Удалить услугу «${s.title}»?`)) {
+                          haptic("warning");
+                          deleteService.mutate(s.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                }
+              />
+            ))
           ))}
 
         {tab === "reviews" &&
@@ -138,7 +189,14 @@ export default function ProfilePage() {
             reviews.map((r) => (
               <div key={r.id} className="bg-panel border border-border rounded-card p-3">
                 <div className="flex items-center gap-2 text-sm">
-                  <span className="text-accent font-bold">★ {r.rating.toFixed(1)}</span>
+                  {/* Audit (continuation) M-2 — defence-in-depth.
+                      ``r.rating`` is typed as ``number`` in the
+                      OpenAPI client, but it round-trips through
+                      Pydantic's ``Decimal`` serializer and a future
+                      ``json_encoders`` change could surface it as a
+                      JSON string. ``parseDecimal`` accepts both shapes,
+                      so the call below stays runtime-safe regardless. */}
+                  <span className="text-accent font-bold">★ {parseDecimal(r.rating).toFixed(1)}</span>
                   <span className="text-text-muted">от @{r.author_username}</span>
                   <span className="text-text-muted ml-auto">{relativeTime(r.created_at)}</span>
                 </div>
@@ -148,53 +206,6 @@ export default function ProfilePage() {
           ))}
       </div>
 
-      <Sheet open={depositOpen} onClose={() => setDepositOpen(false)} title="Пополнить депозит">
-        <div className="space-y-3">
-          <Input
-            label="Сумма (USDT)"
-            value={depositAmount}
-            onChange={(e) => setDepositAmount(e.target.value)}
-            type="number"
-            min={1}
-          />
-          <Button fullWidth onClick={handleDeposit} disabled={createInvoice.isPending}>
-            {createInvoice.isPending ? "Создаю..." : "Пополнить через CryptoBot"}
-          </Button>
-          <div className="text-xs text-text-muted">
-            Депозит-гарант — это сумма, замороженная на профиле как гарантия добропорядочности.
-          </div>
-        </div>
-      </Sheet>
-
-      <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Настройки">
-        <div className="space-y-3">
-          <Textarea
-            label="Описание профиля"
-            placeholder="Расскажите о себе"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-          <Button fullWidth onClick={saveDescription} disabled={updateMe.isPending}>
-            Сохранить
-          </Button>
-        </div>
-      </Sheet>
-
-      <Sheet open={forumsOpen} onClose={() => setForumsOpen(false)} title="Форумы">
-        <div className="space-y-3">
-          {me.forums?.map((f, i) => (
-            <div key={i} className="bg-panel-2 rounded-2xl p-3 text-sm">
-              <div className="font-semibold">{f.name || "—"}</div>
-              <div className="text-text-muted truncate">{f.url}</div>
-            </div>
-          ))}
-          <Input label="Название" value={forumName} onChange={(e) => setForumName(e.target.value)} />
-          <Input label="Ссылка" value={forumUrl} onChange={(e) => setForumUrl(e.target.value)} />
-          <Button fullWidth onClick={addForum} disabled={!forumName || !forumUrl}>
-            Добавить
-          </Button>
-        </div>
-      </Sheet>
     </Page>
   );
 }

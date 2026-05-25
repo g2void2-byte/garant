@@ -1,8 +1,9 @@
-import { motion, useMotionValue, useTransform } from "framer-motion";
 import { Bell, Briefcase, Wallet, Check } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import type { NotificationDto } from "@/api/types";
 import { cn } from "@/lib/cn";
 import { relativeTime } from "@/lib/format";
+import { staggerDelay, useHorizontalSwipe } from "@/lib/animate";
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   deals: Briefcase,
@@ -17,33 +18,34 @@ interface Props {
 }
 
 export function NotificationRow({ item, index = 0, onRead }: Props) {
-  const x = useMotionValue(0);
-  const bg = useTransform(x, [-80, 0], ["var(--success)", "transparent"]);
+  const navigate = useNavigate();
+  const swipe = useHorizontalSwipe(() => onRead?.(item.id));
   const Icon = ICONS[item.type] ?? Bell;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.02, 0.2), duration: 0.18 }}
-      className="relative overflow-hidden rounded-card"
+    <div
+      className="relative overflow-hidden rounded-card animate-fadein"
+      style={staggerDelay(index, 20, 200)}
     >
-      <motion.div
-        style={{ background: bg }}
-        className="absolute inset-0 flex items-center justify-end pr-4 rounded-card text-accent-fg"
-      >
+      <div className="absolute inset-0 flex items-center justify-end pr-4 rounded-card bg-success text-accent-fg">
         <Check className="size-5" />
-      </motion.div>
-      <motion.div
-        drag={item.is_read ? false : "x"}
-        dragConstraints={{ left: -80, right: 0 }}
-        dragElastic={0.2}
-        onDragEnd={(_, info) => {
-          if (info.offset.x < -50) onRead?.(item.id);
+      </div>
+      <div
+        ref={swipe.elRef}
+        onPointerDown={item.is_read ? undefined : swipe.onPointerDown}
+        onPointerMove={item.is_read ? undefined : swipe.onPointerMove}
+        onPointerUp={item.is_read ? undefined : swipe.onPointerUp}
+        onClick={() => navigate(`/notifications/${item.id}`)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            navigate(`/notifications/${item.id}`);
+          }
         }}
-        style={{ x }}
         className={cn(
-          "relative flex items-start gap-3 p-3 rounded-card border bg-panel",
+          "relative flex items-start gap-3 p-3 rounded-card border bg-panel cursor-pointer touch-none",
           item.is_read ? "border-border" : "border-accent/40",
         )}
       >
@@ -63,7 +65,7 @@ export function NotificationRow({ item, index = 0, onRead }: Props) {
           {item.body && <div className="mt-1 text-sm text-text-muted line-clamp-2">{item.body}</div>}
           <div className="mt-1 text-[11px] text-text-muted">{relativeTime(item.created_at)}</div>
         </div>
-      </motion.div>
-    </motion.div>
+      </div>
+    </div>
   );
 }

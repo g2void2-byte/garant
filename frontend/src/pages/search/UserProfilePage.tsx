@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ProfileHeader } from "@/components/domain/ProfileHeader";
 import { ProfileStatsGrid } from "@/components/domain/ProfileStatsGrid";
+import { ProfileForumsCard } from "@/components/domain/ProfileForumsCard";
 import { ServiceCard } from "@/components/domain/ServiceCard";
 import { useMe, useReviews, useServices, useUser } from "@/api/hooks";
 import { openTelegramLink } from "@/lib/tg";
@@ -57,6 +58,8 @@ export default function UserProfilePage() {
 
         <ProfileStatsGrid user={user} />
 
+        <ProfileForumsCard user={user} />
+
         <ToggleTabs
           value={tab}
           options={[
@@ -64,7 +67,6 @@ export default function UserProfilePage() {
             { value: "reviews", label: "Отзывы", count: reviews?.length ?? 0 },
           ]}
           onChange={setTab}
-          layoutId={`profile-tabs-${username}`}
         />
 
         {tab === "services" && (

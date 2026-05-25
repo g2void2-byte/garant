@@ -1,25 +1,70 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { CheckCircle2, Gavel, X, ThumbsUp, MessageSquare, Star } from "lucide-react";
+import {
+  CheckCircle2,
+  Gavel,
+  X,
+  ThumbsUp,
+  MessageSquare,
+  Star,
+  Undo2,
+  ShieldCheck,
+  ExternalLink,
+} from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Sheet } from "@/components/ui/Sheet";
 import { Textarea } from "@/components/ui/Textarea";
-import { useCreateReview, useDeal, useDealAction, useMe, useReviews } from "@/api/hooks";
-import { formatMoney, relativeTime } from "@/lib/format";
+import { DealChatPanel } from "./DealChatPanel";
+import {
+  useCancelPendingTopup,
+  useCreateReview,
+  useDeal,
+  useDealAction,
+  useMe,
+  useReviews,
+} from "@/api/hooks";
+import { formatAmount, relativeTime } from "@/lib/format";
 import { haptic, openTelegramLink } from "@/lib/tg";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
-  wait_confirm: { text: "Ожидает подтверждения", cls: "text-accent" },
-  confirmed: { text: "Подтверждена", cls: "text-success" },
-  success: { text: "Завершена успешно", cls: "text-success" },
-  failed: { text: "Отменена", cls: "text-danger" },
-  arbitrage: { text: "Арбитраж", cls: "text-accent" },
+  cancelled: { text: "Отменена", cls: "text-danger" },
+  pending_confirmation: { text: "Ожидает подтверждения", cls: "text-accent" },
+  pending_payment: { text: "Ожидает оплаты", cls: "text-accent" },
+  pending_topup: { text: "Ожидает оплаты инвойса", cls: "text-accent" },
+  in_progress: { text: "В работе", cls: "text-success" },
+  completed: { text: "Завершена", cls: "text-success" },
+  arbitration: { text: "В арбитраже", cls: "text-accent" },
+  resolved_for_buyer: { text: "Решено в пользу покупателя", cls: "text-success" },
+  resolved_for_seller: { text: "Решено в пользу продавца", cls: "text-success" },
+  pending_cancellation: { text: "Запрошена отмена", cls: "text-accent" },
+  cancelled_for_inactivity: { text: "Отменена за неактивность", cls: "text-danger" },
 };
+
+type WinnerSide = "buyer" | "seller";
+
+function TopupInvoiceRow({
+  label,
+  value,
+  currency,
+  strong = false,
+}: {
+  label: string;
+  value: string | number;
+  currency: string;
+  strong?: boolean;
+}) {
+  return (
+    <div className={"flex items-center justify-between " + (strong ? "font-semibold" : "")}>
+      <span>{label}</span>
+      <span>{value} {currency}</span>
+    </div>
+  );
+}
 
 export default function DealDetailPage() {
   const navigate = useNavigate();
@@ -29,13 +74,23 @@ export default function DealDetailPage() {
   const { data: me } = useMe();
   const toast = useToast();
 
-  const confirm = useDealAction("confirm");
-  const complete = useDealAction("complete");
-  const cancel = useDealAction("cancel");
-  const arbitrate = useDealAction("arbitrate");
+  const accept = useDealAction("accept");
+  const decline = useDealAction("decline");
+  const finish = useDealAction("finish");
+  const cancelReq = useDealAction("cancel_request");
+  const cancelRevoke = useDealAction("cancel_request/revoke");
+  const cancelAccept = useDealAction("cancel_request/accept");
+  const debate = useDealAction("debate");
+  const resolve = useDealAction("resolve");
+  const cancelTopup = useCancelPendingTopup();
 
-  const [arbitrageOpen, setArbitrageOpen] = useState(false);
-  const [arbitrageReason, setArbitrageReason] = useState("");
+  const [debateOpen, setDebateOpen] = useState(false);
+  const [debateReason, setDebateReason] = useState("");
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [resolveOpen, setResolveOpen] = useState(false);
+  const [resolveSide, setResolveSide] = useState<WinnerSide>("buyer");
+  const [resolveNote, setResolveNote] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
@@ -55,34 +110,107 @@ export default function DealDetailPage() {
     );
   }
 
-  const statusInfo = STATUS_LABEL[deal.status] ?? { text: deal.status, cls: "text-text-muted" };
-  const myConfirm = deal.role === "buyer" ? deal.confirm_buyer : deal.confirm_seller;
-  const otherConfirm = deal.role === "buyer" ? deal.confirm_seller : deal.confirm_buyer;
+  const statusInfo =
+    STATUS_LABEL[deal.status] ?? { text: deal.status, cls: "text-text-muted" };
+  const amount = deal.amount;
+  const currency = deal.currency_code ?? "USD";
+  const isParticipant = deal.role === "buyer" || deal.role === "seller";
+  const isAdmin = !!me && (me.prefix === "admin" || me.prefix === "arbiter");
+  const cancelByOther =
+    deal.cancellation_initiator &&
+    deal.cancellation_initiator !== deal.role &&
+    deal.cancellation_initiator !== "other";
+  const cancelByMe = deal.cancellation_initiator === deal.role;
   const alreadyReviewed = !!existingReviews?.some(
     (r) => r.deal_id === deal.id && me && r.author_username === me.username,
   );
 
-  const handle = async (fn: typeof confirm, successMsg: string) => {
+  const handle = async (
+    fn: typeof accept,
+    successMsg: string,
+    body?: Record<string, unknown>,
+  ) => {
     try {
-      await fn.mutateAsync({ id: dealId });
+      await fn.mutateAsync({ id: dealId, body });
       haptic("success");
       toast.show({ kind: "success", title: successMsg });
     } catch (e: unknown) {
       haptic("error");
-      toast.show({ kind: "error", title: (e as Error)?.message || "Не удалось выполнить действие" });
+      toast.show({
+        kind: "error",
+        title: (e as Error)?.message || "Не удалось выполнить действие",
+      });
     }
   };
 
-  const submitArbitrage = async () => {
+  const submitDebate = async () => {
     try {
-      await arbitrate.mutateAsync({ id: dealId, reason: arbitrageReason || undefined });
+      await debate.mutateAsync({
+        id: dealId,
+        body: { reason: debateReason },
+      });
       haptic("success");
       toast.show({ kind: "success", title: "Арбитраж открыт" });
-      setArbitrageOpen(false);
-      setArbitrageReason("");
+      setDebateOpen(false);
+      setDebateReason("");
     } catch (e: unknown) {
       haptic("error");
-      toast.show({ kind: "error", title: (e as Error)?.message || "Не удалось открыть арбитраж" });
+      toast.show({
+        kind: "error",
+        title: (e as Error)?.message || "Не удалось открыть арбитраж",
+      });
+    }
+  };
+
+  const submitCancel = async () => {
+    try {
+      await cancelReq.mutateAsync({
+        id: dealId,
+        body: { reason: cancelReason },
+      });
+      haptic("success");
+      toast.show({ kind: "success", title: "Запрос отмены отправлен" });
+      setCancelOpen(false);
+      setCancelReason("");
+    } catch (e: unknown) {
+      haptic("error");
+      toast.show({
+        kind: "error",
+        title: (e as Error)?.message || "Не удалось запросить отмену",
+      });
+    }
+  };
+
+  const submitResolve = async () => {
+    try {
+      await resolve.mutateAsync({
+        id: dealId,
+        body: { winner: resolveSide, note: resolveNote },
+      });
+      haptic("success");
+      toast.show({ kind: "success", title: "Решение по арбитражу вынесено" });
+      setResolveOpen(false);
+      setResolveNote("");
+    } catch (e: unknown) {
+      haptic("error");
+      toast.show({
+        kind: "error",
+        title: (e as Error)?.message || "Не удалось вынести решение",
+      });
+    }
+  };
+
+  const cancelPendingTopup = async () => {
+    try {
+      await cancelTopup.mutateAsync(dealId);
+      haptic("success");
+      toast.show({ kind: "success", title: "Инвойс отменён" });
+    } catch (e: unknown) {
+      haptic("error");
+      toast.show({
+        kind: "error",
+        title: (e as Error)?.message || "Не удалось отменить инвойс",
+      });
     }
   };
 
@@ -101,25 +229,44 @@ export default function DealDetailPage() {
       setReviewText("");
     } catch (e: unknown) {
       haptic("error");
-      toast.show({ kind: "error", title: (e as Error)?.message || "Не удалось отправить отзыв" });
+      toast.show({
+        kind: "error",
+        title: (e as Error)?.message || "Не удалось отправить отзыв",
+      });
     }
   };
+
+  const canReview =
+    isParticipant &&
+    (deal.status === "completed" ||
+      deal.status === "resolved_for_buyer" ||
+      deal.status === "resolved_for_seller");
 
   return (
     <Page showBack>
       <Header title={`Сделка #${deal.id}`} subtitle={statusInfo.text} />
       <div className="px-4 space-y-3">
         <div className="bg-panel border border-border rounded-card p-4 space-y-2">
-          <div className="text-sm text-text-muted">{deal.role === "buyer" ? "Продавец" : "Покупатель"}</div>
+          <div className="text-sm text-text-muted">
+            {deal.role === "buyer" ? "Продавец" : "Покупатель"}
+          </div>
           <button
-            onClick={() => otherUser && navigate(`/u/${otherUser}`)}
+            onClick={() => otherUser && navigate(`/users/${otherUser}`)}
             className="text-lg font-semibold text-accent active:opacity-80"
           >
             @{otherUser}
           </button>
-          <div className="text-2xl font-bold text-accent">{formatMoney(deal.sum)}</div>
-          <div className={cn("text-sm font-semibold", statusInfo.cls)}>{statusInfo.text}</div>
-          {deal.created_at && <div className="text-xs text-text-muted">Создано {relativeTime(deal.created_at)}</div>}
+          <div className="text-2xl font-bold text-accent">
+            {formatAmount(amount, currency)} {currency}
+          </div>
+          <div className={cn("text-sm font-semibold", statusInfo.cls)}>
+            {statusInfo.text}
+          </div>
+          {deal.created_at && (
+            <div className="text-xs text-text-muted">
+              Создано {relativeTime(deal.created_at)}
+            </div>
+          )}
         </div>
 
         <div className="bg-panel border border-border rounded-card p-4">
@@ -130,115 +277,322 @@ export default function DealDetailPage() {
         <div className="bg-panel border border-border rounded-card p-4 space-y-2">
           <div className="text-sm text-text-muted">Условия</div>
           <div className="flex items-center justify-between text-sm">
-            <span>Комиссию платит</span>
-            <span className="font-semibold">{deal.pay_comission === "buyer" ? "Покупатель" : "Продавец"}</span>
+            <span>Комиссия оплачена</span>
+            <span className="font-semibold">{deal.commission_paid ? "Да" : "Нет"}</span>
           </div>
-          <div className="flex items-center justify-between text-sm">
-            <span>Подтверждение покупателя</span>
-            <span className={deal.confirm_buyer ? "text-success" : "text-text-muted"}>
-              {deal.confirm_buyer ? "есть" : "ожидается"}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span>Подтверждение продавца</span>
-            <span className={deal.confirm_seller ? "text-success" : "text-text-muted"}>
-              {deal.confirm_seller ? "есть" : "ожидается"}
-            </span>
-          </div>
+          {deal.commission_amount !== null && deal.commission_amount > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <span>Размер комиссии</span>
+              <span>
+                {formatAmount(deal.commission_amount, currency)} {currency}
+              </span>
+            </div>
+          )}
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          {deal.status === "wait_confirm" && !myConfirm && (
-            <>
-              <Button onClick={() => handle(confirm, "Сделка подтверждена")} disabled={confirm.isPending}>
-                <CheckCircle2 className="size-4" /> Подтвердить
+        {deal.status === "pending_topup" && (
+          <div className="rounded-card border border-accent/40 bg-accent/10 p-4 space-y-3">
+            <div>
+              <div className="text-sm font-semibold text-accent">Ожидается оплата инвойса</div>
+              <div className="text-xs text-text-muted">
+                После оплаты сделка перейдёт на подтверждение продавцом.
+              </div>
+            </div>
+            {deal.topup_invoice ? (
+              <>
+                <div className="space-y-1 text-sm">
+                  <TopupInvoiceRow label="Недостающая сумма" value={deal.topup_invoice.topup_principal} currency={deal.topup_invoice.currency_code} />
+                  <TopupInvoiceRow label="Комиссия" value={deal.topup_invoice.commission} currency={deal.topup_invoice.currency_code} />
+                  <TopupInvoiceRow label="Итого" value={deal.topup_invoice.total} currency={deal.topup_invoice.currency_code} strong />
+                </div>
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={() => openTelegramLink(deal.topup_invoice!.pay_url)}
+                >
+                  <ExternalLink className="size-4" /> Открыть инвойс
+                </Button>
+              </>
+            ) : (
+              <div className="text-sm text-text-muted">Инвойс недоступен или уже истёк.</div>
+            )}
+            {deal.role === "buyer" && (
+              <Button
+                type="button"
+                className="w-full"
+                variant="danger"
+                onClick={cancelPendingTopup}
+                disabled={cancelTopup.isPending}
+              >
+                {cancelTopup.isPending ? "Отменяю..." : "Отменить"}
               </Button>
-              <Button variant="danger" onClick={() => handle(cancel, "Сделка отменена")} disabled={cancel.isPending}>
-                <X className="size-4" /> Отменить
+            )}
+          </div>
+        )}
+
+        {deal.status === "pending_cancellation" && deal.cancellation_reason && (
+          <div className="bg-panel border border-border rounded-card p-4 space-y-1">
+            <div className="text-sm text-text-muted">Причина отмены</div>
+            <div className="whitespace-pre-wrap break-words">
+              {deal.cancellation_reason}
+            </div>
+          </div>
+        )}
+
+        {deal.status === "arbitration" && deal.arbitration_reason && (
+          <div className="bg-panel border border-border rounded-card p-4 space-y-1">
+            <div className="text-sm text-text-muted">Причина арбитража</div>
+            <div className="whitespace-pre-wrap break-words">
+              {deal.arbitration_reason}
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2">
+          {/* Pending confirmation — seller decides */}
+          {deal.status === "pending_confirmation" && deal.role === "seller" && (
+            <>
+              <Button
+                onClick={() => handle(accept, "Сделка принята")}
+                disabled={accept.isPending}
+              >
+                <CheckCircle2 className="size-4" /> Принять
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => handle(decline, "Сделка отклонена")}
+                disabled={decline.isPending}
+              >
+                <X className="size-4" /> Отклонить
               </Button>
             </>
           )}
-          {deal.status === "wait_confirm" && myConfirm && !otherConfirm && (
+          {deal.status === "pending_confirmation" && deal.role === "buyer" && (
             <div className="col-span-2 bg-panel border border-border rounded-card p-3 text-sm text-text-muted text-center">
               Ожидаем подтверждения от @{otherUser}
             </div>
           )}
-          {deal.status === "confirmed" && deal.role === "buyer" && (
+
+          {/* In progress */}
+          {deal.status === "in_progress" && deal.role === "buyer" && (
             <Button
               className="col-span-2"
-              onClick={() => handle(complete, "Сделка завершена")}
-              disabled={complete.isPending}
+              onClick={() => handle(finish, "Сделка завершена")}
+              disabled={finish.isPending}
             >
               <ThumbsUp className="size-4" /> Подтвердить исполнение
             </Button>
           )}
-          {deal.status === "confirmed" && deal.role === "seller" && (
+          {deal.status === "in_progress" && deal.role === "seller" && (
             <div className="col-span-2 bg-panel border border-border rounded-card p-3 text-sm text-text-muted text-center">
               Ожидаем подтверждения исполнения от @{otherUser}
             </div>
           )}
-          {deal.status === "confirmed" && (
+          {deal.status === "in_progress" && isParticipant && (
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => setCancelOpen(true)}
+                disabled={cancelReq.isPending}
+              >
+                <Undo2 className="size-4" /> Запросить отмену
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setDebateOpen(true)}
+                disabled={debate.isPending}
+              >
+                <Gavel className="size-4" /> Арбитраж
+              </Button>
+            </>
+          )}
+
+          {/* Pending cancellation */}
+          {deal.status === "pending_cancellation" && cancelByMe && (
             <Button
-              variant="secondary"
               className="col-span-2"
-              onClick={() => setArbitrageOpen(true)}
-              disabled={arbitrate.isPending}
+              variant="secondary"
+              onClick={() => handle(cancelRevoke, "Запрос отмены отозван")}
+              disabled={cancelRevoke.isPending}
             >
-              <Gavel className="size-4" /> Открыть арбитраж
+              <Undo2 className="size-4" /> Отозвать запрос
             </Button>
           )}
-          {deal.status === "success" && (
+          {deal.status === "pending_cancellation" && cancelByOther && (
             <>
-              {!alreadyReviewed && (
-                <Button className="col-span-2" onClick={() => setReviewOpen(true)}>
+              <Button
+                variant="danger"
+                onClick={() => handle(cancelAccept, "Сделка отменена")}
+                disabled={cancelAccept.isPending}
+              >
+                <CheckCircle2 className="size-4" /> Согласиться на отмену
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setDebateOpen(true)}
+                disabled={debate.isPending}
+              >
+                <Gavel className="size-4" /> Арбитраж
+              </Button>
+            </>
+          )}
+
+          {/* Arbitration */}
+          {deal.status === "arbitration" && isAdmin && (
+            <Button
+              className="col-span-2"
+              onClick={() => setResolveOpen(true)}
+              disabled={resolve.isPending}
+            >
+              <ShieldCheck className="size-4" /> Вынести решение
+            </Button>
+          )}
+          {deal.status === "arbitration" && !isAdmin && (
+            <div className="col-span-2 bg-panel border border-border rounded-card p-3 text-sm text-text-muted text-center">
+              Сделка в арбитраже. Дождитесь решения арбитра.
+            </div>
+          )}
+
+          {/* Terminal */}
+          {(deal.status === "cancelled" ||
+            deal.status === "cancelled_for_inactivity") && (
+            <div className="col-span-2 bg-panel border border-border rounded-card p-3 text-sm text-text-muted text-center">
+              Сделка отменена.
+            </div>
+          )}
+
+          {canReview && (
+            <>
+              {!alreadyReviewed ? (
+                <Button
+                  className="col-span-2"
+                  onClick={() => setReviewOpen(true)}
+                >
                   <Star className="size-4" /> Оставить отзыв
                 </Button>
-              )}
-              {alreadyReviewed && (
+              ) : (
                 <div className="col-span-2 bg-panel border border-border rounded-card p-3 text-sm text-text-muted text-center">
                   Вы уже оставили отзыв
                 </div>
               )}
             </>
           )}
-          {deal.status === "arbitrage" && (
-            <div className="col-span-2 bg-panel border border-border rounded-card p-3 text-sm text-text-muted text-center">
-              Сделка в арбитраже. Дождитесь решения арбитра.
-            </div>
+
+          {otherUser && (
+            <Button
+              variant="ghost"
+              className="col-span-2"
+              onClick={() => openTelegramLink(`https://t.me/${otherUser}`)}
+            >
+              <MessageSquare className="size-4" /> Написать @{otherUser}
+            </Button>
           )}
-          {deal.status === "failed" && (
-            <div className="col-span-2 bg-panel border border-border rounded-card p-3 text-sm text-text-muted text-center">
-              Сделка отменена.
-            </div>
-          )}
-          <Button
-            variant="ghost"
-            className="col-span-2"
-            onClick={() => otherUser && openTelegramLink(`https://t.me/${otherUser}`)}
-          >
-            <MessageSquare className="size-4" /> Написать @{otherUser}
-          </Button>
         </div>
+
+        {isParticipant && <DealChatPanel dealId={deal.id} />}
       </div>
 
-      <Sheet open={arbitrageOpen} onClose={() => setArbitrageOpen(false)} title="Открыть арбитраж">
+      <Sheet
+        open={cancelOpen}
+        onClose={() => setCancelOpen(false)}
+        title="Запросить отмену"
+      >
         <div className="space-y-3">
           <Textarea
-            label="Опишите причину (необязательно)"
-            placeholder="Контрагент не выполнил условия, не отвечает и т. п."
-            value={arbitrageReason}
-            onChange={(e) => setArbitrageReason(e.target.value)}
+            label="Причина"
+            placeholder="Объясните, почему сделку нужно отменить"
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
           />
-          <Button fullWidth variant="danger" onClick={submitArbitrage} disabled={arbitrate.isPending}>
-            {arbitrate.isPending ? "Отправка..." : "Открыть арбитраж"}
+          <Button
+            fullWidth
+            variant="danger"
+            onClick={submitCancel}
+            disabled={cancelReq.isPending}
+          >
+            {cancelReq.isPending ? "Отправка..." : "Запросить отмену"}
           </Button>
           <div className="text-xs text-text-muted">
-            Арбитр получит уведомление и свяжется с обеими сторонами. До окончания арбитража средства заморожены.
+            Контрагент сможет согласиться (средства вернутся покупателю), отказаться
+            или передать спор в арбитраж.
           </div>
         </div>
       </Sheet>
 
-      <Sheet open={reviewOpen} onClose={() => setReviewOpen(false)} title={`Отзыв на @${otherUser}`}>
+      <Sheet
+        open={debateOpen}
+        onClose={() => setDebateOpen(false)}
+        title="Открыть арбитраж"
+      >
+        <div className="space-y-3">
+          <Textarea
+            label="Опишите ситуацию"
+            placeholder="Контрагент не отвечает / не выполнил условия и т. п."
+            value={debateReason}
+            onChange={(e) => setDebateReason(e.target.value)}
+          />
+          <Button
+            fullWidth
+            variant="danger"
+            onClick={submitDebate}
+            disabled={debate.isPending}
+          >
+            {debate.isPending ? "Отправка..." : "Открыть арбитраж"}
+          </Button>
+          <div className="text-xs text-text-muted">
+            Арбитр получит уведомление и свяжется с обеими сторонами. До решения
+            средства заморожены.
+          </div>
+        </div>
+      </Sheet>
+
+      <Sheet
+        open={resolveOpen}
+        onClose={() => setResolveOpen(false)}
+        title="Решение по арбитражу"
+      >
+        <div className="space-y-3">
+          <div className="text-sm text-text-muted">
+            В чью пользу разрешить спор?
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {(["buyer", "seller"] as WinnerSide[]).map((side) => (
+              <button
+                key={side}
+                type="button"
+                onClick={() => setResolveSide(side)}
+                className={cn(
+                  "rounded-card border p-3 text-sm font-semibold transition-colors",
+                  resolveSide === side
+                    ? "bg-accent/15 border-accent text-accent"
+                    : "bg-panel-2 border-border",
+                )}
+              >
+                {side === "buyer" ? "Покупателю" : "Продавцу"}
+              </button>
+            ))}
+          </div>
+          <Textarea
+            label="Комментарий (необязательно)"
+            placeholder="Кратко объясните решение"
+            value={resolveNote}
+            onChange={(e) => setResolveNote(e.target.value)}
+          />
+          <Button
+            fullWidth
+            onClick={submitResolve}
+            disabled={resolve.isPending}
+          >
+            {resolve.isPending ? "Отправка..." : "Вынести решение"}
+          </Button>
+        </div>
+      </Sheet>
+
+      <Sheet
+        open={reviewOpen}
+        onClose={() => setReviewOpen(false)}
+        title={`Отзыв на @${otherUser}`}
+      >
         <div className="space-y-3">
           <div>
             <div className="text-sm text-text-muted mb-2">Оценка</div>
@@ -253,11 +607,16 @@ export default function DealDetailPage() {
                   }}
                   className={cn(
                     "size-10 grid place-items-center rounded-full border transition-colors",
-                    n <= rating ? "bg-accent/15 border-accent text-accent" : "bg-panel-2 border-border text-text-muted",
+                    n <= rating
+                      ? "bg-accent/15 border-accent text-accent"
+                      : "bg-panel-2 border-border text-text-muted",
                   )}
                   aria-label={`${n} звёзд`}
                 >
-                  <Star className="size-5" fill={n <= rating ? "currentColor" : "none"} />
+                  <Star
+                    className="size-5"
+                    fill={n <= rating ? "currentColor" : "none"}
+                  />
                 </button>
               ))}
             </div>
@@ -268,7 +627,11 @@ export default function DealDetailPage() {
             value={reviewText}
             onChange={(e) => setReviewText(e.target.value)}
           />
-          <Button fullWidth onClick={submitReview} disabled={createReview.isPending}>
+          <Button
+            fullWidth
+            onClick={submitReview}
+            disabled={createReview.isPending}
+          >
             {createReview.isPending ? "Отправка..." : "Опубликовать отзыв"}
           </Button>
         </div>

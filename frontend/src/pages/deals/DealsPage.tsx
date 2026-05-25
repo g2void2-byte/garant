@@ -13,11 +13,15 @@ import { useDeals } from "@/api/hooks";
 
 const STATUS_OPTIONS = [
   { value: "", label: "Все статусы" },
-  { value: "WAIT_CONFIRM", label: "Ожидает" },
-  { value: "CONFIRMED", label: "Подтверждена" },
-  { value: "SUCCESS", label: "Успех" },
-  { value: "FAILED", label: "Отменена" },
-  { value: "ARBITRAGE", label: "Арбитраж" },
+  { value: "pending_confirmation", label: "Ожидает подтверждения" },
+  { value: "in_progress", label: "В работе" },
+  { value: "pending_cancellation", label: "Запрошена отмена" },
+  { value: "arbitration", label: "Арбитраж" },
+  { value: "completed", label: "Завершена" },
+  { value: "resolved_for_buyer", label: "В пользу покупателя" },
+  { value: "resolved_for_seller", label: "В пользу продавца" },
+  { value: "cancelled", label: "Отменена" },
+  { value: "cancelled_for_inactivity", label: "Отмена за неактивность" },
 ];
 
 export default function DealsPage() {
@@ -29,8 +33,7 @@ export default function DealsPage() {
   return (
     <Page>
       <Header
-        title="Мои сделки"
-        subtitle="История и активные сделки"
+        title="Ваши сделки"
         right={
           <Button size="sm" onClick={() => navigate("/deals/new")}>
             <Plus className="size-4" /> Новая

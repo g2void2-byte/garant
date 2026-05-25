@@ -1,3 +1,63 @@
+export function parseDecimal(value: string | number | null | undefined): number {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+const DEFAULT_DECIMALS: Record<string, number> = {
+  USDT: 2,
+  USDC: 2,
+  BTC: 8,
+  ETH: 6,
+  TON: 4,
+  LTC: 6,
+  BNB: 6,
+  TRX: 4,
+  DOGE: 4,
+  SOL: 6,
+};
+
+// Resolve the display precision when a caller did not pass an
+// explicit ``decimals``. Falls back to the per-currency table above
+// (BTC → 8, USDT → 2, …) so e.g. ``formatCurrency(0.12345678, "BTC")``
+// no longer rounds to ``0.12 BTC`` and silently hides 6 fractional
+// digits of a user's balance. The legacy fallback of a flat ``2``
+// remains for unknown / fiat codes the table doesn't cover (RUB,
+// USD, etc.) — those have at most 2 meaningful fractional digits
+// anyway, so the previous behaviour is preserved.
+function _displayDecimals(code: string, override?: number): number {
+  if (override !== undefined) return override;
+  return DEFAULT_DECIMALS[code.toUpperCase()] ?? 2;
+}
+
+export function formatCurrency(
+  value: number | string | null | undefined,
+  code: string,
+  decimals?: number,
+): string {
+  const n = parseDecimal(value);
+  if (!Number.isFinite(n)) return `0 ${code}`;
+  const fixed = n.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: _displayDecimals(code, decimals),
+  });
+  return `${fixed} ${code}`;
+}
+
+export function formatAmount(
+  value: number | string | null | undefined,
+  code: string,
+): string {
+  const n = parseDecimal(value);
+  if (!Number.isFinite(n)) return "0";
+  const decimals = DEFAULT_DECIMALS[code.toUpperCase()] ?? 2;
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: decimals,
+  });
+}
+
 export function formatMoney(value: number): string {
   if (!Number.isFinite(value)) return "$0";
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;

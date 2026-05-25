@@ -1,228 +1,119 @@
+"""Legacy services kept after the PR-3 state-machine refactor.
+
+Deal lifecycle moved to :mod:`backend.app.services_deals` (multi-currency,
+10-status state-machine). This module now only carries:
+
+* :func:`post_review` — review posting (unchanged).
+* :func:`sweep_user_last_ip` — GDPR retention sweep for ``users.last_ip``.
+
+H-1 retired ``credit_invoice`` and ``sweep_expired_invoices`` together
+with the legacy USD ``Invoice`` ledger; the surviving wallet ledger
+has its own ``credit_deposit`` / ``sweep_expired_deposits`` in
+:mod:`backend.app.services_wallet`.
+"""
+
 from __future__ import annotations
 
-from datetime import datetime
+import logging
+from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import notifier
+from .config import settings
 from .models import (
-    AppSettings,
     Deal,
     DealStatus,
-    Invoice,
-    InvoiceStatus,
     NotificationType,
-    PayCommission,
     Review,
     User,
 )
+from .time_utils import utcnow
+
+logger = logging.getLogger(__name__)
+
+# Deal states in which a counter-party review is allowed.
+REVIEWABLE_DEAL_STATUSES = frozenset(
+    {
+        DealStatus.completed,
+        DealStatus.resolved_for_buyer,
+        DealStatus.resolved_for_seller,
+    }
+)
 
 
-async def _get_settings(session: AsyncSession) -> AppSettings:
-    result = await session.execute(select(AppSettings).limit(1))
-    s = result.scalar_one_or_none()
-    if s is None:
-        s = AppSettings()
-        session.add(s)
-        await session.commit()
-        await session.refresh(s)
-    return s
+async def recompute_user_rating(session: AsyncSession, target: User) -> None:
+    """Recompute ``good``/``bad`` counters from the live ``reviews`` table.
 
+    Counts every received review for this user:
+    * ``rating >= 4`` → good
+    * ``rating <= 2`` → bad
+    * ``rating == 3`` → neutral (excluded from both counters)
 
-async def create_deal(
-    session: AsyncSession,
-    buyer: User,
-    seller: User,
-    amount: float,
-    description: str,
-    pay_commission: PayCommission,
-) -> Deal:
-    settings = await _get_settings(session)
-    commission = amount * float(settings.deal_commission_percent) / 100
+    Audit H-5 — pre-fix this helper SELECTed the aggregates and
+    assigned them back to the ORM-managed ``target`` row WITHOUT a
+    row lock on ``users.target_id``. Two concurrent ``post_review``
+    calls could each see their own INSERT but not the other's, and
+    both write the SAME value back, losing one review's contribution
+    to the materialised counter. The underlying ``reviews`` table is
+    still authoritative — but the public profile page reads
+    ``good`` / ``bad`` directly off the row, so the counter lied.
 
-    required = amount + commission if pay_commission == PayCommission.buyer else amount
-    if float(buyer.balance) < required:
-        raise ValueError("Недостаточно средств")
+    The fix is a single ``UPDATE users SET good = (SELECT ...), bad
+    = (SELECT ...) WHERE id = :target_id``. Postgres takes a ROW
+    lock on the target users row at the start of the UPDATE; under
+    ``READ COMMITTED`` (our isolation level) a concurrent UPDATE
+    that lands first causes the second UPDATE to wait and then
+    re-read the row using the latest committed snapshot (EvalPlanQual
+    semantics). The inner subselect inside the SET clause also
+    re-evaluates against the latest snapshot — that is what
+    guarantees the second writer's count includes the first writer's
+    review.
 
-    buyer.balance = float(buyer.balance) - required
-    buyer.frozen_balance = float(buyer.frozen_balance) + required
+    The caller is expected to have already locked the target row
+    via :func:`lock_user_for_rating` (see ``post_review`` below) so
+    the row-lock window covers the INSERT-then-recompute critical
+    section; using a single-statement UPDATE on top is belt-and-
+    braces against any future caller that forgets the explicit
+    lock.
 
-    deal = Deal(
-        buyer_id=buyer.id,
-        seller_id=seller.id,
-        sum=amount,
-        description=description,
-        pay_commission=pay_commission,
-        status=DealStatus.wait_confirm,
+    We do NOT use the ORM ``target.good = …`` assignment any more
+    because that's what produced the lost update: ORM dirty-track
+    plus a stale Python-side count is exactly the read-modify-write
+    cycle the race exploited.
+    """
+    good_expr = func.coalesce(func.sum(case((Review.rating >= 4, 1), else_=0)), 0)
+    bad_expr = func.coalesce(func.sum(case((Review.rating <= 2, 1), else_=0)), 0)
+    good_sub = select(good_expr).where(Review.target_id == target.id).scalar_subquery()
+    bad_sub = select(bad_expr).where(Review.target_id == target.id).scalar_subquery()
+    await session.execute(
+        update(User).where(User.id == target.id).values(good=good_sub, bad=bad_sub)
     )
-    session.add(deal)
-    buyer.deals_total += 1
-    seller.deals_total += 1
-    await session.commit()
-    await session.refresh(deal)
-
-    await notifier.push(
-        session, seller.id, NotificationType.deals,
-        "Новая сделка",
-        f"Покупатель @{buyer.username} создал сделку на ${amount}",
-        {"deal_id": deal.id},
-    )
-
-    return deal
+    # Refresh the in-session ORM object so callers that read
+    # ``target.good`` / ``target.bad`` after this helper returns see
+    # the values we just wrote (instead of the stale ORM cache).
+    await session.refresh(target, attribute_names=["good", "bad"])
 
 
-async def confirm_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
-    if deal.status != DealStatus.wait_confirm:
-        raise ValueError("Сделка не в статусе ожидания подтверждения")
+async def lock_user_for_rating(session: AsyncSession, target: User) -> None:
+    """Acquire ``SELECT … FOR UPDATE`` on the target users row.
 
-    if user.id == deal.buyer_id:
-        if deal.confirm_buyer:
-            raise ValueError("Вы уже подтвердили")
-        deal.confirm_buyer = True
-    elif user.id == deal.seller_id:
-        if deal.confirm_seller:
-            raise ValueError("Вы уже подтвердили")
-        deal.confirm_seller = True
-    else:
-        raise ValueError("Вы не участник сделки")
+    Audit H-5 lock-order helper: callers that are about to insert a
+    new ``reviews`` row and then call :func:`recompute_user_rating`
+    should issue this lock first. The lock blocks any concurrent
+    review-insert-then-recompute against the same target, so the
+    materialised ``good`` / ``bad`` counters cannot suffer a
+    lost-update race.
 
-    if deal.confirm_buyer and deal.confirm_seller:
-        deal.status = DealStatus.confirmed
-
-    await session.commit()
-    await session.refresh(deal)
-
-    counterparty_id = deal.seller_id if user.id == deal.buyer_id else deal.buyer_id
-    await notifier.push(
-        session, counterparty_id, NotificationType.deals,
-        "Подтверждение сделки",
-        f"@{user.username} подтвердил сделку #{deal.id}",
-        {"deal_id": deal.id},
-    )
-
-    return deal
-
-
-async def complete_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
-    if deal.status not in (DealStatus.confirmed, DealStatus.wait_confirm):
-        raise ValueError("Сделка не может быть завершена в текущем статусе")
-
-    if user.id != deal.buyer_id:
-        raise ValueError("Только покупатель может завершить сделку")
-
-    settings = await _get_settings(session)
-    commission = float(deal.sum) * float(settings.deal_commission_percent) / 100
-
-    if deal.pay_commission == PayCommission.buyer:
-        seller_amount = float(deal.sum)
-        frozen_deduct = float(deal.sum) + commission
-    else:
-        seller_amount = float(deal.sum) - commission
-        frozen_deduct = float(deal.sum)
-
-    buyer = await session.get(User, deal.buyer_id)
-    seller = await session.get(User, deal.seller_id)
-    if buyer is None or seller is None:
-        raise ValueError("Участник не найден")
-
-    buyer.frozen_balance = float(buyer.frozen_balance) - frozen_deduct
-    seller.balance = float(seller.balance) + seller_amount
-
-    deal.status = DealStatus.success
-    deal.completed_at = datetime.utcnow()
-
-    buyer.deals_success += 1
-    seller.deals_success += 1
-
-    await session.commit()
-    await session.refresh(deal)
-
-    await notifier.push(
-        session, seller.id, NotificationType.deals,
-        "Сделка завершена",
-        f"Вы получили ${seller_amount:.2f} по сделке #{deal.id}",
-        {"deal_id": deal.id},
-    )
-
-    return deal
-
-
-async def cancel_deal(session: AsyncSession, deal: Deal, user: User) -> Deal:
-    if deal.status != DealStatus.wait_confirm:
-        raise ValueError("Отмена возможна только до подтверждения обеими сторонами")
-
-    settings = await _get_settings(session)
-    commission = float(deal.sum) * float(settings.deal_commission_percent) / 100
-
-    buyer = await session.get(User, deal.buyer_id)
-    if buyer is None:
-        raise ValueError("Покупатель не найден")
-
-    if deal.pay_commission == PayCommission.buyer:
-        refund = float(deal.sum) + commission
-    else:
-        refund = float(deal.sum)
-
-    buyer.balance = float(buyer.balance) + refund
-    buyer.frozen_balance = float(buyer.frozen_balance) - refund
-
-    deal.status = DealStatus.failed
-    deal.completed_at = datetime.utcnow()
-
-    buyer.deals_failed += 1
-    seller = await session.get(User, deal.seller_id)
-    if seller:
-        seller.deals_failed += 1
-
-    await session.commit()
-    await session.refresh(deal)
-
-    counterparty_id = deal.seller_id if user.id == deal.buyer_id else deal.buyer_id
-    await notifier.push(
-        session, counterparty_id, NotificationType.deals,
-        "Сделка отменена",
-        f"@{user.username} отменил сделку #{deal.id}",
-        {"deal_id": deal.id},
-    )
-
-    return deal
-
-
-async def arbitrate_deal(
-    session: AsyncSession, deal: Deal, user: User, reason: str = ""
-) -> Deal:
-    if deal.status in (DealStatus.success, DealStatus.failed):
-        raise ValueError("Сделка уже завершена")
-
-    if user.id not in (deal.buyer_id, deal.seller_id):
-        raise ValueError("Вы не участник сделки")
-
-    deal.status = DealStatus.arbitrage
-    deal.arbitrage_reason = reason
-
-    buyer = await session.get(User, deal.buyer_id)
-    seller = await session.get(User, deal.seller_id)
-    if buyer:
-        buyer.deals_arbitrage += 1
-    if seller:
-        seller.deals_arbitrage += 1
-
-    await session.commit()
-    await session.refresh(deal)
-
-    arbiter_stmt = select(User).where(User.is_arbiter.is_(True))
-    result = await session.execute(arbiter_stmt)
-    arbiters = result.scalars().all()
-    for arb in arbiters:
-        await notifier.push(
-            session, arb.id, NotificationType.deals,
-            "Арбитраж",
-            f"Сделка #{deal.id} передана в арбитраж: {reason}",
-            {"deal_id": deal.id},
-        )
-
-    return deal
+    Lock order intentionally matches the rest of the codebase:
+    insert the *child* row (``Review``) first, then take FOR UPDATE
+    on the *parent* row (``User``). Reviews never reference each
+    other, so the child insert can never deadlock against the
+    parent lock.
+    """
+    await session.execute(select(User.id).where(User.id == target.id).with_for_update())
 
 
 async def post_review(
@@ -235,6 +126,30 @@ async def post_review(
 ) -> Review:
     if rating < 1 or rating > 5:
         raise ValueError("Рейтинг должен быть от 1 до 5")
+    if len(text) > 1024:
+        raise ValueError("Текст отзыва слишком длинный (≤1024)")
+
+    if deal_id is None:
+        raise ValueError("Отзыв можно оставить только по конкретной сделке")
+
+    deal = await session.get(Deal, deal_id)
+    if deal is None:
+        raise ValueError("Сделка не найдена")
+    if author.id not in (deal.buyer_id, deal.seller_id):
+        raise ValueError("Вы не участвуете в этой сделке")
+    counterparty_id = deal.seller_id if author.id == deal.buyer_id else deal.buyer_id
+    if counterparty_id != target.id:
+        raise ValueError("Можно оставить отзыв только контрагенту по сделке")
+    if deal.status not in REVIEWABLE_DEAL_STATUSES:
+        raise ValueError("Отзыв доступен только после завершения сделки")
+
+    existing = (
+        await session.execute(
+            select(Review).where(Review.author_id == author.id, Review.deal_id == deal_id)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise ValueError("Вы уже оставили отзыв по этой сделке")
 
     review = Review(
         author_id=author.id,
@@ -244,47 +159,83 @@ async def post_review(
         text=text,
     )
     session.add(review)
+    # Audit §1.1 — the SELECT above is a non-locking check-then-act
+    # and two parallel callers can both observe ``existing is None``
+    # before either INSERTs. The ``uq_reviews_author_deal`` UNIQUE
+    # constraint on ``reviews(author_id, deal_id)`` makes the
+    # racing INSERT abort here with ``IntegrityError``; we translate
+    # it to the same ``ValueError`` the SELECT-guard raises so the
+    # API surface (HTTP 400 + "Вы уже оставили отзыв по этой сделке")
+    # stays consistent regardless of which side won the race. The
+    # ``ValueError`` propagates to the FastAPI 400 handler in
+    # ``routers/reviews.py``; the per-request session is rolled
+    # back by the dep teardown, so we deliberately do NOT call
+    # ``await session.rollback()`` here — doing so would expire the
+    # ORM objects the router still reads (``author.id`` /
+    # ``target.id``) and trigger a ``MissingGreenlet`` on the
+    # synchronous attribute access in the router's logger.
+    try:
+        await session.flush()
+    except IntegrityError as e:
+        raise ValueError("Вы уже оставили отзыв по этой сделке") from e
 
-    if rating >= 4:
-        target.good += 1
-    elif rating <= 2:
-        target.bad += 1
+    # Audit H-5 — lock the target users row so the INSERT-then-
+    # recompute critical section serialises against any concurrent
+    # ``post_review`` for the same target. Without this lock two
+    # parallel ``post_review(target=X)`` calls could each see only
+    # their own freshly-inserted review and both write the same
+    # materialised counter back. ``recompute_user_rating`` is also
+    # rewritten as a single-statement UPDATE-with-subselect for
+    # defence-in-depth (see its docstring).
+    await lock_user_for_rating(session, target)
+    await recompute_user_rating(session, target)
 
-    await session.commit()
-    await session.refresh(review)
-
-    await notifier.push(
-        session, target.id, NotificationType.system,
+    # A9-M-2 — split-API: persist the notification row atomically with
+    # the review insert + rating recompute, dispatch WS/DM after commit
+    # so a rolled-back transaction never leaks a "new review" toast.
+    notif, ws_payload = await notifier.insert(
+        session,
+        target.id,
+        NotificationType.system,
         "Новый отзыв",
         f"@{author.username} оставил отзыв ({rating}/5)",
         {"review_id": review.id},
     )
+    await session.commit()
+    try:
+        await notifier.dispatch_after_commit(session, notif, ws_payload)
+    except Exception:
+        logger.exception(
+            "post_review: post-commit dispatch failed for notif id=%s",
+            notif.id,
+            extra={"event": "post_review.dispatch.failed", "notif_id": notif.id},
+        )
 
     return review
 
 
-async def credit_invoice(
-    session: AsyncSession,
-    invoice: Invoice,
-) -> Invoice:
-    if invoice.status == InvoiceStatus.paid:
-        return invoice
+async def sweep_user_last_ip(session: AsyncSession) -> int:
+    """Null out ``users.last_ip`` older than the retention window.
 
-    invoice.status = InvoiceStatus.paid
-    invoice.paid_at = datetime.utcnow()
+    Comment 45 (audit v10, GDPR): IP addresses are PII. We keep them
+    for the configured retention period (default 90 days) for abuse
+    investigation, then scrub them so the platform doesn't accumulate
+    PII indefinitely.
+    """
+    retention = int(settings.last_ip_retention_seconds)
+    if retention <= 0:
+        return 0
+    cutoff = utcnow() - timedelta(seconds=retention)
+    from sqlalchemy import update
 
-    owner = await session.get(User, invoice.owner_id)
-    if owner:
-        owner.balance = float(owner.balance) + float(invoice.amount)
-
-    await session.commit()
-    await session.refresh(invoice)
-
-    if owner:
-        await notifier.push(
-            session, owner.id, NotificationType.deposits,
-            "Депозит зачислен",
-            f"${float(invoice.amount):.2f} зачислено на баланс",
+    result = await session.execute(
+        update(User)
+        .where(
+            User.last_ip.is_not(None),
+            User.last_login_at.is_not(None),
+            User.last_login_at <= cutoff,
         )
-
-    return invoice
+        .values(last_ip=None)
+    )
+    await session.commit()
+    return result.rowcount  # type: ignore[return-value]

@@ -1,9 +1,9 @@
-import { motion } from "framer-motion";
 import { Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { ReviewDto } from "@/api/types";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { staggerDelay } from "@/lib/animate";
 
 interface Props {
   review: ReviewDto;
@@ -13,11 +13,9 @@ interface Props {
 export function ReviewRow({ review, index = 0 }: Props) {
   const stars = Math.max(0, Math.min(5, Math.round(review.rating)));
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.025, 0.2), duration: 0.18 }}
-      className="bg-panel border border-border rounded-card p-3"
+    <div
+      className="bg-panel border border-border rounded-card p-3 animate-fadein"
+      style={staggerDelay(index, 25, 200)}
     >
       <div className="flex items-center gap-2 text-sm">
         <div className="flex items-center gap-0.5">
@@ -30,7 +28,7 @@ export function ReviewRow({ review, index = 0 }: Props) {
             />
           ))}
         </div>
-        <Link to={`/u/${review.author_username}`} className="text-text-muted hover:text-text">
+        <Link to={`/users/${review.author_username}`} className="text-text-muted hover:text-text">
           от @{review.author_username}
         </Link>
         {review.deal_id != null && (
@@ -44,6 +42,6 @@ export function ReviewRow({ review, index = 0 }: Props) {
         <span className="text-text-muted ml-auto text-xs">{relativeTime(review.created_at)}</span>
       </div>
       {review.text && <div className="mt-2 text-sm whitespace-pre-wrap break-words">{review.text}</div>}
-    </motion.div>
+    </div>
   );
 }

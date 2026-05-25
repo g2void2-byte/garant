@@ -1,0 +1,50 @@
+{
+  // Audit §16.3.1 / §16.3.2 — pyright config rationale.
+  //
+  // ``typeCheckingMode`` is held at ``basic`` (not ``strict``)
+  // deliberately. Promoting to ``strict`` today would turn the 36
+  // currently-tolerated warnings — most of them ``MoneyDecimal`` <-> ``float``
+  // adapter shims in admin/wallet routers — into hard errors and
+  // block CI without delivering proportional safety: the shims are
+  // already audited (PR-#L1 / PR-#M3) and the runtime types are
+  // exercised by integration tests. We keep the "would-be-strict"
+  // rules visible by mapping them to ``warning`` (per-rule below),
+  // so new code can't *add* untyped patterns silently and the
+  // residual warnings stay grep-able in CI logs.
+  //
+  // Two rules are pinned harder than ``basic`` default:
+  //   * ``reportMissingImports`` / ``reportUndefinedVariable`` —
+  //     ``error``: an undefined name is almost always a typo, never
+  //     intentional; the cost of fixing is trivial and the cost of
+  //     shipping is high.
+  //   * ``reportInvalidTypeForm`` — ``error``: invalid annotations
+  //     are a Pydantic / SQLAlchemy footgun (silent runtime
+  //     ``TypeError`` at model build-time on cold start).
+  //
+  // ``reportAttributeAccessIssue`` is held at ``none`` because the
+  // SQLAlchemy 2.x ``Mapped[...]`` descriptor pattern triggers it on
+  // every column access; we can revisit once SQLAlchemy ships
+  // stricter stubs.
+  "include": ["backend"],
+  "exclude": [
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/.venv",
+    "venv",
+    ".venv",
+    "frontend"
+  ],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic",
+  "useLibraryCodeForTypes": true,
+  "reportMissingImports": "error",
+  "reportUndefinedVariable": "error",
+  "reportInvalidTypeForm": "error",
+  "reportArgumentType": "warning",
+  "reportAttributeAccessIssue": "none",
+  "reportCallIssue": "warning",
+  "reportGeneralTypeIssues": "warning",
+  "reportOptionalMemberAccess": "warning",
+  "reportOptionalSubscript": "warning",
+  "reportReturnType": "warning"
+}

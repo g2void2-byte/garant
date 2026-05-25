@@ -1,19 +1,51 @@
+@import "@fontsource-variable/inter/index.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Continental TMA design tokens.
+ *
+ * Two parallel naming systems coexist:
+ *
+ *   --accent-color / --body-color / --dark-color / --gray-color / ...
+ *     Continental's original CSS variable names (kept verbatim so anyone
+ *     reading the reference CSS dump can locate them 1:1).
+ *
+ *   --bg / --panel / --secondary / --text / --text-muted / ...
+ *     Friendlier aliases used by tailwind.config.ts. New code should prefer
+ *     these via tailwind utility classes.
+ */
 :root {
-  --bg: #1c1c1c;
-  --panel: #282828;
-  --panel-2: #5f5f60;
+  /* Continental-named tokens (verbatim from the reference). */
+  --accent-color: #fee600;
+  --body-color: #1c1c1c;
+  --dark-color: #282828;
+  --secondary-color: #383838; /* button/input "secondary" surface */
+  --dark-gray-color: #5f5f60; /* disabled text */
+  --gray-color: #878787;
+  --light-color: #ffffff;
+  --error-color: #f66262;
+  --warning-color: #f8b31f;
+  --border-radius: 14px;
+  --button-radius: 8px;
+  --navbar-height: 62px;
+
+  /* Friendlier aliases. */
+  --bg: var(--body-color);
+  --panel: var(--dark-color);
+  --panel-2: var(--secondary-color); /* alias for legacy components */
+  --secondary: var(--secondary-color);
   --border: #3a3a3c;
-  --accent: #fee600;
-  --accent-fg: #1c1c1c;
-  --text: #ffffff;
-  --text-muted: #878787;
+  --text: var(--light-color);
+  --text-muted: var(--gray-color);
+  --text-disabled: var(--dark-gray-color);
+  --accent: var(--accent-color);
+  --accent-fg: #000000;
+  --danger: var(--error-color);
+  --warning: var(--warning-color);
   --success: #34d399;
-  --danger: #f66262;
-  --warning: #f8b31f;
 
   font-feature-settings: "tnum" on;
   color-scheme: dark;
@@ -31,17 +63,51 @@ body,
 body {
   margin: 0;
   -webkit-tap-highlight-color: transparent;
-  font-family: "TT Hoves", var(--tg-theme-font-family, -apple-system), system-ui, "Segoe UI",
-    Roboto, sans-serif;
+  /*
+   * Inter Variable is bundled via ``@fontsource-variable/inter`` (self-hosted,
+   * MIT-licensed, served from the same origin so the strict CSP
+   * ``font-src 'self' data:`` is happy). Falls back to the Telegram
+   * theme font / system sans-serif if the variable font fails to load.
+   */
+  font-family: "Inter Variable", "Inter", var(--tg-theme-font-family, -apple-system),
+    system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  font-feature-settings: "cv11", "ss01", "ss03", "tnum";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   overflow-x: hidden;
+}
+
+h1, h2, h3, h4 {
+  letter-spacing: -0.02em;
 }
 
 * {
   box-sizing: border-box;
 }
 
+/*
+ * App content container. On desktop, the TMA must be centered with
+ * max-width 500px to match the mobile layout (this is exactly what
+ * Continental's `@media (min-width: 501px)` does for `_navbar_1kzf0_1`).
+ */
+.app-container {
+  max-width: 500px;
+  margin: 0 auto;
+  position: relative;
+  min-height: 100%;
+}
+
 .shimmer {
-  background: linear-gradient(90deg, var(--panel) 0%, var(--panel-2) 50%, var(--panel) 100%);
+  background: linear-gradient(
+    90deg,
+    var(--panel) 0%,
+    #3a3a3a 50%,
+    var(--panel) 100%
+  );
   background-size: 400px 100%;
   background-repeat: no-repeat;
   animation: shimmer 1.4s linear infinite;
@@ -60,7 +126,9 @@ button {
 }
 
 .glow-accent {
-  box-shadow: 0 0 30px rgba(254, 230, 0, 0.25), 0 0 6px rgba(254, 230, 0, 0.4);
+  box-shadow:
+    0 0 30px rgba(254, 230, 0, 0.25),
+    0 0 6px rgba(254, 230, 0, 0.4);
 }
 
 .no-scrollbar::-webkit-scrollbar {

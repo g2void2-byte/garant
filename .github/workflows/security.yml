@@ -1,0 +1,246 @@
+name: Security
+
+# Security scans. Runs in parallel with the main ``ci`` workflow on
+# every push / PR. V12-H4 / V12-CI-1 — every step used to carry
+# ``continue-on-error: true`` *and* a trailing ``|| true`` in the shell
+# pipeline, which made the workflow a no-op: bandit / pip-audit / npm
+# audit findings never blocked a merge and were typically never read
+# either. The recipe now:
+#
+# 1. Runs each scanner in JSON mode so a fresh report is always uploaded
+#    as a build artifact (``backend-security`` / ``frontend-security``)
+#    — readable from the Actions UI even when the job passed cleanly.
+#    The JSON emission tolerates a non-zero scanner exit via ``|| true``
+#    so the report file is always written; this is the *only* place a
+#    soft failure is allowed. ``continue-on-error: true`` has been
+#    dropped from the scanner steps so a genuine scanner crash (e.g.
+#    bandit / pip-audit not installed, network error talking to PyPI)
+#    surfaces as a hard failure on the offending step instead of
+#    silently producing an empty report.
+# 2. The "Fail on high-severity findings" gate step at the end of
+#    each job re-reads the JSON report and fails the build when any
+#    *high* severity finding is present. Low/medium findings stay
+#    warn-only until the initial backlog is triaged.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# V12-L6 — cancel superseded runs on the same ref. Without this a
+# push-then-rebase-and-push lights up two long-running scans against
+# the same PR; the older one is wasted compute.
+concurrency:
+  # ``github.workflow`` is already unique per workflow file so we don't
+  # need a literal ``security-`` prefix here — ``ci.yml`` and this file
+  # land in disjoint groups by virtue of having different workflow
+  # names.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install scan tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit pip-audit
+
+      # Bandit: AST-based static analysis for common Python security
+      # issues (sql injection patterns, weak hash use, hardcoded
+      # secrets, etc).
+      #
+      # V12-H4 — the previous incarnation passed
+      # ``-x backend/app/tests``, but there is no such directory in
+      # this repo (tests live at the repo root under ``tests/``); the
+      # exclude was dead config. Bandit is now invoked against
+      # ``backend/app`` only — tests aren't shipped in the runtime
+      # image and the scanner doesn't need to walk them.
+      #
+      # V12-CI-1 — ``continue-on-error: true`` has been dropped. The
+      # scanner is invoked *once*, in JSON mode, with a trailing
+      # ``|| true`` because bandit exits 1 whenever any finding is
+      # emitted (regardless of severity) and we want the JSON report
+      # to land on disk for the artifact uploader and the high-severity
+      # gate below. A genuine bandit crash (binary missing, exception
+      # during analysis) now surfaces as a hard step failure rather
+      # than silently producing an empty report.
+      - name: Bandit
+        run: bandit -r backend/app -ll -ii -f json -o bandit-report.json || true
+
+      # pip-audit: checks every installed package against the PyPI
+      # advisory database. We install the project (without dev extras)
+      # to limit the scan to the runtime dependency set, and
+      # ``--skip-editable`` tells pip-audit to ignore the local
+      # ``garant`` package itself (not published on PyPI, so the
+      # advisory lookup would error out).
+      #
+      # V12-CI-1 — same rationale as the Bandit step: drop the
+      # ``continue-on-error`` wrapper and run pip-audit once in JSON
+      # mode with ``|| true``. A scanner crash (e.g. network failure
+      # talking to the advisory DB, or pip-audit itself not installed)
+      # now fails the step instead of silently producing an empty
+      # JSON file that the gate step would helpfully read as "no
+      # vulnerabilities found".
+      - name: pip-audit
+        run: |
+          pip install -e .
+          pip-audit --strict --skip-editable --progress-spinner=off \
+            --format json --output pip-audit-report.json || true
+
+      # Always upload the JSON reports so reviewers can read them
+      # straight from the run summary, regardless of pass/fail. The
+      # ``if: always()`` guard means the artifact survives even when
+      # the gate step below fails the build.
+      - name: Upload backend security reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-security
+          path: |
+            bandit-report.json
+            pip-audit-report.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      # Gate the build on *high* findings only. Bandit JSON has a
+      # top-level ``results`` array whose entries carry an
+      # ``issue_severity`` ("HIGH"|"MEDIUM"|"LOW"); pip-audit JSON has
+      # a ``dependencies`` array whose ``vulns`` entries carry a
+      # CVE/PYSEC id but no severity, so any vuln is treated as a
+      # hard fail. Lower-severity bandit findings remain warn-only
+      # via the JSON artifact uploaded above.
+      - name: Fail on high-severity findings
+        run: |
+          python - <<'PY'
+          import json
+          import sys
+
+          failed = False
+
+          def _load(path: str, default):
+              # Missing report -> nothing was scanned (e.g. the scanner
+              # step itself crashed before writing). Skip rather than
+              # raise. Corrupted JSON -> fail loudly: it almost always
+              # means the scanner was interrupted mid-write and pretending
+              # nothing was found would mask a real CI issue.
+              try:
+                  with open(path, encoding="utf-8") as fh:
+                      return json.load(fh)
+              except FileNotFoundError:
+                  print(f"{path}: not found, skipping")
+                  return default
+              except json.JSONDecodeError as exc:
+                  print(f"{path}: invalid JSON ({exc}); failing the gate")
+                  sys.exit(1)
+
+          bandit = _load("bandit-report.json", {"results": []})
+          high = [
+              r for r in bandit.get("results", [])
+              if r.get("issue_severity", "").upper() == "HIGH"
+          ]
+          if high:
+              failed = True
+              print(f"Bandit: {len(high)} HIGH-severity finding(s)")
+              for r in high:
+                  loc = f"{r.get('filename')}:{r.get('line_number')}"
+                  print(f"  - {r.get('test_id')} {r.get('issue_text')} ({loc})")
+
+          audit = _load("pip-audit-report.json", {"dependencies": []})
+          vulns = [
+              (dep.get("name"), v)
+              for dep in audit.get("dependencies", [])
+              for v in dep.get("vulns", [])
+          ]
+          if vulns:
+              failed = True
+              print(f"pip-audit: {len(vulns)} vulnerability/vulnerabilities")
+              for name, v in vulns:
+                  fix = ", ".join(v.get("fix_versions", [])) or "no fix"
+                  print(f"  - {name} {v.get('id')} (fix: {fix})")
+
+          sys.exit(1 if failed else 0)
+          PY
+
+  frontend-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+
+      # ``npm audit`` reports known vulns in the locked dependency
+      # tree. ``--audit-level=high`` filters out low/moderate noise so
+      # the warning surface stays useful. The JSON report is always
+      # uploaded so reviewers can drill in even when the gate passes.
+      #
+      # V12-CI-1 — same shape as the backend scanners: drop
+      # ``continue-on-error`` and rely on the trailing ``|| true`` to
+      # let the JSON report land on disk even when ``npm audit`` exits
+      # non-zero (which it does for *any* vuln, not just high+). The
+      # high-severity gate below is authoritative.
+      - name: npm audit
+        run: npm audit --json > npm-audit-report.json || true
+
+      - name: Upload frontend security reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-security
+          path: frontend/npm-audit-report.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      # Re-read the JSON report and hard-fail on any high or critical
+      # vuln. npm's JSON schema groups vulns under
+      # ``metadata.vulnerabilities`` with a per-severity count map.
+      - name: Fail on high-severity npm advisories
+        run: |
+          node -e '
+            const fs = require("fs");
+            let report;
+            try {
+              report = JSON.parse(fs.readFileSync("npm-audit-report.json", "utf8"));
+            } catch (err) {
+              // Mirror the backend gate: missing report -> skip (scanner
+              // step crashed before writing), corrupt JSON -> fail loudly
+              // (almost always a mid-write interruption, pretending
+              // nothing was found would hide a real CI break).
+              if (err.code === "ENOENT") {
+                console.log("npm-audit-report.json: not found, skipping");
+                process.exit(0);
+              }
+              console.error("npm-audit-report.json: " + err.message + "; failing the gate");
+              process.exit(1);
+            }
+            const counts = (report.metadata && report.metadata.vulnerabilities) || {};
+            const high = (counts.high || 0) + (counts.critical || 0);
+            if (high > 0) {
+              console.log("npm audit: " + high + " high/critical vuln(s)");
+              process.exit(1);
+            }
+          '

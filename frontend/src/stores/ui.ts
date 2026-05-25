@@ -5,6 +5,13 @@ interface UIState {
   setSearchMode: (mode: "users" | "services") => void;
   hideDesignations: boolean;
   setHideDesignations: (v: boolean) => void;
+  // Global open/close flag for the slide-in admin menu drawer.
+  // Hoisted to ``useUI`` (rather than living on each admin page)
+  // so the menu button rendered on /admin/* headers can toggle the
+  // drawer regardless of which page mounted it.
+  adminMenuOpen: boolean;
+  setAdminMenuOpen: (v: boolean) => void;
+  toggleAdminMenu: () => void;
 }
 
 export const useUI = create<UIState>((set) => ({
@@ -18,4 +25,7 @@ export const useUI = create<UIState>((set) => ({
     }
     set({ hideDesignations: v });
   },
+  adminMenuOpen: false,
+  setAdminMenuOpen: (v) => set({ adminMenuOpen: v }),
+  toggleAdminMenu: () => set((s) => ({ adminMenuOpen: !s.adminMenuOpen })),
 }));

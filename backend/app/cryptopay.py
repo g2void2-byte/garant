@@ -1,0 +1,301 @@
+"""Thin async client for the Crypto Pay API (https://help.send.tg/en/articles/10279948-crypto-pay-api).
+
+Replaces the unmaintained ``AsyncPayments`` SDK. Only implements the
+handful of methods we actually use (``createInvoice``, ``getInvoices``,
+``transfer``) plus a generic ``_call`` helper so future endpoints are
+cheap to add.
+
+The API returns ``{"ok": true, "result": ...}`` on success and
+``{"ok": false, "error": {"code": int, "name": str}}`` on failure.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Any
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+MAINNET_BASE = "https://pay.crypt.bot/api"
+TESTNET_BASE = "https://testnet-pay.crypt.bot/api"
+
+
+class CryptoPayError(Exception):
+    """Raised when the Crypto Pay API returns an error or the request fails."""
+
+    def __init__(self, message: str, code: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+@dataclass(frozen=True, slots=True)
+class Invoice:
+    invoice_id: int
+    status: str  # "active" | "paid" | "expired"
+    asset: str
+    amount: str
+    pay_url: str
+    bot_invoice_url: str | None
+    mini_app_invoice_url: str | None
+    web_app_invoice_url: str | None
+    description: str | None
+    payload: str | None
+    paid_at: str | None
+    created_at: str | None
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any]) -> Invoice:
+        return cls(
+            invoice_id=int(data["invoice_id"]),
+            status=data.get("status", "active"),
+            asset=data.get("asset", ""),
+            amount=str(data.get("amount", "")),
+            pay_url=data.get("pay_url") or data.get("bot_invoice_url") or "",
+            bot_invoice_url=data.get("bot_invoice_url"),
+            mini_app_invoice_url=data.get("mini_app_invoice_url"),
+            web_app_invoice_url=data.get("web_app_invoice_url"),
+            description=data.get("description"),
+            payload=data.get("payload"),
+            paid_at=data.get("paid_at"),
+            created_at=data.get("created_at"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Transfer:
+    transfer_id: int
+    user_id: int
+    asset: str
+    amount: str
+    status: str
+    completed_at: str | None
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any]) -> Transfer:
+        return cls(
+            transfer_id=int(data["transfer_id"]),
+            user_id=int(data["user_id"]),
+            asset=data["asset"],
+            amount=str(data["amount"]),
+            status=data.get("status", "completed"),
+            completed_at=data.get("completed_at"),
+        )
+
+
+class CryptoPay:
+    """Async Crypto Pay client.
+
+    Usage:
+
+        async with CryptoPay(token) as cp:
+            invoice = await cp.create_invoice(asset="USDT", amount=1.5)
+    """
+
+    def __init__(
+        self,
+        token: str,
+        *,
+        testnet: bool = False,
+        timeout: float = 15.0,
+        base_url: str | None = None,
+    ) -> None:
+        if not token:
+            raise CryptoPayError("Crypto Pay token is empty")
+        self._token = token
+        self._base = base_url or (TESTNET_BASE if testnet else MAINNET_BASE)
+        self._timeout = timeout
+        self._client: httpx.AsyncClient | None = None
+
+    async def __aenter__(self) -> CryptoPay:
+        self._client = httpx.AsyncClient(
+            base_url=self._base,
+            timeout=self._timeout,
+            headers={"Crypto-Pay-API-Token": self._token},
+        )
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    async def _call(self, method: str, payload: dict[str, Any] | None = None) -> Any:
+        client = self._client
+        owns_client = False
+        if client is None:
+            client = httpx.AsyncClient(
+                base_url=self._base,
+                timeout=self._timeout,
+                headers={"Crypto-Pay-API-Token": self._token},
+            )
+            owns_client = True
+        try:
+            response = await client.post(f"/{method}", json=payload or {})
+        except httpx.HTTPError as exc:
+            raise CryptoPayError(f"Crypto Pay HTTP error: {exc}") from exc
+        finally:
+            if owns_client:
+                await client.aclose()
+
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise CryptoPayError(
+                f"Crypto Pay returned non-JSON (HTTP {response.status_code})"
+            ) from exc
+
+        if not body.get("ok"):
+            err = body.get("error") or {}
+            raise CryptoPayError(
+                err.get("name") or f"HTTP {response.status_code}",
+                code=err.get("code"),
+            )
+        return body.get("result")
+
+    # ── API methods ──────────────────────────────────────
+
+    async def get_me(self) -> dict[str, Any]:
+        return await self._call("getMe")
+
+    async def create_invoice(
+        self,
+        *,
+        asset: str | None = None,
+        amount: float | str,
+        currency_type: str = "crypto",
+        fiat: str | None = None,
+        accepted_assets: str | None = None,
+        description: str | None = None,
+        payload: str | None = None,
+        expires_in: int | None = None,
+        allow_comments: bool | None = None,
+        allow_anonymous: bool | None = None,
+    ) -> Invoice:
+        """Create a Crypto Pay invoice.
+
+        The Crypto Pay ``createInvoice`` method accepts both crypto
+        invoices (``currency_type="crypto"`` + ``asset``) and fiat
+        invoices (``currency_type="fiat"`` + ``fiat=<code>`` +
+        optional ``accepted_assets``). The fiat path lets the user
+        pick which crypto to pay with at checkout while the merchant
+        denominates the invoice in fiat — Crypto Pay handles the
+        conversion server-side and surfaces the realised
+        ``paid_asset`` / ``paid_fiat_rate`` on the webhook payload.
+
+        See https://help.send.tg/en/articles/10279948-crypto-pay-api
+        for the upstream contract; the closed sets for
+        ``currency_type`` and ``fiat`` live there.
+        """
+        data: dict[str, Any] = {"amount": str(amount)}
+        if currency_type == "fiat":
+            if not fiat:
+                raise CryptoPayError("create_invoice: 'fiat' is required for fiat invoices")
+            data["currency_type"] = "fiat"
+            data["fiat"] = fiat
+            if accepted_assets is not None:
+                # Crypto Pay accepts either a comma-separated string
+                # or an array; the string form is friendlier to
+                # ``urlencode``-style debugging.
+                data["accepted_assets"] = accepted_assets
+        else:
+            if not asset:
+                raise CryptoPayError("create_invoice: 'asset' is required for crypto invoices")
+            data["asset"] = asset
+        if description is not None:
+            data["description"] = description
+        if payload is not None:
+            data["payload"] = payload
+        if expires_in is not None:
+            data["expires_in"] = expires_in
+        if allow_comments is not None:
+            data["allow_comments"] = allow_comments
+        if allow_anonymous is not None:
+            data["allow_anonymous"] = allow_anonymous
+        result = await self._call("createInvoice", data)
+        return Invoice.from_api(result)
+
+    async def get_invoices(
+        self,
+        *,
+        invoice_ids: list[int] | None = None,
+        asset: str | None = None,
+        status: str | None = None,
+        offset: int = 0,
+        count: int = 100,
+    ) -> list[Invoice]:
+        data: dict[str, Any] = {"offset": offset, "count": count}
+        if invoice_ids:
+            data["invoice_ids"] = ",".join(str(i) for i in invoice_ids)
+        if asset:
+            data["asset"] = asset
+        if status:
+            data["status"] = status
+        result = await self._call("getInvoices", data)
+        items = result.get("items") if isinstance(result, dict) else result
+        return [Invoice.from_api(item) for item in (items or [])]
+
+    async def transfer(
+        self,
+        *,
+        user_id: int,
+        asset: str,
+        amount: float | str,
+        spend_id: str,
+        comment: str | None = None,
+        disable_send_notification: bool | None = None,
+    ) -> Transfer:
+        data: dict[str, Any] = {
+            "user_id": user_id,
+            "asset": asset,
+            "amount": str(amount),
+            "spend_id": spend_id,
+        }
+        if comment is not None:
+            data["comment"] = comment
+        if disable_send_notification is not None:
+            data["disable_send_notification"] = disable_send_notification
+        result = await self._call("transfer", data)
+        return Transfer.from_api(result)
+
+    async def get_transfers(
+        self,
+        *,
+        asset: str | None = None,
+        transfer_ids: list[int] | None = None,
+        spend_id: str | None = None,
+        offset: int | None = None,
+        count: int | None = None,
+    ) -> list[Transfer]:
+        """List transfers created by this app, optionally filtered.
+
+        Audit §4.19 — the treasury reconcile endpoint queries this by
+        ``spend_id`` (``treas:{withdrawal_id}``) to verify whether a
+        ``pending`` row's ``transfer`` call landed on Crypto Pay's
+        side after a Phase 2 → Phase 3 crash. The Crypto Pay docs
+        document the response shape under ``getTransfers``; ``items``
+        is an array of transfer objects we wrap in :class:`Transfer`.
+        """
+        data: dict[str, Any] = {}
+        if asset is not None:
+            data["asset"] = asset
+        if transfer_ids:
+            data["transfer_ids"] = ",".join(str(i) for i in transfer_ids)
+        if spend_id is not None:
+            data["spend_id"] = spend_id
+        if offset is not None:
+            data["offset"] = offset
+        if count is not None:
+            data["count"] = count
+        result = await self._call("getTransfers", data)
+        items = result.get("items") if isinstance(result, dict) else result
+        return [Transfer.from_api(item) for item in (items or [])]
+
+    async def get_balance(self) -> list[dict[str, Any]]:
+        result = await self._call("getBalance")
+        return list(result or [])
+
+
+__all__ = ["CryptoPay", "CryptoPayError", "Invoice", "Transfer"]

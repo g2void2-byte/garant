@@ -1,0 +1,99 @@
+# Dev image for the FastAPI backend.
+#
+# The image installs Python deps from pyproject.toml at build time, then
+# expects the repository to be bind-mounted at /app at runtime so
+# `uvicorn --reload` picks up source edits without rebuilds.
+#
+# V12-H3 — migrations are NOT applied by this image's CMD. The compose
+# stack runs `alembic upgrade head` in a dedicated one-shot `migrate`
+# service that the backend depends on (see ``docker-compose.yml``); the
+# backend container only verifies the DB is at the expected head
+# revision during its lifespan (``verify_migrations_at_head``). Manual
+# (non-compose) setups can either run alembic themselves before starting
+# uvicorn, or keep the legacy in-lifespan upgrade by exporting
+# ``RUN_MIGRATIONS_ON_STARTUP=true`` (the default).
+
+FROM python:3.12-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# V12-L2 — system deps trimmed to just ``curl`` (used by the
+# healthcheck) and ``ca-certificates`` (sets up the cert bundle pip
+# needs to talk to PyPI in case the slim image ever drops it).
+# Pre-fix ``build-essential`` + ``libpq-dev`` were carried "for
+# asyncpg/Pillow wheels", but both libraries ship manylinux2014
+# wheels for cp311/cp312 on amd64/arm64 — pip installs them without
+# ever invoking the toolchain, so the apt step was adding ~200 MB of
+# image bloat (and a fresh apt-cache hit on every rebuild) for no
+# upside. If a future dep ever does require a source build, add the
+# minimal toolchain back here rather than pre-installing it
+# speculatively for everyone.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# V12-L10 — install Python deps against the real package source instead
+# of a placeholder ``backend/app/__init__.py`` stub. The pre-fix recipe
+# created an empty stub so ``pip install -e .`` could find *something*
+# named ``backend.app`` at build time, then re-ran ``pip install -e .``
+# from CMD every container start to "rebind" the editable install
+# against the bind-mounted source. The editable install records a
+# ``.pth`` entry pointing at ``/app`` either way, so once the bind
+# mount supplies the real tree the import resolves correctly without
+# the runtime re-install; the stub was load-bearing for the original
+# build only. By copying the actual ``backend`` and ``alembic`` trees
+# into the image we get a working editable install at build time, no
+# stub, and the CMD can drop the redundant ``pip install -e .`` call.
+# Source edits still take effect via the bind mount + uvicorn reload;
+# pyproject changes require a rebuild (same as the previous flow,
+# since adding a new transitive dep can't be done by a quiet pip
+# install over an already-installed editable package without churn).
+COPY pyproject.toml ./
+COPY backend/ ./backend/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
+RUN pip install --upgrade pip \
+    && pip install -e ".[dev]"
+
+# V12-L11 — drop privileges before CMD. The default ``python:3.12-slim``
+# base image runs as root, which means a process exploiting the
+# bind-mounted source could rewrite ``/app`` arbitrarily. Switching to
+# a dedicated unprivileged ``app`` user keeps the dev image surface
+# closer to the prod image and shuts up Trivy/HIPAA-style image
+# scanners. ``--no-create-home`` keeps the image small; uvicorn doesn't
+# read ``$HOME``. ``/app`` is chowned so the editable install + future
+# pip writes from CMD still work, and ``/tmp`` is world-writable on the
+# base image so we don't need to touch it.
+RUN groupadd --system --gid 1000 app \
+    && useradd --system --uid 1000 --gid app --no-create-home --shell /usr/sbin/nologin app \
+    && chown -R app:app /app
+USER app
+
+EXPOSE 8080
+
+# Audit §16.1.2 — bake the same /health probe the compose stack uses
+# into the image itself so standalone runs (``docker run …``, plain
+# Kubernetes ``Deployment``s without an explicit liveness probe, ad-hoc
+# Helm charts) inherit a working healthcheck out of the box. The
+# compose ``backend.healthcheck`` block continues to override these
+# values with its own interval/timeout/retries; this stanza is purely
+# the fallback for non-compose consumers. ``curl`` is already installed
+# above for exactly this reason (V12-L2).
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=5 \
+    CMD curl -fsS http://localhost:8080/health || exit 1
+
+# Entrypoint: just uvicorn. Migrations are owned by the compose
+# ``migrate`` init-service (see ``docker-compose.yml``); the lifespan
+# (``RUN_MIGRATIONS_ON_STARTUP=false`` in compose) verifies the DB is
+# at the expected alembic head before serving traffic. For manual /
+# non-compose setups, run ``alembic upgrade head`` yourself before
+# uvicorn or set ``RUN_MIGRATIONS_ON_STARTUP=true`` to restore the
+# legacy in-lifespan upgrade.
+CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port 8080 --reload"]

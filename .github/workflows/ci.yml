@@ -1,0 +1,270 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# V12-L6 — cancel superseded runs on the same ref. Pre-fix a
+# ``git push --force-with-lease`` after a rebase left the previous
+# 10-minute backend/frontend/e2e fan-out running to completion before
+# the new run picked up; the old runs were always stale (their commit
+# isn't the tip anymore) so we just drop them.
+concurrency:
+  # ``github.workflow`` is already unique per workflow file so we don't
+  # need a literal ``ci-`` prefix here — ``security.yml`` and this file
+  # land in disjoint groups by virtue of having different workflow
+  # names.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: garant
+          POSTGRES_PASSWORD: garant
+          POSTGRES_DB: garant
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U garant"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://garant:garant@localhost:5432/garant
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: garant
+      POSTGRES_PASSWORD: garant
+      POSTGRES_ADMIN_DB: postgres
+      POSTGRES_TEST_DB: garant_test
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # V12-L4 — assert that ``uv.lock`` is in sync with
+      # ``pyproject.toml``. Pre-fix transitive deps drifted between
+      # builds because nothing pinned the resolver output; the
+      # lockfile is the source of truth for the *transitive* dep
+      # tree (the runtime `==` pins in pyproject.toml only cover the
+      # direct deps). ``uv lock --check`` is a pure read of both
+      # files and a re-resolve in-memory — it does not install
+      # anything, so the actual install step below stays on pip.
+      # Refactoring CI / Dockerfile to install via ``uv sync
+      # --frozen`` is a follow-up; this gate at least prevents the
+      # committed ``uv.lock`` from going stale silently.
+      - name: Install uv (for lockfile drift check)
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.7.9"
+
+      - name: Verify uv.lock matches pyproject.toml
+        run: |
+          uv lock --check \
+            || (echo "::error::uv.lock is out of date — run 'uv lock' and commit the result." \
+                && exit 1)
+
+      - name: Install backend deps (with dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check backend/ tests/ alembic/
+
+      # CI-3 — backend type-checking gate. ``pyrightconfig.json`` at
+      # the repo root pins the rule set we currently pass; tightening
+      # is incremental — ``reportArgumentType`` is at ``warning`` so
+      # the SQLAlchemy 2 ``Decimal`` vs ``float`` families surface in
+      # the log without failing the build (audit §16.3.1).  The
+      # package is installed as part of the ``[dev]`` extras above
+      # so this step doesn't shell out to ``npm`` or pull a separate
+      # toolchain.
+      - name: Type-check (pyright)
+        run: pyright
+
+      - name: Alembic upgrade head (verify migrations apply cleanly)
+        run: alembic upgrade head
+
+      # V12-L7 / V12-H5 (part) — OpenAPI drift gate. The committed
+      # ``frontend/openapi.json`` is the canonical contract between
+      # backend and frontend; the frontend uses it to regenerate
+      # ``src/api/openapi.generated.ts`` and to validate its e2e
+      # fixtures. Regenerating from the live FastAPI app and diffing
+      # against the committed copy catches the cases where a backend
+      # route / schema change landed without refreshing the contract.
+      - name: OpenAPI schema drift check
+        run: |
+          python scripts/dump_openapi.py
+          git diff --exit-code -- frontend/openapi.json \
+            || (echo "::error::frontend/openapi.json is out of date — run 'python scripts/dump_openapi.py' and commit." \
+                && exit 1)
+
+      # V12-CI-2 — coverage gate. ``pytest-cov`` is in the ``[dev]``
+      # extras installed above. The threshold (65 %) is a deliberate
+      # 3-pt buffer below the current 68 % baseline so deletion of
+      # a single test doesn't fail the build, but a broader
+      # regression does. ``--cov-report=term`` keeps the per-module
+      # summary in the job log for triage; ``--cov-report=xml``
+      # writes ``coverage.xml`` next to the test run for the upload
+      # step below to ship as a build artifact (no external coverage
+      # service is wired up yet — the XML is purely for offline
+      # inspection from the Actions UI).
+      - name: Tests (pytest, with coverage)
+        run: |
+          pytest -v \
+            --cov=backend/app \
+            --cov-report=term \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=65
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-coverage
+          path: coverage.xml
+          retention-days: 14
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+
+      # Audit N-10 — every ``frontend/package.json`` dependency is
+      # pinned to an exact version (no ``^`` or ``~`` prefix) so the
+      # committed ``package-lock.json`` is the single source of truth
+      # for what the install resolves to. A caret slipping into the
+      # manifest would silently re-enable npm's "compatible minor"
+      # upgrade behaviour the next time anyone deletes the lockfile
+      # — defeating the reproducibility ``npm ci`` is meant to enforce
+      # and reintroducing the supply-chain failure mode the lockfile
+      # is supposed to close. Fail loud here.
+      - name: Forbid caret/tilde version ranges in package.json
+        run: node ../scripts/check-pinned-deps.cjs package.json
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      # V12-M4 — call the package script so any future tweak (e.g.
+      # turning on ``--incremental`` or pointing at a different
+      # tsconfig) goes through one definition rather than diverging
+      # between CI and developer machines. ``npm run typecheck`` runs
+      # ``tsc --noEmit -p tsconfig.json`` which is the right behaviour
+      # for a pure type-check; the previous ``npx tsc -b`` invocation
+      # wrote ``.tsbuildinfo`` files and didn't actually fail when
+      # ``noEmit`` was off in a referenced project.
+      - name: Typecheck (tsc)
+        run: npm run typecheck
+
+      # V12-L7 / V12-H5 (part) — frontend half of the OpenAPI drift
+      # gate. Regenerates ``src/api/openapi.generated.ts`` from the
+      # committed ``frontend/openapi.json`` (the backend job is what
+      # validates that the JSON itself matches the live FastAPI app)
+      # and fails if the file drifted. We don't shell out to python
+      # here so this step stays self-contained — the only contract is
+      # against the JSON snapshot already in the working tree.
+      - name: Frontend API types drift check
+        run: |
+          npx openapi-typescript openapi.json -o src/api/openapi.generated.ts
+          git diff --exit-code -- src/api/openapi.generated.ts \
+            || (echo "::error::src/api/openapi.generated.ts is out of date — run 'npm run generate:api-types' and commit." \
+                && exit 1)
+
+      - name: Unit + component tests (vitest)
+        run: npm run test:run
+
+      - name: Build (vite)
+        run: npx vite build
+
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+
+      # V12-L9 — Cache the Playwright browser binaries by the resolved
+      # ``@playwright/test`` version AND a hash of the committed
+      # ``package-lock.json``. Pre-fix the cache key was just the
+      # declared major.minor.patch of ``@playwright/test``; patch
+      # releases of Playwright sometimes bump the Chromium revision
+      # they download (changelog notes pinpoint the new revision but
+      # the npm version stays the same), so a cache-hit on the same
+      # ``1.60.0`` could resurrect an older Chromium binary while the
+      # current Playwright client expected the newer one — manifest
+      # as "Executable doesn't exist" or webdriver protocol mismatches
+      # in random e2e runs. Mixing the lockfile hash into the key
+      # invalidates the cache the moment ``npm ci`` materialises a new
+      # tarball for any dep, so we re-download Chromium whenever
+      # Playwright's own dep tree shifts.
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-
+
+      - name: Install Chromium (Playwright)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install OS deps only
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: E2E smoke (Playwright)
+        run: npm run test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 14

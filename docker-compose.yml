@@ -1,0 +1,215 @@
+# Dev stack: `docker compose up` brings the whole app online.
+#
+#   - postgres:16-alpine  → :5432  (named volume, survives compose down)
+#   - redis:7-alpine      → :6379  (ephemeral; only used when REDIS_URL set)
+#   - backend             → :8080  (uvicorn --reload, alembic on boot)
+#   - frontend            → :5173  (vite hot-reload)
+#
+# Code is bind-mounted, so edits trigger reload without rebuilds.
+# Copy `.env.compose.example` to `.env` and fill in BOT_TOKEN /
+# CRYPTOBOT_TOKEN before `docker compose up`.
+
+# V12-M10 — Postgres credentials are sourced from ``.env`` (or the
+# ambient shell). A rotated password set in ``.env`` propagates to
+# every consumer (postgres init, migrate-service DSN, backend DSN,
+# healthcheck) without touching the compose file. Pre-fix the literal
+# ``garant`` was hard-coded in three places and the documentation in
+# ``.env.compose.example`` was inert.
+#
+# Audit §16.2.1 — ``POSTGRES_PASSWORD`` no longer has a default. The
+# previous ``${POSTGRES_PASSWORD:-garant}`` baked the literal ``garant``
+# into the running stack whenever someone forgot to copy
+# ``.env.compose.example`` → ``.env`` (or left the placeholder value
+# in place), which is fine on a laptop but a real footgun the day
+# compose is run on a server with the Postgres port exposed. The
+# ``${POSTGRES_PASSWORD:?...}`` syntax aborts ``docker compose up``
+# with a readable error pointing the operator at
+# ``.env.compose.example`` instead, so the misconfiguration surfaces
+# at boot rather than as a weak-credential surprise later. ``USER`` /
+# ``DB`` still default to ``garant`` because those aren't secrets and
+# every other DSN in the stack hard-codes the same names.
+x-postgres-env: &postgres-env
+  POSTGRES_USER: ${POSTGRES_USER:-garant}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.compose.example) before running docker compose up}
+  POSTGRES_DB: ${POSTGRES_DB:-garant}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: *postgres-env
+    # Bound to 127.0.0.1 so a dev's Postgres isn't reachable from
+    # other machines on their LAN (and especially not from the wider
+    # internet if compose ever runs on a server). Use
+    # ``DOCKER_HOST_IFACE=0.0.0.0`` in your shell if you really need
+    # to share the DB.
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # ``$$`` escapes a literal ``$`` in compose's variable
+      # interpolation so the shell inside the container expands the
+      # variables that postgres itself sets at boot.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-garant} -d $${POSTGRES_DB:-garant}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # See note on postgres above — bound to localhost-only by default.
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # V12-H3 — one-shot init-service that runs ``alembic upgrade head``
+  # against the compose-managed Postgres and exits. The backend service
+  # depends on it with ``service_completed_successfully`` so each
+  # ``docker compose up`` migrates exactly once regardless of how many
+  # backend replicas come up afterwards.
+  #
+  # Pre-fix the backend image's CMD ran ``alembic upgrade head``
+  # alongside the FastAPI lifespan's own ``run_migrations()`` call,
+  # so every container boot serialised two upgrade rounds on the
+  # alembic advisory lock for no benefit. Splitting the upgrade into
+  # this dedicated service:
+  #
+  # 1. Makes migration a clearly observable step in ``docker compose
+  #    up`` output (its own service log) instead of mixing into
+  #    backend startup noise.
+  # 2. Lets us horizontally scale ``backend`` later without N replicas
+  #    competing on the same advisory lock during cold start.
+  # 3. Keeps the image build reproducible — re-running ``docker
+  #    compose up`` against an already-migrated DB is still a no-op
+  #    (alembic checks the version row before doing anything).
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # V12-M10 — DSN is built from the shared ``POSTGRES_*`` env so a
+      # rotated password in ``.env`` propagates without editing the
+      # compose file. Audit §16.2.1 — ``POSTGRES_PASSWORD`` is now
+      # required (no default); the missing-var error fires before this
+      # line is reached, so the operator sees a single readable
+      # message instead of a misleading auth failure on first connect.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-garant}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.compose.example)}@postgres:5432/${POSTGRES_DB:-garant}
+    volumes:
+      - ./backend:/app/backend
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+      - ./pyproject.toml:/app/pyproject.toml
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      # V12-M10 — same shared DSN as the ``migrate`` service so a
+      # rotated ``POSTGRES_PASSWORD`` in ``.env`` is honoured by every
+      # consumer in the stack. Audit §16.2.1 — ``POSTGRES_PASSWORD`` is
+      # required; the missing-var error fires at parse time.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-garant}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.compose.example)}@postgres:5432/${POSTGRES_DB:-garant}
+      # Empty REDIS_URL = in-process broadcast + rate-limit; set to
+      # redis://redis:6379/0 to exercise the P3.5 multi-replica path.
+      REDIS_URL: ${REDIS_URL:-}
+      # Audit §4.5 — propagate the require-Redis-for-2FA flag from
+      # ``.env`` so a scale-out deploy can opt into fail-loud
+      # enrolment instead of the per-process fallback.
+      REQUIRE_REDIS_FOR_2FA: ${REQUIRE_REDIS_FOR_2FA:-0}
+      # Audit §16.2.2 — the ``0000000000:FAKE`` placeholder is a
+      # dev-only convenience so ``docker compose up`` works without
+      # ``.env``. ``backend/app/bot/runner.py`` logs at ERROR if
+      # ``RUN_BOT=1`` is set with this placeholder still in place, so
+      # the misconfiguration can't reach Telegram and fail mid-DM.
+      BOT_TOKEN: ${BOT_TOKEN:-0000000000:FAKE}
+      CRYPTOBOT_TOKEN: ${CRYPTOBOT_TOKEN:-000000:FAKE}
+      WEBAPP_URL: ${WEBAPP_URL:-http://localhost:5173}
+      WEBAPP_PORT: "8080"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      RUN_BOT: ${RUN_BOT:-0}
+      # Crystalpay v3 credentials. Empty = provider disabled (safe default).
+      CRYSTALPAY_LOGIN: ${CRYSTALPAY_LOGIN:-}
+      CRYSTALPAY_SECRET: ${CRYSTALPAY_SECRET:-}
+      # V12-H2 — fail closed: require a signed Telegram initData by
+      # default. Pre-fix the compose default was ``1`` which silently
+      # accepted any forged payload as soon as a developer ran
+      # ``docker compose up`` without first reading the README. Set
+      # ``ALLOW_UNSIGNED_INIT_DATA=1`` in your shell or ``.env`` if you
+      # need to drive the TMA from a regular browser tab without a
+      # real Telegram client signature.
+      ALLOW_UNSIGNED_INIT_DATA: ${ALLOW_UNSIGNED_INIT_DATA:-0}
+      # V12-H3 — the ``migrate`` service above owns the
+      # ``alembic upgrade head`` round-trip; the backend lifespan only
+      # verifies the DB is at the expected head revision. Override to
+      # ``1`` only if you're running the backend standalone (without
+      # the compose ``migrate`` service).
+      RUN_MIGRATIONS_ON_STARTUP: ${RUN_MIGRATIONS_ON_STARTUP:-0}
+      BOT_FORUMS_URL: ${BOT_FORUMS_URL:-}
+      BOT_COMMUNITY_CHAT_URL: ${BOT_COMMUNITY_CHAT_URL:-}
+      BOT_ARBITRATION_URL: ${BOT_ARBITRATION_URL:-}
+      BOT_DOCS_URL: ${BOT_DOCS_URL:-}
+      BOT_SUPPORT_USERNAME: ${BOT_SUPPORT_USERNAME:-}
+    # Localhost-only. The TMA is opened in a Telegram client that
+    # tunnels through the local browser, so a public port isn't
+    # needed for dev.
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./backend:/app/backend
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./tests:/app/tests
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    environment:
+      # SPA in the browser calls the backend directly on the host's
+      # published port 8080 (CORS handles the cross-origin part). This
+      # avoids needing to rewrite vite.config.ts proxy target.
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
+      # Inside the docker network ``localhost`` resolves to the
+      # frontend container itself; the vite dev proxy needs the
+      # backend's compose hostname to route ``/api`` and ``/ws``
+      # correctly when the SPA is reached via a tunnel (Telegram TMA).
+      VITE_PROXY_TARGET: ${VITE_PROXY_TARGET:-http://backend:8080}
+    ports:
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/tailwind.config.ts:/app/tailwind.config.ts
+      - ./frontend/postcss.config.js:/app/postcss.config.js
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  postgres_data:

@@ -1,0 +1,129 @@
+"""drop legacy DealStatus values
+
+Removes the five legacy enum values left over from the pre-P3.3 SQLite era:
+``wait_confirm``, ``confirmed``, ``success``, ``failed``, ``arbitrage``. P3.3
+wiped the SQLite-era data on the way to Postgres so there is nothing left
+to migrate — these values are pure dead code.
+
+Postgres does not support ``ALTER TYPE ... DROP VALUE``, so we juggle a
+shadow enum: create the new one, swap the column over, drop the old one,
+rename the new one back to ``dealstatus``.
+
+V5-E-1 — irreversible data loss on downgrade
+--------------------------------------------
+The downgrade recreates the enum with the legacy values appended, so
+*new* rows can again use ``wait_confirm`` etc.  Existing rows are
+unaffected because their text representation survives the
+``USING status::text::dealstatus_new`` cast.  However, the upgrade
+side already silently dropped any pre-P3.3 SQLite-era row that the
+``USING`` cast couldn't translate to a current value — that data was
+considered legacy garbage at cutover time and is *not* recoverable
+from the live schema.  If you ever need it back, restore from a
+pre-cutover backup.
+
+Revision ID: 411cbe508b97
+Revises: b8adfad43818
+Create Date: 2026-05-13 17:30:00.000000
+"""
+
+from __future__ import annotations
+
+from typing import Sequence
+
+import sqlalchemy as sa
+
+from alembic import op
+
+revision: str = "411cbe508b97"
+down_revision: str | None = "b8adfad43818"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+_CURRENT_VALUES = (
+    "cancelled",
+    "pending_confirmation",
+    "pending_payment",
+    "in_progress",
+    "completed",
+    "arbitration",
+    "resolved_for_buyer",
+    "resolved_for_seller",
+    "pending_cancellation",
+    "cancelled_for_inactivity",
+)
+
+_LEGACY_VALUES = (
+    "wait_confirm",
+    "confirmed",
+    "success",
+    "failed",
+    "arbitrage",
+)
+
+
+def upgrade() -> None:
+    # Audit §15.8 — pre-flight check. The bare ``ALTER TYPE ... USING
+    # status::text::dealstatus_new`` below dies with the unhelpful
+    # ``invalid input value for enum dealstatus_new: "<legacy>"`` if
+    # any row still holds a pre-P3.3 legacy value. Surface a friendly
+    # error with the offending count up front so the operator (who is
+    # almost certainly running this against a restored legacy snapshot)
+    # knows whether to purge-and-retry or restore from a post-cutover
+    # backup, instead of having to decode PG's enum-cast error.
+    conn = op.get_bind()
+    legacy_count = conn.execute(
+        sa.text("SELECT count(*) FROM deals WHERE status::text = ANY(:legacy)"),
+        {"legacy": list(_LEGACY_VALUES)},
+    ).scalar_one()
+    if legacy_count:
+        raise RuntimeError(
+            f"Refusing to drop legacy DealStatus values: {legacy_count} row(s) "
+            f"in deals.status still use a legacy enum value "
+            f"({', '.join(_LEGACY_VALUES)}). These values were considered "
+            f"garbage at the P3.3 SQLite→Postgres cutover; either DELETE "
+            f"or UPDATE the offending rows and re-run this migration, or "
+            f"restore from a post-cutover backup. See this revision's "
+            f"docstring for the irreversible-downgrade note."
+        )
+
+    new_values = ", ".join(f"'{v}'" for v in _CURRENT_VALUES)
+    op.execute(f"CREATE TYPE dealstatus_new AS ENUM ({new_values})")
+    op.execute(
+        "ALTER TABLE deals "
+        "ALTER COLUMN status DROP DEFAULT, "
+        "ALTER COLUMN status TYPE dealstatus_new USING status::text::dealstatus_new, "
+        "ALTER COLUMN status SET DEFAULT 'pending_confirmation'::dealstatus_new"
+    )
+    op.execute("DROP TYPE dealstatus")
+    op.execute("ALTER TYPE dealstatus_new RENAME TO dealstatus")
+
+
+def downgrade() -> None:
+    # Audit §15.8 — emit an explicit warning at run time so an
+    # operator who triggers the downgrade is reminded that re-adding
+    # the legacy enum values does NOT recover any pre-P3.3 row that
+    # the original ``upgrade()`` dropped at the SQLite→Postgres
+    # cutover. The docstring at the top of this file has carried
+    # this caveat since V5-E-1 but downgrades are usually run from
+    # CI or a runbook where the docstring isn't in front of the
+    # operator; surfacing it via ``alembic``'s logger keeps the
+    # warning in the same stream as the migration progress.
+    import logging as _logging
+
+    _logging.getLogger("alembic.runtime.migration").warning(
+        "downgrade 411cbe508b97: re-adding legacy DealStatus enum values "
+        "(%s). This does NOT recover pre-P3.3 rows dropped at the original "
+        "upgrade — restore from a pre-cutover backup if you need the data "
+        "back. See this revision's docstring (V5-E-1) for details.",
+        ", ".join(_LEGACY_VALUES),
+    )
+    all_values = ", ".join(f"'{v}'" for v in (*_CURRENT_VALUES, *_LEGACY_VALUES))
+    op.execute(f"CREATE TYPE dealstatus_new AS ENUM ({all_values})")
+    op.execute(
+        "ALTER TABLE deals "
+        "ALTER COLUMN status DROP DEFAULT, "
+        "ALTER COLUMN status TYPE dealstatus_new USING status::text::dealstatus_new, "
+        "ALTER COLUMN status SET DEFAULT 'pending_confirmation'::dealstatus_new"
+    )
+    op.execute("DROP TYPE dealstatus")
+    op.execute("ALTER TYPE dealstatus_new RENAME TO dealstatus")
