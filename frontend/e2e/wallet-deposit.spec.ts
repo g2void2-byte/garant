@@ -99,7 +99,7 @@ test.describe("Wallet deposit", () => {
     await page.getByRole("button", { name: /Пополнить баланс/ }).click();
     await expect(page.getByTestId("deposit-status-modal")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Пополнение баланса" }),
+      page.getByTestId("deposit-status-modal").getByRole("heading", { name: "Пополнение баланса" }),
     ).toBeVisible();
   });
 
