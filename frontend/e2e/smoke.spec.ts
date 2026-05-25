@@ -23,7 +23,7 @@ test.describe("App smoke", () => {
 
   test("loads the wallet page", async ({ page }) => {
     await page.goto("/wallet");
-    await expect(page.getByRole("heading", { name: "Депозит", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Кошелёк", exact: true })).toBeVisible();
     // ``WalletPage`` filters balances to ``kind === "fiat"`` after
     // the fiat-only deposit refactor, so the USD row from the
     // default fixture is what surfaces (Tether is hidden).

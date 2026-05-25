@@ -60,13 +60,13 @@ test.describe("Wallet withdraw", () => {
     // click into the withdraw flow.
     await page.goto("/wallet");
     await expect(
-      page.getByRole("heading", { name: "Депозит", exact: true }),
+      page.getByRole("heading", { name: "Кошелёк", exact: true }),
     ).toBeVisible();
-    await page.getByRole("button", { name: /Вывести\s+депозит/ }).click();
+    await page.getByRole("button", { name: /Вывести\s+средства/ }).click();
 
     // Page header confirms the subroute mounted.
     await expect(
-      page.getByRole("heading", { name: "Вывести депозит" }),
+      page.getByRole("heading", { name: "Вывод средств" }),
     ).toBeVisible();
 
     // Click "Всё" to copy the full balance into the amount input,
@@ -91,7 +91,7 @@ test.describe("Wallet withdraw", () => {
     await mockApi(page);
     await page.goto("/wallet/withdraw");
     await expect(
-      page.getByRole("heading", { name: "Вывести депозит" }),
+      page.getByRole("heading", { name: "Вывод средств" }),
     ).toBeVisible();
 
     await page.getByRole("button", { name: /^Карта$/ }).click();
@@ -123,7 +123,7 @@ test.describe("Wallet withdraw", () => {
 
     await page.goto("/wallet/withdraw");
     await expect(
-      page.getByRole("heading", { name: "Вывести депозит" }),
+      page.getByRole("heading", { name: "Вывод средств" }),
     ).toBeVisible();
 
     // Fill the amount but leave the address blank — the client-side

@@ -61,7 +61,7 @@ test.describe("Wallet currency drill-down", () => {
 
     await page.goto("/wallet");
     await expect(
-      page.getByRole("heading", { name: "Депозит", exact: true }),
+      page.getByRole("heading", { name: "Кошелёк", exact: true }),
     ).toBeVisible();
 
     const usdLink = page.getByRole("link", { name: /US Dollar/ });

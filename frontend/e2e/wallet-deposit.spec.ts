@@ -89,14 +89,14 @@ test.describe("Wallet deposit", () => {
     // pending status + amount header.
     await page.goto("/wallet/deposit");
     await expect(
-      page.getByRole("heading", { name: "Пополнение депозита" }),
+      page.getByRole("heading", { name: "Пополнение баланса" }),
     ).toBeVisible();
 
     // ``useEffect`` seeds the amount to ``min_deposit`` (5) once the
     // currency resolves — assert it surfaced before submit.
     await expect(page.getByLabel("Сумма")).toHaveValue("5");
 
-    await page.getByRole("button", { name: /Пополнить депозит/ }).click();
+    await page.getByRole("button", { name: /Пополнить баланс/ }).click();
     await expect(page.getByTestId("deposit-status-modal")).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Пополнение баланса" }),
@@ -124,14 +124,14 @@ test.describe("Wallet deposit", () => {
 
     await page.goto("/wallet/deposit");
     await expect(
-      page.getByRole("heading", { name: "Пополнение депозита" }),
+      page.getByRole("heading", { name: "Пополнение баланса" }),
     ).toBeVisible();
 
     // Wait for the auto-fill to settle, then clear the amount so the
     // client-side ``Number.isFinite || value <= 0`` guard trips.
     await expect(page.getByLabel("Сумма")).toHaveValue("5");
     await page.getByLabel("Сумма").fill("0");
-    await page.getByRole("button", { name: /Пополнить депозит/ }).click();
+    await page.getByRole("button", { name: /Пополнить баланс/ }).click();
 
     await expect(page.getByText("Введите корректную сумму")).toBeVisible();
     expect(postCalled).toBe(false);
