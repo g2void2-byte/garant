@@ -136,9 +136,9 @@ export default function NotificationDetailPage() {
             variant="secondary"
             fullWidth
             className="mt-2"
-            onClick={() => navigate("/wallet")}
+            onClick={() => navigate("/profile")}
           >
-            <Wallet className="size-4" /> Открыть кошелёк
+            <Wallet className="size-4" /> Открыть профиль
           </Button>
         )}
       </div>

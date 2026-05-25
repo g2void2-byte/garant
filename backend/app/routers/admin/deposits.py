@@ -248,7 +248,7 @@ async def refund_deposit(
         session,
         d.user_id,
         NotificationType.deposits,
-        "Депозит возвращён",
+        "Пополнение возвращено",
         f"−{d.amount} {currency.code} списаны (возврат)",
         {"deposit_id": d.id, "currency": currency.code},
     )

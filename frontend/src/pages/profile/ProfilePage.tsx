@@ -112,7 +112,7 @@ export default function ProfilePage() {
           ) : null}
         </div>
 
-        <ProfileStatsGrid user={me} onDepositClick={() => navigate("/wallet")} />
+        <ProfileStatsGrid user={me} onDepositClick={() => navigate("/wallet/trust-deposit")} />
 
         <ProfileForumsCard user={me} />
 

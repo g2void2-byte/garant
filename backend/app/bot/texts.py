@@ -154,7 +154,7 @@ def profile_summary(
         f"👤 <b>Имя</b> [<code>{user.tg_user_id}</code>]: {name}\n"
         f"🎫 <b>Статус:</b> {_user_status(user)}\n"
         f"⭐ <b>Рейтинг:</b> {_rating(user)}\n"
-        f"💼 <b>Депозит:</b> {deposit_str}\n\n"
+        f"💼 <b>Депозит доверия:</b> {deposit_str}\n\n"
         f"🛒 <b>Покупок:</b> {buys_count} шт, на сумму: {buys_sum_line}\n"
         f"🎁 <b>Продаж:</b> {sales_count} шт, на сумму: {sales_sum_line}"
     )

@@ -31,12 +31,12 @@ const PROVIDER_LABELS: Record<DepositProvider, string> = {
 };
 
 /**
- * Continental "Пополнение депозита" page.
+ * Continental "Пополнение баланса" page.
  *
  * Continental layout:
  *   - Currency picker (dropdown showing all active currencies).
  *   - Amount input (with min-deposit placeholder).
- *   - "Пополнить депозит" button — opens the CryptoBot invoice URL.
+ *   - "Пополнить баланс" button — opens the CryptoBot invoice URL.
  *   - Helper text below: "Пополните баланс через выбранную сеть и валюту".
  */
 export default function WalletDepositPage() {
@@ -99,7 +99,7 @@ export default function WalletDepositPage() {
   if (currencies.isLoading) {
     return (
       <Page showBack>
-        <Header title="Пополнение депозита" />
+        <Header title="Пополнение баланса" />
         <div className="px-4 space-y-2">
           <Skeleton className="h-12 w-full rounded-button" />
           <Skeleton className="h-12 w-full rounded-button" />
@@ -135,7 +135,7 @@ export default function WalletDepositPage() {
       haptic("error");
       toast.show({
         kind: "error",
-        title: (e as Error)?.message || "Не удалось создать депозит",
+        title: (e as Error)?.message || "Не удалось создать счет на оплату",
       });
     }
   }
@@ -151,7 +151,7 @@ export default function WalletDepositPage() {
 
   return (
     <Page showBack>
-      <Header title="Пополнение депозита" />
+      <Header title="Пополнение баланса" />
       <div className="px-4 space-y-3">
         <div>
           <div className="mb-1 text-[14px] font-medium">Платёжная система</div>
@@ -215,7 +215,7 @@ export default function WalletDepositPage() {
           disabled={create.isPending || !current}
         >
           <ArrowDownToLine className="size-4" />
-          {create.isPending ? "Создаю депозит..." : "Пополнить депозит"}
+          {create.isPending ? "Создаю счет..." : "Пополнить баланс"}
         </Button>
         <p className="text-xs text-text-muted leading-relaxed">
           Пополните баланс через выбранную сеть и валюту. Уведомления о пополнениях

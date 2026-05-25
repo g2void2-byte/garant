@@ -25,7 +25,7 @@ import { haptic, openTelegramLink } from "@/lib/tg";
 type WithdrawMethod = "cryptobot" | "card";
 
 /**
- * Continental "Вывести депозит" page.
+ * Continental "Вывод средств" page.
  *
  * Two withdrawal methods:
  *   * **🤖 CryptoBot** — drives ``POST /api/wallet/withdrawals``.
@@ -88,7 +88,7 @@ export default function WalletWithdrawPage() {
   if (balances.isLoading) {
     return (
       <Page showBack>
-        <Header title="Вывести депозит" />
+        <Header title="Вывод средств" />
         <div className="px-4 space-y-2">
           <Skeleton className="h-12 w-full rounded-button" />
           <Skeleton className="h-12 w-full rounded-button" />
@@ -101,7 +101,7 @@ export default function WalletWithdrawPage() {
   if (!eligible.length) {
     return (
       <Page showBack>
-        <Header title="Вывести депозит" />
+        <Header title="Вывод средств" />
         <div className="px-4 space-y-3">
           <MethodSwitcher
             value={method}
@@ -112,7 +112,7 @@ export default function WalletWithdrawPage() {
           />
           <EmptyState
             title="У вас нет доступных для вывода валют"
-            description="Пополните баланс через «Внести депозит», чтобы запросить вывод."
+            description="Пополните баланс через «Пополнить баланс», чтобы запросить вывод."
           />
         </div>
         <CardWithdrawModal
@@ -210,7 +210,7 @@ export default function WalletWithdrawPage() {
 
   return (
     <Page showBack>
-      <Header title="Вывести депозит" />
+      <Header title="Вывод средств" />
       <div className="px-4 space-y-3">
         <MethodSwitcher
           value={method}

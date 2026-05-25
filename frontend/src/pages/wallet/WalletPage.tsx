@@ -46,8 +46,8 @@ export default function WalletPage() {
   const trustBalance = me.data?.deposit ?? 0;
 
   return (
-    <Page>
-      <Header title="Депозит" />
+    <Page showBack>
+      <Header title="Кошелёк" />
       <div className="px-4 space-y-2">
         {isLoading && (
           <>
@@ -88,9 +88,9 @@ export default function WalletPage() {
           >
             <ArrowDownToLine className="size-5 text-accent" />
             <div className="text-[15px] font-medium leading-tight text-left">
-              Внести
+              Пополнить
               <br />
-              депозит
+              баланс
             </div>
           </button>
           <button
@@ -102,7 +102,7 @@ export default function WalletPage() {
             <div className="text-[15px] font-medium leading-tight text-left">
               Вывести
               <br />
-              депозит
+              средства
             </div>
           </button>
         </div>
@@ -129,7 +129,7 @@ export default function WalletPage() {
               className="w-full flex items-center justify-center gap-2 bg-accent text-accent-fg rounded-button px-4 py-2.5 font-semibold active:scale-[0.98] transition"
             >
               <ShieldCheck className="size-4" />
-              Внести депозит доверия
+              Управление депозитом
             </button>
           </div>
         </section>

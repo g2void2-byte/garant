@@ -676,7 +676,7 @@ async def _build_expired_notification(
         session,
         deposit.user_id,
         NotificationType.deposits,
-        "Срок депозита истёк",
+        "Срок оплаты истёк",
         f"Счёт на {deposit.amount} {currency.code} истёк без оплаты. "
         "Создайте новый, если хотите пополнить баланс.",
         {"deposit_id": deposit.id, "currency": currency.code},
