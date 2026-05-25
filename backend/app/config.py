@@ -125,7 +125,7 @@ class Settings(BaseSettings):
     # 30 min also matches the upstream lifetime we now pass to both
     # providers when creating the invoice so all three sides agree on
     # the terminal moment.
-    wallet_deposit_expiry_seconds: int = 30 * 60  # 30 min
+    wallet_deposit_expiry_seconds: int = 20 * 60  # 20 min
     wallet_deposit_sweep_seconds: int = 60
 
     # Audit (continuation) H-2 — auto-reconcile stale pending
