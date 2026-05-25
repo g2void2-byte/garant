@@ -44,7 +44,7 @@ describe("<WalletPage />", () => {
   it("renders the page header", () => {
     mockState.data = [];
     renderPage();
-    expect(screen.getByRole("heading", { name: "Депозит" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Кошелёк" })).toBeInTheDocument();
   });
 
   it("renders the empty state when there are no balances", () => {
@@ -191,11 +191,7 @@ describe("<WalletPage />", () => {
   it("renders deposit and withdrawal action tiles", () => {
     mockState.data = [];
     renderPage();
-    // Two "Внести"-prefixed buttons live on the page after V12 (the
-    // legacy wallet-deposit tile and the new trust-deposit CTA), so
-    // the assertion checks for *both* matches explicitly to keep the
-    // regression detector unambiguous.
-    expect(screen.getAllByText(/Внести/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/Пополнить/)).toBeInTheDocument();
     expect(screen.getByText(/Вывести/)).toBeInTheDocument();
   });
 
@@ -208,7 +204,7 @@ describe("<WalletPage />", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/250/)).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Внести депозит доверия/ }),
+      screen.getByRole("button", { name: /Управление депозитом/ }),
     ).toBeInTheDocument();
   });
 });

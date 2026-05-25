@@ -140,10 +140,10 @@ describe("<WalletDepositPage />", () => {
   it("renders the header and the submit button", () => {
     renderPage();
     expect(
-      screen.getByRole("heading", { name: "Пополнение депозита" }),
+      screen.getByRole("heading", { name: "Пополнение баланса" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Пополнить депозит/ }),
+      screen.getByRole("button", { name: /Пополнить баланс/ }),
     ).toBeInTheDocument();
   });
 
@@ -180,7 +180,7 @@ describe("<WalletDepositPage />", () => {
     // ``fireEvent.change`` bypasses the useEffect that re-seeds the
     // amount to ``min_deposit`` whenever ``amount`` is empty.
     fireEvent.change(amount, { target: { value: "-1" } });
-    await user.click(screen.getByRole("button", { name: /Пополнить депозит/ }));
+    await user.click(screen.getByRole("button", { name: /Пополнить баланс/ }));
     expect(mockState.createMutation.mutateAsync).not.toHaveBeenCalled();
     expect(hapticSpy).toHaveBeenCalledWith("error");
   });
@@ -194,7 +194,7 @@ describe("<WalletDepositPage />", () => {
     renderPage();
     const amount = screen.getByDisplayValue("5") as HTMLInputElement;
     fireEvent.change(amount, { target: { value: "10" } });
-    await user.click(screen.getByRole("button", { name: /Пополнить депозит/ }));
+    await user.click(screen.getByRole("button", { name: /Пополнить баланс/ }));
 
     await waitFor(() => {
       expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
@@ -230,7 +230,7 @@ describe("<WalletDepositPage />", () => {
     await user.click(screen.getByTestId("provider-crystalpay"));
     const amount = screen.getByDisplayValue("5") as HTMLInputElement;
     fireEvent.change(amount, { target: { value: "10" } });
-    await user.click(screen.getByRole("button", { name: /Пополнить депозит/ }));
+    await user.click(screen.getByRole("button", { name: /Пополнить баланс/ }));
 
     await waitFor(() => {
       expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
@@ -254,7 +254,7 @@ describe("<WalletDepositPage />", () => {
     mockState.createMutation.mutateAsync.mockRejectedValue(new Error("Минимум 5"));
     const user = userEvent.setup();
     renderPage();
-    await user.click(screen.getByRole("button", { name: /Пополнить депозит/ }));
+    await user.click(screen.getByRole("button", { name: /Пополнить баланс/ }));
     await waitFor(() => {
       expect(hapticSpy).toHaveBeenCalledWith("error");
     });
@@ -265,7 +265,7 @@ describe("<WalletDepositPage />", () => {
   it("shows '...' while the mutation is pending and disables the button", () => {
     mockState.createMutation.isPending = true;
     renderPage();
-    const btn = screen.getByRole("button", { name: /Создаю депозит/ });
+    const btn = screen.getByRole("button", { name: /Создаю счет/ });
     expect(btn).toBeDisabled();
   });
 
@@ -282,7 +282,7 @@ describe("<WalletDepositPage />", () => {
     );
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderPage();
-    await user.click(screen.getByRole("button", { name: /Пополнить депозит/ }));
+    await user.click(screen.getByRole("button", { name: /Пополнить баланс/ }));
     await waitFor(() => {
       expect(screen.getByTestId("deposit-status-modal")).toBeInTheDocument();
     });
