@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   useCheckPin,
   useConfirmPinReset,
-  useRequestPinReset,
   useSetupPin,
 } from "@/api/hooks";
 import type { PinStatusDto, PinTokenDto } from "@/api/types";
@@ -10,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { PinPad } from "@/components/ui/PinPad";
 import { useToast } from "@/components/ui/Toast";
 import { Logo } from "@/components/layout/Logo";
+import { PinResetPaywallModal } from "@/components/PinResetPaywallModal";
 import { setPinToken } from "@/lib/pin";
 import { haptic } from "@/lib/tg";
 
@@ -38,8 +38,8 @@ export default function PinPage({ status, onUnlocked }: PinPageProps) {
 
   const setup = useSetupPin();
   const check = useCheckPin();
-  const requestReset = useRequestPinReset();
   const confirmReset = useConfirmPinReset();
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   // V5-F-7: keep memo/pin in sync with mode flips.
   useEffect(() => {
@@ -137,23 +137,8 @@ export default function PinPage({ status, onUnlocked }: PinPageProps) {
     }
   }
 
-  async function startReset() {
-    try {
-      const r = await requestReset.mutateAsync();
-      if (r.delivered) {
-        toast.show({ kind: "info", title: "Код отправлен в Telegram" });
-      } else {
-        toast.show({
-          kind: "error",
-          title: "Бот не смог отправить вам сообщение",
-          body: "Напишите /start боту и попробуйте снова.",
-        });
-      }
-      setResetCode("");
-      setMode("reset_code");
-    } catch (e: unknown) {
-      toast.show({ kind: "error", title: (e as Error)?.message || "Не удалось запросить сброс" });
-    }
+  function startReset() {
+    setPaywallOpen(true);
   }
 
   const locked = !!lockMessage;
@@ -235,12 +220,30 @@ export default function PinPage({ status, onUnlocked }: PinPageProps) {
             type="button"
             onClick={startReset}
             className="text-accent underline"
-            disabled={requestReset.isPending}
           >
             Забыли PIN?
           </button>
         </div>
       )}
+
+      <PinResetPaywallModal
+        open={paywallOpen}
+        onClose={() => setPaywallOpen(false)}
+        onPaid={(res) => {
+          setPaywallOpen(false);
+          if (res.delivered) {
+            toast.show({ kind: "info", title: "Код отправлен в Telegram" });
+          } else {
+            toast.show({
+              kind: "error",
+              title: "Бот не смог отправить сообщение",
+              body: "Напишите /start боту и попробуйте снова.",
+            });
+          }
+          setResetCode("");
+          setMode("reset_code");
+        }}
+      />
     </div>
   );
 }

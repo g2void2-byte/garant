@@ -21,7 +21,15 @@ def _common_user_fields(
     deposit: Decimal | None,
     deals_sum: Decimal,
 ) -> dict:
-    """Fields shared between :func:`user_to_out` and :func:`user_to_public_out`."""
+    """Fields shared between :func:`user_to_out` and :func:`user_to_public_out`.
+
+    ``deals_sum`` defaults to ``Decimal(0)`` upstream; when the
+    caller didn't pass an explicit value we fall back to the
+    admin-editable ``users.deals_sum_override`` column so the field
+    is no longer a hard-coded zero on every endpoint.
+    """
+    if deals_sum == 0 and getattr(user, "deals_sum_override", None) is not None:
+        deals_sum = Decimal(str(user.deals_sum_override or 0))
     reviews_count = user.good + user.bad
     total = reviews_count or 1
     computed_rating = round(user.good / total * 5, 1)

@@ -112,6 +112,7 @@ def _to_detail(user: User, *, has_pin: bool) -> AdminUserDetailOut:
         deals_success=user.deals_success,
         deals_failed=user.deals_failed,
         deals_arbitrage=user.deals_arbitrage,
+        deals_sum_override=Decimal(str(user.deals_sum_override or 0)),
         is_admin=user.is_admin,
         is_arbiter=user.is_arbiter,
         is_vip=user.is_vip,
@@ -769,6 +770,12 @@ async def set_stats(
         before["bad"] = target.bad
         after["bad"] = body.bad
         target.bad = body.bad
+    if body.deals_sum_override is not None:
+        current = Decimal(str(target.deals_sum_override or 0))
+        if Decimal(str(body.deals_sum_override)) != current:
+            before["deals_sum_override"] = str(current)
+            after["deals_sum_override"] = str(body.deals_sum_override)
+            target.deals_sum_override = Decimal(str(body.deals_sum_override))
     if not after:
         return _to_detail(target, has_pin=await _has_pin(target))
 

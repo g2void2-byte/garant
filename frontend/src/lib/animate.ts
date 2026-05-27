@@ -15,20 +15,49 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * ```
  */
 export function usePresence(show: boolean, duration = 200) {
+  // Two state slots: ``mounted`` controls whether the element exists
+  // in the DOM, ``visible`` controls the open class. They are
+  // intentionally desynchronised on the OPEN transition so the
+  // initial render lands with ``mounted=true, visible=false`` (the
+  // closed-state class), and a next-frame effect flips ``visible``
+  // to ``true``. Without this the open-state class is applied on
+  // the very first paint and the CSS transition has nothing to
+  // animate from — symptom: opens abruptly, closes smoothly.
   const [mounted, setMounted] = useState(show);
+  const [visible, setVisible] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
+  const raf = useRef<number | null>(null);
 
   useEffect(() => {
     clearTimeout(timer.current);
+    if (raf.current !== null) {
+      cancelAnimationFrame(raf.current);
+      raf.current = null;
+    }
     if (show) {
       setMounted(true);
+      // Flip ``visible`` on the next frame so the closed-state class
+      // is painted at least once before the open-state class — that's
+      // the frame the CSS transition lerps from.
+      raf.current = requestAnimationFrame(() => {
+        raf.current = requestAnimationFrame(() => {
+          setVisible(true);
+        });
+      });
     } else {
+      setVisible(false);
       timer.current = setTimeout(() => setMounted(false), duration);
     }
-    return () => clearTimeout(timer.current);
+    return () => {
+      clearTimeout(timer.current);
+      if (raf.current !== null) {
+        cancelAnimationFrame(raf.current);
+        raf.current = null;
+      }
+    };
   }, [show, duration]);
 
-  return { mounted, visible: show && mounted };
+  return { mounted, visible };
 }
 
 /**

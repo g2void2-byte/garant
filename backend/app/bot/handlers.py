@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import pathlib
 
 from aiogram import F, Router
 from aiogram.filters import CommandStart
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from . import keyboards, sections
 
@@ -26,12 +27,24 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
+_LOGO_PATH = pathlib.Path(__file__).parent / "assets" / "logo.jpg"
+
 
 # ── /start ───────────────────────────────────────────────────────────────
 
 
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
+    if _LOGO_PATH.exists():
+        try:
+            await message.answer_photo(
+                FSInputFile(_LOGO_PATH),
+                caption=sections.texts.WELCOME,
+                reply_markup=keyboards.main_reply_keyboard(),
+            )
+            return
+        except Exception as exc:  # noqa: BLE001 — non-fatal
+            logger.warning("cmd_start: logo send failed, falling back to text: %s", exc)
     await message.answer(
         sections.texts.WELCOME,
         reply_markup=keyboards.main_reply_keyboard(),

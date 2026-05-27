@@ -145,6 +145,7 @@ function makeUser(
     deals_success: 9,
     deals_failed: 1,
     deals_arbitrage: 0,
+    deals_sum_override: 0,
     is_admin: false,
     is_arbiter: false,
     is_vip: false,

@@ -72,6 +72,7 @@ function makeSettings(
     maintenance_enabled: false,
     maintenance_message: "Сервис на ТО",
     auto_withdraw_enabled: true,
+    pin_reset_price_usd: 3,
     ...overrides,
   };
 }

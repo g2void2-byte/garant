@@ -459,6 +459,7 @@ interface StatsDraft {
   deals_success: string;
   deals_failed: string;
   deals_arbitrage: string;
+  deals_sum_override: string;
   good: string;
   bad: string;
 }
@@ -471,6 +472,7 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
     deals_success: String(user.deals_success),
     deals_failed: String(user.deals_failed),
     deals_arbitrage: String(user.deals_arbitrage),
+    deals_sum_override: String(user.deals_sum_override ?? 0),
     good: String(user.good),
     bad: String(user.bad),
   });
@@ -484,6 +486,7 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
     { key: "deals_success", label: "Успешных", type: "int" },
     { key: "deals_failed", label: "Неуспешных", type: "int" },
     { key: "deals_arbitrage", label: "В арбитраже", type: "int" },
+    { key: "deals_sum_override", label: "Сумма сделок ($)", type: "float" },
     { key: "good", label: "Положительных оценок", type: "int" },
     { key: "bad", label: "Отрицательных оценок", type: "int" },
   ];

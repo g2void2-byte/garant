@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
@@ -193,6 +194,14 @@ class User(Base):
     deals_success: Mapped[int] = mapped_column(Integer, default=0)
     deals_failed: Mapped[int] = mapped_column(Integer, default=0)
     deals_arbitrage: Mapped[int] = mapped_column(Integer, default=0)
+    # Admin-editable aggregate "сумма сделок" shown in profile cards.
+    # Real per-currency volume isn't trivial to sum (different
+    # currencies, deleted deals) so we surface a manually-set value
+    # the admin can override per user. Defaults to 0; serializers
+    # forward it as ``deals_sum`` in the public/private DTOs.
+    deals_sum_override: Mapped[Decimal] = mapped_column(
+        Numeric(28, 8), default=Decimal(0), server_default="0"
+    )
     good: Mapped[int] = mapped_column(Integer, default=0)
     bad: Mapped[int] = mapped_column(Integer, default=0)
     pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -737,6 +746,15 @@ class AppSettings(Base):
     # the typical CryptoBot/Crystalpay invoice TTL.
     pending_topup_expiry_hours: Mapped[int] = mapped_column(
         Integer, default=24, server_default="24"
+    )
+    # Price (in USD, stored as Decimal for parity with the money
+    # columns) of a paid PIN-reset. The user clicks "Забыли PIN" on
+    # the lock screen / withdrawal flow, sees a modal with this price,
+    # and either pays it from their fiat balance to receive a fresh
+    # 6-digit code in Telegram or contacts an admin. ``0`` keeps the
+    # legacy free-reset behaviour.
+    pin_reset_price_usd: Mapped[Decimal] = mapped_column(
+        Numeric(28, 8), default=Decimal("3"), server_default="3"
     )
 
 

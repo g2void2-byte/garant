@@ -389,6 +389,7 @@ export interface AdminUserDetailDto {
   deals_success: number;
   deals_failed: number;
   deals_arbitrage: number;
+  deals_sum_override: number;
   is_admin: boolean;
   is_arbiter: boolean;
   is_vip: boolean;
@@ -702,6 +703,7 @@ export interface AdminSettingsDto {
   maintenance_enabled: boolean;
   maintenance_message: string;
   auto_withdraw_enabled: boolean;
+  pin_reset_price_usd: number;
 }
 
 export interface AdminSettingsUpdateBody {
@@ -714,6 +716,7 @@ export interface AdminSettingsUpdateBody {
   maintenance_enabled?: boolean;
   maintenance_message?: string;
   auto_withdraw_enabled?: boolean;
+  pin_reset_price_usd?: number;
 }
 
 export interface AdminCategoryDto {

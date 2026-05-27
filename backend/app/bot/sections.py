@@ -11,6 +11,7 @@ Bot handlers stay thin — they just decide which section to dispatch to.
 
 from __future__ import annotations
 
+import logging
 import pathlib
 from typing import Any
 
@@ -27,6 +28,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import async_session
 from ..models import Currency, Deal, DealStatus, User
 from . import banners, keyboards, texts
+
+logger = logging.getLogger(__name__)
 
 # Section-specific banner images. Drop a PNG/JPG next to this file under
 # ``assets/`` (search.png, deals.png, profile.png, help.png) and the bot
@@ -270,6 +273,38 @@ async def send_deals(
     await _send(message, body, keyboard=kb, photo=photo)
 
 
+async def _fetch_avatar_png(message: Message, tg_user_id: int) -> bytes | None:
+    """Download the Telegram profile photo as bytes, or ``None`` if the
+    user has no avatar / the call fails.
+
+    Failures here are non-fatal — the renderer falls back to a
+    placeholder. Telegram caches ``file_id`` server-side, so this is
+    cheap on the second hit.
+    """
+    bot = message.bot
+    if bot is None:
+        return None
+    try:
+        photos = await bot.get_user_profile_photos(user_id=tg_user_id, limit=1)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("get_user_profile_photos failed for %s: %s", tg_user_id, exc)
+        return None
+    if not photos.photos or not photos.photos[0]:
+        return None
+    # Pick the largest size (the last entry in the per-row list is the
+    # original-resolution variant).
+    size = photos.photos[0][-1]
+    try:
+        buf = await bot.download(size.file_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("avatar download failed for %s: %s", tg_user_id, exc)
+        return None
+    if buf is None:
+        return None
+    data = buf.read() if hasattr(buf, "read") else bytes(buf)
+    return data or None
+
+
 async def send_profile(
     message: Message, *, tg_user_id: int, username: str | None, first_name: str | None
 ) -> None:
@@ -285,9 +320,12 @@ async def send_profile(
         sales_count=stats["sales_count"],
         by_currency=stats["by_currency"],
     )
+    avatar_png = await _fetch_avatar_png(message, tg_user_id)
     photo = BufferedInputFile(
         banners.render_profile(
-            username=user.username, deposit=float(user.trust_deposit_balance or 0)
+            username=user.username,
+            deposit=float(user.trust_deposit_balance or 0),
+            avatar_png=avatar_png,
         ),
         filename="profile.jpg",
     )
