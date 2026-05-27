@@ -963,51 +963,21 @@ async def create_withdrawal(
             400, f"Минимальная сумма вывода: {currency.min_withdraw} {currency.code}"
         )
 
-    # P11-W1 — CryptoBot Transfer auto-mode (``auto_withdraw_enabled``
-    # + a real ``CRYPTOBOT_TOKEN``) identifies the recipient by
-    # ``users.tg_user_id`` and therefore does not need an on-chain
-    # address. Manual-mode payouts (admin DM-driven) still require
-    # one — without it the operator has nowhere to send funds. We
-    # decide which mode is active up front so the regex check below
-    # can be skipped when the address is legitimately absent.
-    auto_mode = await _auto_withdraw_enabled(session) and _cryptopay_configured()
+    # V14 — both auto- and manual-mode payouts ship via CryptoBot
+    # Transfer (recipient = ``users.tg_user_id``), so the on-chain
+    # address is no longer collected from the user or required by the
+    # backend. In auto-mode ``services_wallet.create_withdrawal``
+    # dispatches the Transfer call itself (Phase 2 below). In manual
+    # mode the admin reviews the queue and triggers the same Transfer
+    # via the Approve button in ``admin/withdrawals.decide_withdrawal``.
+    # Either way the funds land in @CryptoBot on the user's Telegram
+    # account — no operator-side address entry needed.
     if address is not None:
-        # Audit L-8 — strip control bytes / CR-LF / backslashes and clip
-        # to a sane width BEFORE the per-currency regex match. The
-        # ``WalletWithdrawal.address`` value ends up in admin DM
-        # templates, audit logs and email subjects; a smuggled ``\n``
-        # would split the message and a multi-megabyte input would
-        # bloat the DB row. The regex check below still gates whatever
-        # survives sanitisation, so a malformed-but-clean string fails
-        # the same way it used to.
-        address = _sanitise_withdraw_address(address)
-        if not address:
-            address = None
-
-    if address is None and not auto_mode:
-        # Manual mode requires an address — there's no other channel
-        # to dispatch the payout. Refuse upfront so the frontend can
-        # surface a deterministic error instead of letting the row
-        # land in ``pending`` with nothing for the admin to action.
-        raise HTTPException(400, "Адрес кошелька обязателен")
-
-    # per-currency anchored regex check. Anchored on both
-    # ends because ``re.fullmatch`` already requires the whole string
-    # to match; the ``^...$`` markers in the seed are defensive against
-    # someone swapping ``fullmatch`` for ``search`` later. An empty
-    # ``address_regex`` means "validation deliberately disabled for
-    # this currency" (e.g. a future asset added before its regex is
-    # known) — fall through and let CryptoBot's ``transfer`` validate
-    # at payout time, same as before this audit item. We do NOT
-    # ``re.compile`` here because the regex column rarely changes and
-    # Python's regex cache caps at 512 patterns — well above the ~10
-    # currencies we ship.
-    if address is not None and currency.address_regex:
-        if not _safe_fullmatch(currency.address_regex, address):
-            raise HTTPException(
-                400,
-                f"Неверный формат адреса для {currency.code} ({currency.network})",
-            )
+        # Defence-in-depth: if a legacy client still sends an address
+        # field, sanitise it before persisting so a smuggled control
+        # byte / multi-megabyte payload can't bloat the row or split
+        # the admin DM template later.
+        address = _sanitise_withdraw_address(address) or None
 
     # Audit (continuation) M-3 — refuse the withdrawal *before* the
     # Phase 1 debit when the row would land in a state we have no

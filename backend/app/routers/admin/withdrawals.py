@@ -31,7 +31,6 @@ from ...config import settings as app_settings_env
 from ...cryptopay import CryptoPay, CryptoPayError
 from ...deps import AdminUser, SessionDep
 from ...models import (
-    AppSettings,
     Currency,
     Notification,
     NotificationType,
@@ -180,12 +179,14 @@ async def decide_withdrawal(
         if w.status != WalletWithdrawStatus.pending:
             raise HTTPException(409, "Заявка уже обработана")
 
-        app_row = (
-            await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
-        ).scalar_one_or_none()
-        auto = bool(app_row and app_row.auto_withdraw_enabled)
-
-        if auto and is_cryptopay_configured(app_settings_env.cryptobot_token):
+        # V14 — Approve always dispatches the payout via CryptoBot
+        # Transfer when the token is configured (which is the only
+        # supported deployment going forward). ``auto_withdraw_enabled``
+        # now only controls whether the user-facing
+        # ``services_wallet.create_withdrawal`` runs the Transfer at
+        # request time or queues the row for admin review; in the
+        # admin path the Approve button is always the trigger.
+        if is_cryptopay_configured(app_settings_env.cryptobot_token):
             # 4.2 (HIGH) — two-phase commit so the row lock on
             # ``wallet_withdrawals`` is NOT held through the CryptoBot
             # HTTP roundtrip. Pre-fix the ``with_for_update()`` lock
@@ -399,31 +400,23 @@ async def decide_withdrawal(
                 )
                 w = w_locked
         else:
-            # Non-auto branch (manual approve, or auto disabled / no
-            # CryptoBot token configured). Stays a single transaction
-            # because no network call is made — the row lock is only
-            # held for local DB work.
-            if auto and not is_cryptopay_configured(app_settings_env.cryptobot_token):
-                # Audit 3.9 — silent degradation guard. ``auto_withdraw_enabled``
-                # is on but the CryptoBot token is missing/blank, so the
-                # auto-send branch above is unreachable and the approval
-                # silently falls back to manual. Surface this as a
-                # structured warning so ops can spot a misconfigured
-                # token (e.g. dropped after a settings edit) rather
-                # than only noticing when users complain about a
-                # pending queue.
-                logger.warning(
-                    "withdrawal.approve: auto_withdraw_enabled but CryptoBot token missing"
-                    " — falling back to manual",
-                    extra={
-                        "event": "withdrawal.auto_disabled.missing_token",
-                        "withdrawal_id": w.id,
-                        "user_id": w.user_id,
-                        "currency": currency.code if currency else None,
-                        "amount": str(w.amount),
-                        "actor_id": admin.id,
-                    },
-                )
+            # No CryptoBot token configured — there is no automated
+            # payout channel, the admin must finish the transfer
+            # manually in @CryptoBot and then click "mark sent". Stay
+            # in ``approved`` and log it loudly so ops notice the
+            # missing token rather than only finding out when users
+            # complain about a stuck queue.
+            logger.warning(
+                "withdrawal.approve: CryptoBot token missing — manual mark_sent required",
+                extra={
+                    "event": "withdrawal.auto_disabled.missing_token",
+                    "withdrawal_id": w.id,
+                    "user_id": w.user_id,
+                    "currency": currency.code if currency else None,
+                    "amount": str(w.amount),
+                    "actor_id": admin.id,
+                },
+            )
             w.status = WalletWithdrawStatus.approved
             w.admin_note = body.note or ""
             await log_admin_action(
