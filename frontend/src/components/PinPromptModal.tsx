@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useCheckPin } from "@/api/hooks";
 import { PinPad } from "@/components/ui/PinPad";
+import { PinResetPaywallModal } from "@/components/PinResetPaywallModal";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { usePresence } from "@/lib/animate";
@@ -38,6 +39,7 @@ export function PinPromptModal({
   const toast = useToast();
   const check = useCheckPin();
   const [pin, setPin] = useState("");
+  const [paywallOpen, setPaywallOpen] = useState(false);
   const { mounted, visible } = usePresence(open, 200);
 
   useEffect(() => {
@@ -133,8 +135,41 @@ export function PinPromptModal({
               disabled={check.isPending}
             />
           </div>
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={() => setPaywallOpen(true)}
+              className="text-accent text-[13px] underline"
+            >
+              Забыли PIN?
+            </button>
+          </div>
         </div>
       </div>
+
+      <PinResetPaywallModal
+        open={paywallOpen}
+        onClose={() => setPaywallOpen(false)}
+        onPaid={(res) => {
+          setPaywallOpen(false);
+          // Close the PIN prompt too — the user now has a fresh
+          // reset code in Telegram and needs to go through the
+          // full PIN-reset flow on the lock screen, not type their
+          // (now-unknown) PIN here. We surface a clear toast so
+          // they know what to do next.
+          onClose();
+          toast.show({
+            kind: "info",
+            title: res.delivered
+              ? "Код отправлен в Telegram"
+              : "Код выписан, но Telegram-сообщение не доставлено",
+            body:
+              "Перезайдите на главный экран и нажмите «Забыли PIN?»,"
+              + " чтобы ввести 6-значный код.",
+          });
+        }}
+        title="Без PIN-кода вывод недоступен"
+      />
     </>
   );
 

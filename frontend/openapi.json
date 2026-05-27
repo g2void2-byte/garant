@@ -2413,6 +2413,21 @@
             ],
             "title": "Deals Success"
           },
+          "deals_sum_override": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deals Sum Override"
+          },
           "deals_total": {
             "anyOf": [
               {
@@ -2506,6 +2521,10 @@
             "title": "Pending Topup Expiry Hours",
             "type": "integer"
           },
+          "pin_reset_price_usd": {
+            "title": "Pin Reset Price Usd",
+            "type": "number"
+          },
           "vip_commission_percent": {
             "title": "Vip Commission Percent",
             "type": "number"
@@ -2520,7 +2539,8 @@
           "maintenance_enabled",
           "maintenance_message",
           "auto_withdraw_enabled",
-          "pending_topup_expiry_hours"
+          "pending_topup_expiry_hours",
+          "pin_reset_price_usd"
         ],
         "title": "AdminSettingsOut",
         "type": "object"
@@ -2619,6 +2639,21 @@
               }
             ],
             "title": "Pending Topup Expiry Hours"
+          },
+          "pin_reset_price_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Reset Price Usd"
           },
           "vip_commission_percent": {
             "anyOf": [
@@ -2842,6 +2877,10 @@
             "title": "Deals Success",
             "type": "integer"
           },
+          "deals_sum_override": {
+            "title": "Deals Sum Override",
+            "type": "number"
+          },
           "deals_total": {
             "title": "Deals Total",
             "type": "integer"
@@ -3004,6 +3043,7 @@
           "deals_success",
           "deals_failed",
           "deals_arbitrage",
+          "deals_sum_override",
           "is_admin",
           "is_arbiter",
           "is_vip",
@@ -4458,6 +4498,68 @@
           "new_pin"
         ],
         "title": "PinResetConfirmIn",
+        "type": "object"
+      },
+      "PinResetPaidOut": {
+        "description": "Result of a paid PIN-reset: the reset code was just sent.",
+        "properties": {
+          "charged": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Charged",
+            "type": "string"
+          },
+          "currency_code": {
+            "title": "Currency Code",
+            "type": "string"
+          },
+          "delivered": {
+            "title": "Delivered",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "delivered",
+          "expires_at",
+          "charged",
+          "currency_code"
+        ],
+        "title": "PinResetPaidOut",
+        "type": "object"
+      },
+      "PinResetPriceOut": {
+        "description": "Public info shown in the \"\u0417\u0430\u0431\u044b\u043b\u0438 PIN\" paywall modal.\n\n``price`` and ``currency_code`` describe the configured USD price\n(admin-editable via ``AppSettings.pin_reset_price_usd``).\n``user_balance`` is the user's USD-balance (``UserBalance.amount``\nfor the USD ``Currency`` row) so the frontend can decide whether\nto enable the \"\u041e\u043f\u043b\u0430\u0442\u0438\u0442\u044c \u0441 \u0431\u0430\u043b\u0430\u043d\u0441\u0430\" button or show a \"not enough\"\nfallback. Falls back to 0 when the user has no USD row yet.",
+        "properties": {
+          "can_afford": {
+            "title": "Can Afford",
+            "type": "boolean"
+          },
+          "currency_code": {
+            "title": "Currency Code",
+            "type": "string"
+          },
+          "price": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Price",
+            "type": "string"
+          },
+          "user_balance": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "User Balance",
+            "type": "string"
+          }
+        },
+        "required": [
+          "price",
+          "currency_code",
+          "user_balance",
+          "can_afford"
+        ],
+        "title": "PinResetPriceOut",
         "type": "object"
       },
       "PinResetRequestOut": {
@@ -15220,6 +15322,106 @@
           }
         },
         "summary": "Pin Reset Confirm",
+        "tags": [
+          "pin"
+        ]
+      }
+    },
+    "/api/pin/reset/paid": {
+      "post": {
+        "description": "Charge the configured price from the user's USD balance and send\na fresh 6-digit reset code in Telegram.\n\nSingle transaction: row-lock the user (PIN-counter race), row-lock\nthe USD balance, check it covers the price, debit, mint code,\nDM the user, commit. The 24h ``PIN_RESET_MAX_PER_WINDOW`` throttle\nis intentionally skipped because the user paid for this call; the\nper-IP ``RLPin`` limit still applies.",
+        "operationId": "pin_reset_paid_api_pin_reset_paid_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PinResetPaidOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pin Reset Paid",
+        "tags": [
+          "pin"
+        ]
+      }
+    },
+    "/api/pin/reset/price": {
+      "get": {
+        "description": "Return the PIN-reset price + user's USD balance for the paywall modal.",
+        "operationId": "pin_reset_price_api_pin_reset_price_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PinResetPriceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pin Reset Price",
         "tags": [
           "pin"
         ]

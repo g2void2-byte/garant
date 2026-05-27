@@ -112,6 +112,12 @@ export default function AdminSettingsPage() {
               onChange={(c) => setForm({ ...form, auto_withdraw_enabled: c })}
             />
           </Row>
+          <Row label="Цена восстановления PIN ($)">
+            <NumberField
+              value={Number(form.pin_reset_price_usd ?? 0)}
+              onChange={(v) => setForm({ ...form, pin_reset_price_usd: v })}
+            />
+          </Row>
         </Section>
 
         <Section title="Технические работы" danger>

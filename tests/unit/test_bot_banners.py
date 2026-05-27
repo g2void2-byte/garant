@@ -47,7 +47,9 @@ def test_render_profile_produces_valid_jpeg(username: str | None, deposit: float
     assert len(data) > 5_000
     img = Image.open(io.BytesIO(data))
     assert img.format == "JPEG"
-    assert img.size == (1187, 1325)
+    # V14 — template replaced with the EW Garant wooden-frame artwork
+    # at 1254×1254 (was 1187×1325 for the Continental template).
+    assert img.size == (1254, 1254)
 
 
 def test_fmt_money_uses_thin_space_grouping() -> None:

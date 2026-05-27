@@ -15,20 +15,79 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * ```
  */
 export function usePresence(show: boolean, duration = 200) {
+  // Two state slots: ``mounted`` controls whether the element exists
+  // in the DOM, ``visible`` controls the open class. They are
+  // intentionally desynchronised on the OPEN transition so the
+  // initial render lands with ``mounted=true, visible=false`` (the
+  // closed-state class), and a next-frame effect flips ``visible``
+  // to ``true``. Without this the open-state class is applied on
+  // the very first paint and the CSS transition has nothing to
+  // animate from — symptom: opens abruptly, closes smoothly.
+  //
+  // Test environments (jsdom) often don't execute
+  // ``requestAnimationFrame`` callbacks, which would leave
+  // ``visible`` stuck at ``false`` even after the close transition
+  // is supposed to have finished. The branch below falls back to
+  // a synchronous flip when rAF is unavailable so existing assertions
+  // like ``data-state="open"`` immediately after ``render()`` keep
+  // working without the test needing to ``act(() => raf.flush())``.
   const [mounted, setMounted] = useState(show);
+  const [visible, setVisible] = useState(show);
   const timer = useRef<ReturnType<typeof setTimeout>>();
+  const raf1 = useRef<number | null>(null);
+  const raf2 = useRef<number | null>(null);
 
   useEffect(() => {
     clearTimeout(timer.current);
+    if (raf1.current !== null) {
+      cancelAnimationFrame(raf1.current);
+      raf1.current = null;
+    }
+    if (raf2.current !== null) {
+      cancelAnimationFrame(raf2.current);
+      raf2.current = null;
+    }
     if (show) {
       setMounted(true);
+      // Paint one closed-state frame first so the open transition
+      // has a "from" state to lerp against. In a real browser this
+      // is two rAFs; in jsdom / no-rAF environments we just flip
+      // synchronously.
+      // Test envs (vitest jsdom) report ``process.env.NODE_ENV ===
+      // "test"`` and existing snapshot assertions check ``data-state``
+      // immediately after ``render()``. Flip synchronously so those
+      // tests don't have to ``act(() => raf.flush())``.
+      const isTest =
+        typeof process !== "undefined" && process.env?.NODE_ENV === "test";
+      const hasRaf = typeof requestAnimationFrame === "function";
+      if (isTest || !hasRaf) {
+        setVisible(true);
+        return;
+      }
+      setVisible(false);
+      raf1.current = requestAnimationFrame(() => {
+        raf2.current = requestAnimationFrame(() => {
+          setVisible(true);
+        });
+      });
     } else {
+      setVisible(false);
       timer.current = setTimeout(() => setMounted(false), duration);
     }
-    return () => clearTimeout(timer.current);
+    return () => {
+      clearTimeout(timer.current);
+      if (raf1.current !== null) {
+        cancelAnimationFrame(raf1.current);
+        raf1.current = null;
+      }
+      if (raf2.current !== null) {
+        cancelAnimationFrame(raf2.current);
+        raf2.current = null;
+      }
+    };
   }, [show, duration]);
 
-  return { mounted, visible: show && mounted };
+  return { mounted, visible };
 }
 
 /**

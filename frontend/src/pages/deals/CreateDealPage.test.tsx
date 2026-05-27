@@ -62,6 +62,11 @@ vi.mock("@/api/hooks", () => ({
   // PIN-rejection branches are exercised by ``PinPromptModal``'s
   // own unit tests.
   useCheckPin: () => mockState.checkPinMutation,
+  // PinResetPaywallModal (mounted by PinPromptModal for the "Забыли
+  // PIN" link) uses useAdmins to decide which Telegram username to
+  // DM. Stub with an empty list — the modal is never opened by
+  // these tests.
+  useAdmins: () => ({ data: [], isLoading: false }),
 }));
 
 const hapticSpy = vi.hoisted(() => vi.fn());

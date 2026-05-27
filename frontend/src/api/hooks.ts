@@ -816,6 +816,13 @@ export function useWalletBalances(opts: { kind?: "fiat" | "crypto" } = {}) {
       const sp = opts.kind ? { searchParams: { kind: opts.kind } } : undefined;
       return api.get("api/wallet/balances", sp).json();
     },
+    // Always refetch on mount so a user returning to the wallet
+    // page after a successful deposit sees the credited balance
+    // immediately, even if the WS notification fired while the
+    // page was unmounted (e.g. user closed the deposit modal then
+    // tabbed away). ``staleTime`` stays at 15s so passive renders
+    // don't thrash the API.
+    refetchOnMount: "always",
     staleTime: 15_000,
   });
 }

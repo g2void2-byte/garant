@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import logging
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -14,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..bot.notify import send_dm
 from ..config import settings
 from ..deps import CurrentUser, SessionDep
-from ..models import User
+from ..models import AppSettings, Currency, User, UserBalance
 from ..pin import (
     generate_reset_code,
     hash_pin,
@@ -26,6 +27,7 @@ from ..pin import (
     verify_reset_code,
 )
 from ..rate_limit import RLPin
+from ..services_wallet import lock_user_balance
 from ..time_utils import utcnow
 
 
@@ -98,6 +100,32 @@ class PinTokenOut(BaseModel):
 class PinResetRequestOut(BaseModel):
     delivered: bool
     expires_at: datetime
+
+
+class PinResetPriceOut(BaseModel):
+    """Public info shown in the "Забыли PIN" paywall modal.
+
+    ``price`` and ``currency_code`` describe the configured USD price
+    (admin-editable via ``AppSettings.pin_reset_price_usd``).
+    ``user_balance`` is the user's USD-balance (``UserBalance.amount``
+    for the USD ``Currency`` row) so the frontend can decide whether
+    to enable the "Оплатить с баланса" button or show a "not enough"
+    fallback. Falls back to 0 when the user has no USD row yet.
+    """
+
+    price: Decimal
+    currency_code: str
+    user_balance: Decimal
+    can_afford: bool
+
+
+class PinResetPaidOut(BaseModel):
+    """Result of a paid PIN-reset: the reset code was just sent."""
+
+    delivered: bool
+    expires_at: datetime
+    charged: Decimal
+    currency_code: str
 
 
 # ── Helpers ────────────────────────────────────────────
@@ -324,6 +352,43 @@ PIN_RESET_WINDOW_SECONDS = 24 * 60 * 60
 PIN_RESET_MAX_PER_WINDOW = 3
 
 
+async def _mint_and_send_reset_code(user) -> tuple[bool, datetime]:
+    """Mint a fresh 6-digit PIN-reset code, stash its hash on ``user``,
+    and DM the plaintext code to the user's Telegram. Returns
+    ``(delivered, expires_at)``.
+
+    Caller is responsible for ``session.commit()`` so the code-hash
+    write is part of the same transaction as any prior balance debit
+    (paid path) or counter bump (free path).
+    """
+    now = _now()
+    code = generate_reset_code()
+    user.pin_reset_code_hash = hash_reset_code(code)
+    user.pin_reset_expires = now + timedelta(seconds=settings.pin_reset_code_ttl_seconds)
+    # ``code`` is the plaintext PIN-reset secret — never log it, never
+    # put it in ``extra=`` payloads, never echo it back to anyone other
+    # than the Telegram recipient. ``send_dm`` ships HTML; we escape
+    # the interpolated value as defence-in-depth even though
+    # ``generate_reset_code`` returns digits only.
+    text = (
+        "🔐 Сброс PIN в Garant\n\n"
+        f"Ваш код: <b>{html.escape(code)}</b>\n\n"
+        "Код действителен 10 минут. Если вы не запрашивали сброс, "
+        "просто игнорируйте это сообщение."
+    )
+    delivered = await send_dm(user.tg_user_id, text)
+    if not delivered:
+        logger.warning(
+            "PIN reset code delivery failed for user %s",
+            user.id,
+            extra={
+                "event": "pin.reset.delivery_failed",
+                "user_id": user.id,
+            },
+        )
+    return delivered, user.pin_reset_expires
+
+
 @router.post("/reset/request", response_model=PinResetRequestOut)
 async def pin_reset_request(
     user: CurrentUser, session: SessionDep, _rl: RLPin
@@ -350,51 +415,9 @@ async def pin_reset_request(
             headers={"Retry-After": str(max(wait_for, 60))},
         )
     user.pin_reset_attempts = (user.pin_reset_attempts or 0) + 1
-
-    code = generate_reset_code()
-    user.pin_reset_code_hash = hash_reset_code(code)
-    user.pin_reset_expires = now + timedelta(seconds=settings.pin_reset_code_ttl_seconds)
+    delivered, expires_at = await _mint_and_send_reset_code(user)
     await session.commit()
-
-    # ``code`` is the plaintext PIN-reset secret. It must
-    # never appear in logs, breadcrumbs, or Sentry events. Only
-    # ``send_dm`` and the recipient see it; the ``logger.warning``
-    # below intentionally logs only ``user.id`` (no ``text``, no
-    # ``code``, no ``extra=`` payload). See the docstrings on
-    # ``backend.app.bot.notify.send_dm`` and
-    # ``backend.app.notifier.push`` for the full contract.
-    #
-    # 5.4 (MED) — ``send_dm`` ships ``text`` with ``parse_mode=HTML``
-    # (see ``bot/notify.py::get_bot``). Every interpolated value
-    # below MUST pass through ``html.escape`` even when the source is
-    # server-controlled (``generate_reset_code`` returns digits only),
-    # so a future change that adds user-supplied input to this string
-    # cannot accidentally inject HTML / Telegram entities. The static
-    # ``<b>...</b>`` wrappers stay un-escaped because they are the
-    # only markup we *want* the Telegram client to render.
-    # *** DO NOT INTERPOLATE UNESCAPED USER INPUT BELOW. ***
-    text = (
-        "🔐 Сброс PIN в Garant\n\n"
-        f"Ваш код: <b>{html.escape(code)}</b>\n\n"
-        "Код действителен 10 минут. Если вы не запрашивали сброс, "
-        "просто игнорируйте это сообщение."
-    )
-    delivered = await send_dm(user.tg_user_id, text)
-    if not delivered:
-        # V11-L-15 — structured-logging fields so the JSON-logger
-        # downstream (Loki/Sentry) can pivot on event/user_id without
-        # regexing the message body. ``code`` / ``text`` are NOT in
-        # ``extra`` (see V5-A-7 contract above) — the plaintext
-        # PIN-reset secret must never appear in logs.
-        logger.warning(
-            "PIN reset code delivery failed for user %s",
-            user.id,
-            extra={
-                "event": "pin.reset.delivery_failed",
-                "user_id": user.id,
-            },
-        )
-    return PinResetRequestOut(delivered=delivered, expires_at=user.pin_reset_expires)
+    return PinResetRequestOut(delivered=delivered, expires_at=expires_at)
 
 
 @router.post("/reset/confirm", response_model=PinTokenOut)
@@ -456,3 +479,115 @@ async def pin_reset_confirm(
     user.pin_last_activity_at = _now()
     await session.commit()
     return _token_response(user)
+
+
+# ── Paid PIN-reset (V14) ───────────────────────────────
+
+
+async def _usd_currency_or_404(session: AsyncSession) -> Currency:
+    """Look up the USD currency row used by the paid PIN-reset flow."""
+    row = (
+        await session.execute(select(Currency).where(Currency.code == "USD"))
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(
+            503,
+            "USD валюта не настроена на платформе — обратитесь к администрации",
+        )
+    return row
+
+
+async def _pin_reset_price(session: AsyncSession) -> Decimal:
+    """Return the admin-configured PIN-reset price (USD)."""
+    row = (
+        await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
+    ).scalar_one_or_none()
+    if row is None or row.pin_reset_price_usd is None:
+        return Decimal("3")
+    return Decimal(str(row.pin_reset_price_usd))
+
+
+@router.get("/reset/price", response_model=PinResetPriceOut)
+async def pin_reset_price(user: CurrentUser, session: SessionDep) -> PinResetPriceOut:
+    """Return the PIN-reset price + user's USD balance for the paywall modal."""
+    price = await _pin_reset_price(session)
+    usd = await _usd_currency_or_404(session)
+    bal_row = (
+        await session.execute(
+            select(UserBalance).where(
+                UserBalance.user_id == user.id,
+                UserBalance.currency_id == usd.id,
+            )
+        )
+    ).scalar_one_or_none()
+    balance = Decimal(str(bal_row.amount)) if bal_row is not None else Decimal(0)
+    return PinResetPriceOut(
+        price=price,
+        currency_code=usd.code,
+        user_balance=balance,
+        can_afford=balance >= price,
+    )
+
+
+@router.post("/reset/paid", response_model=PinResetPaidOut)
+async def pin_reset_paid(
+    user: CurrentUser, session: SessionDep, _rl: RLPin
+) -> PinResetPaidOut:
+    """Charge the configured price from the user's USD balance and send
+    a fresh 6-digit reset code in Telegram.
+
+    Single transaction: row-lock the user (PIN-counter race), row-lock
+    the USD balance, check it covers the price, debit, mint code,
+    DM the user, commit. The 24h ``PIN_RESET_MAX_PER_WINDOW`` throttle
+    is intentionally skipped because the user paid for this call; the
+    per-IP ``RLPin`` limit still applies.
+    """
+    user = await _lock_user_for_pin(session, user)
+    price = await _pin_reset_price(session)
+    usd = await _usd_currency_or_404(session)
+
+    if price <= 0:
+        # Admin set the price to 0 — mint the code for free so the
+        # paywall modal still works.
+        delivered, expires_at = await _mint_and_send_reset_code(user)
+        await session.commit()
+        return PinResetPaidOut(
+            delivered=delivered,
+            expires_at=expires_at,
+            charged=Decimal(0),
+            currency_code=usd.code,
+        )
+
+    bal = await lock_user_balance(session, user.id, usd.id)
+    current = Decimal(str(bal.amount or 0))
+    if current < price:
+        raise HTTPException(
+            402,
+            {
+                "code": "pin_reset_insufficient",
+                "detail": (
+                    f"Недостаточно средств на USD-балансе. "
+                    f"Нужно {price} USD, доступно {current} USD."
+                ),
+            },
+        )
+    bal.amount = current - price
+    delivered, expires_at = await _mint_and_send_reset_code(user)
+    await session.commit()
+    logger.info(
+        "PIN reset paid for user %s: charged %s USD",
+        user.id,
+        price,
+        extra={
+            "event": "pin.reset.paid",
+            "user_id": user.id,
+            "charged": str(price),
+            "currency": usd.code,
+        },
+    )
+    return PinResetPaidOut(
+        delivered=delivered,
+        expires_at=expires_at,
+        charged=price,
+        currency_code=usd.code,
+    )

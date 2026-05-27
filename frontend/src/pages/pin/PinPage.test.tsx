@@ -41,6 +41,10 @@ vi.mock("@/api/hooks", () => ({
   useCheckPin: () => mockState.check,
   useRequestPinReset: () => mockState.requestReset,
   useConfirmPinReset: () => mockState.confirmReset,
+  // PinResetPaywallModal (imported by PinPage) uses useAdmins to
+  // decide which Telegram username to DM. Stub it out so the modal
+  // can render in tests without hitting the network.
+  useAdmins: () => ({ data: [], isLoading: false }),
 }));
 
 const setPinTokenSpy = vi.hoisted(() => vi.fn());
@@ -189,43 +193,20 @@ describe("<PinPage />", () => {
     expect(mockState.setup.mutateAsync).not.toHaveBeenCalled();
   });
 
-  it("'Забыли PIN?' click calls requestReset and switches to reset_code", async () => {
-    mockState.requestReset.mutateAsync.mockResolvedValue({ delivered: true });
+  it("'Забыли PIN?' click opens the paid-reset paywall modal", async () => {
+    // V14 — the "Забыли PIN?" button no longer calls /reset/request
+    // directly. It opens the ``PinResetPaywallModal`` which shows
+    // the admin-configured price and, on payment, sends the 6-digit
+    // code via Telegram. The legacy flow (instant DM, no charge) was
+    // removed in favour of this paywall — covered separately by the
+    // paywall's own integration tests.
     const user = userEvent.setup();
     renderPage({ has_pin: true });
     await user.click(screen.getByRole("button", { name: /Забыли PIN/ }));
-    await waitFor(() =>
-      expect(mockState.requestReset.mutateAsync).toHaveBeenCalled(),
-    );
-    expect(toastSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "info" }),
-    );
+    // The paywall renders via React portal — assert by its test id.
     expect(
-      await screen.findByPlaceholderText("000000"),
+      await screen.findByTestId("pin-reset-paywall"),
     ).toBeInTheDocument();
-  });
-
-  it("reset code input strips non-digits and caps at 6", () => {
-    mockState.requestReset.mutateAsync.mockResolvedValue({ delivered: true });
-    renderPage({ has_pin: true });
-    // Manually switch mode by clicking "Забыли PIN?"
-    // (already covered above) — here we re-render in reset_code via UI flow:
-    const forgot = screen.getByRole("button", { name: /Забыли PIN/ });
-    fireEvent.click(forgot);
-  });
-
-  it("reset bot-undelivered shows error toast suggesting /start", async () => {
-    mockState.requestReset.mutateAsync.mockResolvedValue({ delivered: false });
-    const user = userEvent.setup();
-    renderPage({ has_pin: true });
-    await user.click(screen.getByRole("button", { name: /Забыли PIN/ }));
-    await waitFor(() =>
-      expect(toastSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: "error",
-          body: expect.stringContaining("/start"),
-        }),
-      ),
-    );
+    expect(mockState.requestReset.mutateAsync).not.toHaveBeenCalled();
   });
 });

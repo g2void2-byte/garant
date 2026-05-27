@@ -10,7 +10,9 @@ import {
   X,
   XCircle,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useWalletDeposit } from "@/api/hooks";
+import { qk } from "@/api/queryKeys";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
@@ -116,6 +118,7 @@ export function DepositStatusModal({
   autoOpenDelayMs = 1000,
 }: DepositStatusModalProps) {
   const toast = useToast();
+  const qc = useQueryClient();
   const { mounted, visible } = usePresence(open, 200);
   const initial = deposit ?? null;
   const query = useWalletDeposit(open ? initial?.id : undefined);
@@ -149,13 +152,24 @@ export function DepositStatusModal({
     if (!open || !current) return;
     if (lastStatus.current !== "paid" && current.status === "paid") {
       haptic("success");
+      // Real-time balance refresh: the polled deposit DTO is the
+      // earliest authoritative signal that funds landed on the
+      // backend. Invalidate the wallet caches immediately so the
+      // updated balance is already in flight when the modal
+      // auto-closes 1.8s later (instead of relying on a WS
+      // ``notification`` frame that may have been missed if the WS
+      // dropped or the user's tab was inactive). Also nudge
+      // ``/api/me`` because the profile card surfaces deposit
+      // counters.
+      void qc.invalidateQueries({ queryKey: qk.wallet.all() });
+      void qc.invalidateQueries({ queryKey: qk.me() });
       const finish = onSuccess ?? onClose;
       const t = setTimeout(finish, 1800);
       lastStatus.current = current.status;
       return () => clearTimeout(t);
     }
     lastStatus.current = current.status;
-  }, [open, current, onClose, onSuccess]);
+  }, [open, current, onClose, onSuccess, qc]);
 
   // Reset the cached "auto-opened" + "last status" state whenever the
   // modal closes so a follow-up deposit starts from a clean slate.

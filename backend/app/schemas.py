@@ -1167,6 +1167,9 @@ class AdminUserDetailOut(BaseModel):
     deals_success: int
     deals_failed: int
     deals_arbitrage: int
+    # Admin-editable "сумма сделок" surfaced as ``deals_sum`` on the
+    # public user DTO. Settable via ``POST /admin/users/:id/stats``.
+    deals_sum_override: MoneyDecimal
     is_admin: bool
     is_arbiter: bool
     is_vip: bool
@@ -1263,6 +1266,11 @@ class AdminSetStatsIn(BaseModel):
     deals_arbitrage: int | None = None
     good: int | None = None
     bad: int | None = None
+    # Admin-editable "сумма сделок" — surfaced as ``deals_sum`` on the
+    # public/private user DTOs. ``Decimal`` to match the rest of the
+    # money columns (Numeric(28, 8)); negative values rejected by the
+    # validator below.
+    deals_sum_override: Decimal | None = None
 
     @field_validator(
         "deals_total",
@@ -1274,6 +1282,13 @@ class AdminSetStatsIn(BaseModel):
     )
     @classmethod
     def _non_negative_int(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("Значение не может быть отрицательным")
+        return v
+
+    @field_validator("deals_sum_override")
+    @classmethod
+    def _non_negative_money(cls, v: Decimal | None) -> Decimal | None:
         if v is not None and v < 0:
             raise ValueError("Значение не может быть отрицательным")
         return v
@@ -1875,6 +1890,7 @@ class AdminSettingsOut(BaseModel):
     maintenance_message: str
     auto_withdraw_enabled: bool
     pending_topup_expiry_hours: int
+    pin_reset_price_usd: MoneyDecimal
 
 
 class AdminSettingsUpdateIn(BaseModel):
@@ -1893,6 +1909,7 @@ class AdminSettingsUpdateIn(BaseModel):
     maintenance_message: str | None = None
     auto_withdraw_enabled: bool | None = None
     pending_topup_expiry_hours: int | None = None
+    pin_reset_price_usd: Decimal | None = None
 
     @field_validator(
         "deal_commission_percent",
@@ -1932,6 +1949,16 @@ class AdminSettingsUpdateIn(BaseModel):
         if len(v) > 1024:
             raise ValueError("Сообщение слишком длинное (≤1024)")
         return v
+
+    @field_validator("pin_reset_price_usd")
+    @classmethod
+    def _price_ok(cls, v: Decimal | float | None) -> Decimal | None:
+        if v is None:
+            return v
+        d = Decimal(str(v)) if isinstance(v, float) else v
+        if d < 0:
+            raise ValueError("Цена не может быть отрицательной")
+        return d
 
 
 # ── Admin: taxonomy (categories + forums) ──────────────
