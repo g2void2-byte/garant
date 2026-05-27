@@ -281,7 +281,7 @@ async def _fetch_avatar_png(message: Message, tg_user_id: int) -> bytes | None:
     placeholder. Telegram caches ``file_id`` server-side, so this is
     cheap on the second hit.
     """
-    bot = message.bot
+    bot = getattr(message, "bot", None)
     if bot is None:
         return None
     try:
