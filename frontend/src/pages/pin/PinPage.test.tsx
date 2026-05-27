@@ -41,6 +41,10 @@ vi.mock("@/api/hooks", () => ({
   useCheckPin: () => mockState.check,
   useRequestPinReset: () => mockState.requestReset,
   useConfirmPinReset: () => mockState.confirmReset,
+  // PinResetPaywallModal (imported by PinPage) uses useAdmins to
+  // decide which Telegram username to DM. Stub it out so the modal
+  // can render in tests without hitting the network.
+  useAdmins: () => ({ data: [], isLoading: false }),
 }));
 
 const setPinTokenSpy = vi.hoisted(() => vi.fn());

@@ -1867,6 +1867,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pin/reset/paid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pin Reset Paid
+         * @description Charge the configured price from the user's USD balance and send
+         *     a fresh 6-digit reset code in Telegram.
+         *
+         *     Single transaction: row-lock the user (PIN-counter race), row-lock
+         *     the USD balance, check it covers the price, debit, mint code,
+         *     DM the user, commit. The 24h ``PIN_RESET_MAX_PER_WINDOW`` throttle
+         *     is intentionally skipped because the user paid for this call; the
+         *     per-IP ``RLPin`` limit still applies.
+         */
+        post: operations["pin_reset_paid_api_pin_reset_paid_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pin/reset/price": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pin Reset Price
+         * @description Return the PIN-reset price + user's USD balance for the paywall modal.
+         */
+        get: operations["pin_reset_price_api_pin_reset_price_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pin/reset/request": {
         parameters: {
             query?: never;
@@ -3159,6 +3206,8 @@ export interface components {
             deals_failed?: number | null;
             /** Deals Success */
             deals_success?: number | null;
+            /** Deals Sum Override */
+            deals_sum_override?: number | string | null;
             /** Deals Total */
             deals_total?: number | null;
             /** Good */
@@ -3201,6 +3250,8 @@ export interface components {
             max_active_services_per_user: number;
             /** Pending Topup Expiry Hours */
             pending_topup_expiry_hours: number;
+            /** Pin Reset Price Usd */
+            pin_reset_price_usd: number;
             /** Vip Commission Percent */
             vip_commission_percent: number;
         };
@@ -3228,6 +3279,8 @@ export interface components {
             max_active_services_per_user?: number | null;
             /** Pending Topup Expiry Hours */
             pending_topup_expiry_hours?: number | null;
+            /** Pin Reset Price Usd */
+            pin_reset_price_usd?: number | string | null;
             /** Vip Commission Percent */
             vip_commission_percent?: number | string | null;
         };
@@ -3309,6 +3362,8 @@ export interface components {
             deals_failed: number;
             /** Deals Success */
             deals_success: number;
+            /** Deals Sum Override */
+            deals_sum_override: number;
             /** Deals Total */
             deals_total: number;
             /** Description */
@@ -3961,6 +4016,44 @@ export interface components {
             code: string;
             /** New Pin */
             new_pin: string;
+        };
+        /**
+         * PinResetPaidOut
+         * @description Result of a paid PIN-reset: the reset code was just sent.
+         */
+        PinResetPaidOut: {
+            /** Charged */
+            charged: string;
+            /** Currency Code */
+            currency_code: string;
+            /** Delivered */
+            delivered: boolean;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /**
+         * PinResetPriceOut
+         * @description Public info shown in the "Забыли PIN" paywall modal.
+         *
+         *     ``price`` and ``currency_code`` describe the configured USD price
+         *     (admin-editable via ``AppSettings.pin_reset_price_usd``).
+         *     ``user_balance`` is the user's USD-balance (``UserBalance.amount``
+         *     for the USD ``Currency`` row) so the frontend can decide whether
+         *     to enable the "Оплатить с баланса" button or show a "not enough"
+         *     fallback. Falls back to 0 when the user has no USD row yet.
+         */
+        PinResetPriceOut: {
+            /** Can Afford */
+            can_afford: boolean;
+            /** Currency Code */
+            currency_code: string;
+            /** Price */
+            price: string;
+            /** User Balance */
+            user_balance: string;
         };
         /** PinResetRequestOut */
         PinResetRequestOut: {
@@ -8245,6 +8338,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PinTokenOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_reset_paid_api_pin_reset_paid_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PinResetPaidOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_reset_price_api_pin_reset_price_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PinResetPriceOut"];
                 };
             };
             /** @description Validation Error */
