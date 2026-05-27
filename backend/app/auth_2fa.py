@@ -69,6 +69,7 @@ from urllib.parse import quote
 
 import jwt
 from fastapi import HTTPException
+from sqlalchemy import or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import pin_secret, settings
@@ -210,25 +211,49 @@ def otpauth_url(secret: str, *, account: str, issuer: str = "Garant") -> str:
 def _totp_bypass() -> str:
     """Return the current ``ADMIN_TOTP_BYPASS`` value, or ``""`` if unset.
 
-    read per-request rather than caching at import
-    time. See module docstring for the rationale.
+    Fails closed in production/staging: even when the env var leaks
+    into a prod host (CI value copy-pasted, container image baked
+    with the staging value, etc.) this function returns ``""`` so the
+    bypass NEVER short-circuits ``_consume_totp``. Mirrors the
+    fail-closed pattern of
+    :func:`backend.app.security._parse_unsigned` and
+    :func:`backend.app.config.pin_secret` — a loud WARNING at boot
+    was the only previous defence, and it was advisory-only.
     """
-    return os.environ.get("ADMIN_TOTP_BYPASS") or ""
+    value = os.environ.get("ADMIN_TOTP_BYPASS") or ""
+    if value and settings.environment in ("production", "staging"):
+        # Per-call ERROR (not just import-time) so a leak is
+        # impossible to miss in CloudWatch / Loki.
+        logger.error(
+            "ADMIN_TOTP_BYPASS is set in environment=%s — refusing to honour it",
+            settings.environment,
+            extra={"event": "auth_2fa.bypass.rejected_in_prod"},
+        )
+        return ""
+    return value
 
 
-if _totp_bypass():
-    # Single startup-time WARNING; intentionally NOT logging the
-    # value itself (would defeat the point of treating it as a
-    # shared secret in CI logs).
-    # V11-L-15 — structured-logging fields so the JSON-logger
-    # downstream (Loki/Sentry) can pivot on event without regexing
-    # the message body. The ``event`` name is intentionally loud —
-    # this should fire an alert in any production environment.
-    logger.warning(
-        "ADMIN_TOTP_BYPASS is set — 2FA is bypassed for matching "
-        "X-Totp-Code headers. This MUST NOT be set in production.",
-        extra={"event": "auth_2fa.bypass.enabled"},
-    )
+if os.environ.get("ADMIN_TOTP_BYPASS"):
+    # Startup-time log; intentionally NOT logging the value itself
+    # (would defeat the point of treating it as a shared secret in
+    # CI logs). V11-L-15 — structured-logging fields so the
+    # JSON-logger downstream (Loki/Sentry) can pivot on event
+    # without regexing the message body. In prod/staging we log
+    # ERROR so the alerting pipeline fires; in dev/test we keep the
+    # historical WARNING level.
+    if settings.environment in ("production", "staging"):
+        logger.error(
+            "ADMIN_TOTP_BYPASS is set in environment=%s — bypass is "
+            "disabled (fail-closed). Unset the env var.",
+            settings.environment,
+            extra={"event": "auth_2fa.bypass.disabled_in_prod"},
+        )
+    else:
+        logger.warning(
+            "ADMIN_TOTP_BYPASS is set — 2FA is bypassed for matching "
+            "X-Totp-Code headers. This MUST NOT be set in production.",
+            extra={"event": "auth_2fa.bypass.enabled"},
+        )
 
 
 async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> None:
@@ -243,7 +268,12 @@ async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> 
     the next request without a process restart.
     """
     bypass = _totp_bypass()
-    if bypass and code == bypass:
+    if bypass and code and hmac.compare_digest(code, bypass):
+        # Constant-time compare so the bypass token cannot be
+        # recovered byte-by-byte via response-timing analysis (the
+        # rest of this module is careful about constant-time crypto
+        # — see ``verify_totp_and_counter`` and the comment above
+        # the ``hmac.compare_digest`` call there).
         return
     if not user.totp_enabled or not user.totp_secret:
         raise HTTPException(
@@ -271,9 +301,10 @@ async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> 
     # in Redis is an atomic claim that holds for the full TOTP
     # period plus a small drift buffer, so the second request
     # immediately 401s without touching the DB. When Redis is
-    # disabled we fall back to the DB counter, which is still
-    # correct for single-worker deployments.
+    # disabled we fall back to the DB counter — see below for the
+    # conditional UPDATE that closes the corresponding RMW race.
     r = await get_redis()
+    redis_claimed = False
     if r is not None:
         try:
             key = f"totp-claim:{user.id}:{matched}"
@@ -291,15 +322,66 @@ async def _consume_totp(session: AsyncSession, user: User, code: str | None) -> 
                     401,
                     {"code": "totp_replay", "detail": _d},
                 )
+            redis_claimed = True
         except HTTPException:
             raise
         except Exception:
-            # Redis hiccup must not lock out admins; the DB counter
-            # below is still a working second line of defence. The
-            # caller already logs Redis failures in ``get_redis``.
-            pass
-    user.totp_last_counter = matched
-    session.add(user)
+            # Redis hiccup: if the operator has opted into strict
+            # mode (``require_redis_for_2fa``), fail closed rather
+            # than fall back to the lossy DB-counter path. The
+            # alternative — falling through — is only safe in
+            # single-worker deployments because the DB-counter
+            # update below is a last-writer-wins RMW with no
+            # conditional WHERE, so two concurrent commits can both
+            # observe the old counter and accept the same code.
+            logger.exception(
+                "auth_2fa: redis totp-claim failed; using DB fallback",
+                extra={
+                    "event": "auth_2fa.redis.failed",
+                    "user_id": user.id,
+                },
+            )
+            if settings.require_redis_for_2fa:
+                raise HTTPException(  # noqa: B904
+                    503,
+                    {
+                        "code": "totp_unavailable",
+                        "detail": "Сервис 2FA временно недоступен",
+                    },
+                )
+    # DB-side counter bump. Always use a conditional UPDATE so two
+    # concurrent admins (or two parallel calls from the same admin)
+    # that both pass the in-memory ``matched > totp_last_counter``
+    # check above cannot both win the commit: the second UPDATE
+    # ticks ``rowcount == 0`` and we treat that as a replay. This
+    # closes the Redis-fallback race documented above.
+    if not redis_claimed:
+        result = await session.execute(
+            update(User)
+            .where(
+                User.id == user.id,
+                or_(
+                    User.totp_last_counter.is_(None),
+                    User.totp_last_counter < matched,
+                ),
+            )
+            .values(totp_last_counter=matched)
+        )
+        if (result.rowcount or 0) == 0:
+            raise HTTPException(
+                401,
+                {
+                    "code": "totp_replay",
+                    "detail": "Код 2FA уже использован — дождитесь следующего",
+                },
+            )
+        # Keep the ORM-managed object in sync with the conditional
+        # UPDATE so the caller's later attribute reads see the new
+        # high-water mark without a refresh round-trip.
+        user.totp_last_counter = matched
+    else:
+        user.totp_last_counter = matched
+        session.add(user)
 
 
 # ``TotpUser`` lives in :mod:`backend.app.admin_guard` now (R2 —

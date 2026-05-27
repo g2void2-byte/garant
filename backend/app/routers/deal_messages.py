@@ -24,7 +24,7 @@ from sqlalchemy.orm import selectinload
 
 from ..deps import CurrentUser, SessionDep
 from ..media_signing import signed_media_url
-from ..models import TERMINAL_DEAL_STATUSES, Deal, DealMessage, DealStatus, Media
+from ..models import Deal, DealMessage, DealStatus, Media
 from ..rate_limit import RLDealMessage
 from ..schemas import DealMessageCreate, DealMessageOut, MediaOut
 from ..ws import manager
@@ -201,24 +201,32 @@ async def create_message(
 ) -> DealMessageOut:
     deal = await _load_deal_or_403(session, deal_id, user)
 
-    # Comment 37 (H, harassment) — block new chat messages on deals
-    # that are already in a terminal state. Pre-fix, the loser of a
-    # deal (or any party after completion / cancellation) could keep
-    # writing into the chat forever — a harassment vector that the
-    # block / mute UI does not cover because the chat is scoped to a
-    # specific deal id. Participants can chat only while the deal is
-    # actively running (``pending_confirmation``, ``in_progress``,
-    # ``pending_cancellation``). Staff (admins / arbiters) may still
-    # send messages into ``arbitration`` / ``resolved_*`` rows so
-    # they can post a verdict / explanation.
-    is_staff = bool(user.is_admin or user.is_arbiter)
-    _STAFF_TERMINAL_OK = {
+    # Comment 37 (H, harassment) — participants can chat only while
+    # the deal is actively running (``pending_confirmation``,
+    # ``in_progress``, ``pending_cancellation``). Pre-fix the gate
+    # was an inverse check against ``TERMINAL_DEAL_STATUSES`` which
+    # silently re-opened the harassment vector for non-terminal
+    # but non-active states (``pending``, ``pending_topup``,
+    # ``arbitration``). Use the explicit allow-list so any future
+    # deal status that is *not* one of these three keeps the chat
+    # closed by default. Staff (admins / arbiters) may also post
+    # into ``arbitration`` and the ``resolved_*`` rows so they can
+    # render a verdict / explanation; everything else is closed.
+    _PARTICIPANT_OK = {
+        DealStatus.pending_confirmation,
+        DealStatus.in_progress,
+        DealStatus.pending_cancellation,
+    }
+    _STAFF_EXTRA_OK = {
+        DealStatus.arbitration,
         DealStatus.resolved_for_buyer,
         DealStatus.resolved_for_seller,
     }
-    if deal.status in TERMINAL_DEAL_STATUSES:
-        if not (is_staff and deal.status in _STAFF_TERMINAL_OK):
-            raise HTTPException(409, "Чат сделки закрыт")
+    is_staff = bool(user.is_admin or user.is_arbiter)
+    if deal.status not in _PARTICIPANT_OK and not (
+        is_staff and deal.status in _STAFF_EXTRA_OK
+    ):
+        raise HTTPException(409, "Чат сделки закрыт")
 
     text = (body.text or "").strip()
     if not text and not body.attachments:

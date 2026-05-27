@@ -8,10 +8,13 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..bot.notify import send_dm
 from ..config import settings
 from ..deps import CurrentUser, SessionDep
+from ..models import User
 from ..pin import (
     generate_reset_code,
     hash_pin,
@@ -24,6 +27,35 @@ from ..pin import (
 )
 from ..rate_limit import RLPin
 from ..time_utils import utcnow
+
+
+async def _lock_user_for_pin(session: AsyncSession, user: User) -> User:
+    """Re-load ``user`` with ``SELECT … FOR UPDATE`` so the
+    ``pin_attempts`` / ``pin_reset_*`` read-modify-write below cannot
+    race with a parallel call.
+
+    ``CurrentUser`` loads the row without a lock, so two simultaneous
+    wrong-PIN requests would both observe the pre-increment value
+    and the commits would last-writer-wins, losing one increment
+    and effectively doubling the attacker's allowed attempts before
+    lockout. The row lock is held until the surrounding transaction
+    commits or rolls back, which is exactly the window we need.
+
+    ``populate_existing=True`` ensures the ORM-managed instance
+    reflects the row data held under the lock (not a stale snapshot
+    from the earlier unlocked load in ``get_current_user``).
+    """
+    locked = (
+        await session.execute(
+            select(User)
+            .where(User.id == user.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if locked is None:  # pragma: no cover — user just authed
+        raise HTTPException(401, "Пользователь не найден")
+    return locked
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/pin", tags=["pin"])
@@ -176,6 +208,11 @@ async def pin_check(
     if not user.pin_hash:
         raise HTTPException(409, {"code": "pin_not_set", "detail": "PIN не установлен"})
     _ensure_format(body.pin)
+    # Row-lock the user before the RMW on ``pin_attempts`` so two
+    # parallel wrong-PIN attempts cannot both read the same value
+    # and last-writer-wins the increment (would let an attacker
+    # exceed ``pin_max_attempts`` before lockout fires).
+    user = await _lock_user_for_pin(session, user)
     if _is_locked(user):
         raise HTTPException(423, "Слишком много попыток. Попробуйте позже.")
 
@@ -211,6 +248,9 @@ async def pin_change(
         raise HTTPException(409, "PIN ещё не установлен")
     _ensure_format(body.old_pin)
     _ensure_format(body.new_pin)
+    # Row-lock — see ``pin_check`` for the lost-update rationale.
+    # Same race applies to the wrong-old-PIN branch below.
+    user = await _lock_user_for_pin(session, user)
     if _is_locked(user):
         raise HTTPException(423, "Слишком много попыток. Попробуйте позже.")
     # V5-A-6 (M) / M-10 — wrap the whole sequence in try/except so an
@@ -288,6 +328,13 @@ PIN_RESET_MAX_PER_WINDOW = 3
 async def pin_reset_request(
     user: CurrentUser, session: SessionDep, _rl: RLPin
 ) -> PinResetRequestOut:
+    # Row-lock so two parallel reset-request calls cannot both pass
+    # the ``pin_reset_attempts < PIN_RESET_MAX_PER_WINDOW`` gate,
+    # both rewrite ``pin_reset_code_hash``, and both DM the user.
+    # The lock also bounds the 6-digit reset-code keyspace an
+    # attacker can probe before the ``/reset/confirm`` lockout
+    # — exactly the bypass the throttle was added to prevent.
+    user = await _lock_user_for_pin(session, user)
     now = _now()
     window_start = user.pin_reset_window_started_at
     elapsed = (now - window_start).total_seconds() if window_start else None
@@ -358,6 +405,9 @@ async def pin_reset_confirm(
     _rl: RLPin,
 ) -> PinTokenOut:
     _ensure_format(body.new_pin)
+    # Row-lock — see ``pin_check`` for the RMW-race rationale; this
+    # endpoint increments ``pin_attempts`` on wrong reset codes.
+    user = await _lock_user_for_pin(session, user)
     if _is_locked(user):
         raise HTTPException(423, "Слишком много попыток. Попробуйте позже.")
     if not user.pin_reset_code_hash or not user.pin_reset_expires:

@@ -40,7 +40,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
 
-from .config import settings
+from .config import effective_require_redis_for_rate_limit, settings
 from .deps import CurrentUser
 from .models import User
 from .redis_client import get_redis
@@ -130,7 +130,7 @@ async def _hit_redis(scope: str, key: str, *, limit: int, window: float) -> None
     global _rl_script
     r = await get_redis()
     if r is None:
-        if settings.require_redis_for_rate_limit:
+        if effective_require_redis_for_rate_limit():
             raise HTTPException(
                 status_code=503,
                 detail="Сервис временно недоступен (rate-limiter)",
@@ -172,11 +172,13 @@ async def _hit_redis(scope: str, key: str, *, limit: int, window: float) -> None
             "rate-limit: redis hit failed; falling back to in-memory",
             extra={"event": "rate_limit.redis.failed", "scope": scope},
         )
-        # Audit v3 L-11 — fail-closed when configured. On a
+        # Audit v3 L-11 — fail-closed when configured (always fail
+        # closed in production/staging via
+        # ``effective_require_redis_for_rate_limit``). On a
         # multi-replica deployment the in-memory fallback gives each
         # replica its own counter, effectively multiplying the allowed
         # rate by the replica count.
-        if settings.require_redis_for_rate_limit:
+        if effective_require_redis_for_rate_limit():
             raise HTTPException(  # noqa: B904
                 status_code=503,
                 detail="Сервис временно недоступен (rate-limiter)",

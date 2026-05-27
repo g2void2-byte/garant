@@ -242,6 +242,13 @@ class Settings(BaseSettings):
     # unavailable. On a multi-replica deployment the in-memory
     # fallback gives each replica its own counter, effectively
     # multiplying the allowed rate by the replica count.
+    #
+    # The DEFAULT is ``False`` (dev/test friendly — Redis is
+    # optional locally). :func:`effective_require_redis_for_rate_limit`
+    # below upgrades this to ``True`` in production/staging so a
+    # multi-replica prod that loses Redis fails closed instead of
+    # silently weakening per-user PIN/withdrawal/admin throttles
+    # by a factor of N.
     require_redis_for_rate_limit: bool = False
 
     # Comment 38 (audit v10) — WS DoS hardening tunables.
@@ -293,6 +300,20 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def effective_require_redis_for_rate_limit() -> bool:
+    """Return whether the rate-limiter must fail closed on Redis loss.
+
+    In production/staging this is always ``True`` — a multi-replica
+    deploy that loses Redis would otherwise silently weaken per-user
+    PIN/withdrawal/admin throttles by a factor of N (each replica
+    keeps its own in-memory counter). Dev/test still respects the
+    explicit setting so local runs without Redis stay usable.
+    """
+    if settings.environment in ("production", "staging"):
+        return True
+    return bool(settings.require_redis_for_rate_limit)
 
 
 def pin_secret() -> str:

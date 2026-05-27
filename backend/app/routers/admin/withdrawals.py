@@ -247,9 +247,7 @@ async def decide_withdrawal(
                 # V11-L-15 — surface withdrawal/user/currency context
                 # as structured log fields so the JSON-logger downstream
                 # (Loki/Sentry) can query by user/currency without
-                # regexing the human message body. We leave the row
-                # at ``approved`` so a manual operator can retry via
-                # ``mark_sent``; CryptoBot will dedupe.
+                # regexing the human message body.
                 logger.error(
                     "withdrawal #%s CryptoBot transfer failed: %s",
                     w.id,
@@ -263,10 +261,42 @@ async def decide_withdrawal(
                         "actor_id": admin.id,
                     },
                 )
-                # Record the failed attempt in the audit log so the
-                # operator timeline shows the error. We re-lock the
-                # row briefly only to attach the audit row
-                # transactionally.
+                # We DO NOT roll the status back to ``pending`` /
+                # release ``balance.locked`` here: the CryptoBot
+                # error may mask a successful transfer (network
+                # blip on the response), and releasing the locked
+                # funds would let the user re-withdraw them while
+                # the upstream payout is in flight. Idempotency via
+                # ``spend_id`` only protects retries while the row
+                # is still ``approved``; if we returned to
+                # ``pending`` and the user spent the freed balance,
+                # the next approve attempt would observe the
+                # already-paid transfer and silently double-spend.
+                #
+                # Instead, re-lock the row briefly, stamp the
+                # error onto ``admin_note`` so the admin UI's
+                # existing column makes the failure visible at a
+                # glance, and audit the failure. An operator now
+                # has two recovery paths:
+                #   * ``mark_sent`` — funds did arrive; CryptoBot
+                #     dedupes on ``spend_id`` for any later retry.
+                #   * ``reject`` — funds did NOT arrive; this
+                #     branch releases ``balance.locked`` back to
+                #     ``balance.amount`` (see the reject branch).
+                w_locked = (
+                    await session.execute(
+                        select(WalletWithdrawal)
+                        .where(WalletWithdrawal.id == w.id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                ).scalar_one_or_none()
+                if w_locked is not None:
+                    err_tag = f"[auto-send failed] {e}"[:500]
+                    existing = (w_locked.admin_note or "").strip()
+                    w_locked.admin_note = (
+                        f"{existing}\n{err_tag}".strip() if existing else err_tag
+                    )
                 await log_admin_action(
                     session,
                     actor=admin,
