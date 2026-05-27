@@ -189,9 +189,30 @@ async def list_deals(
     stmt = stmt.order_by(Deal.created_at.desc())
     result = await session.execute(stmt)
     deals = result.scalars().all()
-    return [
-        _deal_out(d, user.id, topup_invoice=await _hydrate_topup_invoice(session, d)) for d in deals
-    ]
+    # Batch-load the top-up deposits in a single ``WHERE id IN (...)``
+    # round-trip instead of one ``session.get`` per pending_topup
+    # deal. Same pattern as ``deal_messages.list_messages`` batching
+    # its attachment Media rows (audit H2).
+    deposit_ids = {
+        d.topup_deposit_id
+        for d in deals
+        if d.status == DealStatus.pending_topup and d.topup_deposit_id is not None
+    }
+    deposits_by_id: dict[int, WalletDeposit] = {}
+    if deposit_ids:
+        rows = (
+            await session.execute(
+                select(WalletDeposit).where(WalletDeposit.id.in_(deposit_ids))
+            )
+        ).scalars().all()
+        deposits_by_id = {dp.id: dp for dp in rows}
+
+    def _invoice_for(deal: Deal) -> DealTopupInvoiceOut | None:
+        if deal.status != DealStatus.pending_topup or deal.topup_deposit_id is None:
+            return None
+        return _topup_invoice_from_deposit(deal, deposits_by_id.get(deal.topup_deposit_id))
+
+    return [_deal_out(d, user.id, topup_invoice=_invoice_for(d)) for d in deals]
 
 
 @router.get("/{deal_id}", response_model=DealOut)

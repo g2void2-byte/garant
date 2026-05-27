@@ -206,11 +206,12 @@ async def create_message(
     # deal (or any party after completion / cancellation) could keep
     # writing into the chat forever — a harassment vector that the
     # block / mute UI does not cover because the chat is scoped to a
-    # specific deal id. Participants can chat only while the deal is
-    # actively running (``pending_confirmation``, ``in_progress``,
-    # ``pending_cancellation``). Staff (admins / arbiters) may still
-    # send messages into ``arbitration`` / ``resolved_*`` rows so
-    # they can post a verdict / explanation.
+    # specific deal id. Participants can chat in every non-terminal
+    # state (``pending_confirmation``, ``in_progress``,
+    # ``pending_cancellation``, ``arbitration`` — see
+    # ``tests/e2e/test_deal_messages.py::test_messages_still_allowed_in_active_statuses``).
+    # Staff (admins / arbiters) may also post into ``resolved_*`` so
+    # they can record a verdict / explanation.
     is_staff = bool(user.is_admin or user.is_arbiter)
     _STAFF_TERMINAL_OK = {
         DealStatus.resolved_for_buyer,

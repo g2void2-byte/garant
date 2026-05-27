@@ -631,8 +631,16 @@ async def force_release(
     request: Request,
 ) -> AdminDealActionResult:
     deal = await _get_deal_or_404(session, deal_id, lock=True)
-    if _is_terminal(deal.status):
-        raise HTTPException(400, "Сделка уже завершена")
+    # CRIT — gate on the active-money-movement allow-list, not the
+    # terminal-state deny-list. The deny-list misses
+    # ``pending_topup``: buyer hasn't paid the deposit invoice yet
+    # so ``UserBalance.locked`` is zero for the principal, and the
+    # release path then credits the seller from nothing
+    # (``buyer.locked = max(0, 0 - amt) = 0`` while
+    # ``seller.amount += amt``). Same hazard applies to ``pending``
+    # (no escrow yet either).
+    if not _is_active_for_money_movement(deal.status):
+        raise HTTPException(400, "Сделка не в активной фазе расчётов")
     if deal.currency_id is None or deal.amount is None:
         raise HTTPException(400, "У сделки не задана валюта")
     currency = await session.get(Currency, deal.currency_id)
@@ -700,8 +708,10 @@ async def force_refund(
     request: Request,
 ) -> AdminDealActionResult:
     deal = await _get_deal_or_404(session, deal_id, lock=True)
-    if _is_terminal(deal.status):
-        raise HTTPException(400, "Сделка уже завершена")
+    # CRIT — see ``force_release`` for the rationale; the active-
+    # phase allow-list is the only correct gate for money movement.
+    if not _is_active_for_money_movement(deal.status):
+        raise HTTPException(400, "Сделка не в активной фазе расчётов")
     if deal.currency_id is None or deal.amount is None:
         raise HTTPException(400, "У сделки не задана валюта")
     currency = await session.get(Currency, deal.currency_id)
@@ -768,8 +778,10 @@ async def split_deal(
     request: Request,
 ) -> AdminDealActionResult:
     deal = await _get_deal_or_404(session, deal_id, lock=True)
-    if _is_terminal(deal.status):
-        raise HTTPException(400, "Сделка уже завершена")
+    # CRIT — see ``force_release`` for the rationale; the active-
+    # phase allow-list is the only correct gate for money movement.
+    if not _is_active_for_money_movement(deal.status):
+        raise HTTPException(400, "Сделка не в активной фазе расчётов")
     if deal.currency_id is None or deal.amount is None:
         raise HTTPException(400, "У сделки не задана валюта")
     currency = await session.get(Currency, deal.currency_id)
