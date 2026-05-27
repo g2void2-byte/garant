@@ -40,7 +40,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
 
-from .config import effective_require_redis_for_rate_limit, settings
+from .config import effective_require_redis_for_rate_limit
 from .deps import CurrentUser
 from .models import User
 from .redis_client import get_redis
