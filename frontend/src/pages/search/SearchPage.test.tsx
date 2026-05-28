@@ -4,6 +4,11 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { UserCardDto } from "@/api/types";
 
+const meState = vi.hoisted(() => ({
+  data: { id: 100, deals_count: 5, is_admin: false } as any,
+  isLoading: false,
+}));
+
 const mockState = vi.hoisted(() => ({
   data: undefined as UserCardDto[] | undefined,
   isLoading: false,
@@ -11,6 +16,7 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock("@/api/hooks", () => ({
   useUsers: () => mockState,
+  useMe: () => meState,
 }));
 
 import SearchPage from "./SearchPage";
@@ -30,6 +36,8 @@ function renderPage() {
 beforeEach(() => {
   mockState.data = undefined;
   mockState.isLoading = false;
+  meState.data = { id: 100, deals_count: 5, is_admin: false } as any;
+  meState.isLoading = false;
   useUI.setState({ searchMode: "users" });
 });
 
@@ -94,5 +102,16 @@ describe("<SearchPage />", () => {
     renderPage();
     expect(screen.getByRole("button", { name: /Открыть фильтры/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Услуги" })).toBeInTheDocument();
+  });
+
+  it("renders security warning overlay when user has 0 deals and is not admin", () => {
+    meState.data = { id: 100, deals_count: 0, is_admin: false } as any;
+    mockState.data = [
+      makeUser({ id: 1, username: "alice", display_name: "Alice" }),
+    ];
+    renderPage();
+    expect(screen.getByText("Поиск ограничен")).toBeInTheDocument();
+    expect(screen.getByText(/В целях безопасности и защиты от спама/)).toBeInTheDocument();
+    expect(screen.queryByText("Alice")).not.toBeInTheDocument();
   });
 });

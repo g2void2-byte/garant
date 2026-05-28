@@ -1,6 +1,5 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { Star } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
 import { SearchInput } from "@/components/ui/SearchInput";
@@ -19,13 +18,21 @@ import {
 } from "@/components/domain/SearchFilterSheet";
 import { ActiveFilterChips } from "@/components/domain/ActiveFilterChips";
 import { useUI } from "@/stores/ui";
-import { useUsers } from "@/api/hooks";
+import { useMe, useUsers } from "@/api/hooks";
 import { staggerDelay } from "@/lib/animate";
 import { dealsLabel, formatMoney } from "@/lib/format";
 import { countryFromCode } from "@/lib/countries";
 import { cn } from "@/lib/cn";
 import type { UserCardDto } from "@/api/types";
-import { Search as SearchIcon, SlidersHorizontal } from "lucide-react";
+import { Search as SearchIcon, SlidersHorizontal, ShieldAlert, Star } from "lucide-react";
+
+const MOCK_USERS: UserCardDto[] = [
+  { id: 991, user_id: 111, username: "garant_deal", display_name: "Garant Pro", photo_url: null, banner_url: null, deposit: 1500, description: "", prefix: "admin", is_admin: true, is_arbiter: false, rating: 5.0, reviews_count: 85, deals_count: 142, online: true, country: "US", admin: 1, good: 85, bad: 0, deals_success: 142, deals_failed: 0, deals_arbitrage: 0, deals_sum: 15000, forums: [] },
+  { id: 992, user_id: 222, username: "crypto_change", display_name: "Crypto Swap", photo_url: null, banner_url: null, deposit: 5000, description: "", prefix: "vip", is_admin: false, is_arbiter: false, rating: 4.9, reviews_count: 64, deals_count: 98, online: true, country: "AE", admin: 0, good: 64, bad: 0, deals_success: 95, deals_failed: 3, deals_arbitrage: 0, deals_sum: 50000, forums: [] },
+  { id: 993, user_id: 333, username: "agency_tg", display_name: "TG Agency", photo_url: null, banner_url: null, deposit: 500, description: "", prefix: null, is_admin: false, is_arbiter: false, rating: 4.8, reviews_count: 22, deals_count: 37, online: false, country: "RU", admin: 0, good: 22, bad: 0, deals_success: 35, deals_failed: 2, deals_arbitrage: 0, deals_sum: 1200, forums: [] },
+  { id: 994, user_id: 444, username: "dev_bot", display_name: "Bot Developer", photo_url: null, banner_url: null, deposit: 0, description: "", prefix: null, is_admin: false, is_arbiter: false, rating: 4.7, reviews_count: 15, deals_count: 29, online: true, country: "UA", admin: 0, good: 15, bad: 0, deals_success: 28, deals_failed: 1, deals_arbitrage: 0, deals_sum: 3500, forums: [] },
+  { id: 995, user_id: 555, username: "escrow_helper", display_name: "Escrow Helper", photo_url: null, banner_url: null, deposit: 2500, description: "", prefix: "arbiter", is_admin: false, is_arbiter: true, rating: 5.0, reviews_count: 110, deals_count: 231, online: false, country: "GB", admin: 0, good: 110, bad: 0, deals_success: 230, deals_failed: 1, deals_arbitrage: 5, deals_sum: 45000, forums: [] },
+];
 
 const FILTER_OPTIONS = [
   { value: "all", label: "Все" },
@@ -65,7 +72,11 @@ export default function SearchPage() {
     }),
     [debouncedQ, filter, filters],
   );
+  const { data: me, isLoading: meLoading } = useMe();
   const { data: users, isLoading } = useUsers(queryParams);
+
+  const isGated = me && me.deals_count === 0 && !me.is_admin;
+  const showSkeleton = isLoading || meLoading;
 
   const removeFilter = (key: keyof SearchFilters) => {
     setFilters((prev) => {
@@ -119,11 +130,47 @@ export default function SearchPage() {
             />
             <DesignationsHelp />
 
-            {isLoading ? (
+            {showSkeleton ? (
               <div className="space-y-2">
                 {Array.from({ length: 5 }).map((_, i) => (
                   <Skeleton key={i} className="h-[78px]" />
                 ))}
+              </div>
+            ) : isGated ? (
+              <div className="relative overflow-hidden rounded-card">
+                <div
+                  role="listbox"
+                  aria-label="Результаты поиска пользователей"
+                  className={cn(
+                    "bg-panel border border-border shadow-pop overflow-hidden",
+                    "filter blur-[3.5px] select-none pointer-events-none",
+                  )}
+                >
+                  <ul className="py-1.5">
+                    {MOCK_USERS.map((u, i) => (
+                      <SearchUserRow
+                        key={u.id}
+                        user={u}
+                        index={i}
+                        onPick={() => {}}
+                      />
+                    ))}
+                  </ul>
+                </div>
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-black/10 backdrop-blur-[1px] text-center z-10">
+                  <div className="bg-panel/95 border border-border rounded-2xl p-5 shadow-2xl max-w-sm animate-fade-in-scale">
+                    <div className="size-12 mx-auto rounded-full bg-accent/15 text-accent grid place-items-center mb-3">
+                      <ShieldAlert className="size-6" />
+                    </div>
+                    <h3 className="font-semibold text-lg text-text">Поиск ограничен</h3>
+                    <p className="text-[13px] text-text-muted mt-2 leading-relaxed">
+                      В целях безопасности и защиты от спама детальный поиск пользователей доступен только участникам, совершившим хотя бы 1 сделку.
+                    </p>
+                    <Button size="sm" className="mt-4 w-full" onClick={() => navigate("/deals")}>
+                      Перейти к сделкам
+                    </Button>
+                  </div>
+                </div>
               </div>
             ) : !users || users.length === 0 ? (
               <EmptyState
