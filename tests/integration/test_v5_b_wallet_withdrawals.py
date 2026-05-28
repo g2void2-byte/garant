@@ -31,7 +31,6 @@ from backend.app.db import async_session
 from backend.app.models import (
     Currency,
     User,
-    UserBalance,
     WalletDeposit,
     WalletDepositStatus,
     WalletWithdrawal,
@@ -39,7 +38,6 @@ from backend.app.models import (
 )
 from tests.helpers import (
     auth_headers,
-    credit_balance,
     get_user_id_by_tg,
     setup_pin,
     signed_init_data,
