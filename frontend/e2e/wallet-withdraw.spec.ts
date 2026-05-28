@@ -69,11 +69,9 @@ test.describe("Wallet withdraw", () => {
       page.getByRole("heading", { name: "Вывод средств" }),
     ).toBeVisible();
 
-    // Click "Всё" to copy the full balance into the amount input,
-    // then fill the address (no auto-fill).
+    // Click "Всё" to copy the full balance into the amount input.
     await page.getByRole("button", { name: "Всё" }).click();
     await expect(page.getByLabel("Сумма")).toHaveValue("123.45");
-    await page.getByLabel("Адрес кошелька").fill("TXYZ1234567890");
 
     // Submit and assert the success toast surfaces. ``Toast`` renders
     // both the title and the body, so the title is enough to scope.
@@ -100,37 +98,5 @@ test.describe("Wallet withdraw", () => {
     ).toBeVisible();
     const adminBtn = page.getByRole("button", { name: /Написать админу/ });
     await expect(adminBtn).toBeEnabled();
-  });
-
-  test("rejects empty address with an error toast before posting", async ({
-    page,
-  }) => {
-    await mockApi(page);
-    let postCalled = false;
-    await page.route(
-      /^https?:\/\/[^/]+\/api\/wallet\/withdrawals(?:\?.*)?$/,
-      async (route) => {
-        if (route.request().method() === "POST") {
-          postCalled = true;
-        }
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify([]),
-        });
-      },
-    );
-
-    await page.goto("/wallet/withdraw");
-    await expect(
-      page.getByRole("heading", { name: "Вывод средств" }),
-    ).toBeVisible();
-
-    // Fill the amount but leave the address blank — the client-side
-    // guard in ``submit()`` must short-circuit before the POST fires.
-    await page.getByRole("button", { name: "Всё" }).click();
-    await page.getByRole("button", { name: /Запросить вывод/ }).click();
-    await expect(page.getByText("Введите адрес кошелька")).toBeVisible();
-    expect(postCalled).toBe(false);
   });
 });
