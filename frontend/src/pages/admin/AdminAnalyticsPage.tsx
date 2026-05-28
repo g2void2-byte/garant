@@ -58,7 +58,7 @@ export default function AdminAnalyticsPage() {
           label="Объём (30d)"
           value={
             kpi.data
-              ? `$${kpi.data.deals_volume_usd_30d.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+              ? `$${kpi.data.deals_volume_usd_30d.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
               : "—"
           }
           loading={kpi.isLoading}
@@ -91,7 +91,7 @@ export default function AdminAnalyticsPage() {
             <SparklineCard
               title="Объём ($) в день"
               data={series.data?.deals_volume_30d ?? []}
-              format={(v) => `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+              format={(v) => `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
             />
             <SparklineCard
               title="Новые юзеры в день"
