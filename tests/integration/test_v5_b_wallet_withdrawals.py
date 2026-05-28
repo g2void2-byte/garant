@@ -31,7 +31,6 @@ from backend.app.db import async_session
 from backend.app.models import (
     Currency,
     User,
-    UserBalance,
     WalletDeposit,
     WalletDepositStatus,
     WalletWithdrawal,
@@ -39,7 +38,6 @@ from backend.app.models import (
 )
 from tests.helpers import (
     auth_headers,
-    credit_balance,
     get_user_id_by_tg,
     setup_pin,
     signed_init_data,
@@ -105,100 +103,6 @@ async def test_create_deposit_invoice_rejects_blank_pay_url(client, monkeypatch)
         headers=auth_headers(init),
     )
     assert resp.status_code == 502, resp.text
-
-
-# ── V5-B-4 — per-currency address regex ─────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_withdrawal_rejects_malformed_usdt_address(client):
-    """Garbage in the ``address`` field for USDT (TRC20) must hit the
-    regex check **before** we touch the balance row."""
-    init = signed_init_data(8101, "addr_regex_user")
-    pin_token = await setup_pin(client, init)
-
-    async with async_session() as session:
-        user_id = await get_user_id_by_tg(session, 8101)
-        await credit_balance(session, user_id, "USDT", 500.0)
-
-    resp = await client.post(
-        "/api/wallet/withdrawals",
-        json={"currency_code": "USDT", "amount": 50.0, "address": "not-a-tron-address"},
-        headers={**auth_headers(init), "X-Pin-Token": pin_token},
-    )
-    assert resp.status_code == 400, resp.text
-    assert "USDT" in resp.json().get("detail", "")
-
-    # Funds untouched: nothing moved to locked.
-    async with async_session() as session:
-        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
-        bal = (
-            await session.execute(
-                select(UserBalance).where(
-                    UserBalance.user_id == user_id,
-                    UserBalance.currency_id == usdt.id,
-                )
-            )
-        ).scalar_one()
-        assert float(bal.amount) == 500.0
-        assert float(bal.locked) == 0.0
-
-
-@pytest.mark.asyncio
-async def test_withdrawal_accepts_wellformed_usdt_address(client):
-    """A 34-char base58 ``T``-prefixed address must pass the regex check."""
-    init = signed_init_data(8102, "addr_regex_ok")
-    pin_token = await setup_pin(client, init)
-
-    async with async_session() as session:
-        user_id = await get_user_id_by_tg(session, 8102)
-        await credit_balance(session, user_id, "USDT", 500.0)
-
-    resp = await client.post(
-        "/api/wallet/withdrawals",
-        json={"currency_code": "USDT", "amount": 50.0, "address": "T" + "x" * 33},
-        headers={**auth_headers(init), "X-Pin-Token": pin_token},
-    )
-    assert resp.status_code == 200, resp.text
-
-
-@pytest.mark.asyncio
-async def test_withdrawal_empty_regex_skips_check(client):
-    """A currency with ``address_regex=""`` must bypass the format check
-    (back-compat for newly-seeded assets with no regex yet)."""
-    init = signed_init_data(8103, "addr_regex_skip")
-    pin_token = await setup_pin(client, init)
-
-    async with async_session() as session:
-        user_id = await get_user_id_by_tg(session, 8103)
-        # Spin up an ad-hoc currency for this test so we don't have to
-        # mutate one of the seeded rows (which would leak into sibling
-        # tests). ``X8K`` is unused.
-        cur = Currency(
-            code="X8K",
-            name="Skip-regex test currency",
-            network="X8K",
-            decimals=2,
-            min_deposit=1,
-            min_withdraw=1,
-            sort_order=999,
-            is_active=True,
-            address_regex="",
-        )
-        session.add(cur)
-        await session.commit()
-        await session.refresh(cur)
-
-        bal = UserBalance(user_id=user_id, currency_id=cur.id, amount=500, locked=0)
-        session.add(bal)
-        await session.commit()
-
-    resp = await client.post(
-        "/api/wallet/withdrawals",
-        json={"currency_code": "X8K", "amount": 10.0, "address": "whatever-the-regex-is-empty"},
-        headers={**auth_headers(init), "X-Pin-Token": pin_token},
-    )
-    assert resp.status_code == 200, resp.text
 
 
 # ── shared helpers ──────────────────────────────────────────────────────

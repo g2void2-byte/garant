@@ -65,7 +65,6 @@ export default function WalletWithdrawPage() {
   const [pinOpen, setPinOpen] = useState(false);
   const [code, setCode] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
-  const [address, setAddress] = useState<string>("");
 
   const eligible = useMemo(
     () => (balances.data ?? []).filter((b) => b.amount > 0),
@@ -146,11 +145,6 @@ export default function WalletWithdrawPage() {
       toast.show({ kind: "error", title: "Введите корректную сумму" });
       return false;
     }
-    if (!autoWithdraw && !address.trim()) {
-      haptic("error");
-      toast.show({ kind: "error", title: "Введите адрес кошелька" });
-      return false;
-    }
     return true;
   }
 
@@ -167,17 +161,16 @@ export default function WalletWithdrawPage() {
     // string and parses it without going through ``float``.
     const value = amount.trim();
     try {
+      // Both auto- and manual-mode payouts ship via CryptoBot
+      // Transfer (recipient = ``users.tg_user_id``). In manual mode
+      // the admin reviews the queue and triggers the same Transfer
+      // call by clicking Approve in the admin panel; the on-chain
+      // address is never relevant either way. Backend's
+      // ``WalletWithdrawCreateReq.address`` stays ``str | None`` so
+      // it accepts the omitted field without complaint.
       await create.mutateAsync({
         currency_code: current.currency.code,
         amount: value,
-        // Bug-10 — omit ``address`` in auto-mode; the backend
-        // ``WalletWithdrawCreateReq.address`` is ``str | None`` and
-        // ``services_wallet.create_withdrawal`` routes the payout via
-        // CryptoBot Transfer (recipient = ``users.tg_user_id``) when
-        // both ``auto_withdraw_enabled`` and ``CRYPTOBOT_TOKEN`` are
-        // set. Sending an unused address string would just be dead
-        // data on the row.
-        ...(autoWithdraw ? {} : { address: address.trim() }),
       });
       haptic("success");
       toast.show({
@@ -188,7 +181,6 @@ export default function WalletWithdrawPage() {
           : "Администратор обработает её в ближайшее время.",
       });
       setAmount("");
-      setAddress("");
     } catch (e: unknown) {
       haptic("error");
       toast.show({
@@ -258,23 +250,14 @@ export default function WalletWithdrawPage() {
           inputMode="decimal"
           placeholder={current ? String(current.currency.min_withdraw) : "0"}
         />
-        {autoWithdraw ? (
-          <div
-            className="rounded-card border border-accent/30 bg-accent/5 px-3 py-2 text-[12px] text-text leading-snug"
-            data-testid="withdraw-autoinfo"
-          >
-            Вывод придёт автоматически в{" "}
-            <span className="font-semibold">@CryptoBot</span> на ваш Telegram-аккаунт.
-            Адрес кошелька указывать не нужно.
-          </div>
-        ) : (
-          <Input
-            label="Адрес кошелька"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder={current ? `Адрес ${current.currency.code}` : "Адрес"}
-          />
-        )}
+        <div
+          className="rounded-card border border-accent/30 bg-accent/5 px-3 py-2 text-[12px] text-text leading-snug"
+          data-testid="withdraw-autoinfo"
+        >
+          Вывод придёт в{" "}
+          <span className="font-semibold">@CryptoBot</span> на ваш Telegram-аккаунт.
+          Адрес кошелька указывать не нужно.
+        </div>
         <Button
           fullWidth
           onClick={requestSubmit}

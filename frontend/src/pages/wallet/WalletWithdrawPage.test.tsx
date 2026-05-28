@@ -185,17 +185,6 @@ describe("<WalletWithdrawPage />", () => {
     expect(hapticSpy).toHaveBeenCalledWith("error");
   });
 
-  it("blocks submit when the address is empty", async () => {
-    mockState.balances = [makeBalance(50, "USDT")];
-    const user = userEvent.setup();
-    renderPage();
-    const amount = document.querySelector('input[type="number"]') as HTMLInputElement;
-    fireEvent.change(amount, { target: { value: "10" } });
-    await user.click(screen.getByRole("button", { name: /Запросить вывод/ }));
-    expect(mockState.createMutation.mutateAsync).not.toHaveBeenCalled();
-    expect(hapticSpy).toHaveBeenCalledWith("error");
-  });
-
   it("'Всё' button prefills the amount with the available balance", async () => {
     mockState.balances = [makeBalance(12.34, "USDT", 2)];
     const user = userEvent.setup();
@@ -205,7 +194,7 @@ describe("<WalletWithdrawPage />", () => {
     expect(amount.value).toBe("12.34");
   });
 
-  it("happy path: submits a withdrawal with amount + address + currency_code", async () => {
+  it("happy path: submits a withdrawal with amount + currency_code", async () => {
     mockState.balances = [makeBalance(100, "USDT")];
     mockState.createMutation.mutateAsync.mockResolvedValue({});
     const user = userEvent.setup();
@@ -213,8 +202,6 @@ describe("<WalletWithdrawPage />", () => {
 
     const amount = document.querySelector('input[type="number"]') as HTMLInputElement;
     fireEvent.change(amount, { target: { value: "25" } });
-    const address = screen.getByPlaceholderText("Адрес USDT") as HTMLInputElement;
-    fireEvent.change(address, { target: { value: "  TXYZ-some-address  " } });
 
     await user.click(screen.getByRole("button", { name: /Запросить вывод/ }));
     // PIN re-prompt now gates the withdrawal — punch in 1234.
@@ -226,8 +213,6 @@ describe("<WalletWithdrawPage />", () => {
         // backend can parse it into ``Decimal`` without an
         // intermediate ``float`` round-trip.
         amount: "25",
-        // Address is trimmed before being sent.
-        address: "TXYZ-some-address",
       });
     });
     expect(hapticSpy).toHaveBeenCalledWith("success");
@@ -242,8 +227,6 @@ describe("<WalletWithdrawPage />", () => {
     renderPage();
     const amount = document.querySelector('input[type="number"]') as HTMLInputElement;
     fireEvent.change(amount, { target: { value: "10" } });
-    const address = screen.getByPlaceholderText("Адрес USDT") as HTMLInputElement;
-    fireEvent.change(address, { target: { value: "addr" } });
     await user.click(screen.getByRole("button", { name: /Запросить вывод/ }));
     await enterPin(user);
     await waitFor(() => {
@@ -258,7 +241,7 @@ describe("<WalletWithdrawPage />", () => {
     const user = userEvent.setup();
     renderPage();
 
-    // Address input must not render in auto mode — instead the
+    // Address input must not render — instead the
     // page shows the @CryptoBot hint.
     expect(screen.queryByPlaceholderText("Адрес USDT")).toBeNull();
     expect(screen.getByTestId("withdraw-autoinfo")).toBeInTheDocument();
@@ -271,8 +254,6 @@ describe("<WalletWithdrawPage />", () => {
       expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USDT",
         amount: "25",
-        // No ``address`` — the backend resolves the recipient by
-        // ``users.tg_user_id`` in CryptoBot Transfer auto-mode.
       });
     });
   });

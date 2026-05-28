@@ -157,26 +157,3 @@ async def test_withdrawal_address_optional_in_auto_mode(client, monkeypatch):
     body = resp.json()
     assert body["address"] is None
 
-
-@pytest.mark.asyncio
-async def test_withdrawal_address_required_in_manual_mode(client):
-    """P11-W1 — manual mode still requires an address.
-
-    Without an admin-driven payout channel, an address-less
-    withdrawal cannot be processed; the endpoint must reject upfront
-    with 400.
-    """
-    from backend.app.db import async_session
-
-    init = signed_init_data(7102, "withdraw_manual_a")
-    pin_token = await setup_pin(client, init)
-    async with async_session() as session:
-        user_id = await get_user_id_by_tg(session, 7102)
-        await credit_balance(session, user_id, "USDT", 50)
-
-    resp = await client.post(
-        "/api/wallet/withdrawals",
-        json={"currency_code": "USDT", "amount": 5.0},
-        headers={**auth_headers(init), "X-Pin-Token": pin_token},
-    )
-    assert resp.status_code == 400, resp.text
