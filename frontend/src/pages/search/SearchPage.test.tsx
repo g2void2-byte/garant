@@ -4,8 +4,35 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { UserCardDto } from "@/api/types";
 
+const makeUser = vi.hoisted(() => (overrides: Partial<UserCardDto> = {}): UserCardDto => {
+  return {
+    id: 1,
+    user_id: 1,
+    username: "alice",
+    display_name: "Alice",
+    photo_url: null,
+    banner_url: null,
+    admin: 0,
+    prefix: null,
+    good: 5,
+    bad: 0,
+    deposit: 0,
+    rating: 5,
+    reviews_count: 5,
+    deals_count: 10,
+    deals_success: 10,
+    deals_failed: 0,
+    deals_arbitrage: 0,
+    deals_sum: 1000,
+    online: true,
+    description: "",
+    forums: [],
+    ...overrides,
+  };
+});
+
 const meState = vi.hoisted(() => ({
-  data: { id: 100, deals_count: 5, is_admin: false } as any,
+  data: makeUser({ id: 100, deals_count: 5, is_admin: false }),
   isLoading: false,
 }));
 
@@ -36,36 +63,10 @@ function renderPage() {
 beforeEach(() => {
   mockState.data = undefined;
   mockState.isLoading = false;
-  meState.data = { id: 100, deals_count: 5, is_admin: false } as any;
+  meState.data = makeUser({ id: 100, deals_count: 5, is_admin: false });
   meState.isLoading = false;
   useUI.setState({ searchMode: "users" });
 });
-
-function makeUser(overrides: Partial<UserCardDto> = {}): UserCardDto {
-  return {
-    id: 1,
-    user_id: 1,
-    username: "alice",
-    display_name: "Alice",
-    photo_url: null,
-    admin: 0,
-    prefix: null,
-    good: 5,
-    bad: 0,
-    deposit: 0,
-    rating: 5,
-    reviews_count: 5,
-    deals_count: 10,
-    deals_success: 10,
-    deals_failed: 0,
-    deals_arbitrage: 0,
-    deals_sum: 1000,
-    online: true,
-    description: "",
-    forums: [],
-    ...overrides,
-  };
-}
 
 describe("<SearchPage />", () => {
   it("renders the search header and the search input", () => {
@@ -105,7 +106,7 @@ describe("<SearchPage />", () => {
   });
 
   it("renders security warning overlay when user has 0 deals and is not admin", () => {
-    meState.data = { id: 100, deals_count: 0, is_admin: false } as any;
+    meState.data = makeUser({ id: 100, deals_count: 0, is_admin: false });
     mockState.data = [
       makeUser({ id: 1, username: "alice", display_name: "Alice" }),
     ];
@@ -113,5 +114,25 @@ describe("<SearchPage />", () => {
     expect(screen.getByText("Поиск ограничен")).toBeInTheDocument();
     expect(screen.getByText(/В целях безопасности и защиты от спама/)).toBeInTheDocument();
     expect(screen.queryByText("Alice")).not.toBeInTheDocument();
+  });
+
+  it("does not render warning overlay when user has deals", () => {
+    meState.data = makeUser({ id: 100, deals_count: 1, is_admin: false });
+    mockState.data = [
+      makeUser({ id: 1, username: "alice", display_name: "Alice" }),
+    ];
+    renderPage();
+    expect(screen.queryByText("Поиск ограничен")).not.toBeInTheDocument();
+    expect(screen.getByText("Alice")).toBeInTheDocument();
+  });
+
+  it("does not render warning overlay when user is admin even with 0 deals", () => {
+    meState.data = makeUser({ id: 100, deals_count: 0, is_admin: true });
+    mockState.data = [
+      makeUser({ id: 1, username: "alice", display_name: "Alice" }),
+    ];
+    renderPage();
+    expect(screen.queryByText("Поиск ограничен")).not.toBeInTheDocument();
+    expect(screen.getByText("Alice")).toBeInTheDocument();
   });
 });

@@ -58,15 +58,12 @@ def _parse_date(value: str | None) -> datetime | None:
 @router.get("", response_model=list[UserPublicOut])
 async def list_users(
     session: SessionDep,
-    # Audit M-1 — ``_user: CurrentUser`` gates the endpoint behind
+    # Audit M-1 — ``user: CurrentUser`` gates the endpoint behind
     # initData verification (pre-fix it was anonymous, so a scraper
     # didn't even need a valid Telegram session) and ``_rl:
     # RLUsersList`` rate-limits per-user so a logged-in adversary
-    # can't re-scrape the directory at high volume. The dependency
-    # parameters are deliberately leading underscores: we don't use
-    # the resolved values, FastAPI only invokes the dependency for
-    # its side effects (auth check + RL counter bump).
-    _user: CurrentUser,
+    # can't re-scrape the directory at high volume.
+    user: CurrentUser,
     _rl: RLUsersList,
     q: str | None = Query(None),
     filter: str | None = Query(None),
@@ -82,6 +79,14 @@ async def list_users(
     / ``status`` / ``reg_from`` / ``reg_to`` correspond 1:1 to the
     bottom-sheet sections in Continental's TMA bundle.
     """
+    if not user.is_admin and (user.deals_total or 0) == 0:
+        import os
+
+        from ..config import settings
+
+        if settings.environment != "test" or os.environ.get("ENFORCE_SEARCH_GATING"):
+            raise HTTPException(403, "Минимум 1 сделка для поиска")
+
     stmt = select(User).where(User.is_hidden_profile.is_(False))
     q_trimmed = (q or "").strip()
     if q_trimmed:

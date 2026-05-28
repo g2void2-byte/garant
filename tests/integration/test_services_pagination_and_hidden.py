@@ -24,6 +24,14 @@ async def _bootstrap(client, *, tg_user_id: int, username: str) -> int:
     init = signed_init_data(tg_user_id, username)
     resp = await client.get("/api/me", headers=auth_headers(init))
     assert resp.status_code == 200, resp.text
+    # Bypass gating for list tests by giving the bootstrapped user deals_total >= 1
+    from sqlalchemy import update
+
+    async with async_session() as session:
+        await session.execute(
+            update(User).where(User.tg_user_id == tg_user_id).values(deals_total=1)
+        )
+        await session.commit()
     return resp.json()["id"]
 
 
@@ -56,6 +64,7 @@ async def test_default_limit_is_capped_at_100(client):
     owner_id = await _bootstrap(client, tg_user_id=14001, username="lots_owner")
     await _seed_active_services(owner_id, count=120, prefix="default")
 
+    await _bootstrap(client, tg_user_id=14002, username="caller_p1")
     caller_init = signed_init_data(14002, "caller_p1")
     resp = await client.get("/api/services", headers=auth_headers(caller_init))
     assert resp.status_code == 200, resp.text
@@ -66,6 +75,7 @@ async def test_explicit_limit_caps_response(client):
     owner_id = await _bootstrap(client, tg_user_id=14003, username="few_owner")
     await _seed_active_services(owner_id, count=8, prefix="explicit")
 
+    await _bootstrap(client, tg_user_id=14004, username="caller_p2")
     caller_init = signed_init_data(14004, "caller_p2")
     resp = await client.get("/api/services?limit=3", headers=auth_headers(caller_init))
     assert resp.status_code == 200, resp.text
@@ -78,6 +88,7 @@ async def test_offset_skips_rows(client):
     owner_id = await _bootstrap(client, tg_user_id=14005, username="paginator_owner")
     await _seed_active_services(owner_id, count=5, prefix="paginate")
 
+    await _bootstrap(client, tg_user_id=14006, username="caller_p3")
     caller_init = signed_init_data(14006, "caller_p3")
     page_a = (
         await client.get("/api/services?limit=2&offset=0", headers=auth_headers(caller_init))
@@ -99,6 +110,7 @@ async def test_x_total_count_header_reflects_unpaginated_count(client):
     owner_id = await _bootstrap(client, tg_user_id=14007, username="total_owner")
     await _seed_active_services(owner_id, count=12, prefix="total")
 
+    await _bootstrap(client, tg_user_id=14008, username="caller_p4")
     caller_init = signed_init_data(14008, "caller_p4")
     resp = await client.get("/api/services?limit=3", headers=auth_headers(caller_init))
     assert resp.status_code == 200, resp.text
@@ -141,6 +153,7 @@ async def test_hidden_owner_services_excluded_from_public_catalog(client):
     await _seed_active_services(hidden_id, count=3, prefix="HIDDEN")
     await _seed_active_services(visible_id, count=3, prefix="VISIBLE")
 
+    await _bootstrap(client, tg_user_id=14103, username="caller_hide_1")
     caller_init = signed_init_data(14103, "caller_hide_1")
     resp = await client.get("/api/services", headers=auth_headers(caller_init))
     assert resp.status_code == 200, resp.text
@@ -158,6 +171,7 @@ async def test_hidden_owner_services_excluded_when_filtering_by_username(client)
     hidden_id = await _make_hidden_owner(client, 14111, "hidden_owner_2")
     await _seed_active_services(hidden_id, count=4, prefix="HIDDEN2")
 
+    await _bootstrap(client, tg_user_id=14112, username="caller_hide_2")
     caller_init = signed_init_data(14112, "caller_hide_2")
     resp = await client.get("/api/services?owner=hidden_owner_2", headers=auth_headers(caller_init))
     assert resp.status_code == 200, resp.text
