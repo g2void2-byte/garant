@@ -36,6 +36,14 @@ async def _caller_headers(client) -> dict[str, str]:
     # Bootstrap so the user row exists; ``CurrentUser`` then resolves.
     resp = await client.get("/api/me", headers=auth_headers(init))
     assert resp.status_code == 200, resp.text
+    # Bypass gating for list tests by giving the caller deals_total >= 1
+    from sqlalchemy import update
+
+    async with async_session() as session:
+        await session.execute(
+            update(User).where(User.username == _CALLER_USERNAME).values(deals_total=1)
+        )
+        await session.commit()
     return auth_headers(init)
 
 

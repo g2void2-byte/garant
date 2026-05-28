@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     # silently fall back to derivable values in dev.
     environment: Literal["development", "test", "staging", "production"] = "development"
 
+    # Allow custom variables in local .env to bypass extra="forbid" restriction
+    postgres_password: str = ""
+    vite_api_url: str = ""
+
     bot_token: str = ""
     cryptobot_token: str = ""
     cryptobot_testnet: bool = False

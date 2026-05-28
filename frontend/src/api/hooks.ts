@@ -94,11 +94,12 @@ export function useUpdateMe() {
   });
 }
 
-export function useCategories() {
+export function useCategories(options: { enabled?: boolean } = {}) {
   return useQuery<CategoryDto[]>({
     queryKey: qk.categories(),
     queryFn: () => api.get("api/categories").json(),
     staleTime: 5 * 60_000,
+    enabled: options.enabled ?? true,
   });
 }
 
@@ -265,7 +266,10 @@ export interface UsersQueryParams {
   reg_to?: string;
 }
 
-export function useUsers(params: UsersQueryParams = {}) {
+export function useUsers(
+  params: UsersQueryParams = {},
+  options: { enabled?: boolean } = {},
+) {
   const searchParams: Record<string, string> = {};
   if (params.q) searchParams.q = params.q;
   if (params.filter) searchParams.filter = params.filter;
@@ -278,6 +282,7 @@ export function useUsers(params: UsersQueryParams = {}) {
     queryKey: qk.users.list(params),
     queryFn: () => api.get("api/users", { searchParams }).json(),
     staleTime: 15_000,
+    enabled: options.enabled ?? true,
   });
 }
 

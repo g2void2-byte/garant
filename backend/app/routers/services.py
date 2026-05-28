@@ -173,6 +173,9 @@ async def list_services(
         description="Row offset for cursorless pagination.",
     ),
 ):
+    if not user.is_admin and (user.deals_total or 0) == 0:
+        raise HTTPException(403, "Минимум 1 сделка для поиска")
+
     # R7/H-12 \u2014 always join ``Service.owner`` so we have a single
     # well-known join target for the ``is_hidden_profile`` filter below.
     # The owner relation is also already eager-loaded by the ORM for
