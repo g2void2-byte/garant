@@ -19,7 +19,9 @@ async def list_categories(
 ):
     if not user.is_admin and (user.deals_total or 0) == 0:
         import os
+
         from ..config import settings
+
         if settings.environment != "test" or os.environ.get("ENFORCE_SEARCH_GATING"):
             raise HTTPException(403, "Минимум 1 сделка для поиска")
     # M-5: ``services_count`` is the public catalog cue, so it must
