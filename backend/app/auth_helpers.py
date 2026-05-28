@@ -85,10 +85,6 @@ async def ensure_user_row(
         "photo_url": photo_url,
         "language_code": language_code,
     }
-    from .config import settings
-
-    if settings.environment == "test":
-        values["deals_total"] = 1
     if bump_login:
         if now is None:
             raise ValueError("ensure_user_row(bump_login=True) requires now=")
