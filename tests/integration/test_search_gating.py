@@ -35,7 +35,8 @@ async def _setup_user(
 
 
 @pytest.mark.asyncio
-async def test_search_gating_behavior(client):
+async def test_search_gating_behavior(client, monkeypatch):
+    monkeypatch.setenv("ENFORCE_SEARCH_GATING", "1")
     # 1. Setup users
     gated_headers = await _setup_user(
         client, _GATED_TG, _GATED_USERNAME, deals_total=0, is_admin=False
