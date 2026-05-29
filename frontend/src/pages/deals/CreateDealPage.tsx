@@ -18,7 +18,8 @@ import {
   useWalletBalances,
 } from "@/api/hooks";
 import { formatCurrency } from "@/lib/format";
-import { haptic, openTelegramLink } from "@/lib/tg";
+import { haptic, openPaymentLink } from "@/lib/tg";
+import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 
 // Item 18 — backend can return a structured ``insufficient_funds``
 // payload on the create-deal 400. The ky ``beforeError`` hook
@@ -103,6 +104,7 @@ export default function CreateDealPage() {
   const [pinOpen, setPinOpen] = useState(false);
   const [insufficient, setInsufficient] = useState<InsufficientFundsDetail | null>(null);
   const [created, setCreated] = useState<DealCreateWithTopupResponseDto | null>(null);
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
 
   // Per the deposit-flow plan, deals are funded from the buyer's
   // fiat balance — the dropdown therefore surfaces only fiat
@@ -187,13 +189,16 @@ export default function CreateDealPage() {
       // distinguishes the two outcomes so the user knows whether
       // they still need to pay an invoice.
       const total = parseFloat(String(deal.invoice.total));
-      toast.show({
-        kind: "success",
-        title:
-          Number.isFinite(total) && total <= 0
-            ? "Сделка создана — оплата с баланса"
-            : "Инвойс создан",
-      });
+      const paidFromBalance = Number.isFinite(total) && total <= 0;
+      if (paidFromBalance) {
+        toast.show({
+          kind: "success",
+          title: "Сделка создана — оплата с баланса",
+        });
+      } else {
+        toast.show({ kind: "success", title: "Инвойс создан" });
+        setInvoiceModalOpen(true);
+      }
     } catch (e: unknown) {
       haptic("error");
       const lowFunds = parseInsufficientFunds(e);
@@ -390,35 +395,42 @@ export default function CreateDealPage() {
           // doesn't get sent to a zero-value pay-url.
           const totalNum = parseFloat(String(created.invoice.total));
           const paidFromBalance = Number.isFinite(totalNum) && totalNum <= 0;
-          return paidFromBalance ? (
-            <div
-              className="rounded-card border border-success/40 bg-success/10 p-4 space-y-3"
-              data-testid="deal-balance-paid"
-            >
-              <div>
-                <div className="text-sm font-semibold text-success">
-                  Сделка #{created.deal.id} создана
-                </div>
-                <div className="text-xs text-text-muted">
-                  Сумма и комиссия списаны с баланса. Сделка ждёт подтверждения продавцом.
-                </div>
-              </div>
-              <Button
-                type="button"
-                onClick={() => navigate(`/deals/${created.deal.id}`)}
+          if (paidFromBalance) {
+            return (
+              <div
+                className="rounded-card border border-success/40 bg-success/10 p-4 space-y-3"
+                data-testid="deal-balance-paid"
               >
-                К сделке
-              </Button>
-            </div>
-          ) : (
+                <div>
+                  <div className="text-sm font-semibold text-success">
+                    Сделка #{created.deal.id} создана
+                  </div>
+                  <div className="text-xs text-text-muted">
+                    Сумма и комиссия списаны с баланса. Сделка ждёт подтверждения продавцом.
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => navigate(`/deals/${created.deal.id}`)}
+                >
+                  К сделке
+                </Button>
+              </div>
+            );
+          }
+          // Topup required: when the realtime modal is closed, show a
+          // compact "Оплатите инвойс #N" card that reopens it. The
+          // modal itself handles polling, auto-open, and auto-navigate
+          // — this card just gives the user a way back in.
+          return (
             <div
               className="rounded-card border border-accent/40 bg-accent/10 p-4 space-y-3"
               data-testid="topup-invoice-preview"
             >
               <div>
-                <div className="text-sm font-semibold text-accent">Инвойс на оплату</div>
+                <div className="text-sm font-semibold text-accent">Инвойс #{created.deal.id} ждёт оплаты</div>
                 <div className="text-xs text-text-muted">
-                  Оплатите инвойс, чтобы сделка #{created.deal.id} перешла на подтверждение продавцом.
+                  Когда платёж пройдёт, сделка откроется автоматически.
                 </div>
               </div>
               <div className="space-y-1 text-sm">
@@ -429,9 +441,9 @@ export default function CreateDealPage() {
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   type="button"
-                  onClick={() => openTelegramLink(created.invoice.pay_url)}
+                  onClick={() => setInvoiceModalOpen(true)}
                 >
-                  Открыть инвойс
+                  Открыть оплату
                 </Button>
                 <Button
                   type="button"
@@ -444,8 +456,12 @@ export default function CreateDealPage() {
             </div>
           );
         })()}
-        <Button fullWidth onClick={requestSubmit} disabled={create.isPending}>
-          {create.isPending ? "Создаю..." : "Создать сделку"}
+        <Button fullWidth onClick={requestSubmit} disabled={create.isPending || created !== null}>
+          {create.isPending
+            ? "Создаю..."
+            : created !== null
+              ? "Сделка создана"
+              : "Создать сделку"}
         </Button>
       </div>
       <PinPromptModal
@@ -458,6 +474,26 @@ export default function CreateDealPage() {
         title="Подтвердите PIN"
         subtitle="Введите PIN, чтобы создать сделку"
       />
+      {created && invoiceModalOpen && created.invoice.pay_url && (
+        <DealInvoiceModal
+          open={invoiceModalOpen}
+          onClose={() => setInvoiceModalOpen(false)}
+          dealId={created.deal.id}
+          depositId={created.invoice.deposit_id}
+          payUrl={created.invoice.pay_url}
+          amount={created.invoice.total}
+          currencyCode={created.deal.currency_code ?? "USD"}
+          provider={created.deal.payment_provider ?? "cryptobot"}
+          canPay={true}
+          successTitle="Сделка создана"
+          successBody="Платёж прошёл. Сейчас откроем сделку."
+          onSuccess={(dealId) => {
+            setInvoiceModalOpen(false);
+            setCreated(null);
+            navigate(`/deals/${dealId}`, { replace: true });
+          }}
+        />
+      )}
     </Page>
   );
 }

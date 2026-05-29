@@ -27,12 +27,14 @@ vi.mock("@/api/hooks", () => ({
   useDealAction: () => actionStub(),
   useCancelPendingTopup: () => cancelTopupState,
   useCreateReview: () => actionStub(),
+  useWalletDeposit: () => ({ data: undefined, isLoading: false }),
 }));
 
 vi.mock("@/lib/tg", () => ({
   useTelegramViewport: () => null,
   haptic: vi.fn(),
   openTelegramLink: vi.fn(),
+  openPaymentLink: vi.fn(),
   showBackButton: () => () => {},
 }));
 
@@ -165,9 +167,10 @@ describe("<DealDetailPage />", () => {
       },
     });
     renderAt(42);
-    expect(screen.getByText("Ожидается оплата инвойса")).toBeInTheDocument();
+    expect(screen.getAllByText("Ожидает оплаты инвойса")[0]).toBeInTheDocument();
     expect(screen.getByText("105 USD")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Открыть инвойс/i })).toBeInTheDocument();
+    expect(screen.getByText(/Оплатите инвойс, чтобы сделка активировалась/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Открыть оплату/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Отменить$/i })).toBeInTheDocument();
   });
 

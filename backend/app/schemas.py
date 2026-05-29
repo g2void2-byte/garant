@@ -1891,6 +1891,10 @@ class AdminSettingsOut(BaseModel):
     auto_withdraw_enabled: bool
     pending_topup_expiry_hours: int
     pin_reset_price_usd: MoneyDecimal
+    faq_stats_badge_enabled: bool
+    faq_stats_users: int
+    faq_stats_deals: int
+    faq_stats_total_usd: MoneyDecimal
 
 
 class AdminSettingsUpdateIn(BaseModel):
@@ -1910,6 +1914,10 @@ class AdminSettingsUpdateIn(BaseModel):
     auto_withdraw_enabled: bool | None = None
     pending_topup_expiry_hours: int | None = None
     pin_reset_price_usd: Decimal | None = None
+    faq_stats_badge_enabled: bool | None = None
+    faq_stats_users: int | None = None
+    faq_stats_deals: int | None = None
+    faq_stats_total_usd: Decimal | None = None
 
     @field_validator(
         "deal_commission_percent",

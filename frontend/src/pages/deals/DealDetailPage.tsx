@@ -27,7 +27,8 @@ import {
   useReviews,
 } from "@/api/hooks";
 import { formatAmount, relativeTime } from "@/lib/format";
-import { haptic, openTelegramLink } from "@/lib/tg";
+import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
+import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 
@@ -94,6 +95,7 @@ export default function DealDetailPage() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
 
   const otherUser = deal && (deal.role === "buyer" ? deal.seller : deal.buyer);
   const { data: existingReviews } = useReviews(otherUser ?? undefined);
@@ -124,6 +126,9 @@ export default function DealDetailPage() {
   const alreadyReviewed = !!existingReviews?.some(
     (r) => r.deal_id === deal.id && me && r.author_username === me.username,
   );
+
+  const canOpenInvoice = deal.role === "buyer" && deal.status === "pending_topup";
+  const showPaidInvoiceState = deal.status !== "pending_topup" && !!deal.topup_invoice;
 
   const handle = async (
     fn: typeof accept,
@@ -291,43 +296,70 @@ export default function DealDetailPage() {
         </div>
 
         {deal.status === "pending_topup" && (
-          <div className="rounded-card border border-accent/40 bg-accent/10 p-4 space-y-3">
-            <div>
-              <div className="text-sm font-semibold text-accent">Ожидается оплата инвойса</div>
-              <div className="text-xs text-text-muted">
-                После оплаты сделка перейдёт на подтверждение продавцом.
-              </div>
-            </div>
-            {deal.topup_invoice ? (
-              <>
-                <div className="space-y-1 text-sm">
-                  <TopupInvoiceRow label="Недостающая сумма" value={deal.topup_invoice.topup_principal} currency={deal.topup_invoice.currency_code} />
-                  <TopupInvoiceRow label="Комиссия" value={deal.topup_invoice.commission} currency={deal.topup_invoice.currency_code} />
-                  <TopupInvoiceRow label="Итого" value={deal.topup_invoice.total} currency={deal.topup_invoice.currency_code} strong />
-                </div>
-                <Button
-                  type="button"
-                  className="w-full"
-                  onClick={() => openTelegramLink(deal.topup_invoice!.pay_url)}
-                >
-                  <ExternalLink className="size-4" /> Открыть инвойс
-                </Button>
-              </>
-            ) : (
-              <div className="text-sm text-text-muted">Инвойс недоступен или уже истёк.</div>
-            )}
-            {deal.role === "buyer" && (
-              <Button
-                type="button"
-                className="w-full"
-                variant="danger"
-                onClick={cancelPendingTopup}
-                disabled={cancelTopup.isPending}
-              >
-                {cancelTopup.isPending ? "Отменяю..." : "Отменить"}
-              </Button>
-            )}
+          <div className="rounded-card border border-border bg-card/80 p-4 space-y-3">
+            {(() => {
+              const topupInvoice = deal.topup_invoice;
+              return (
+                <>
+                  <div className="text-sm text-text-muted">
+                    {deal.role === "buyer"
+                      ? `Оплатите инвойс, чтобы сделка активировалась`
+                      : `Ожидайте подтверждение сделки от @${otherUser}`}
+                  </div>
+                  {topupInvoice && (
+                    <div className="space-y-2">
+                      <TopupInvoiceRow label="Провайдер" value={topupInvoice.provider === "crystalpay" ? "Crystal Pay" : "CryptoBot"} currency={topupInvoice.currency_code} />
+                      <TopupInvoiceRow label="Сумма" value={topupInvoice.total} currency={topupInvoice.currency_code} strong />
+                      {topupInvoice.expires_at && (
+                        <TopupInvoiceRow label="Истекает" value={new Date(topupInvoice.expires_at).toLocaleString()} currency={topupInvoice.currency_code} />
+                      )}
+                    </div>
+                  )}
+                  {deal.role === "buyer" && topupInvoice ? (
+                    <div className="flex gap-2">
+                      <Button onClick={() => openPaymentLink(topupInvoice.pay_url)}>Открыть оплату</Button>
+                      <Button
+                        variant="danger"
+                        onClick={cancelPendingTopup}
+                        disabled={cancelTopup.isPending}
+                      >
+                        {cancelTopup.isPending ? "Отменяю..." : "Отменить"}
+                      </Button>
+                    </div>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
+        )}
+
+        {showPaidInvoiceState && (
+          <div className="rounded-card border border-success/30 bg-success/5 p-4 space-y-2">
+            <div className="text-sm font-semibold text-success">Инвойс оплачен</div>
+            <div className="text-xs text-text-muted">
+              История сохранена. Кнопка оплаты больше недоступна.
+            </div>
+          </div>
+        )}
+
+        {invoiceModalOpen && deal.topup_invoice && canOpenInvoice && (
+          <DealInvoiceModal
+            open={invoiceModalOpen}
+            onClose={() => setInvoiceModalOpen(false)}
+            dealId={deal.id}
+            depositId={deal.topup_invoice.deposit_id}
+            payUrl={deal.topup_invoice.pay_url}
+            amount={deal.topup_invoice.total}
+            currencyCode={deal.topup_invoice.currency_code}
+            provider={deal.topup_invoice.provider}
+            canPay={canOpenInvoice}
+            successTitle="Сделка создана"
+            successBody="Платёж прошёл. Сейчас откроем сделку."
+            onSuccess={(dealId) => {
+              setInvoiceModalOpen(false);
+              navigate(`/deals/${dealId}`, { replace: true });
+            }}
+          />
         )}
 
         {deal.status === "pending_cancellation" && deal.cancellation_reason && (

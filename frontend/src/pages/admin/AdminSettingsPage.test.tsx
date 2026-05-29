@@ -73,6 +73,10 @@ function makeSettings(
     maintenance_message: "Сервис на ТО",
     auto_withdraw_enabled: true,
     pin_reset_price_usd: 3,
+    faq_stats_badge_enabled: false,
+    faq_stats_users: 0,
+    faq_stats_deals: 0,
+    faq_stats_total_usd: 0,
     ...overrides,
   };
 }
@@ -111,7 +115,7 @@ describe("<AdminSettingsPage />", () => {
   it("'Сохранить' is disabled when there is no diff", () => {
     mockState.data = makeSettings();
     renderPage();
-    const save = screen.getByRole("button", { name: /^Сохранить/ });
+    const save = screen.getByRole("button", { name: /^Сохранить(\s\(\d+\))?$/ });
     expect(save).toBeDisabled();
   });
 
@@ -126,7 +130,7 @@ describe("<AdminSettingsPage />", () => {
     const dealInput = screen.getByDisplayValue("2") as HTMLInputElement;
     fireEvent.change(dealInput, { target: { value: "3" } });
 
-    const save = screen.getByRole("button", { name: /^Сохранить/ });
+    const save = screen.getByRole("button", { name: /^Сохранить(\s\(\d+\))?$/ });
     await waitFor(() => expect(save).not.toBeDisabled());
     await user.click(save);
     await waitFor(() =>
@@ -161,7 +165,7 @@ describe("<AdminSettingsPage />", () => {
 
     const dealInput = screen.getByDisplayValue("2") as HTMLInputElement;
     fireEvent.change(dealInput, { target: { value: "4" } });
-    await user.click(screen.getByRole("button", { name: /^Сохранить/ }));
+    await user.click(screen.getByRole("button", { name: /^Сохранить(\s\(\d+\))?$/ }));
     await waitFor(() =>
       expect(toastSpy).toHaveBeenCalledWith(
         expect.objectContaining({

@@ -277,6 +277,15 @@ export function openExternalLink(url: string) {
   if (typeof window !== "undefined") window.open(url, "_blank", "noopener,noreferrer");
 }
 
+export function openPaymentLink(url: string) {
+  if (!isSafeLink(url)) return;
+  if (url.startsWith("https://t.me/")) {
+    openTelegramLink(url);
+    return;
+  }
+  openExternalLink(url);
+}
+
 // Audit L-13 / H-1 — schemes we allow to flow through
 // ``openTelegramLink`` / ``openExternalLink``. Anything else
 // (``javascript:``, ``data:``, ``vbscript:``, ``file:`` …) is refused

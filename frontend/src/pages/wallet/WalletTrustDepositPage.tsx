@@ -17,7 +17,7 @@ import { useToast } from "@/components/ui/Toast";
 import { usePresence } from "@/lib/animate";
 import { cn } from "@/lib/cn";
 import { formatCurrency, formatMoney } from "@/lib/format";
-import { haptic, openTelegramLink } from "@/lib/tg";
+import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
 
 /**
  * "Депозит доверия" page.
@@ -80,7 +80,7 @@ export default function WalletTrustDepositPage() {
         purpose: "trust",
       });
       haptic("success");
-      if (dep.pay_url) openTelegramLink(dep.pay_url);
+      if (dep.pay_url) openPaymentLink(dep.pay_url);
       toast.show({
         kind: "success",
         title: "Счёт создан",

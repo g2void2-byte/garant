@@ -669,11 +669,13 @@ async def public_settings():
             "deal_commission_percent": 5.0,
             "vip_commission_percent": -1.0,
             "auto_withdraw_enabled": False,
+            "faq_stats_badge_enabled": False,
         }
     return {
         "deal_commission_percent": float(row.deal_commission_percent),
         "vip_commission_percent": float(row.vip_commission_percent),
         "auto_withdraw_enabled": bool(row.auto_withdraw_enabled),
+        "faq_stats_badge_enabled": bool(row.faq_stats_badge_enabled),
     }
 
 

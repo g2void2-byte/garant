@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useAdminSettings, useAdminUpdateSettings } from "@/api/admin/hooks";
 import type { AdminSettingsDto } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { StatsBadge } from "@/components/domain/StatsBadge";
 
 /**
  * `/admin/settings` — global app configuration.
@@ -59,6 +60,77 @@ export default function AdminSettingsPage() {
     <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader title="Настройки" subtitle={dirty ? "Несохранённые изменения" : undefined} />
       <div className="px-4 space-y-4 pb-24">
+        <Section title="Плашка статистики на FAQ">
+          <Row label="Показывать на /faq">
+            <Switch
+              checked={form.faq_stats_badge_enabled}
+              onChange={(c) =>
+                setForm({ ...form, faq_stats_badge_enabled: c })
+              }
+            />
+          </Row>
+          <Row label="Пользователей">
+            <NumberField
+              value={form.faq_stats_users}
+              onChange={(v) => setForm({ ...form, faq_stats_users: v })}
+            />
+          </Row>
+          <Row label="Сделок">
+            <NumberField
+              value={form.faq_stats_deals}
+              onChange={(v) => setForm({ ...form, faq_stats_deals: v })}
+            />
+          </Row>
+          <Row label="Объём (USD)">
+            <NumberField
+              value={form.faq_stats_total_usd}
+              onChange={(v) => setForm({ ...form, faq_stats_total_usd: v })}
+            />
+          </Row>
+          <div className={`px-3 pb-2 ${form.faq_stats_badge_enabled ? "" : "opacity-55"}`}>
+            <div className="mb-2 text-[11px] uppercase tracking-wider text-text-muted">
+              Превью плашки
+            </div>
+            <StatsBadge
+              variant="compact"
+              stats={{
+                users: form.faq_stats_users,
+                deals: form.faq_stats_deals,
+                total_usd: form.faq_stats_total_usd,
+              }}
+              title="FAQ EW Гарант"
+              subtitle={
+                form.faq_stats_badge_enabled
+                  ? "Показывается на /faq"
+                  : "Сейчас скрыта — включите переключатель, чтобы показать на /faq"
+              }
+            />
+            <div className="mt-3">
+              <Button
+                type="button"
+                className="w-full"
+                disabled={update.isPending}
+                onClick={async () => {
+                  try {
+                    const saved = await update.mutateAsync({
+                      faq_stats_badge_enabled: form.faq_stats_badge_enabled,
+                      faq_stats_users: form.faq_stats_users,
+                      faq_stats_deals: form.faq_stats_deals,
+                      faq_stats_total_usd: form.faq_stats_total_usd,
+                    });
+                    setForm(saved);
+                    toast.show({ kind: "success", title: "Плашка сохранена" });
+                  } catch (e) {
+                    toast.show({ kind: "error", title: "Ошибка", body: (e as Error).message });
+                  }
+                }}
+              >
+                Сохранить плашку FAQ
+              </Button>
+            </div>
+          </div>
+        </Section>
+
         <Section title="Комиссии (%)">
           <Row label="Обычная комиссия (сделки)">
             <NumberField
@@ -150,7 +222,7 @@ export default function AdminSettingsPage() {
         </Section>
       </div>
 
-      <div className="fixed bottom-4 left-4 right-4 z-40">
+      <div className="fixed bottom-24 left-4 right-4 z-50">
         <Button
           type="button"
           disabled={!dirty || update.isPending}

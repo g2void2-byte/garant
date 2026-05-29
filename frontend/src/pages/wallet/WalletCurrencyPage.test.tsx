@@ -69,6 +69,11 @@ vi.mock("@/lib/tg", () => ({
   useTelegramViewport: () => null,
   haptic: hapticSpy,
   openTelegramLink: openTelegramLinkSpy,
+  openPaymentLink: (url: string) => {
+    if (url.startsWith("https://t.me/")) {
+      openTelegramLinkSpy(url);
+    }
+  },
   showBackButton: () => () => {},
 }));
 

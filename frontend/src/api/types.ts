@@ -704,6 +704,10 @@ export interface AdminSettingsDto {
   maintenance_message: string;
   auto_withdraw_enabled: boolean;
   pin_reset_price_usd: number;
+  faq_stats_badge_enabled: boolean;
+  faq_stats_users: number;
+  faq_stats_deals: number;
+  faq_stats_total_usd: number;
 }
 
 export interface AdminSettingsUpdateBody {
@@ -717,6 +721,10 @@ export interface AdminSettingsUpdateBody {
   maintenance_message?: string;
   auto_withdraw_enabled?: boolean;
   pin_reset_price_usd?: number;
+  faq_stats_badge_enabled?: boolean;
+  faq_stats_users?: number;
+  faq_stats_deals?: number;
+  faq_stats_total_usd?: number;
 }
 
 export interface AdminCategoryDto {
@@ -910,6 +918,7 @@ export interface PublicSettingsDto {
   deal_commission_percent: number;
   vip_commission_percent: number;
   auto_withdraw_enabled: boolean;
+  faq_stats_badge_enabled: boolean;
 }
 
 export interface MaintenanceStatusDto {
