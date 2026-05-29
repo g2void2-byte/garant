@@ -95,6 +95,7 @@ return {1, '0'}
 # Single cached Script handle per process; ``redis.asyncio`` resolves
 # the SHA on first call and falls back to EVAL on NOSCRIPT.
 _rl_script = None
+_rl_counter = 0
 
 
 async def _hit_inmemory(scope: str, key: str, *, limit: int, window: float) -> None:
@@ -127,7 +128,7 @@ async def _hit_redis(scope: str, key: str, *, limit: int, window: float) -> None
     + ``ZCARD`` + ``ZADD``) tracks each hit's own timestamp, so the
     cap is honoured for any rolling ``window``-second slice.
     """
-    global _rl_script
+    global _rl_script, _rl_counter
     r = await get_redis()
     if r is None:
         if effective_require_redis_for_rate_limit():
@@ -144,10 +145,11 @@ async def _hit_redis(scope: str, key: str, *, limit: int, window: float) -> None
         now = time.time()
         # ZSET member must be unique per hit so two hits inside the
         # same fractional second do not collide and de-duplicate to
-        # one entry. ``now`` + a per-process counter would also work;
-        # ``time.time_ns`` is simpler and process-local uniqueness is
-        # all we need because the Redis-side member set is per-key.
-        member = f"{now:.6f}:{time.monotonic_ns()}"
+        # one entry. Process-local uniqueness is guaranteed by adding
+        # a rolling counter, defending against low timer resolution
+        # on environments like Windows.
+        _rl_counter = (_rl_counter + 1) & 0xFFFFFF
+        member = f"{now:.6f}:{time.monotonic_ns()}:{_rl_counter}"
         result = await _rl_script(
             keys=[full_key],
             args=[f"{now:.6f}", f"{window:.6f}", str(int(limit)), member],
