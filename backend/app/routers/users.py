@@ -72,6 +72,15 @@ async def list_users(
     status: str | None = Query(None, description="Continental prefix tier"),
     reg_from: str | None = Query(None, description="ISO date (YYYY-MM-DD)"),
     reg_to: str | None = Query(None, description="ISO date (YYYY-MM-DD)"),
+    picker: bool = Query(
+        False,
+        description=(
+            "When true, the endpoint is being used as a counterparty"
+            " picker (e.g. on /deals/new) — bypass the 'min 1 deal'"
+            " search gate so brand-new users can still find a"
+            " counterparty to do their first deal with."
+        ),
+    ),
 ):
     """List users, optionally filtered by Continental's search-page schema.
 
@@ -79,7 +88,7 @@ async def list_users(
     / ``status`` / ``reg_from`` / ``reg_to`` correspond 1:1 to the
     bottom-sheet sections in Continental's TMA bundle.
     """
-    if not user.is_admin and (user.deals_total or 0) == 0:
+    if not picker and not user.is_admin and (user.deals_total or 0) == 0:
         import os
 
         from ..config import settings

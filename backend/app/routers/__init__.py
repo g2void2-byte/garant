@@ -21,6 +21,7 @@ from . import (
     notifications,
     payments,
     pin,
+    public_stats,
     reviews,
     services,
     support,
@@ -58,5 +59,6 @@ all_routers = [
     csp_report.router,
     client_errors.router,
     services.admin_router,
+    public_stats.router,
     *admin_routers,
 ]

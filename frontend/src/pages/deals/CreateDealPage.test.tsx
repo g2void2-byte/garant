@@ -67,6 +67,8 @@ vi.mock("@/api/hooks", () => ({
   // DM. Stub with an empty list — the modal is never opened by
   // these tests.
   useAdmins: () => ({ data: [], isLoading: false }),
+  useWalletDeposit: () => ({ data: undefined, isLoading: false }),
+  useDeal: () => ({ data: undefined, isLoading: false }),
 }));
 
 const hapticSpy = vi.hoisted(() => vi.fn());
@@ -74,6 +76,7 @@ vi.mock("@/lib/tg", () => ({
   useTelegramViewport: () => null,
   haptic: hapticSpy,
   openTelegramLink: vi.fn(),
+  openPaymentLink: vi.fn(),
   showBackButton: () => () => {},
 }));
 
@@ -299,7 +302,7 @@ describe("<CreateDealPage />", () => {
     expect(hapticSpy).toHaveBeenCalledWith("success");
     expect(await screen.findByTestId("topup-invoice-preview")).toBeInTheDocument();
     expect(screen.getByText("105.25 USD")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Открыть инвойс/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Открыть оплату/i })[0]).toBeInTheDocument();
   });
 
   it("fires haptic('error') when the API rejects", async () => {

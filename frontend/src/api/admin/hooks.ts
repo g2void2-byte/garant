@@ -556,7 +556,11 @@ export function useAdminUpdateSettings() {
   const qc = useQueryClient();
   return useMutation<AdminSettingsDto, Error, AdminSettingsUpdateBody>({
     mutationFn: (body) => api.patch("api/admin/settings", { json: body }).json(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.admin.settings() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.admin.settings() });
+      qc.invalidateQueries({ queryKey: qk.publicSettings() });
+      qc.invalidateQueries({ queryKey: qk.publicStats() });
+    },
   });
 }
 

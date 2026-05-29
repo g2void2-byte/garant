@@ -264,6 +264,12 @@ export interface UsersQueryParams {
   status?: string;
   reg_from?: string;
   reg_to?: string;
+  /**
+   * When true, the request is for a counterparty picker (e.g.
+   * /deals/new) — the backend bypasses the "min 1 deal" search gate
+   * so brand-new users can still pick a counterparty.
+   */
+  picker?: boolean;
 }
 
 export function useUsers(
@@ -278,6 +284,7 @@ export function useUsers(
   if (params.status) searchParams.status = params.status;
   if (params.reg_from) searchParams.reg_from = params.reg_from;
   if (params.reg_to) searchParams.reg_to = params.reg_to;
+  if (params.picker) searchParams.picker = "1";
   return useQuery<UserCardDto[]>({
     queryKey: qk.users.list(params),
     queryFn: () => api.get("api/users", { searchParams }).json(),

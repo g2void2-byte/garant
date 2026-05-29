@@ -15,7 +15,7 @@ import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { formatCurrency } from "@/lib/format";
-import { haptic } from "@/lib/tg";
+import { haptic, openPaymentLink } from "@/lib/tg";
 import type { WalletDepositDto } from "@/api/types";
 
 type DepositProvider = "cryptobot" | "crystalpay";
@@ -131,6 +131,7 @@ export default function WalletDepositPage() {
         title: "Счёт создан",
         body: `Оплатите ${formatCurrency(dep.amount, dep.currency.code, current.decimals)} в ${PROVIDER_LABELS[provider]}.`,
       });
+      if (dep.pay_url) openPaymentLink(dep.pay_url);
     } catch (e: unknown) {
       haptic("error");
       toast.show({

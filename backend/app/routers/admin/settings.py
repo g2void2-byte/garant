@@ -52,6 +52,10 @@ _EDITABLE_FIELDS: frozenset[str] = frozenset(
         "auto_withdraw_enabled",
         "pending_topup_expiry_hours",
         "pin_reset_price_usd",
+        "faq_stats_badge_enabled",
+        "faq_stats_users",
+        "faq_stats_deals",
+        "faq_stats_total_usd",
     }
 )
 
@@ -78,6 +82,10 @@ def _to_out(row: AppSettings) -> AdminSettingsOut:
         auto_withdraw_enabled=bool(row.auto_withdraw_enabled),
         pending_topup_expiry_hours=int(row.pending_topup_expiry_hours or 24),
         pin_reset_price_usd=row.pin_reset_price_usd,
+        faq_stats_badge_enabled=bool(row.faq_stats_badge_enabled),
+        faq_stats_users=int(row.faq_stats_users or 0),
+        faq_stats_deals=int(row.faq_stats_deals or 0),
+        faq_stats_total_usd=row.faq_stats_total_usd,
     )
 
 

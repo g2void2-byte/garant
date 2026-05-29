@@ -108,6 +108,14 @@ test.describe("Create-deal page", () => {
     // (see fixtures) returns a fresh token and the deal POST fires.
     await enterPinPromptDigits(page);
 
+    // Realtime modal pops up: verify it is visible
+    await expect(page.getByTestId("deal-invoice-modal")).toBeVisible();
+    await expect(page.getByTestId("deal-invoice-modal").getByText("157.5 USD", { exact: true })).toBeVisible();
+
+    // Close it so we can see the under-the-fold invoice preview card
+    await page.getByTestId("deal-invoice-modal").getByLabel("Закрыть").click();
+    await expect(page.getByTestId("deal-invoice-modal")).not.toBeVisible();
+
     await expect(page.getByTestId("topup-invoice-preview")).toBeVisible();
     await expect(
       page.getByTestId("topup-invoice-preview").getByText("157.50 USD"),

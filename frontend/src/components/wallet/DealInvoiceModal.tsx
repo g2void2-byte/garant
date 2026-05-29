@@ -11,7 +11,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useWalletDeposit } from "@/api/hooks";
+import { useDeal, useWalletDeposit } from "@/api/hooks";
 import { qk } from "@/api/queryKeys";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
@@ -19,40 +19,23 @@ import { cn } from "@/lib/cn";
 import { usePresence } from "@/lib/animate";
 import { formatCurrency } from "@/lib/format";
 import { haptic, openPaymentLink } from "@/lib/tg";
-import type { WalletDepositDto } from "@/api/types";
 
-// ``useWalletDeposit`` pulls the polled DTO into ``query.data`` but a
-// malformed / empty payload (e.g. catchall ``[]`` in e2e mocks, or a
-// transient backend hiccup) would otherwise crash the render on
-// ``current.currency.decimals``. Treat anything that doesn't look
-// like a DTO as "no fresh data" and fall back to ``initial``.
-function isValidDeposit(value: unknown): value is WalletDepositDto {
-  return (
-    !!value &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    "currency" in value &&
-    !!(value as WalletDepositDto).currency
-  );
-}
-
-interface DepositStatusModalProps {
-  deposit: WalletDepositDto | null;
+interface DealInvoiceModalProps {
   open: boolean;
   onClose: () => void;
-  /**
-   * Optional callback invoked after the deposit transitions to
-   * ``paid`` (in place of ``onClose``). The host page typically
-   * navigates the user somewhere meaningful here — e.g. back to
-   * ``/profile`` where the credited balance is visible — instead of
-   * leaving them on the deposit-creation form.
-   */
-  onSuccess?: () => void;
-  /**
-   * Delay before automatically opening the upstream invoice page so
-   * the user has a beat to see the modal animate in. Default 1000 ms.
-   */
+  dealId: number;
+  depositId: number;
+  payUrl: string;
+  amount: string | number;
+  currencyCode: string;
+  provider: string;
+  canPay?: boolean;
+  /** Called when the deal transitions out of ``pending_topup``. */
+  onSuccess: (dealId: number) => void;
   autoOpenDelayMs?: number;
+  postSuccessDelayMs?: number;
+  successTitle?: string;
+  successBody?: string;
 }
 
 type StatusBadge = {
@@ -68,7 +51,7 @@ function badgeFor(status: string): StatusBadge {
       label: "Оплачено",
       tone: "paid",
       Icon: CheckCircle2,
-      description: "Платёж получен — баланс уже пополнен.",
+      description: "Платёж получен — сейчас откроем сделку.",
     };
   }
   if (status === "expired" || status === "refunded") {
@@ -78,8 +61,8 @@ function badgeFor(status: string): StatusBadge {
       Icon: XCircle,
       description:
         status === "refunded"
-          ? "Депозит возвращён администратором."
-          : "Срок инвойса истёк. Создайте новый, если ещё хотите пополнить.",
+          ? "Инвойс возвращён администратором."
+          : "Срок инвойса истёк. Создайте новый, если ещё хотите оплатить.",
     };
   }
   return {
@@ -91,105 +74,108 @@ function badgeFor(status: string): StatusBadge {
   };
 }
 
-function openPayUrl(url: string) {
-  openPaymentLink(url);
-}
-
 /**
- * Real-time deposit invoice status modal.
+ * Real-time deal-invoice status modal.
  *
- * Shown right after ``POST /api/wallet/deposits`` succeeds. Auto-opens
- * the upstream invoice ``pay_url`` after a short delay so the user
- * sees the modal animate in first, then polls
- * ``GET /api/wallet/deposits/{id}`` (every 5 s while ``pending``) and
- * also receives WS push events through ``useLiveNotifications`` —
- * either path invalidates the deposit query and surfaces the new
- * status without a page reload. Closes itself a moment after the
- * status transitions to ``paid`` so the user lands back on the wallet
- * page already credited.
+ * Mirrors :class:`DepositStatusModal` but is wired to a deal: the
+ * polled :func:`useDeal` query is the source of truth for "did the
+ * payment land" (deal transitions out of ``pending_topup`` exactly
+ * when the upstream provider webhook lands). The deposit query is
+ * used as a secondary signal — it flips ``paid`` a moment earlier
+ * and lets the user see the green check before the auto-navigate.
  */
-export function DepositStatusModal({
-  deposit,
+export function DealInvoiceModal({
   open,
   onClose,
+  dealId,
+  depositId,
+  payUrl,
+  amount,
+  currencyCode,
+  provider,
+  canPay = true,
   onSuccess,
   autoOpenDelayMs = 1000,
-}: DepositStatusModalProps) {
+  postSuccessDelayMs = 1800,
+  successTitle = "Сделка создана",
+  successBody = "Платёж прошёл. Сейчас откроем сделку.",
+}: DealInvoiceModalProps) {
   const toast = useToast();
   const qc = useQueryClient();
   const { mounted, visible } = usePresence(open, 200);
-  const initial = deposit ?? null;
-  const query = useWalletDeposit(open ? initial?.id : undefined);
-  const current = isValidDeposit(query.data) ? query.data : initial;
 
-  // Track which deposit we've already auto-opened so reopening the
-  // modal for a different deposit fires the timer again, but a
-  // background refetch on the same deposit doesn't reopen the
-  // already-shown invoice in the user's browser.
+  const depositQuery = useWalletDeposit(open ? depositId : undefined);
+  const dealQuery = useDeal(open ? dealId : undefined);
+
+  // Derived status: deal-status leaving ``pending_topup`` is the
+  // canonical "paid" signal. ``deposit.status === "paid"`` is the
+  // earlier UI hint while the deal-status transition is in flight.
+  const dealStatus = dealQuery.data?.status;
+  const depositStatus = depositQuery.data?.status ?? "pending";
+  const status = depositStatus === "expired" || depositStatus === "refunded"
+    ? depositStatus
+    : depositStatus === "paid" || (!!dealStatus && dealStatus !== "pending_topup")
+      ? "paid"
+      : "pending";
+
+  // Auto-open the upstream invoice once per modal session.
   const autoOpenedRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!open || !initial?.pay_url) return;
-    if (autoOpenedRef.current === initial.id) return;
-    autoOpenedRef.current = initial.id;
-    const t = setTimeout(() => {
-      if (initial.pay_url) openPayUrl(initial.pay_url);
-    }, autoOpenDelayMs);
+    if (!open || !payUrl) return;
+    if (autoOpenedRef.current === depositId) return;
+    autoOpenedRef.current = depositId;
+    const t = setTimeout(() => openPaymentLink(payUrl), autoOpenDelayMs);
     return () => clearTimeout(t);
-  }, [open, initial?.id, initial?.pay_url, autoOpenDelayMs]);
+  }, [open, depositId, payUrl, autoOpenDelayMs]);
 
-  // Auto-close shortly after a successful payment so the user sees
-  // the "Оплачено" state, the success haptic fires, and then they're
-  // dropped back on the wallet page with the credited balance. Host
-  // pages that want to navigate elsewhere after the credit (e.g.
-  // ``/profile`` to show the new balance) can opt in via
-  // ``onSuccess`` — it replaces ``onClose`` only for the ``paid``
-  // transition; ``expired`` / ``refunded`` still fall through to the
-  // regular close path.
-  const lastStatus = useRef<string | undefined>();
   useEffect(() => {
-    if (!open || !current) return;
-    if (lastStatus.current !== "paid" && current.status === "paid") {
-      haptic("success");
-      // Real-time balance refresh: the polled deposit DTO is the
-      // earliest authoritative signal that funds landed on the
-      // backend. Invalidate the wallet caches immediately so the
-      // updated balance is already in flight when the modal
-      // auto-closes 1.8s later (instead of relying on a WS
-      // ``notification`` frame that may have been missed if the WS
-      // dropped or the user's tab was inactive). Also nudge
-      // ``/api/me`` because the profile card surfaces deposit
-      // counters.
-      void qc.invalidateQueries({ queryKey: qk.wallet.all() });
-      void qc.invalidateQueries({ queryKey: qk.me() });
-      const finish = onSuccess ?? onClose;
-      const t = setTimeout(finish, 1800);
-      lastStatus.current = current.status;
-      return () => clearTimeout(t);
-    }
-    lastStatus.current = current.status;
-  }, [open, current, onClose, onSuccess, qc]);
+    if (!open || status !== "pending") return;
+    const t = setInterval(() => {
+      void depositQuery.refetch();
+      void dealQuery.refetch();
+    }, 2000);
+    return () => clearInterval(t);
+  }, [open, status, depositQuery, dealQuery]);
 
-  // Reset the cached "auto-opened" + "last status" state whenever the
-  // modal closes so a follow-up deposit starts from a clean slate.
+  useEffect(() => {
+    if (!open) autoOpenedRef.current = null;
+  }, [open]);
+
+  const firedSuccessRef = useRef(false);
   useEffect(() => {
     if (!open) {
-      autoOpenedRef.current = null;
-      lastStatus.current = undefined;
+      firedSuccessRef.current = false;
+      return;
     }
-  }, [open]);
+    if (status !== "paid" || firedSuccessRef.current) return;
+    firedSuccessRef.current = true;
+    haptic("success");
+    void qc.invalidateQueries({ queryKey: qk.wallet.all() });
+    void qc.invalidateQueries({ queryKey: qk.deals.all() });
+    void qc.invalidateQueries({ queryKey: qk.deal.detail(dealId) });
+    void qc.invalidateQueries({ queryKey: qk.me() });
+    toast.show({
+      kind: "success",
+      title: successTitle,
+      body: successBody,
+    });
+    const closeTimer = setTimeout(() => {
+      onClose();
+      const navTimer = setTimeout(() => onSuccess(dealId), 180);
+      return () => clearTimeout(navTimer);
+    }, postSuccessDelayMs);
+    return () => clearTimeout(closeTimer);
+  }, [open, status, onSuccess, qc, dealId, toast, postSuccessDelayMs, onClose, successTitle, successBody]);
 
   const [refreshing, setRefreshing] = useState(false);
   async function refresh() {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await query.refetch();
+      await Promise.all([depositQuery.refetch(), dealQuery.refetch()]);
       haptic("light");
     } catch (e: unknown) {
       const msg = (e as Error)?.message ?? "";
-      // The wallet-poll endpoint is rate-limited to a few requests
-      // per minute server-side; surface 429s as a friendly toast
-      // instead of letting the modal swallow them silently.
       if (/429/.test(msg)) {
         toast.show({
           kind: "info",
@@ -204,10 +190,10 @@ export function DepositStatusModal({
     }
   }
 
+  const invoiceId = depositQuery.data?.invoice_id ?? String(depositId);
   async function copyInvoice() {
-    if (!current?.invoice_id) return;
     try {
-      await navigator.clipboard.writeText(current.invoice_id);
+      await navigator.clipboard.writeText(invoiceId);
       haptic("light");
       toast.show({ kind: "success", title: "ID инвойса скопирован" });
     } catch {
@@ -215,15 +201,14 @@ export function DepositStatusModal({
     }
   }
 
-  if (!mounted || !current) return null;
-  const badge = badgeFor(current.status);
-  const isPending = current.status === "pending";
-  const decimals = current.currency.decimals;
-  const providerLabel =
-    current.provider === "crystalpay" ? "Crystalpay" : "CryptoBot";
+  if (!mounted) return null;
+  const badge = badgeFor(status);
+  const isPending = status === "pending";
+  const decimals = depositQuery.data?.currency?.decimals ?? 2;
+  const providerLabel = provider === "crystalpay" ? "Crystalpay" : "CryptoBot";
 
   const body = (
-    <div role="dialog" aria-modal="true" aria-labelledby="deposit-status-title">
+    <div role="dialog" aria-modal="true" aria-labelledby="deal-invoice-title">
       <div
         className={cn(
           "fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm transition-opacity duration-200",
@@ -239,7 +224,7 @@ export function DepositStatusModal({
         )}
       >
         <div
-          data-testid="deposit-status-modal"
+          data-testid="deal-invoice-modal"
           className={cn(
             "pointer-events-auto w-full max-w-sm rounded-3xl bg-panel border border-border shadow-pop p-6",
             "transform transition-all duration-200",
@@ -249,13 +234,13 @@ export function DepositStatusModal({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2
-                id="deposit-status-title"
+                id="deal-invoice-title"
                 className="text-[18px] font-semibold tracking-tight text-text"
               >
-                Пополнение баланса
+                Оплата сделки #{dealId}
               </h2>
               <p className="text-[12px] text-text-muted">
-                {providerLabel} · {formatCurrency(current.amount, current.currency.code, decimals)}
+                {providerLabel} · {formatCurrency(amount, currencyCode, decimals)}
               </p>
             </div>
             <button
@@ -310,9 +295,9 @@ export function DepositStatusModal({
 
           <div className="mt-4 grid grid-cols-2 gap-2 text-[12px]">
             <div className="rounded-xl border border-border bg-secondary/30 px-3 py-2">
-              <div className="text-text-muted">Сумма</div>
+              <div className="text-text-muted">К оплате</div>
               <div className="text-text font-medium">
-                {formatCurrency(current.amount, current.currency.code, decimals)}
+                {formatCurrency(amount, currencyCode, decimals)}
               </div>
             </div>
             <button
@@ -324,8 +309,8 @@ export function DepositStatusModal({
                 <span>ID инвойса</span>
                 <Copy className="size-3" />
               </div>
-              <div className="text-text font-medium truncate" title={current.invoice_id}>
-                {current.invoice_id}
+              <div className="text-text font-medium truncate" title={invoiceId}>
+                {invoiceId}
               </div>
             </button>
           </div>
@@ -344,20 +329,25 @@ export function DepositStatusModal({
               <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
               Проверить
             </button>
-            <Button
-              size="md"
-              onClick={() => current.pay_url && openPayUrl(current.pay_url)}
-              disabled={!isPending || !current.pay_url}
-              className="!h-11"
-            >
-              <ExternalLink className="size-4" />
-              Открыть оплату
-            </Button>
+            {canPay && isPending && payUrl ? (
+              <Button
+                size="md"
+                onClick={() => openPaymentLink(payUrl)}
+                className="!h-11"
+              >
+                <ExternalLink className="size-4" />
+                Открыть оплату
+              </Button>
+            ) : (
+              <div className="rounded-xl border border-border bg-secondary/30 px-3 py-2 text-[12px] leading-relaxed text-text-muted flex items-center justify-center text-center">
+                Оплата доступна покупателю. Вы можете только отслеживать статус.
+              </div>
+            )}
           </div>
           {isPending && (
             <p className="mt-3 text-[11px] text-text-muted text-center leading-relaxed">
-              Окно закроется автоматически, когда платёж зайдёт. Не нужно
-              перезагружать страницу.
+              Окно само закроется и откроет сделку, когда платёж зайдёт.
+              Не нужно перезагружать страницу.
             </p>
           )}
         </div>

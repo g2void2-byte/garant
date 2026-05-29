@@ -93,7 +93,9 @@ export function UserPicker({
 
   // Normalise leading ``@`` so the server receives the bare username.
   const normalized = useMemo(() => debounced.replace(/^@+/, "").trim(), [debounced]);
-  const { data: users, isLoading } = useUsers(normalized ? { q: normalized } : {});
+  const { data: users, isLoading } = useUsers(
+    normalized ? { q: normalized, picker: true } : { picker: true },
+  );
 
   // Close on outside click so the dropdown doesn't linger when the
   // user taps somewhere else on the form.

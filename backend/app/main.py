@@ -669,11 +669,13 @@ async def public_settings():
             "deal_commission_percent": 5.0,
             "vip_commission_percent": -1.0,
             "auto_withdraw_enabled": False,
+            "faq_stats_badge_enabled": False,
         }
     return {
         "deal_commission_percent": float(row.deal_commission_percent),
         "vip_commission_percent": float(row.vip_commission_percent),
         "auto_withdraw_enabled": bool(row.auto_withdraw_enabled),
+        "faq_stats_badge_enabled": bool(row.faq_stats_badge_enabled),
     }
 
 
@@ -735,7 +737,7 @@ def resolve_spa_path(full_path: str, dist: Path) -> Path:
 if FRONTEND_DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
-    @app.get("/{full_path:path}")
+    @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str):
         # V11-H-5 — ``index.html`` MUST NOT be cached by browsers or
         # intermediary CDNs/proxies. ``/assets/*`` filenames are

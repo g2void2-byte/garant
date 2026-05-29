@@ -756,6 +756,24 @@ class AppSettings(Base):
     pin_reset_price_usd: Mapped[Decimal] = mapped_column(
         Numeric(28, 8), default=Decimal("3"), server_default="3"
     )
+    # FAQ stats badge — when ``True`` the public ``/faq`` page renders
+    # the StatsBadge (total users, deals, USD volume). Defaults to
+    # ``False`` so the badge is opt-in per environment.
+    faq_stats_badge_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    # Admin-entered values displayed by the StatsBadge on the public
+    # ``/faq`` page. We intentionally do NOT compute them from the
+    # database so the admin can showcase round/marketing numbers.
+    faq_stats_users: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    faq_stats_deals: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    faq_stats_total_usd: Mapped[Decimal] = mapped_column(
+        Numeric(28, 8), default=Decimal("0"), server_default="0"
+    )
 
 
 class Forum(Base):

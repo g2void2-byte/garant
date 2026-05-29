@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ToggleTabs } from "@/components/ui/ToggleTabs";
 import { useToast } from "@/components/ui/Toast";
 import { formatCurrency, relativeTime } from "@/lib/format";
-import { haptic, openTelegramLink } from "@/lib/tg";
+import { haptic, openPaymentLink } from "@/lib/tg";
 
 type Tab = "deposit" | "withdraw" | "history";
 
@@ -171,7 +171,7 @@ function DepositForm({
     try {
       const dep = await create.mutateAsync({ currency_code: currencyCode, amount: value });
       haptic("success");
-      if (dep.pay_url) openTelegramLink(dep.pay_url);
+      if (dep.pay_url) openPaymentLink(dep.pay_url);
       toast.show({
         kind: "success",
         title: "Счёт создан",
@@ -411,7 +411,7 @@ function HistoryList({
                 to="#"
                 onClick={(e) => {
                   e.preventDefault();
-                  openTelegramLink(r.pay_url!);
+                  openPaymentLink(r.pay_url!);
                 }}
                 className="text-accent text-xs underline"
               >
