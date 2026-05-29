@@ -122,10 +122,12 @@ async def test_public_settings_endpoint_open(client):
         "deal_commission_percent",
         "vip_commission_percent",
         "auto_withdraw_enabled",
+        "faq_stats_badge_enabled",
     }
     assert isinstance(body["deal_commission_percent"], (int, float))
     assert isinstance(body["vip_commission_percent"], (int, float))
     assert isinstance(body["auto_withdraw_enabled"], bool)
+    assert isinstance(body["faq_stats_badge_enabled"], bool)
 
 
 async def test_maintenance_blocks_non_admin_writes(client):
