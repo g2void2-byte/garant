@@ -2497,6 +2497,22 @@
             "title": "Deal Commission Percent",
             "type": "number"
           },
+          "faq_stats_badge_enabled": {
+            "title": "Faq Stats Badge Enabled",
+            "type": "boolean"
+          },
+          "faq_stats_deals": {
+            "title": "Faq Stats Deals",
+            "type": "integer"
+          },
+          "faq_stats_total_usd": {
+            "title": "Faq Stats Total Usd",
+            "type": "number"
+          },
+          "faq_stats_users": {
+            "title": "Faq Stats Users",
+            "type": "integer"
+          },
           "inactivity_pending_cancellation_days": {
             "title": "Inactivity Pending Cancellation Days",
             "type": "integer"
@@ -2540,7 +2556,11 @@
           "maintenance_message",
           "auto_withdraw_enabled",
           "pending_topup_expiry_hours",
-          "pin_reset_price_usd"
+          "pin_reset_price_usd",
+          "faq_stats_badge_enabled",
+          "faq_stats_users",
+          "faq_stats_deals",
+          "faq_stats_total_usd"
         ],
         "title": "AdminSettingsOut",
         "type": "object"
@@ -2573,6 +2593,54 @@
               }
             ],
             "title": "Deal Commission Percent"
+          },
+          "faq_stats_badge_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faq Stats Badge Enabled"
+          },
+          "faq_stats_deals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faq Stats Deals"
+          },
+          "faq_stats_total_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faq Stats Total Usd"
+          },
+          "faq_stats_users": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faq Stats Users"
           },
           "inactivity_pending_cancellation_days": {
             "anyOf": [
@@ -16347,6 +16415,38 @@
         "summary": "Public Settings"
       }
     },
+    "/api/stats/public": {
+      "get": {
+        "operationId": "public_stats_api_stats_public_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  },
+                  "title": "Response Public Stats Api Stats Public Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Public Stats",
+        "tags": [
+          "stats"
+        ]
+      }
+    },
     "/api/support/admins": {
       "get": {
         "operationId": "list_admins_api_support_admins_get",
@@ -16578,6 +16678,18 @@
               ],
               "description": "ISO date (YYYY-MM-DD)",
               "title": "Reg To"
+            }
+          },
+          {
+            "description": "When true, the endpoint is being used as a counterparty picker (e.g. on /deals/new) \u2014 bypass the 'min 1 deal' search gate so brand-new users can still find a counterparty to do their first deal with.",
+            "in": "query",
+            "name": "picker",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "When true, the endpoint is being used as a counterparty picker (e.g. on /deals/new) \u2014 bypass the 'min 1 deal' search gate so brand-new users can still find a counterparty to do their first deal with.",
+              "title": "Picker",
+              "type": "boolean"
             }
           },
           {
@@ -17201,6 +17313,43 @@
         "tags": [
           "media"
         ]
+      }
+    },
+    "/{full_path}": {
+      "get": {
+        "operationId": "spa_fallback__full_path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "full_path",
+            "required": true,
+            "schema": {
+              "title": "Full Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Spa Fallback"
       }
     }
   }

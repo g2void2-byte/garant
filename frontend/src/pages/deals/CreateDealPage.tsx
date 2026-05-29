@@ -18,7 +18,7 @@ import {
   useWalletBalances,
 } from "@/api/hooks";
 import { formatCurrency } from "@/lib/format";
-import { haptic, openPaymentLink } from "@/lib/tg";
+import { haptic } from "@/lib/tg";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 
 // Item 18 — backend can return a structured ``insufficient_funds``

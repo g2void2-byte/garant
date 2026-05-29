@@ -18,7 +18,7 @@ import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { usePresence } from "@/lib/animate";
 import { formatCurrency } from "@/lib/format";
-import { haptic, openExternalLink, openPaymentLink, openTelegramLink } from "@/lib/tg";
+import { haptic, openPaymentLink } from "@/lib/tg";
 import type { WalletDepositDto } from "@/api/types";
 
 // ``useWalletDeposit`` pulls the polled DTO into ``query.data`` but a

@@ -2117,6 +2117,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stats/public": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Public Stats */
+        get: operations["public_stats_api_stats_public_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/support/admins": {
         parameters: {
             query?: never;
@@ -2344,6 +2361,23 @@ export interface paths {
          *     fresh signature.
          */
         get: operations["serve_deal_media_media_deal__filename__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/{full_path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Spa Fallback */
+        get: operations["spa_fallback__full_path__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3238,6 +3272,14 @@ export interface components {
             auto_withdraw_enabled: boolean;
             /** Deal Commission Percent */
             deal_commission_percent: number;
+            /** Faq Stats Badge Enabled */
+            faq_stats_badge_enabled: boolean;
+            /** Faq Stats Deals */
+            faq_stats_deals: number;
+            /** Faq Stats Total Usd */
+            faq_stats_total_usd: number;
+            /** Faq Stats Users */
+            faq_stats_users: number;
             /** Inactivity Pending Cancellation Days */
             inactivity_pending_cancellation_days: number;
             /** Inactivity Pending Confirmation Days */
@@ -3267,6 +3309,14 @@ export interface components {
             auto_withdraw_enabled?: boolean | null;
             /** Deal Commission Percent */
             deal_commission_percent?: number | string | null;
+            /** Faq Stats Badge Enabled */
+            faq_stats_badge_enabled?: boolean | null;
+            /** Faq Stats Deals */
+            faq_stats_deals?: number | null;
+            /** Faq Stats Total Usd */
+            faq_stats_total_usd?: number | string | null;
+            /** Faq Stats Users */
+            faq_stats_users?: number | null;
             /** Inactivity Pending Cancellation Days */
             inactivity_pending_cancellation_days?: number | null;
             /** Inactivity Pending Confirmation Days */
@@ -8905,6 +8955,28 @@ export interface operations {
             };
         };
     };
+    public_stats_api_stats_public_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
+                };
+            };
+        };
+    };
     list_admins_api_support_admins_get: {
         parameters: {
             query?: never;
@@ -8982,6 +9054,8 @@ export interface operations {
                 reg_from?: string | null;
                 /** @description ISO date (YYYY-MM-DD) */
                 reg_to?: string | null;
+                /** @description When true, the endpoint is being used as a counterparty picker (e.g. on /deals/new) — bypass the 'min 1 deal' search gate so brand-new users can still find a counterparty to do their first deal with. */
+                picker?: boolean;
             };
             header?: {
                 authorization?: string | null;
@@ -9303,6 +9377,37 @@ export interface operations {
             header?: never;
             path: {
                 filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    spa_fallback__full_path__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                full_path: string;
             };
             cookie?: never;
         };

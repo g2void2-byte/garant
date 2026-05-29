@@ -9,7 +9,6 @@ import {
   Star,
   Undo2,
   ShieldCheck,
-  ExternalLink,
 } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
