@@ -1,18 +1,16 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Page } from "@/components/layout/Page";
 import { CategoryTile } from "@/components/domain/CategoryTile";
 import { ServiceCard } from "@/components/domain/ServiceCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { Button } from "@/components/ui/Button";
 import { useCategories, useServices, useMe } from "@/api/hooks";
 import { MOCK_CATEGORIES, MOCK_SERVICES } from "./mockData";
 import { SearchGateOverlay } from "./SearchGateOverlay";
 
 export default function CategoriesPage() {
   const { slug } = useParams<{ slug?: string }>();
-  const navigate = useNavigate();
   const { data: me, isLoading: meLoading } = useMe();
   const isGated = me !== undefined && me.deals_count === 0 && !me.is_admin;
   const { data: categories, isLoading } = useCategories({ enabled: me !== undefined && !isGated });
