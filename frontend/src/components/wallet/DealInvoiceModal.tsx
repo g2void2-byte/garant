@@ -204,7 +204,7 @@ export function DealInvoiceModal({
   if (!mounted) return null;
   const badge = badgeFor(status);
   const isPending = status === "pending";
-  const decimals = depositQuery.data?.currency.decimals ?? 2;
+  const decimals = depositQuery.data?.currency?.decimals ?? 2;
   const providerLabel = provider === "crystalpay" ? "Crystalpay" : "CryptoBot";
 
   const body = (

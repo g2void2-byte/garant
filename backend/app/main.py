@@ -737,7 +737,7 @@ def resolve_spa_path(full_path: str, dist: Path) -> Path:
 if FRONTEND_DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
-    @app.get("/{full_path:path}")
+    @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str):
         # V11-H-5 — ``index.html`` MUST NOT be cached by browsers or
         # intermediary CDNs/proxies. ``/assets/*`` filenames are
