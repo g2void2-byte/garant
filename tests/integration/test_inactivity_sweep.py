@@ -66,8 +66,8 @@ async def test_sweep_cancels_stale_pending_confirmation(client):
                 )
             )
         ).scalar_one()
-        # P10 — commission is no longer locked on the legacy
-        # ``POST /api/deals`` path, so the inactivity sweep refunds
-        # the buyer the full 30 principal 1:1.
-        assert float(bal.amount) == 100.0
+        # H-02 — legacy creation now charges the same commission as
+        # /with-topup. Sweep refunds the 30 principal; the 1.5 commission
+        # remains paid.
+        assert float(bal.amount) == 98.5
         assert float(bal.locked) == 0.0

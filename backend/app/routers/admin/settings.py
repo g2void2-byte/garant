@@ -72,8 +72,8 @@ def _to_out(row: AppSettings) -> AdminSettingsOut:
     # not to be exact in binary float. Hand the ``Decimal`` straight
     # to Pydantic; ``PlainSerializer`` does the one (and only) cast.
     return AdminSettingsOut(
-        deal_commission_percent=row.deal_commission_percent,
-        vip_commission_percent=row.vip_commission_percent,
+        deal_commission_percent=Decimal(str(row.deal_commission_percent)),
+        vip_commission_percent=Decimal(str(row.vip_commission_percent)),
         inactivity_pending_confirmation_days=row.inactivity_pending_confirmation_days,
         inactivity_pending_cancellation_days=row.inactivity_pending_cancellation_days,
         max_active_services_per_user=row.max_active_services_per_user,

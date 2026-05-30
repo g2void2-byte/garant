@@ -216,9 +216,8 @@ async def test_admin_force_refund(client):
     detail = resp.json()["deal"]
     assert detail["status"] == DealStatus.resolved_for_buyer.value
     assert Decimal(detail["buyer"]["locked"]) == Decimal(0)
-    # P10 — commission is no longer locked on the legacy path so the
-    # refund returns the full principal (100) and the buyer ends back
-    # at the pre-deal balance.
+    # H-02 — legacy creation now collects the same 5% commission as
+    # /with-topup; force-refund returns the locked principal only.
     async with async_session() as session:
         usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         buyer_id = await get_user_id_by_tg(session, 2001)
@@ -230,9 +229,9 @@ async def test_admin_force_refund(client):
                 )
             )
         ).scalar_one()
-        # started with 1000, locked 100. Refund returns the full
-        # principal; commission was never charged on this path.
-        assert float(bal.amount) == 1000.0
+        # started with 1000, creation charged 100 principal + 5 commission;
+        # refund returns the full principal and leaves the commission paid.
+        assert float(bal.amount) == 995.0
 
 
 async def test_admin_split_deal(client):

@@ -791,7 +791,7 @@ async def split_deal(
 
     before_status = deal.status.value
     locked, buyer_share, seller_share = await _split_locked(
-        session, deal, currency, body.buyer_percent
+        session, deal, currency, float(body.buyer_percent)
     )
     deal.status = (
         DealStatus.resolved_for_buyer

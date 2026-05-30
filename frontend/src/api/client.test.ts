@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HTTPError } from "ky";
+import type { TotpRequiredDetail } from "./client";
 
 /**
  * Tests for the project-wide ``api`` ky instance.
@@ -147,6 +148,40 @@ describe("api ky client — beforeError", () => {
     expect(queryClientSpy.invalidateQueries).toHaveBeenCalledWith({
       queryKey: ["pin", "status"],
     });
+  });
+
+  it("dispatches TOTP event with a replay-safe body snapshot for consumed POSTs", async () => {
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL) => {
+      if (input instanceof Request && input.body !== null) {
+        await input.text();
+      }
+      return jsonResponse(401, {
+        detail: { code: "totp_required", detail: "Введите код 2FA" },
+      });
+    });
+
+    const { api, TOTP_REQUIRED_EVENT } = await import("./client");
+    const events: TotpRequiredDetail[] = [];
+    const onRequired = (event: Event) => {
+      events.push((event as CustomEvent<TotpRequiredDetail>).detail);
+    };
+    window.addEventListener(TOTP_REQUIRED_EVENT, onRequired);
+
+    try {
+      await expect(
+        api
+          .post("api/admin/settings", { json: { support_username: "support" } })
+          .json(),
+      ).rejects.toThrow("Введите код 2FA");
+    } finally {
+      window.removeEventListener(TOTP_REQUIRED_EVENT, onRequired);
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0].method).toBe("POST");
+    expect(events[0].body).toBeInstanceOf(ArrayBuffer);
+    const body = new TextDecoder().decode(events[0].body as ArrayBuffer);
+    expect(JSON.parse(body)).toEqual({ support_username: "support" });
   });
 
   it("does NOT clear PIN on 401 with an unrelated detail string", async () => {

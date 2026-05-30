@@ -150,7 +150,7 @@ async def _deals_stats(session: AsyncSession, user_id: int) -> dict[str, Any]:
 
     # Per-currency completed volume. Buys + sales tracked separately
     # because the profile card surfaces them on different lines.
-    by_currency: dict[str, dict[str, float | int]] = {}
+    by_currency: dict[str, dict[str, str | float | int]] = {}
 
     currencies = (await session.execute(select(Currency))).scalars().all()
     by_id = {c.id: c for c in currencies}
@@ -176,7 +176,7 @@ async def _deals_stats(session: AsyncSession, user_id: int) -> dict[str, Any]:
         )
     ).all()
 
-    def _bucket(code: str, decimals: int) -> dict[str, float | int]:
+    def _bucket(code: str, decimals: int) -> dict[str, str | float | int]:
         return by_currency.setdefault(
             code, {"code": code, "decimals": decimals, "buys_sum": 0.0, "sales_sum": 0.0}
         )

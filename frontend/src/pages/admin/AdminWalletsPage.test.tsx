@@ -109,7 +109,6 @@ function makeUserBalance() {
         updated_at: null,
       },
     ],
-    total_usd_estimate: "105",
   };
 }
 

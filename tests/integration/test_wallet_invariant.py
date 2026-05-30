@@ -86,6 +86,7 @@ async def _seed_deposit(
     amount: Decimal,
     provider_invoice_id: str,
     status: WalletDepositStatus = WalletDepositStatus.pending,
+    purpose: str = "wallet",
 ) -> int:
     async with async_session() as session:
         dep = WalletDeposit(
@@ -95,6 +96,7 @@ async def _seed_deposit(
             provider_invoice_id=provider_invoice_id,
             pay_url="http://example.com/pay",
             status=status,
+            purpose=purpose,
         )
         session.add(dep)
         await session.commit()
@@ -193,3 +195,53 @@ async def test_credit_deposit_is_idempotent_and_does_not_re_touch_balances():
         f"deposit must not move any balance; first={after_first} "
         f"second={after_second}"
     )
+
+
+@pytest.mark.asyncio
+async def test_credit_deposit_credits_webhook_reported_overpayment():
+    """Wallet deposits credit the actual paid amount when it is higher
+    than the invoice nominal amount."""
+    user_id = await _seed_user(50_006)
+    usdt_id, usdt_bal_id = await _seed_balance(user_id, "USDT", Decimal("0"))
+    deposit_id = await _seed_deposit(user_id, usdt_id, Decimal("10"), "cb-dep-overpay-1")
+
+    async with async_session() as session:
+        deposit = (
+            await session.execute(select(WalletDeposit).where(WalletDeposit.id == deposit_id))
+        ).scalar_one()
+        await credit_deposit(session, deposit, paid_amount=Decimal("12"))
+
+    after = await _snapshot(user_id)
+    assert after == {usdt_bal_id: (Decimal("12.00000000"), Decimal("0"))}
+    async with async_session() as session:
+        dep = await session.get(WalletDeposit, deposit_id)
+        assert dep is not None
+        assert Decimal(str(dep.amount)) == Decimal("12.00000000")
+        assert Decimal(str(dep.paid_amount)) == Decimal("12.00000000")
+
+
+@pytest.mark.asyncio
+async def test_credit_trust_deposit_credits_webhook_reported_overpayment():
+    """Trust deposits use the same actual-paid overpayment rule."""
+    user_id = await _seed_user(50_007)
+    usdt_id, _ = await _seed_balance(user_id, "USDT", Decimal("0"))
+    deposit_id = await _seed_deposit(
+        user_id,
+        usdt_id,
+        Decimal("25"),
+        "cb-trust-overpay-1",
+        purpose="trust",
+    )
+
+    async with async_session() as session:
+        deposit = await session.get(WalletDeposit, deposit_id)
+        assert deposit is not None
+        await credit_deposit(session, deposit, paid_amount=Decimal("30"))
+
+    async with async_session() as session:
+        user = await session.get(User, user_id)
+        dep = await session.get(WalletDeposit, deposit_id)
+        assert user is not None and dep is not None
+        assert Decimal(str(user.trust_deposit_balance)) == Decimal("30.00000000")
+        assert Decimal(str(dep.amount)) == Decimal("30.00000000")
+        assert Decimal(str(dep.paid_amount)) == Decimal("30.00000000")

@@ -683,10 +683,9 @@ class DealCreateWithTopup(DealCreate):
     """P10 — input for ``POST /api/deals/with-topup``.
 
     Exactly the same shape as :class:`DealCreate` but routed through
-    the commission-via-invoice service entry point. Kept as a
-    separate class so the OpenAPI surface stays explicit and the
-    legacy ``POST /api/deals`` (balance-only) path can be removed
-    independently in a follow-up.
+    the commission-via-invoice service entry point. Kept as a separate
+    class so the OpenAPI surface stays explicit; the legacy
+    ``POST /api/deals`` route now delegates to the same service.
     """
 
 
@@ -1026,12 +1025,10 @@ class WalletDepositOut(BaseModel):
 class WalletWithdrawCreateReq(BaseModel):
     currency_code: str
     amount: Decimal
-    # P11-W1 — optional so the CryptoBot Transfer payout (auto-mode +
-    # ``CRYPTOBOT_TOKEN`` configured) can omit the on-chain address;
-    # the recipient is identified by ``users.tg_user_id`` upstream.
-    # Whether the field is actually required is decided in
-    # ``services_wallet.create_withdrawal`` (auto-mode allows None;
-    # manual mode rejects an empty address with 400).
+    # Optional for the current CryptoBot Transfer payout model: the
+    # recipient is the user's Telegram identity, not an on-chain address.
+    # Legacy clients may still send an address; the service sanitises it
+    # and applies the currency regex when one is configured.
     address: str | None = None
 
     @field_validator("amount")
@@ -1732,14 +1729,6 @@ class AdminWalletListItem(BaseModel):
     is_banned: bool
     is_frozen: bool
     balances: list[AdminUserBalanceOut]
-    # Audit §5.4 — this is **not** a real USD valuation. The field is a
-    # naive sum of every per-currency ``total`` (``amount + locked``)
-    # treating each unit as 1 USD, because the admin panel doesn't have
-    # a price oracle wired up. Holding 1 BTC therefore reports
-    # ``total_usd_estimate=1``, not ~70 000. The admin UI must label
-    # the column as an approximation; do NOT use it for accounting.
-    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
-    total_usd_estimate: Decimal
 
 
 class AdminWalletListOut(BaseModel):
@@ -1960,10 +1949,10 @@ class AdminSettingsUpdateIn(BaseModel):
 
     @field_validator("pin_reset_price_usd")
     @classmethod
-    def _price_ok(cls, v: Decimal | float | None) -> Decimal | None:
+    def _price_ok(cls, v: Decimal | float | int | None) -> Decimal | None:
         if v is None:
             return v
-        d = Decimal(str(v)) if isinstance(v, float) else v
+        d = Decimal(str(v))
         if d < 0:
             raise ValueError("Цена не может быть отрицательной")
         return d

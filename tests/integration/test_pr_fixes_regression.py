@@ -120,6 +120,49 @@ async def test_resolve_arbitration_non_admin_returns_403(client):
     assert "Доступ запрещён" in resp.text
 
 
+async def test_resolve_arbitration_admin_requires_totp(client):
+    init_buyer = signed_init_data(6013, "buyer_resolve_totp")
+    init_seller = signed_init_data(6014, "seller_resolve_totp")
+    init_admin = signed_init_data(6015, "admin_resolve_totp")
+    await setup_pin(client, init_buyer)
+    await setup_pin(client, init_seller)
+    me = await client.get("/api/me", headers=auth_headers(init_admin))
+    assert me.status_code == 200, me.text
+
+    async with async_session() as session:
+        buyer_id = await get_user_id_by_tg(session, 6013)
+        seller_id = await get_user_id_by_tg(session, 6014)
+        admin = (
+            await session.execute(select(User).where(User.tg_user_id == 6015))
+        ).scalar_one()
+        admin.is_admin = True
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
+        deal = Deal(
+            buyer_id=buyer_id,
+            seller_id=seller_id,
+            amount=10,
+            currency_id=usdt.id,
+            status=DealStatus.arbitration,
+        )
+        session.add(deal)
+        await session.commit()
+        deal_id = deal.id
+
+    resp = await client.post(
+        f"/api/deals/{deal_id}/resolve",
+        json={"winner": "buyer", "note": "missing 2FA"},
+        headers=auth_headers(init_admin),
+    )
+    assert resp.status_code in (401, 403)
+
+    resp = await client.post(
+        f"/api/deals/{deal_id}/resolve",
+        json={"winner": "buyer", "note": "with 2FA"},
+        headers=with_totp(auth_headers(init_admin)),
+    )
+    assert resp.status_code == 200, resp.text
+
+
 async def test_crystalpay_webhook_signature_case_insensitive(client):
     init_data = signed_init_data(6021, "alice-cp-case")
     await setup_pin(client, init_data)

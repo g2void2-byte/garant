@@ -128,7 +128,7 @@ async def test_arbitration_claim_self_assigns_arbiter(client):
     arb_init, arb_id = await _make_arbiter(client, 11, "arb")
     resp = await client.post(
         f"/api/admin/arbitration/{deal_id}/claim",
-        headers=auth_headers(arb_init),
+        headers=with_totp(auth_headers(arb_init)),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -139,18 +139,28 @@ async def test_arbitration_claim_self_assigns_arbiter(client):
         assert deal.arbitration_resolved_by == arb_id
 
 
+async def test_arbitration_claim_requires_totp(client):
+    deal_id = await _make_arbitration_deal(client)
+    arb_init, _ = await _make_arbiter(client, 11, "arb")
+    resp = await client.post(
+        f"/api/admin/arbitration/{deal_id}/claim",
+        headers=auth_headers(arb_init),
+    )
+    assert resp.status_code in (401, 403)
+
+
 async def test_arbitration_claim_conflict_when_already_claimed(client):
     deal_id = await _make_arbitration_deal(client)
     arb_a_init, _ = await _make_arbiter(client, 11, "arb_a")
     arb_b_init, _ = await _make_arbiter(client, 12, "arb_b")
     r1 = await client.post(
         f"/api/admin/arbitration/{deal_id}/claim",
-        headers=auth_headers(arb_a_init),
+        headers=with_totp(auth_headers(arb_a_init)),
     )
     assert r1.status_code == 200
     r2 = await client.post(
         f"/api/admin/arbitration/{deal_id}/claim",
-        headers=auth_headers(arb_b_init),
+        headers=with_totp(auth_headers(arb_b_init)),
     )
     assert r2.status_code == 409
 
@@ -160,7 +170,7 @@ async def test_arbitration_claim_writes_audit_row(client):
     arb_init, _ = await _make_arbiter(client, 11, "arb")
     await client.post(
         f"/api/admin/arbitration/{deal_id}/claim",
-        headers=auth_headers(arb_init),
+        headers=with_totp(auth_headers(arb_init)),
     )
     async with async_session() as session:
         rows = list(

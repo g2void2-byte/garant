@@ -1355,7 +1355,14 @@ export interface paths {
         /** List Deals */
         get: operations["list_deals_api_deals_get"];
         put?: never;
-        /** Create Deal Endpoint */
+        /**
+         * Create Deal Endpoint
+         * @description Legacy route kept as a compatibility shim over ``/with-topup``.
+         *
+         *     It no longer creates balance-only commission-paid deals. Direct API
+         *     callers still get a ``DealOut`` response, but the deal goes through
+         *     the same commission/top-up invoice flow as the frontend endpoint.
+         */
         post: operations["create_deal_endpoint_api_deals_post"];
         delete?: never;
         options?: never;
@@ -3544,8 +3551,6 @@ export interface components {
             is_vip: boolean;
             /** Photo Url */
             photo_url: string | null;
-            /** Total Usd Estimate */
-            total_usd_estimate: string;
             /** User Id */
             user_id: number;
             /** Username */
@@ -3731,10 +3736,9 @@ export interface components {
          * @description P10 — input for ``POST /api/deals/with-topup``.
          *
          *     Exactly the same shape as :class:`DealCreate` but routed through
-         *     the commission-via-invoice service entry point. Kept as a
-         *     separate class so the OpenAPI surface stays explicit and the
-         *     legacy ``POST /api/deals`` (balance-only) path can be removed
-         *     independently in a follow-up.
+         *     the commission-via-invoice service entry point. Kept as a separate
+         *     class so the OpenAPI surface stays explicit; the legacy
+         *     ``POST /api/deals`` route now delegates to the same service.
          */
         DealCreateWithTopup: {
             /** Amount */
@@ -7888,6 +7892,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
                 authorization?: string | null;
             };
             path: {

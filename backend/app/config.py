@@ -39,6 +39,18 @@ class Settings(BaseSettings):
     crystalpay_secret: str = ""
 
     webapp_url: str = "http://localhost:5173"
+    # Public backend/API origin used for provider webhooks and optional
+    # split-origin CSP. Leave empty for same-origin monolith deploys.
+    public_api_url: str = ""
+    # More specific callback base for payment providers. Defaults to
+    # ``public_api_url`` and then ``webapp_url`` for backwards compatibility.
+    webhook_base_url: str = ""
+    # Space-separated CSP sources for ``connect-src``. Empty means
+    # ``'self'`` plus the origin from ``public_api_url`` when set.
+    csp_connect_src: str = ""
+    # ``None`` means production/staging only; set explicitly for a
+    # custom staging/dev HTTPS domain.
+    enable_hsts: bool | None = None
     webapp_port: int = 8080
     allowed_origins: str = "http://localhost:5173"
 

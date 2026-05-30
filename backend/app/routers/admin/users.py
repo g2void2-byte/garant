@@ -32,7 +32,7 @@ Safety invariants enforced here:
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
@@ -281,7 +281,7 @@ async def list_users(
     if q:
         q_clean = q.strip().lstrip("@")
         like = f"%{escape_like_wildcards(q_clean.lower())}%"
-        conditions = [
+        conditions: list[Any] = [
             func.lower(User.username).like(like, escape="\\"),
             func.lower(User.display_name).like(like, escape="\\"),
         ]
@@ -743,8 +743,8 @@ async def set_stats(
     """
     target = await _get_user_or_404(session, user_id)
 
-    before: dict[str, int | float] = {}
-    after: dict[str, int | float] = {}
+    before: dict[str, object] = {}
+    after: dict[str, object] = {}
 
     if body.deals_total is not None and body.deals_total != target.deals_total:
         before["deals_total"] = target.deals_total

@@ -559,6 +559,7 @@ async def create_deal_with_topup(
         purpose="deal_topup",
         provider=payment_provider,
         min_check=not skip_min,
+        commit=False,
     )
     deposit.linked_deal_id = deal.id
     deal.topup_deposit_id = deposit.id
@@ -584,6 +585,42 @@ async def create_deal_with_topup(
     return deal, deposit
 
 
+async def _issue_remaining_topup_invoice(
+    session: AsyncSession,
+    deal: Deal,
+    currency: Currency,
+    current_balance: Decimal,
+) -> WalletDeposit | None:
+    """Attach a fresh top-up invoice for the remaining activation gap."""
+    from .services_wallet import create_deposit_invoice
+
+    buyer = await session.get(User, deal.buyer_id)
+    if buyer is None:
+        raise ValueError("buyer vanished")
+
+    amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
+    commission = quantize_money(Decimal(str(deal.commission_amount or 0)), currency.decimals)
+    commission_due = Decimal("0") if deal.commission_paid else commission
+    principal_gap = max(Decimal("0"), amt - current_balance)
+    invoice_total = quantize_money(principal_gap + commission_due, currency.decimals)
+    if invoice_total <= 0:
+        return None
+
+    deposit = await create_deposit_invoice(
+        session,
+        buyer,
+        currency.code,
+        float(invoice_total),
+        purpose="deal_topup",
+        provider=deal.payment_provider or "cryptobot",
+        min_check=False,
+        commit=False,
+    )
+    deposit.linked_deal_id = deal.id
+    deal.topup_deposit_id = deposit.id
+    return deposit
+
+
 async def complete_deal_topup_payment(
     session: AsyncSession,
     deposit: WalletDeposit,
@@ -596,15 +633,16 @@ async def complete_deal_topup_payment(
     Algorithm (spec):
 
     * ``paid = paid_amount or deposit.amount``
-    * ``principal_credit = paid - deal.commission_amount``
-    * If ``principal_credit < 0``: credit the full ``paid`` to the
-      buyer's ``UserBalance.amount`` (no commission charged); the
-      deal stays ``pending_topup``; notify buyer to top up the rest.
-    * Else: credit ``principal_credit`` to the buyer's balance,
-      re-check ``balance >= deal.amount``. If yes: lock ``deal.amount``
-      into ``UserBalance.locked``, advance to ``pending_confirmation``,
-      flip ``commission_paid = True``. If no: stay ``pending_topup``,
-      notify buyer to top up more.
+    * ``commission_due`` is zero once a previous partial payment has
+      already covered the commission.
+    * If ``paid < commission_due``: credit the full ``paid`` to the
+      buyer's ``UserBalance.amount``; the deal stays ``pending_topup``;
+      attach a new invoice for the remaining principal + commission.
+    * Else: credit ``paid - commission_due`` to the buyer's balance,
+      mark the commission collected, and re-check ``balance >= deal.amount``.
+      If yes: lock ``deal.amount`` into ``UserBalance.locked`` and advance
+      to ``pending_confirmation``. If no: stay ``pending_topup`` and attach
+      a new invoice for the remaining principal.
 
     Lock order: ``WalletDeposit (already locked by caller) → Deal →
     UserBalance``. The deposit row is the canonical entry point in
@@ -693,27 +731,26 @@ async def complete_deal_topup_payment(
 
     amt = quantize_money(Decimal(str(deal.amount)), currency.decimals)
     commission = quantize_money(Decimal(str(deal.commission_amount or 0)), currency.decimals)
+    commission_due = Decimal("0") if deal.commission_paid else commission
 
     bal = await lock_user_balance(session, deal.buyer_id, currency.id)
     balance_amount = Decimal(str(bal.amount))
 
     pending: list[tuple[Notification, dict[str, Any] | None]] = []
 
-    if paid < commission:
+    if paid < commission_due:
         # Spec: principal_credit < 0 → all paid goes to balance, deal
         # stays pending_topup. Commission stays uncollected on the
         # platform side (the wallet provider still has the money but
         # we route it back into the buyer's spendable balance per
         # spec). Buyer is asked to top up the rest.
-        bal.amount = balance_amount + paid
+        new_balance = balance_amount + paid
+        bal.amount = new_balance
         deposit.status = WalletDepositStatus.paid
         deposit.paid_at = utcnow()
         deposit.paid_amount = paid
-        deficit = quantize_money(commission - paid + amt, currency.decimals)
-        # The deal still owes (amt + commission - paid); ``deficit``
-        # is how much *more* must arrive before the principal can be
-        # locked. Buyer is expected to issue a manual top-up to the
-        # wallet OR the admin can force-cancel the deal.
+        replacement = await _issue_remaining_topup_invoice(session, deal, currency, new_balance)
+        deficit = Decimal(str(replacement.amount)) if replacement is not None else Decimal("0")
         notif, ws_payload = await notifier.insert(
             session,
             deal.buyer_id,
@@ -723,7 +760,12 @@ async def complete_deal_topup_payment(
                 f"По сделке #{deal.id} получено {paid} {currency.code}. "
                 f"Требуется ещё около {deficit} {currency.code} для активации."
             ),
-            {"deal_id": deal.id, "deposit_id": deposit.id, "kind": "underpayment"},
+            {
+                "deal_id": deal.id,
+                "deposit_id": deposit.id,
+                "replacement_deposit_id": replacement.id if replacement is not None else None,
+                "kind": "underpayment",
+            },
         )
         pending.append((notif, ws_payload))
         await session.commit()
@@ -733,10 +775,13 @@ async def complete_deal_topup_payment(
         )
         return deposit
 
-    # ``paid >= commission``. The principal_credit is what's left
-    # after deducting the platform commission.
-    principal_credit = quantize_money(paid - commission, currency.decimals)
+    # ``paid >= commission_due``. The principal_credit is what's left
+    # after deducting any commission not already collected by an earlier
+    # partial payment.
+    principal_credit = quantize_money(paid - commission_due, currency.decimals)
     bal.amount = balance_amount + principal_credit
+    if commission_due > 0:
+        deal.commission_paid = True
 
     # Re-read post-credit balance so the lock check below uses the
     # post-credit value.
@@ -750,7 +795,8 @@ async def complete_deal_topup_payment(
         deposit.status = WalletDepositStatus.paid
         deposit.paid_at = utcnow()
         deposit.paid_amount = paid
-        deficit = quantize_money(amt - new_balance, currency.decimals)
+        replacement = await _issue_remaining_topup_invoice(session, deal, currency, new_balance)
+        deficit = Decimal(str(replacement.amount)) if replacement is not None else Decimal("0")
         notif, ws_payload = await notifier.insert(
             session,
             deal.buyer_id,
@@ -760,7 +806,12 @@ async def complete_deal_topup_payment(
                 f"По сделке #{deal.id} получено {paid} {currency.code}. "
                 f"Не хватает ещё {deficit} {currency.code} на баланс."
             ),
-            {"deal_id": deal.id, "deposit_id": deposit.id, "kind": "underpayment"},
+            {
+                "deal_id": deal.id,
+                "deposit_id": deposit.id,
+                "replacement_deposit_id": replacement.id if replacement is not None else None,
+                "kind": "underpayment",
+            },
         )
         pending.append((notif, ws_payload))
         await session.commit()

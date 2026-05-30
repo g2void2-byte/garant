@@ -17,6 +17,7 @@ remains a forensic source of truth.
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -98,13 +99,15 @@ async def _service_to_out(
         category_slug=category.slug if category else None,
         title=service.title,
         description=service.description,
-        price=float(service.price),
+        price=Decimal(str(service.price)),
         status=service.status.value,
         ban_reason=service.ban_reason,
         views=service.views,
         deals_count=service.deals_count,
-        deposit=float(service.deposit),
-        rating_manual=float(service.rating_manual) if service.rating_manual is not None else None,
+        deposit=Decimal(str(service.deposit)),
+        rating_manual=(
+            Decimal(str(service.rating_manual)) if service.rating_manual is not None else None
+        ),
         created_at=service.created_at,
     )
 

@@ -52,7 +52,7 @@ def _service_out(s: Service) -> ServiceOut:
         owner_username=s.owner.username if s.owner else None,
         title=s.title,
         description=s.description,
-        price=s.price,
+        price=Decimal(str(s.price)),
         currency=s.currency.code if s.currency else "USD",
         status=s.status.value if isinstance(s.status, ServiceStatus) else str(s.status),
         category=CategoryOut(
@@ -174,12 +174,7 @@ async def list_services(
     ),
 ):
     if not user.is_admin and (user.deals_total or 0) == 0:
-        import os
-
-        from ..config import settings
-
-        if settings.environment != "test" or os.environ.get("ENFORCE_SEARCH_GATING"):
-            raise HTTPException(403, "Минимум 1 сделка для поиска")
+        raise HTTPException(403, "Минимум 1 сделка для поиска")
 
     # R7/H-12 \u2014 always join ``Service.owner`` so we have a single
     # well-known join target for the ``is_hidden_profile`` filter below.

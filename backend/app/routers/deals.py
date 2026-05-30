@@ -5,6 +5,7 @@ from decimal import Decimal
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import or_, select
 
+from ..admin_guard import TotpOrArbiterUser
 from ..deps import CurrentUser, PinUser, SessionDep
 from ..models import Deal, DealStatus, User, WalletDeposit, WalletDepositStatus
 from ..rate_limit import RLDealCreate
@@ -19,11 +20,9 @@ from ..schemas import (
     DealTopupInvoiceOut,
 )
 from ..services_deals import (
-    InsufficientFundsError,
     accept_cancel,
     accept_deal,
     cancel_pending_topup,
-    create_deal,
     create_deal_with_topup,
     decline_deal,
     finish_deal,
@@ -41,7 +40,7 @@ def _topup_invoice_from_deposit(
 ) -> DealTopupInvoiceOut | None:
     if deposit is None or deposit.status != WalletDepositStatus.pending:
         return None
-    commission = Decimal(str(deal.commission_amount or 0))
+    commission = Decimal("0") if deal.commission_paid else Decimal(str(deal.commission_amount or 0))
     total = Decimal(str(deposit.amount))
     topup_principal = max(Decimal(0), total - commission)
     return DealTopupInvoiceOut(
@@ -80,8 +79,10 @@ def _deal_out(
         role=role,
         created_at=deal.created_at,
         currency_code=currency_code,
-        amount=deal.amount,
-        commission_amount=deal.commission_amount,
+        amount=Decimal(str(deal.amount)),
+        commission_amount=(
+            Decimal(str(deal.commission_amount)) if deal.commission_amount is not None else None
+        ),
         in_progress_at=deal.in_progress_at,
         completed_at=deal.completed_at,
         cancellation_initiator=_role_for(deal, deal.cancellation_initiator_id),
@@ -226,6 +227,12 @@ async def get_deal(deal_id: int, user: CurrentUser, session: SessionDep):
 async def create_deal_endpoint(
     body: DealCreate, user: PinUser, session: SessionDep, _rl: RLDealCreate
 ):
+    """Legacy route kept as a compatibility shim over ``/with-topup``.
+
+    It no longer creates balance-only commission-paid deals. Direct API
+    callers still get a ``DealOut`` response, but the deal goes through
+    the same commission/top-up invoice flow as the frontend endpoint.
+    """
     # Audit C1 — every deal is initiated by the buyer, i.e. the caller
     # of this endpoint. The previous ``role="seller"`` branch let any
     # user lock an arbitrary counterparty's balance into an escrow row
@@ -246,7 +253,7 @@ async def create_deal_endpoint(
     buyer, seller = user, counterparty
 
     try:
-        deal = await create_deal(
+        deal, deposit = await create_deal_with_topup(
             session,
             buyer,
             seller,
@@ -255,26 +262,10 @@ async def create_deal_endpoint(
             body.description,
             payment_provider=body.payment_provider,
         )
-    except InsufficientFundsError as e:
-        # Item 18 — structured payload so the frontend can render a
-        # precise "не хватает X" hint instead of a generic toast. The
-        # ``message`` field keeps the legacy human-readable string so
-        # any client still treating ``detail`` as a string degrades
-        # gracefully.
-        raise HTTPException(
-            400,
-            detail={
-                "code": "insufficient_funds",
-                "message": str(e),
-                "required": str(e.required),
-                "balance": str(e.balance),
-                "deficit": str(e.deficit),
-                "currency_code": e.currency_code,
-            },
-        ) from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    return _deal_out(deal, user.id)
+    invoice = _topup_invoice_from_deposit(deal, deposit)
+    return _deal_out(deal, user.id, topup_invoice=invoice)
 
 
 @router.post(
@@ -431,11 +422,9 @@ async def debate_endpoint(
 async def resolve_endpoint(
     deal_id: int,
     body: DealResolveRequest,
-    user: CurrentUser,
+    user: TotpOrArbiterUser,
     session: SessionDep,
 ):
-    if not (user.is_admin or user.is_arbiter):
-        raise HTTPException(403, "Доступ запрещён")
     deal = await _get_locked(session, deal_id)
     try:
         deal = await resolve_arbitration(session, deal, user, body.winner, body.note)

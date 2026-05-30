@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import pathlib
+from typing import TypedDict
 
 from aiogram import F, Router
 from aiogram.filters import CommandStart
@@ -54,7 +55,13 @@ async def cmd_start(message: Message) -> None:
 # ── Reply-keyboard buttons (exact text match) ────────────────────────────
 
 
-def _user_kwargs(message: Message) -> dict[str, object]:
+class _UserKwargs(TypedDict):
+    tg_user_id: int
+    username: str | None
+    first_name: str | None
+
+
+def _user_kwargs(message: Message) -> _UserKwargs:
     if message.from_user is None:
         # Bot updates without a user (channel posts) are not relevant here.
         return {"tg_user_id": 0, "username": None, "first_name": None}

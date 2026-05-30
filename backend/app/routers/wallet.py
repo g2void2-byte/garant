@@ -46,8 +46,8 @@ def _currency_dto(c: Currency) -> CurrencyOut:
         network=c.network,
         icon_url=c.icon_url,
         decimals=c.decimals,
-        min_deposit=c.min_deposit,
-        min_withdraw=c.min_withdraw,
+        min_deposit=Decimal(str(c.min_deposit)),
+        min_withdraw=Decimal(str(c.min_withdraw)),
         kind=c.kind or "crypto",
     )
 
@@ -56,7 +56,7 @@ def _deposit_dto(d: WalletDeposit, c: Currency) -> WalletDepositOut:
     return WalletDepositOut(
         id=d.id,
         currency=_currency_dto(c),
-        amount=d.amount,
+        amount=Decimal(str(d.amount)),
         status=d.status.value,
         pay_url=d.pay_url,
         invoice_id=d.provider_invoice_id,
@@ -71,7 +71,7 @@ def _withdrawal_dto(w: WalletWithdrawal, c: Currency) -> WalletWithdrawalOut:
     return WalletWithdrawalOut(
         id=w.id,
         currency=_currency_dto(c),
-        amount=w.amount,
+        amount=Decimal(str(w.amount)),
         address=w.address,
         status=w.status.value,
         admin_note=w.admin_note,
@@ -178,7 +178,7 @@ async def create_deposit(
         session,
         user,
         body.currency_code,
-        body.amount,
+        float(body.amount),
         purpose=body.purpose,
         provider=body.provider,
     )

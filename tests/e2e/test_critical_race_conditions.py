@@ -106,7 +106,7 @@ async def test_concurrent_withdrawals_cannot_overdraw(client):
 
 
 @pytest.mark.asyncio
-async def test_concurrent_deal_creation_cannot_overdraw(client):
+async def test_concurrent_deal_creation_cannot_overdraw(client, _stub_cryptopay):
     """C2 — two parallel ``create_deal`` requests must not overspend.
 
     Buyer has 100 USDT; two simultaneous deals of 70 USDT each are
@@ -118,7 +118,7 @@ async def test_concurrent_deal_creation_cannot_overdraw(client):
     ("Недостаточно средств").
     """
     from backend.app.db import async_session
-    from backend.app.models import Currency, UserBalance
+    from backend.app.models import Currency, DealStatus, UserBalance
 
     buyer_init = signed_init_data(7201, "race_buyer")
     seller_init = signed_init_data(7202, "race_seller")
@@ -144,7 +144,12 @@ async def test_concurrent_deal_creation_cannot_overdraw(client):
     )
 
     statuses = sorted([r1.status_code, r2.status_code])
-    assert statuses == [201, 400], (r1.status_code, r1.text, r2.status_code, r2.text)
+    assert statuses == [201, 201], (r1.status_code, r1.text, r2.status_code, r2.text)
+    deal_statuses = {r1.json()["status"], r2.json()["status"]}
+    assert deal_statuses == {
+        DealStatus.pending_confirmation.value,
+        DealStatus.pending_topup.value,
+    }
 
     async with async_session() as session:
         usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
@@ -160,7 +165,7 @@ async def test_concurrent_deal_creation_cannot_overdraw(client):
         # 70 locked (principal only — see docstring). The balance
         # must never go negative.
         assert float(bal.amount) >= 0
-        assert float(bal.amount) == pytest.approx(30.0)
+        assert float(bal.amount) == pytest.approx(26.5)
         assert float(bal.locked) == pytest.approx(70.0)
 
 

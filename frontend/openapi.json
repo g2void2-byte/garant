@@ -3381,11 +3381,6 @@
             ],
             "title": "Photo Url"
           },
-          "total_usd_estimate": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Total Usd Estimate",
-            "type": "string"
-          },
           "user_id": {
             "title": "User Id",
             "type": "integer"
@@ -3412,8 +3407,7 @@
           "is_vip",
           "is_banned",
           "is_frozen",
-          "balances",
-          "total_usd_estimate"
+          "balances"
         ],
         "title": "AdminWalletListItem",
         "type": "object"
@@ -3808,7 +3802,7 @@
         "type": "object"
       },
       "DealCreateWithTopup": {
-        "description": "P10 \u2014 input for ``POST /api/deals/with-topup``.\n\nExactly the same shape as :class:`DealCreate` but routed through\nthe commission-via-invoice service entry point. Kept as a\nseparate class so the OpenAPI surface stays explicit and the\nlegacy ``POST /api/deals`` (balance-only) path can be removed\nindependently in a follow-up.",
+        "description": "P10 \u2014 input for ``POST /api/deals/with-topup``.\n\nExactly the same shape as :class:`DealCreate` but routed through\nthe commission-via-invoice service entry point. Kept as a separate\nclass so the OpenAPI surface stays explicit; the legacy\n``POST /api/deals`` route now delegates to the same service.",
         "properties": {
           "amount": {
             "anyOf": [
@@ -13579,6 +13573,7 @@
         ]
       },
       "post": {
+        "description": "Legacy route kept as a compatibility shim over ``/with-topup``.\n\nIt no longer creates balance-only commission-paid deals. Direct API\ncallers still get a ``DealOut`` response, but the deal goes through\nthe same commission/top-up invoice flow as the frontend endpoint.",
         "operationId": "create_deal_endpoint_api_deals_post",
         "parameters": [
           {
@@ -14571,6 +14566,38 @@
             "schema": {
               "title": "Deal Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
             }
           },
           {

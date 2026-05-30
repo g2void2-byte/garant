@@ -243,8 +243,11 @@ async def pin_check(
     user = await _lock_user_for_pin(session, user)
     if _is_locked(user):
         raise HTTPException(423, "Слишком много попыток. Попробуйте позже.")
+    pin_hash = user.pin_hash
+    if pin_hash is None:
+        raise HTTPException(409, {"code": "pin_not_set", "detail": "PIN не установлен"})
 
-    if not verify_pin(body.pin, user.pin_hash):
+    if not verify_pin(body.pin, pin_hash):
         user.pin_attempts = (user.pin_attempts or 0) + 1
         if user.pin_attempts >= settings.pin_max_attempts:
             user.pin_locked_until = _now() + timedelta(minutes=settings.pin_lock_minutes)
@@ -281,6 +284,9 @@ async def pin_change(
     user = await _lock_user_for_pin(session, user)
     if _is_locked(user):
         raise HTTPException(423, "Слишком много попыток. Попробуйте позже.")
+    pin_hash = user.pin_hash
+    if pin_hash is None:
+        raise HTTPException(409, "PIN ещё не установлен")
     # V5-A-6 (M) / M-10 — wrap the whole sequence in try/except so an
     # unexpected exception (DB connectivity blip, asyncpg protocol
     # error, ORM constraint violation) doesn't leave a partial state
@@ -304,7 +310,7 @@ async def pin_change(
     # exception. ``HTTPException`` is re-raised untouched so the
     # already-committed attempts++ write stays persisted.
     try:
-        if not verify_pin(body.old_pin, user.pin_hash):
+        if not verify_pin(body.old_pin, pin_hash):
             user.pin_attempts = (user.pin_attempts or 0) + 1
             if user.pin_attempts >= settings.pin_max_attempts:
                 user.pin_locked_until = _now() + timedelta(minutes=settings.pin_lock_minutes)

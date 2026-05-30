@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,7 +60,7 @@ def _make_sweep_loop(
     name: str,
     work: Callable[[], Awaitable[int | None]],
     success_message: str,
-) -> Callable[[int], Awaitable[None]]:
+) -> Callable[[int], Coroutine[object, object, None]]:
     """Build a background sweep loop with logging + exponential backoff.
 
     V11-L-8 / V11-L-17 — pre-fix every sweep (inactivity, deposit
@@ -521,6 +522,19 @@ app.add_middleware(
 # matching ``Report-To`` header naming an endpoint group — sticking
 # with the legacy ``report-uri`` is enough for the telemetry pass and
 # avoids the extra header.
+def _connect_src_directive() -> str:
+    explicit = settings.csp_connect_src.strip()
+    if explicit:
+        return explicit
+    public_api_url = settings.public_api_url.strip()
+    if not public_api_url:
+        return "'self'"
+    parsed = urlparse(public_api_url)
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return f"'self' {parsed.scheme}://{parsed.netloc}"
+    return "'self'"
+
+
 _CSP_DIRECTIVES = (
     "default-src 'self'; "
     "script-src 'self' https://telegram.org; "
@@ -530,7 +544,7 @@ _CSP_DIRECTIVES = (
     "style-src-attr 'none'; "
     "img-src 'self' data: blob: https:; "
     "font-src 'self' data:; "
-    "connect-src 'self'; "
+    f"connect-src {_connect_src_directive()}; "
     "worker-src 'self' blob:; "
     "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org; "
     "base-uri 'self'; "
@@ -555,13 +569,17 @@ async def _security_headers(request, call_next):
     # for the /media/ mount, where a confused sniffer used to be how
     # uploaded HTML got executed.
     response.headers["X-Content-Type-Options"] = "nosniff"
-    # Audit v3 L-10 — HSTS. The TMA runs inside Telegram's WebView
-    # (always HTTPS), but direct API access or a future non-TMA
-    # frontend should not be downgradable via SSL stripping. One
-    # year max-age is the OWASP baseline; ``includeSubDomains``
-    # covers the ``media`` and ``api`` subpath mounts on the same
-    # origin.
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # HSTS is useful on real HTTPS origins, but setting it on arbitrary
+    # dev/staging domains with ``includeSubDomains`` can pin an operator
+    # into a bad local policy. Default to production/staging only and
+    # allow explicit override for custom HTTPS test domains.
+    hsts_enabled = (
+        settings.enable_hsts
+        if settings.enable_hsts is not None
+        else settings.environment in ("production", "staging")
+    )
+    if hsts_enabled:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     # Don't leak Garant URLs (which encode user IDs in paths) to
     # third-party origins users navigate to from inside the TMA.
     response.headers["Referrer-Policy"] = "no-referrer"

@@ -5,8 +5,8 @@ Escrow-сервис для безопасных сделок между поль
 ## Stack
 
 - **Backend**: Python 3.12, FastAPI, SQLAlchemy 2 (async + asyncpg), PostgreSQL 16, Alembic, Pydantic v2, aiogram 3
-- **Frontend**: React 18, TypeScript, Vite, TailwindCSS, Framer Motion, TanStack Query
-- **Payments**: CryptoBot (AsyncPayments SDK) + Crystalpay v3 (alternative deposit provider)
+- **Frontend**: React 18, TypeScript, Vite, TailwindCSS, TanStack Query
+- **Payments**: CryptoBot via the internal async `CryptoPay` client + Crystalpay v3
 
 ## Quick start — Docker Compose (recommended)
 
@@ -86,7 +86,7 @@ Code is bind-mounted, so edits trigger hot-reload without rebuilds. Add `-d` to 
 ```bash
 # 1. PostgreSQL
 docker run -d --name garant-pg \
-  -e POSTGRES_USER=garant -e POSTGRES_PASSWORD=garant -e POSTGRES_DB=garant \
+  -e POSTGRES_USER=garant -e POSTGRES_PASSWORD="$(openssl rand -hex 16)" -e POSTGRES_DB=garant \
   -p 5432:5432 postgres:16-alpine
 
 # 2. Backend
@@ -167,15 +167,26 @@ rules, and the telemetry path through `/api/csp-report` — lives in
 
 | Variable | Default | Description |
 |---|---|---|
+| `ENVIRONMENT` | `development` | `development`, `test`, `staging`, or `production`. Production/staging enable fail-fast security guards. |
 | `BOT_TOKEN` | — | Telegram Bot API token |
 | `CRYPTOBOT_TOKEN` | — | CryptoBot API token |
 | `CRYSTALPAY_LOGIN` | _empty_ | Crystalpay v3 cashbox login (merchant cabinet → Кассы → header). Both empty = provider disabled. |
 | `CRYSTALPAY_SECRET` | _empty_ | Crystalpay v3 cashbox API secret (Settings / API → generate). Same value signs webhook payloads via `sha1(invoice_id:secret)`. |
-| `WEBAPP_URL` | `http://localhost:5173` | Public URL of the frontend |
+| `WEBAPP_URL` | `http://localhost:5173` | Public URL of the frontend/TMA |
+| `PUBLIC_API_URL` | _empty_ | Public backend/API origin for split deployments and CSP `connect-src` widening. |
+| `WEBHOOK_BASE_URL` | _empty_ | Public backend origin used for provider callbacks; falls back to `PUBLIC_API_URL`, then `WEBAPP_URL`. |
+| `CSP_CONNECT_SRC` | _empty_ | Optional full `connect-src` source list. Empty means `'self'` plus `PUBLIC_API_URL` origin when set. |
+| `ENABLE_HSTS` | _empty_ | Empty = enable HSTS only in production/staging; set `1`/`0` to override. |
 | `WEBAPP_PORT` | `8080` | Backend listen port |
 | `ALLOWED_ORIGINS` | `http://localhost:5173` | CORS origins (comma-separated) |
 | `DATABASE_URL` | `postgresql+asyncpg://garant:garant@localhost:5432/garant` | SQLAlchemy async DB URL |
 | `REDIS_URL` | _empty_ | Optional. When set (e.g. `redis://localhost:6379/0`), WebSocket broadcasts go through Redis pub/sub and the rate limiter uses Redis counters. Empty keeps everything in-process. |
+| `REQUIRE_REDIS_FOR_RATE_LIMIT` | `0` | Dev/test toggle; production/staging require Redis for rate limits regardless of this value. |
+| `REQUIRE_REDIS_FOR_2FA` | `0` | Require Redis for the admin TOTP enrolment handoff instead of using in-process fallback. |
+| `TRUSTED_PROXIES` | _empty_ | Required in production/staging behind a reverse proxy; CIDR list trusted for forwarded client IP headers. |
+| `PIN_JWT_SECRET` | _empty_ | Required in production/staging; signs PIN-session JWTs. |
+| `PIN_PEPPER` | _empty_ | Server-side PIN hash pepper. Set deliberately before creating production PIN hashes. |
+| `MEDIA_URL_SIGNING_SECRET` | _empty_ | Required in production/staging; signs private media URLs. |
 | `RUN_BOT` | `1` | Start aiogram polling (set `0` to disable) |
 | `ALLOW_UNSIGNED_INIT_DATA` | `0` | Accept unsigned initData (dev only!) |
 | `BOT_FORUMS_URL` | _empty_ | URL for "🏛 Форумы" button on the bot /profile keyboard. Empty hides the button. |

@@ -632,7 +632,6 @@ export interface AdminWalletListItemDto {
   is_banned: boolean;
   is_frozen: boolean;
   balances: AdminUserBalanceDto[];
-  total_usd_estimate: string;
 }
 
 export interface AdminWalletListDto {
