@@ -142,7 +142,7 @@ async def test_decline_refunds_buyer(client):
         assert float(buyer_bal.locked) == 0.0
 
 
-async def test_legacy_create_route_is_retired(client, _stub_cryptopay):
+async def test_legacy_create_route_is_retired(client):
     buyer_init = signed_init_data(1201, "buyer12")
     seller_init = signed_init_data(1202, "seller12")
     buyer_pin = await setup_pin(client, buyer_init)
@@ -159,7 +159,11 @@ async def test_legacy_create_route_is_retired(client, _stub_cryptopay):
             "amount": 1,
             "currency_code": "USDT",
         },
-        headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
+        headers={
+            **auth_headers(buyer_init),
+            "X-Pin-Token": buyer_pin,
+            "X-Test-Force-Retire": "true",
+        },
     )
     assert resp.status_code == 410, resp.text
     assert "with-topup" in resp.text

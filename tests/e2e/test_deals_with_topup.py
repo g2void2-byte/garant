@@ -49,7 +49,6 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
-import pytest
 from sqlalchemy import select
 
 from tests.helpers import (
@@ -59,57 +58,6 @@ from tests.helpers import (
     setup_pin,
     signed_init_data,
 )
-
-# ── CryptoPay stub ───────────────────────────────────────────────
-
-
-class _StubInvoice:
-    invoice_id = 99001
-    pay_url = "https://pay.crypt.bot/$cb-topup-stub"
-    bot_invoice_url = "https://pay.crypt.bot/$cb-topup-stub"
-    mini_app_invoice_url = ""
-    web_app_invoice_url = ""
-
-
-class _StubCryptoPay:
-    """Drop-in replacement that never hits the real CryptoBot API."""
-
-    _counter = 99000
-
-    def __init__(self, *_args, **_kwargs):
-        pass
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_exc):
-        return None
-
-    async def create_invoice(self, **_kwargs):
-        _StubCryptoPay._counter += 1
-        return type(
-            "_Inv",
-            (),
-            {
-                "invoice_id": _StubCryptoPay._counter,
-                "pay_url": f"https://pay.crypt.bot/$cb-{_StubCryptoPay._counter}",
-                "bot_invoice_url": (f"https://pay.crypt.bot/$cb-{_StubCryptoPay._counter}"),
-                "mini_app_invoice_url": "",
-                "web_app_invoice_url": "",
-            },
-        )()
-
-
-@pytest.fixture
-def _stub_cryptopay(monkeypatch):
-    import backend.app.services_wallet as services_wallet
-
-    monkeypatch.setattr(services_wallet, "CryptoPay", _StubCryptoPay)
-    monkeypatch.setattr(services_wallet, "is_cryptopay_configured", lambda: True)
-    yield
-
-
-# ── Helpers ──────────────────────────────────────────────────────
 
 
 async def _create_with_topup(

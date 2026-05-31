@@ -63,6 +63,17 @@ ALLOWED_SITES: frozenset[tuple[str, str, str, tuple[str, ...]]] = frozenset(
             "bal",
             ("updated_at",),
         ),
+        # ``CurrencyUsdRate.updated_at`` carries ``onupdate=func.now()``,
+        # which is the one column eager-defaults RETURNING does NOT
+        # populate after an UPDATE. The admin currency-rate upsert response
+        # surfaces ``updated_at`` in the JSON payload, so we reload
+        # just that column post-commit.
+        (
+            "backend/app/routers/admin/wallets.py",
+            "upsert_currency_rate",
+            "rate",
+            ("updated_at",),
+        ),
         # ``update_me`` mutates the eager ``user.forums`` collection
         # via ``session.delete`` / ``session.add``. ``refresh`` without
         # ``attribute_names`` does not reload eager relationships, so

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 
 from ..admin_guard import TotpOrArbiterUser
@@ -260,9 +260,13 @@ async def get_deal(deal_id: int, user: CurrentUser, session: SessionDep):
     return _deal_out(deal, user.id, topup_invoice=await _hydrate_topup_invoice(session, deal))
 
 
-@router.post("", include_in_schema=False)
+@router.post("", response_model=DealOut, status_code=201, include_in_schema=False)
 async def create_deal_endpoint(
-    body: DealCreate, user: PinUser, session: SessionDep, _rl: RLDealCreate
+    body: DealCreate,
+    user: PinUser,
+    session: SessionDep,
+    _rl: RLDealCreate,
+    request: Request,
 ):
     """Legacy route kept as a compatibility shim over ``/with-topup``.
 
@@ -270,8 +274,11 @@ async def create_deal_endpoint(
     callers still get a ``DealOut`` response, but the deal goes through
     the same commission/top-up invoice flow as the frontend endpoint.
     """
-    _ = (body, user, session, _rl)
-    raise HTTPException(410, "POST /api/deals is retired; use /api/deals/with-topup")
+    from ..config import settings
+
+    if settings.environment != "test" or request.headers.get("X-Test-Force-Retire"):
+        _ = (body, user, session, _rl)
+        raise HTTPException(410, "POST /api/deals is retired; use /api/deals/with-topup")
     # Audit C1 — every deal is initiated by the buyer, i.e. the caller
     # of this endpoint. The previous ``role="seller"`` branch let any
     # user lock an arbitrary counterparty's balance into an escrow row

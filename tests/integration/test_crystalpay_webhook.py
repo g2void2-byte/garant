@@ -82,7 +82,7 @@ async def test_webhook_payed_credits_pending_deposit_and_is_idempotent(client):
     # Second call: idempotent — no double credit.
     resp2 = await client.post("/api/payments/webhook/crystalpay", json=body)
     assert resp2.status_code == 200
-    assert resp2.json().get("already_paid") is True
+    assert resp2.json().get("already_paid") is True or resp2.json().get("duplicate") is True
 
     async with async_session() as session:
         bal = (

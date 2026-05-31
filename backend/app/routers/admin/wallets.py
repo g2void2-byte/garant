@@ -244,7 +244,7 @@ async def upsert_currency_rate(
         request=request,
     )
     await session.commit()
-    await session.refresh(rate)
+    await session.refresh(rate, attribute_names=["updated_at"])
     return _rate_out(rate, currency)
 
 

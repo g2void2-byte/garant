@@ -263,8 +263,12 @@ async def test_concurrent_invoice_paid_webhook_credits_wallet_only_once(client):
         assert resp.json()["ok"] is True
 
     # Exactly one delivery actually credited; the other ``_WEBHOOK_FANOUT
-    # - 1`` saw ``already_paid`` after re-checking under the row lock.
-    credited = [r for r in responses if not r.json().get("already_paid")]
+    # - 1`` saw ``already_paid`` or ``duplicate`` after re-checking under the row lock.
+    credited = [
+        r
+        for r in responses
+        if not r.json().get("already_paid") and not r.json().get("duplicate")
+    ]
     assert len(credited) == 1, [r.json() for r in responses]
 
     async with async_session() as session:

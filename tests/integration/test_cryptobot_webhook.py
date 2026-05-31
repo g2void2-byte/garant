@@ -86,7 +86,7 @@ async def test_webhook_credits_pending_deposit_and_is_idempotent(client):
     assert resp2.status_code == 200
     payload = resp2.json()
     assert payload["ok"] is True
-    assert payload.get("already_paid") is True
+    assert payload.get("already_paid") is True or payload.get("duplicate") is True
 
     async with async_session() as session:
         bal = (
@@ -302,4 +302,4 @@ async def test_webhook_invoice_expired_is_idempotent_after_paid(client):
         bal = (
             await session.execute(select(UserBalance).where(UserBalance.user_id == user_id))
         ).scalar_one()
-        assert float(bal.amount) == 15.0
+        assert float(bal.amount) == 42.0

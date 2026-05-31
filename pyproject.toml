@@ -159,6 +159,7 @@ env = [
     "D:PIN_JWT_SECRET=test-pin-secret-fixed-value-do-not-use-in-prod",
     "D:ALLOW_UNSIGNED_INIT_DATA=false",
     "D:ENVIRONMENT=test",
+    "D:ADMIN_DEAL_APPROVAL_THRESHOLD_USD=0.0",
 ]
 # V12-M2 — narrow the deprecation noise filter. The previous
 # wholesale ``ignore::DeprecationWarning`` /

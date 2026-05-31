@@ -139,6 +139,11 @@ async def test_users_search_reports_offline_for_stale_login(client):
     # ``utcnow`` helper (returns a naive datetime) rather than a
     # tz-aware ``datetime.now(timezone.utc)``.
     async with async_session() as session:
+        from sqlalchemy import select
+        caller = (
+            await session.execute(select(User).where(User.tg_user_id == 12011))
+        ).scalar_one()
+        caller.deals_total = 1
         u = User(
             tg_user_id=12012,
             username="stale_user",

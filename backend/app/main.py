@@ -757,6 +757,9 @@ if FRONTEND_DIST.is_dir():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str):
+        if full_path.startswith("api/") or full_path == "api":
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not Found")
         # V11-H-5 — ``index.html`` MUST NOT be cached by browsers or
         # intermediary CDNs/proxies. ``/assets/*`` filenames are
         # content-hashed by Vite so long TTLs on those are safe and
