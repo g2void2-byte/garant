@@ -27,17 +27,21 @@ from sqlalchemy import func, or_, select
 from ...admin_audit import log_admin_action
 from ...admin_guard import TotpUser
 from ...deps import AdminUser, SessionDep
-from ...models import Currency, User, UserBalance
+from ...models import Currency, CurrencyUsdRate, User, UserBalance
 from ...money import quantize_money
 from ...rate_limit import rate_limit
 from ...schemas import (
+    AdminCurrencyRateOut,
+    AdminCurrencyRateUpsertIn,
     AdminUserBalanceOut,
     AdminWalletAdjustIn,
     AdminWalletListItem,
     AdminWalletListOut,
 )
+from ...services_ledger import latest_usd_rates, record_balance_ledger
 from ...services_wallet import lock_user_balance
 from ...sql_filters import escape_like_wildcards
+from ...time_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +52,24 @@ router = APIRouter(
 )
 
 
-def _balance_row(user: User, currency: Currency, bal: UserBalance | None) -> AdminUserBalanceOut:
+def _rate_out(rate: CurrencyUsdRate, currency: Currency) -> AdminCurrencyRateOut:
+    return AdminCurrencyRateOut(
+        currency_id=currency.id,
+        currency_code=currency.code,
+        usd_rate=Decimal(str(rate.usd_rate)),
+        source=rate.source,
+        observed_at=rate.observed_at,
+        updated_at=rate.updated_at,
+        updated_by_id=rate.updated_by_id,
+    )
+
+
+def _balance_row(
+    user: User,
+    currency: Currency,
+    bal: UserBalance | None,
+    rate: CurrencyUsdRate | None = None,
+) -> AdminUserBalanceOut:
     # H-2: every ``Decimal`` field on ``AdminUserBalanceOut`` is
     # quantised to the currency's own ``decimals`` so the wire format
     # never shows trailing satoshi noise the underlying row doesn't
@@ -58,6 +79,9 @@ def _balance_row(user: User, currency: Currency, bal: UserBalance | None) -> Adm
     # skip the redundant re-quantise on ``total``.
     amount = quantize_money(bal.amount if bal else 0, currency.decimals)
     locked = quantize_money(bal.locked if bal else 0, currency.decimals)
+    total = amount + locked
+    usd_rate = Decimal(str(rate.usd_rate)) if rate is not None else None
+    usd_estimate = total * usd_rate if usd_rate is not None else None
     return AdminUserBalanceOut(
         user_id=user.id,
         username=user.username,
@@ -68,7 +92,11 @@ def _balance_row(user: User, currency: Currency, bal: UserBalance | None) -> Adm
         decimals=currency.decimals,
         amount=amount,
         locked=locked,
-        total=amount + locked,
+        total=total,
+        usd_rate=usd_rate,
+        usd_estimate=usd_estimate,
+        usd_rate_source=rate.source if rate is not None else None,
+        usd_rate_observed_at=rate.observed_at if rate is not None else None,
         updated_at=bal.updated_at if bal else None,
     )
 
@@ -91,6 +119,7 @@ async def list_wallets(
         .scalars()
         .all()
     )
+    rates_by_currency = await latest_usd_rates(session)
 
     stmt = select(User)
     if q:
@@ -128,16 +157,20 @@ async def list_wallets(
 
     items: list[AdminWalletListItem] = []
     for u in rows:
-        per_currency = [_balance_row(u, c, by_user.get(u.id, {}).get(c.id)) for c in currencies]
-        # Audit §5.4 — placeholder ``total_usd_estimate``. We don't have a
-        # rate oracle wired up, so this just sums every per-currency
-        # ``total`` (``amount + locked``) and treats each unit as 1 USD.
-        # That means a 1 BTC holding reports ``1``, not ~70 000 — the
-        # admin UI must label the column "(approx.)" and never feed it
-        # into accounting math. See ``schemas.AdminWalletListItem`` for
-        # the full caveat. The field is kept on the wire only because
-        # the admin list view shows a single sortable "total" column.
-        usd = sum((b.total for b in per_currency), Decimal(0))
+        per_currency = [
+            _balance_row(u, c, by_user.get(u.id, {}).get(c.id), rates_by_currency.get(c.id))
+            for c in currencies
+        ]
+        missing_rates = [
+            b.currency_code
+            for b in per_currency
+            if b.total > 0 and b.usd_estimate is None
+        ]
+        total_usd = (
+            None
+            if missing_rates
+            else sum(((b.usd_estimate or Decimal("0")) for b in per_currency), Decimal("0"))
+        )
         items.append(
             AdminWalletListItem(
                 user_id=u.id,
@@ -150,11 +183,69 @@ async def list_wallets(
                 is_banned=u.is_banned,
                 is_frozen=u.is_frozen,
                 balances=per_currency,
-                total_usd_estimate=usd,
+                total_usd_estimate=total_usd,
+                usd_estimate_missing_rates=missing_rates,
             )
         )
 
     return AdminWalletListOut(items=items, total=int(total), page=page, page_size=page_size)
+
+
+@router.get("/rates", response_model=list[AdminCurrencyRateOut])
+async def list_currency_rates(_admin: AdminUser, session: SessionDep):
+    rows = (
+        await session.execute(
+            select(CurrencyUsdRate, Currency)
+            .join(Currency, Currency.id == CurrencyUsdRate.currency_id)
+            .order_by(Currency.sort_order, Currency.code)
+        )
+    ).all()
+    return [_rate_out(rate, currency) for rate, currency in rows]
+
+
+@router.post("/rates", response_model=AdminCurrencyRateOut)
+async def upsert_currency_rate(
+    body: AdminCurrencyRateUpsertIn,
+    admin: TotpUser,
+    session: SessionDep,
+    request: Request,
+):
+    currency = (
+        await session.execute(select(Currency).where(Currency.code == body.currency_code))
+    ).scalar_one_or_none()
+    if currency is None:
+        raise HTTPException(404, f"Currency {body.currency_code} not found")
+    rate = (
+        await session.execute(
+            select(CurrencyUsdRate).where(CurrencyUsdRate.currency_id == currency.id)
+        )
+    ).scalar_one_or_none()
+    if rate is None:
+        rate = CurrencyUsdRate(currency_id=currency.id)
+        session.add(rate)
+    before = Decimal(str(rate.usd_rate)) if rate.id is not None else None
+    rate.usd_rate = body.usd_rate
+    rate.source = body.source
+    rate.observed_at = body.observed_at or utcnow()
+    rate.updated_by_id = admin.id
+    await log_admin_action(
+        session,
+        actor=admin,
+        action="wallet.rate_upsert",
+        target_type="currency",
+        target_id=currency.id,
+        reason=None,
+        payload={
+            "currency": currency.code,
+            "before_usd_rate": str(before) if before is not None else None,
+            "after_usd_rate": str(body.usd_rate),
+            "source": body.source,
+        },
+        request=request,
+    )
+    await session.commit()
+    await session.refresh(rate, attribute_names=["updated_at"])
+    return _rate_out(rate, currency)
 
 
 @router.get("/{user_id}", response_model=list[AdminUserBalanceOut])
@@ -177,7 +268,11 @@ async def user_wallet_detail(user_id: int, _admin: AdminUser, session: SessionDe
         .all()
     )
     by_currency = {b.currency_id: b for b in bal_rows}
-    return [_balance_row(user, c, by_currency.get(c.id)) for c in currencies]
+    rates_by_currency = await latest_usd_rates(session)
+    return [
+        _balance_row(user, c, by_currency.get(c.id), rates_by_currency.get(c.id))
+        for c in currencies
+    ]
 
 
 @router.post("/{user_id}/adjust", response_model=AdminUserBalanceOut)
@@ -252,7 +347,18 @@ async def adjust_user_balance(
     # M5: persist as Decimal so the ``Numeric(28,8)`` precision is
     # preserved end-to-end — admin adjustments on the BTC/USDT side
     # otherwise lose the last few sat / cents on every save.
+    before_locked = Decimal(str(bal.locked))
     bal.amount = new_amount
+    record_balance_ledger(
+        session,
+        bal,
+        before_amount=before_amount,
+        before_locked=before_locked,
+        event_type="admin_wallet.adjust",
+        source_type="admin_adjustment",
+        source_id=user.id,
+        meta={"admin_id": admin.id, "reason": body.reason},
+    )
 
     await log_admin_action(
         session,
@@ -295,4 +401,9 @@ async def adjust_user_balance(
             "after_amount": str(new_amount),
         },
     )
-    return _balance_row(user, currency, bal)
+    rate = (
+        await session.execute(
+            select(CurrencyUsdRate).where(CurrencyUsdRate.currency_id == currency.id)
+        )
+    ).scalar_one_or_none()
+    return _balance_row(user, currency, bal, rate)

@@ -5,7 +5,7 @@ import math
 import re
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, PlainSerializer, field_validator, model_validator
@@ -683,10 +683,9 @@ class DealCreateWithTopup(DealCreate):
     """P10 — input for ``POST /api/deals/with-topup``.
 
     Exactly the same shape as :class:`DealCreate` but routed through
-    the commission-via-invoice service entry point. Kept as a
-    separate class so the OpenAPI surface stays explicit and the
-    legacy ``POST /api/deals`` (balance-only) path can be removed
-    independently in a follow-up.
+    the commission-via-invoice service entry point. Kept as a separate
+    class so the OpenAPI surface stays explicit; the legacy
+    ``POST /api/deals`` route now delegates to the same service.
     """
 
 
@@ -704,6 +703,7 @@ class DealTopupInvoiceOut(BaseModel):
     total: MoneyDecimal
     topup_principal: MoneyDecimal
     commission: MoneyDecimal
+    paid_total: MoneyDecimal = Decimal("0")
     currency_code: str
     provider: str
     expires_at: datetime | None = None
@@ -1026,12 +1026,10 @@ class WalletDepositOut(BaseModel):
 class WalletWithdrawCreateReq(BaseModel):
     currency_code: str
     amount: Decimal
-    # P11-W1 — optional so the CryptoBot Transfer payout (auto-mode +
-    # ``CRYPTOBOT_TOKEN`` configured) can omit the on-chain address;
-    # the recipient is identified by ``users.tg_user_id`` upstream.
-    # Whether the field is actually required is decided in
-    # ``services_wallet.create_withdrawal`` (auto-mode allows None;
-    # manual mode rejects an empty address with 400).
+    # Optional for the current CryptoBot Transfer payout model: the
+    # recipient is the user's Telegram identity, not an on-chain address.
+    # Legacy clients may still send an address; the service sanitises it
+    # and applies the currency regex when one is configured.
     address: str | None = None
 
     @field_validator("amount")
@@ -1451,12 +1449,34 @@ class AdminDealDetailOut(BaseModel):
     confirm_seller: bool
     events: list[AdminDealEventItem]
     messages: list[DealMessageOut]
+    pending_approvals: list[AdminApprovalOut] = Field(default_factory=list)
+
+
+class AdminApprovalOut(BaseModel):
+    id: int
+    action: str
+    target_type: str
+    target_id: int
+    status: str
+    requested_by_id: int | None
+    approved_by_id: int | None = None
+    executed_by_id: int | None = None
+    currency_code: str | None = None
+    amount: Decimal | None = None
+    amount_usd_estimate: Decimal | None = None
+    reason: str | None = None
+    payload: dict[str, Any] | None = None
+    created_at: datetime
+    approved_at: datetime | None = None
+    executed_at: datetime | None = None
+    rejected_at: datetime | None = None
 
 
 class AdminDealActionResult(BaseModel):
     """Generic response after a state-changing admin action on a deal."""
 
     deal: AdminDealDetailOut
+    pending_approval: AdminApprovalOut | None = None
 
 
 class AdminDealForceOut(BaseModel):
@@ -1466,6 +1486,7 @@ class AdminDealForceOut(BaseModel):
     """
 
     reason: str | None = None
+    approval_id: int | None = None
 
     @field_validator("reason")
     @classmethod
@@ -1492,6 +1513,7 @@ class AdminDealSplitIn(BaseModel):
 
     buyer_percent: Decimal
     reason: str | None = None
+    approval_id: int | None = None
 
     @field_validator("buyer_percent")
     @classmethod
@@ -1716,6 +1738,10 @@ class AdminUserBalanceOut(BaseModel):
     amount: Decimal
     locked: Decimal
     total: Decimal
+    usd_rate: Decimal | None = None
+    usd_estimate: Decimal | None = None
+    usd_rate_source: str | None = None
+    usd_rate_observed_at: datetime | None = None
     updated_at: datetime | None
 
 
@@ -1732,14 +1758,8 @@ class AdminWalletListItem(BaseModel):
     is_banned: bool
     is_frozen: bool
     balances: list[AdminUserBalanceOut]
-    # Audit §5.4 — this is **not** a real USD valuation. The field is a
-    # naive sum of every per-currency ``total`` (``amount + locked``)
-    # treating each unit as 1 USD, because the admin panel doesn't have
-    # a price oracle wired up. Holding 1 BTC therefore reports
-    # ``total_usd_estimate=1``, not ~70 000. The admin UI must label
-    # the column as an approximation; do NOT use it for accounting.
-    # M-3 wire format — see ``AdminDealListItem.amount`` for rationale.
-    total_usd_estimate: Decimal
+    total_usd_estimate: Decimal | None = None
+    usd_estimate_missing_rates: list[str] = Field(default_factory=list)
 
 
 class AdminWalletListOut(BaseModel):
@@ -1794,6 +1814,47 @@ class AdminWalletAdjustIn(BaseModel):
 
 
 # ── Admin: deposits queue (PR-CDE) ─────────────────────
+
+
+class AdminCurrencyRateOut(BaseModel):
+    currency_id: int
+    currency_code: str
+    usd_rate: Decimal
+    source: str
+    observed_at: datetime
+    updated_at: datetime | None = None
+    updated_by_id: int | None = None
+
+
+class AdminCurrencyRateUpsertIn(BaseModel):
+    currency_code: str
+    usd_rate: Decimal
+    source: str = "manual"
+    observed_at: datetime | None = None
+
+    @field_validator("currency_code")
+    @classmethod
+    def _rate_code_ok(cls, v: str) -> str:
+        v = (v or "").strip().upper()
+        if not v or len(v) > 16:
+            raise ValueError("Invalid currency code")
+        return v
+
+    @field_validator("usd_rate")
+    @classmethod
+    def _rate_ok(cls, v: Decimal | float) -> Decimal:
+        d = _reject_non_finite_money(v)
+        if d is None or d <= 0:
+            raise ValueError("USD rate must be greater than zero")
+        return d
+
+    @field_validator("source")
+    @classmethod
+    def _source_ok(cls, v: str) -> str:
+        v = (v or "manual").strip() or "manual"
+        if len(v) > 64:
+            raise ValueError("source is too long (<=64)")
+        return v
 
 
 class AdminDepositOut(BaseModel):
@@ -1960,10 +2021,10 @@ class AdminSettingsUpdateIn(BaseModel):
 
     @field_validator("pin_reset_price_usd")
     @classmethod
-    def _price_ok(cls, v: Decimal | float | None) -> Decimal | None:
+    def _price_ok(cls, v: Decimal | float | int | None) -> Decimal | None:
         if v is None:
             return v
-        d = Decimal(str(v)) if isinstance(v, float) else v
+        d = Decimal(str(v))
         if d < 0:
             raise ValueError("Цена не может быть отрицательной")
         return d
@@ -2360,6 +2421,13 @@ class AdminAnalyticsTopListsOut(BaseModel):
 # ── Admin: system (PR-CDE) ─────────────────────────────
 
 
+class OperationalAlertOut(BaseModel):
+    name: str
+    severity: Literal["info", "warning", "critical"]
+    count: int
+    detail: str
+
+
 class AdminSystemStatusOut(BaseModel):
     db_ok: bool
     db_latency_ms: float | None
@@ -2370,6 +2438,7 @@ class AdminSystemStatusOut(BaseModel):
     backend_version: str
     started_at: datetime | None
     uptime_seconds: float
+    alerts: list[OperationalAlertOut] = Field(default_factory=list)
 
 
 # ── Admin: 2FA (PR-CDE) ────────────────────────────────

@@ -440,7 +440,7 @@ PinUser = Annotated[User, Depends(require_pin_session)]
 # avoided at import time. Once resolved, the value is cached in the
 # module's ``__dict__`` so subsequent lookups are direct.
 def __getattr__(name: str):
-    if name in ("AdminUser", "AdminOrArbiterUser"):
+    if name in ("AdminUser", "AdminOrArbiterUser", "TotpOrArbiterUser"):
         from . import admin_guard
 
         value = getattr(admin_guard, name)

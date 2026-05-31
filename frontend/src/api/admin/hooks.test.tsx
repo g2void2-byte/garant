@@ -127,11 +127,11 @@ function hasKey(keys: readonly (readonly unknown[])[], expected: readonly unknow
 
 describe("useAdminDealAction (force-release / force-refund) — V5-F-5 invalidations", () => {
   beforeEach(() => {
-    apiState.postResponse = makeDealDetail();
+    apiState.postResponse = { deal: makeDealDetail() };
   });
 
   it("force-release invalidates buyer + seller user-detail query keys", async () => {
-    apiState.postResponse = makeDealDetail();
+    apiState.postResponse = { deal: makeDealDetail() };
     const { invalidateSpy, wrapper } = makeHarness();
 
     const { result } = renderHook(() => useAdminForceRelease(), { wrapper });
@@ -150,10 +150,12 @@ describe("useAdminDealAction (force-release / force-refund) — V5-F-5 invalidat
   });
 
   it("force-refund invalidates buyer + seller user-detail query keys", async () => {
-    apiState.postResponse = makeDealDetail({
-      buyer: makeBalance({ user_id: 42 }),
-      seller: makeBalance({ user_id: 99 }),
-    });
+    apiState.postResponse = {
+      deal: makeDealDetail({
+        buyer: makeBalance({ user_id: 42 }),
+        seller: makeBalance({ user_id: 99 }),
+      }),
+    };
     const { invalidateSpy, wrapper } = makeHarness();
 
     const { result } = renderHook(() => useAdminForceRefund(), { wrapper });

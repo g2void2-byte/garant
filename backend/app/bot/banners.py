@@ -258,7 +258,8 @@ def _boost_alpha(im: Image.Image, factor: float = 8.0) -> Image.Image:
     if im.mode != "RGBA":
         im = im.convert("RGBA")
     r, g, b, a = im.split()
-    a = a.point(lambda v: min(255, int(v * factor)))
+    lut = [min(255, int(v * factor)) for v in range(256)]
+    a = a.point(lut)
     return Image.merge("RGBA", (r, g, b, a))
 
 

@@ -25,6 +25,10 @@ const mockState = vi.hoisted(() => ({
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
   },
+  upsertRate: {
+    mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
+    isPending: false,
+  },
   shouldRender: true as boolean,
   lastAdjustUserId: undefined as number | undefined,
   lastWalletsQuery: undefined as { q?: string; page?: number } | undefined,
@@ -36,6 +40,8 @@ vi.mock("@/api/admin/hooks", () => ({
     return { data: mockState.list, isLoading: mockState.loading };
   },
   useAdminCurrencies: () => ({ data: mockState.currencies }),
+  useAdminCurrencyRates: () => ({ data: [] }),
+  useAdminUpsertCurrencyRate: () => mockState.upsertRate,
   useAdminAdjustBalance: (userId: number) => {
     mockState.lastAdjustUserId = userId;
     return mockState.adjust;
@@ -109,7 +115,6 @@ function makeUserBalance() {
         updated_at: null,
       },
     ],
-    total_usd_estimate: "105",
   };
 }
 
@@ -143,6 +148,7 @@ beforeEach(() => {
     },
   ];
   mockState.adjust = { mutateAsync: vi.fn(), isPending: false };
+  mockState.upsertRate = { mutateAsync: vi.fn(), isPending: false };
   mockState.shouldRender = true;
   mockState.lastAdjustUserId = undefined;
   mockState.lastWalletsQuery = undefined;

@@ -14,13 +14,11 @@ Why a class instead of three functions?
   one ``__call__`` body. Adding a new dimension (IP allowlist,
   per-actor rate limit, audit-action propagation) is one edit
   instead of three.
-* **Composable.** A route needing a non-standard combination — say,
-  TOTP-gated arbiter endpoints — declares
-  ``Annotated[User, Depends(AdminGuard(require_totp=True, allow_arbiter=True))]``
-  inline without adding a fourth top-level alias.
+* **Composable.** The common combinations below cover current admin
+  endpoints, including arbiter endpoints that also need TOTP.
 * **Cache-friendly.** FastAPI's dependency cache keys on the callable
-  identity. The three module-level singletons below give the most
-  common combinations a stable identity so FastAPI can de-duplicate
+  identity. The module-level singletons below give the most common
+  combinations a stable identity so FastAPI can de-duplicate
   the resolution within a request even across multiple sub-deps.
 
 What this **does not** do (intentionally):
@@ -55,9 +53,11 @@ __all__ = [
     "ADMIN_GUARD",
     "ADMIN_GUARD_TOTP",
     "ADMIN_GUARD_OR_ARBITER",
+    "ADMIN_GUARD_TOTP_OR_ARBITER",
     "AdminUser",
     "TotpUser",
     "AdminOrArbiterUser",
+    "TotpOrArbiterUser",
 ]
 
 
@@ -76,11 +76,8 @@ class AdminGuard:
         # Arbiter-or-admin endpoint (was ``AdminOrArbiterUser``):
         async def list_disputes(_u: AdminOrArbiterUser, ...): ...
 
-        # Non-standard combination — declare inline:
-        async def special(
-            user: Annotated[User, Depends(AdminGuard(require_totp=True, allow_arbiter=True))],
-            ...,
-        ): ...
+        # Arbiter-or-admin write endpoint with TOTP:
+        async def mutate_dispute(user: TotpOrArbiterUser, ...): ...
 
     Both flags default to ``False`` to keep the no-argument
     constructor a faithful replacement for the previous
@@ -127,13 +124,13 @@ class AdminGuard:
         return user
 
 
-# Module-level singletons. Three combinations cover every current
-# admin endpoint; declaring them once gives FastAPI a stable
+# Module-level singletons. Declaring them once gives FastAPI a stable
 # dependency identity (handy for the per-request cache) and keeps
 # the call sites short.
 ADMIN_GUARD = AdminGuard()
 ADMIN_GUARD_TOTP = AdminGuard(require_totp=True)
 ADMIN_GUARD_OR_ARBITER = AdminGuard(allow_arbiter=True)
+ADMIN_GUARD_TOTP_OR_ARBITER = AdminGuard(require_totp=True, allow_arbiter=True)
 
 
 # Backwards-compatible type aliases. Every router in the codebase
@@ -144,3 +141,4 @@ ADMIN_GUARD_OR_ARBITER = AdminGuard(allow_arbiter=True)
 AdminUser = Annotated[User, Depends(ADMIN_GUARD)]
 TotpUser = Annotated[User, Depends(ADMIN_GUARD_TOTP)]
 AdminOrArbiterUser = Annotated[User, Depends(ADMIN_GUARD_OR_ARBITER)]
+TotpOrArbiterUser = Annotated[User, Depends(ADMIN_GUARD_TOTP_OR_ARBITER)]

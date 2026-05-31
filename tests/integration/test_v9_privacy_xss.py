@@ -30,7 +30,13 @@ async def _bootstrap(client, *, tg_user_id: int, username: str) -> int:
     init = signed_init_data(tg_user_id, username)
     resp = await client.get("/api/me", headers=auth_headers(init))
     assert resp.status_code == 200, resp.text
-    return resp.json()["id"]
+    uid = resp.json()["id"]
+    async with async_session() as session:
+        u = await session.get(User, uid)
+        if u:
+            u.deals_total = 1
+            await session.commit()
+    return uid
 
 
 async def _make_admin(client, tg: int = 1) -> tuple[str, int]:

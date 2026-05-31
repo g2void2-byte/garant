@@ -26,6 +26,7 @@ from sqlalchemy import and_, func, or_, select, update
 
 from ... import notifier
 from ...admin_audit import log_admin_action
+from ...admin_guard import TotpOrArbiterUser
 from ...deps import AdminOrArbiterUser, SessionDep
 from ...models import Deal, DealStatus, Notification, NotificationType
 from ...rate_limit import rate_limit
@@ -121,7 +122,7 @@ async def list_arbitration(
 @router.post("/{deal_id}/claim", status_code=200)
 async def claim_arbitration(
     deal_id: int,
-    user: AdminOrArbiterUser,
+    user: TotpOrArbiterUser,
     session: SessionDep,
     request: Request,
 ) -> dict:

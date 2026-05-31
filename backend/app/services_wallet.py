@@ -7,8 +7,8 @@ review or during the cool-down window).
 
 from __future__ import annotations
 
-import concurrent.futures
 import logging
+import multiprocessing as mp
 import re
 from datetime import timedelta
 from decimal import Decimal
@@ -43,6 +43,8 @@ from .models import (
     WalletWithdrawal,
     WalletWithdrawStatus,
 )
+from .money import quantize_money
+from .services_ledger import record_balance_ledger, record_synthetic_ledger
 from .time_utils import utcnow
 
 logger = logging.getLogger(__name__)
@@ -68,23 +70,36 @@ _WITHDRAW_ADDRESS_FORBIDDEN_CHARS = frozenset(chr(b) for b in [*range(0, 32), 0x
 
 
 _REGEX_TIMEOUT_SECONDS = 2
-_regex_pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+
+def _regex_fullmatch_worker(pattern: str, string: str, queue: Any) -> None:
+    try:
+        queue.put(("ok", re.fullmatch(pattern, string) is not None))
+    except re.error as exc:
+        queue.put(("re_error", str(exc)))
+    except Exception as exc:  # pragma: no cover - defensive child-process boundary
+        queue.put(("error", repr(exc)))
 
 
 def _safe_fullmatch(pattern: str, string: str) -> bool:
-    """``re.fullmatch`` with a hard timeout.
+    """``re.fullmatch`` with a real process-level timeout.
 
     Admin-controlled ``address_regex`` is stored in the DB and could
     contain pathological patterns (e.g. ``(a+)+$``) that cause
     catastrophic backtracking. The input is already capped at
     ``_WITHDRAW_ADDRESS_MAX_LEN`` (256) chars, but even 256 chars
-    can stall a pathological NFA. Running the match in a thread with
-    a timeout ensures we never block the event loop.
+    can stall a pathological NFA. A thread timeout cannot kill the
+    underlying regex, so run the match in a child process and terminate
+    it on timeout.
     """
-    try:
-        future = _regex_pool.submit(re.fullmatch, pattern, string)
-        return future.result(timeout=_REGEX_TIMEOUT_SECONDS) is not None
-    except concurrent.futures.TimeoutError:
+    ctx = mp.get_context("spawn")
+    queue = ctx.Queue(maxsize=1)
+    proc = ctx.Process(target=_regex_fullmatch_worker, args=(pattern, string, queue), daemon=True)
+    proc.start()
+    proc.join(_REGEX_TIMEOUT_SECONDS)
+    if proc.is_alive():
+        proc.kill()
+        proc.join(timeout=1)
         logger.warning(
             "address_regex timed out after %ss for pattern %.60s",
             _REGEX_TIMEOUT_SECONDS,
@@ -92,13 +107,31 @@ def _safe_fullmatch(pattern: str, string: str) -> bool:
             extra={"event": "wallet.regex.timeout"},
         )
         return False
-    except re.error:
+    try:
+        kind, value = queue.get_nowait()
+    except Exception:
+        logger.warning(
+            "address_regex worker exited without result for pattern %.60s",
+            pattern,
+            extra={"event": "wallet.regex.worker_failed"},
+        )
+        return False
+    if kind == "ok":
+        return bool(value)
+    if kind == "re_error":
         logger.warning(
             "address_regex is invalid: %.60s",
             pattern,
             extra={"event": "wallet.regex.invalid"},
         )
         return False
+    logger.warning(
+        "address_regex worker failed for pattern %.60s: %s",
+        pattern,
+        value,
+        extra={"event": "wallet.regex.worker_error"},
+    )
+    return False
 
 
 def _truncate_address(addr: str, *, head: int = 6, tail: int = 6) -> str:
@@ -284,6 +317,7 @@ async def create_deposit_invoice(
     provider: str = "cryptobot",
     *,
     min_check: bool = True,
+    commit: bool = True,
 ) -> WalletDeposit:
     """Create a wallet-deposit invoice on the configured ``provider``.
 
@@ -319,9 +353,13 @@ async def create_deposit_invoice(
         raise HTTPException(400, f"Неизвестный тип депозита: {purpose}")
 
     if provider == "crystalpay":
-        return await _create_crystalpay_deposit(session, user, currency, amount, purpose)
+        return await _create_crystalpay_deposit(
+            session, user, currency, amount, purpose, commit=commit
+        )
     if provider == "cryptobot":
-        return await _create_cryptobot_deposit(session, user, currency, amount, purpose)
+        return await _create_cryptobot_deposit(
+            session, user, currency, amount, purpose, commit=commit
+        )
     raise HTTPException(400, f"Неизвестный провайдер: {provider}")
 
 
@@ -338,6 +376,8 @@ async def _create_cryptobot_deposit(
     currency: Currency,
     amount: float,
     purpose: str,
+    *,
+    commit: bool = True,
 ) -> WalletDeposit:
     if not is_cryptopay_configured():
         raise HTTPException(502, "CryptoBot не настроен")
@@ -424,7 +464,9 @@ async def _create_cryptobot_deposit(
         purpose=purpose,
     )
     session.add(deposit)
-    await session.commit()
+    await session.flush()
+    if commit:
+        await session.commit()
     return deposit
 
 
@@ -434,6 +476,8 @@ async def _create_crystalpay_deposit(
     currency: Currency,
     amount: float,
     purpose: str,
+    *,
+    commit: bool = True,
 ) -> WalletDeposit:
     if not settings.crystalpay_login or not settings.crystalpay_secret:
         raise HTTPException(502, "Crystalpay не настроен")
@@ -451,10 +495,12 @@ async def _create_crystalpay_deposit(
     # is credited in near real time instead of relying on the
     # ``poll_deposit_status`` fallback (which only fires when the
     # user re-opens the deposit detail page). Only sent when the
-    # configured ``WEBAPP_URL`` is HTTPS — Crystalpay refuses to fire
-    # callbacks at non-public hosts and we'd otherwise leak the
-    # localhost URL into the invoice metadata.
-    base = settings.webapp_url.rstrip("/")
+    # configured public backend/webhook base is HTTPS — Crystalpay refuses
+    # to fire callbacks at non-public hosts and we'd otherwise leak the
+    # localhost URL into the invoice metadata. ``WEBAPP_URL`` remains a
+    # fallback for old monolith deploys; split frontend/backend deploys
+    # should set ``WEBHOOK_BASE_URL`` or ``PUBLIC_API_URL``.
+    base = (settings.webhook_base_url or settings.public_api_url or settings.webapp_url).rstrip("/")
     callback_url: str | None = None
     if base.lower().startswith("https://"):
         callback_url = base + "/api/payments/webhook/crystalpay"
@@ -516,7 +562,9 @@ async def _create_crystalpay_deposit(
         purpose=purpose,
     )
     session.add(deposit)
-    await session.commit()
+    await session.flush()
+    if commit:
+        await session.commit()
     return deposit
 
 
@@ -551,6 +599,15 @@ async def credit_deposit(
         return deposit
 
     purpose = deposit.purpose or "wallet"
+    currency = await session.get(Currency, deposit.currency_id)
+    decimals = currency.decimals if currency is not None else 8
+    nominal_amount = quantize_money(Decimal(str(deposit.amount)), decimals)
+    credit_amount = nominal_amount
+    reported_amount: Decimal | None = None
+    if paid_amount is not None:
+        reported_amount = quantize_money(Decimal(str(paid_amount)), decimals)
+        if reported_amount > credit_amount:
+            credit_amount = reported_amount
 
     # P10 — ``deal_topup`` deposits drive the commission-via-invoice
     # flow. The settlement logic (lock the deal principal, advance
@@ -582,11 +639,34 @@ async def credit_deposit(
             return deposit
         # See M5 in services_deals._debit for why this stays Decimal
         # end-to-end instead of round-tripping through ``float``.
-        user_row.trust_deposit_balance = Decimal(str(user_row.trust_deposit_balance)) + Decimal(
-            str(deposit.amount)
+        before_trust = Decimal(str(user_row.trust_deposit_balance))
+        after_trust = before_trust + credit_amount
+        user_row.trust_deposit_balance = (
+            after_trust
         )
+        deposit.amount = credit_amount
+        if reported_amount is not None:
+            deposit.paid_amount = reported_amount
         deposit.status = WalletDepositStatus.paid
         deposit.paid_at = utcnow()
+        record_synthetic_ledger(
+            session,
+            user_id=user_row.id,
+            currency_id=deposit.currency_id,
+            before_amount=before_trust,
+            after_amount=after_trust,
+            event_type="deposit.trust_credit",
+            source_type="deposit",
+            source_id=deposit.id,
+            provider=deposit.provider.value,
+            provider_event_id=deposit.provider_invoice_id,
+            meta={
+                "purpose": purpose,
+                "reported_amount": str(reported_amount)
+                if reported_amount is not None
+                else None,
+            },
+        )
     else:
         # take a FOR UPDATE lock on the user's balance row before
         # mutating it. Two concurrent webhook deliveries that race past
@@ -614,15 +694,36 @@ async def credit_deposit(
             return deposit
         # See M5 in services_deals._debit for why this stays Decimal end-
         # to-end instead of round-tripping through ``float``.
-        bal.amount = Decimal(str(bal.amount)) + Decimal(str(deposit.amount))
+        before_amount = Decimal(str(bal.amount))
+        before_locked = Decimal(str(bal.locked))
+        bal.amount = Decimal(str(bal.amount)) + credit_amount
+        deposit.amount = credit_amount
+        if reported_amount is not None:
+            deposit.paid_amount = reported_amount
         deposit.status = WalletDepositStatus.paid
         deposit.paid_at = utcnow()
+        record_balance_ledger(
+            session,
+            bal,
+            before_amount=before_amount,
+            before_locked=before_locked,
+            event_type="deposit.wallet_credit",
+            source_type="deposit",
+            source_id=deposit.id,
+            provider=deposit.provider.value,
+            provider_event_id=deposit.provider_invoice_id,
+            meta={
+                "purpose": purpose,
+                "reported_amount": str(reported_amount)
+                if reported_amount is not None
+                else None,
+            },
+        )
 
     # A9-M-2 — split-API: insert the notification row atomically with
     # the balance credit + deposit-status flip, dispatch WS/DM after
     # commit so a rolled-back transaction never leaks a "deposit
     # credited" toast to the user.
-    currency = await session.get(Currency, deposit.currency_id)
     pending: tuple[Notification, dict[str, Any] | None] | None = None
     if currency:
         pending = await notifier.insert(
@@ -630,7 +731,7 @@ async def credit_deposit(
             deposit.user_id,
             NotificationType.deposits,
             "Пополнение зачислено",
-            f"+{deposit.amount} {currency.code} зачислены на ваш баланс",
+            f"+{credit_amount} {currency.code} зачислены на ваш баланс",
             {"deposit_id": deposit.id, "currency": currency.code},
         )
 
@@ -915,17 +1016,9 @@ async def _auto_withdraw_enabled(session: AsyncSession) -> bool:
 def is_cryptopay_configured(token: str | None = None) -> bool:
     """Return True iff a real (non-placeholder) CryptoBot token is configured.
 
-    7.2 — the placeholder check is a heuristic, not a hard guarantee:
-    we treat any token that ``startswith("000")`` as the well-known
-    docker-compose default (``CRYPTOBOT_TOKEN=000000:FAKE``) so that
-    dev/CI environments don't accidentally fire a network call to the
-    real CryptoBot API on every withdrawal/transfer. A real CryptoBot
-    token starts with the app id (numeric, currently 4–6 digits)
-    followed by ``:`` — a real token whose app id starts with ``000``
-    is theoretically possible but extremely unlikely in practice. If
-    the upstream switches to longer / non-numeric prefixes (or if we
-    want to harden this further), swap the heuristic for a length /
-    prefix-and-format check.
+    Reject only the placeholders shipped in this repository. Earlier
+    code rejected any token starting with ``000``, which could disable
+    a real CryptoBot app whose numeric id happens to have that prefix.
 
     ``token`` defaults to ``settings.cryptobot_token`` so callers can
     use the no-arg form, but admin/system endpoints that pre-resolve
@@ -934,7 +1027,14 @@ def is_cryptopay_configured(token: str | None = None) -> bool:
     """
     if token is None:
         token = settings.cryptobot_token or ""
-    return bool(token) and not token.startswith("000")
+    token = token.strip()
+    placeholders = {
+        "000000:FAKE",
+        "0000000000:FAKE",
+        "000000:REPLACE_ME",
+        "0000000000:REPLACE_ME",
+    }
+    return bool(token) and token not in placeholders
 
 
 # Internal alias kept for the historical name; new callers should use
@@ -978,23 +1078,16 @@ async def create_withdrawal(
         # byte / multi-megabyte payload can't bloat the row or split
         # the admin DM template later.
         address = _sanitise_withdraw_address(address) or None
+        if address and currency.address_regex and not _safe_fullmatch(
+            currency.address_regex, address
+        ):
+            raise HTTPException(400, "Адрес не соответствует формату валюты")
 
-    # Audit (continuation) M-3 — refuse the withdrawal *before* the
-    # Phase 1 debit when the row would land in a state we have no
-    # path to clear. The legacy code committed the
-    # ``amount → locked`` debit, queued the row in ``pending``, and
-    # only then noticed there were no admins — leaving the user's
-    # funds trapped in ``locked`` with no automated recovery path
-    # (the sweep loop in :func:`sweep_stale_withdrawals` only fires
-    # when CryptoBot is configured; manual-mode-only deploys have no
-    # ``getTransfers`` reconciler to fall back to). Refusing upfront
-    # with 503 surfaces the misconfiguration to the user (and
-    # observability stack) instead of trapping their funds.
-    #
-    # The check is skipped when CryptoBot is configured because in
-    # that case the auto-mode path will either succeed (no admin
-    # needed) or fail to ``pending`` where the H-2 sweep loop will
-    # reconcile via ``getTransfers``.
+    # Refuse before the Phase 1 debit when neither CryptoBot nor a human
+    # admin can process the queued row. If CryptoBot is configured, a
+    # pending row is recoverable through the admin Approve path and
+    # CryptoBot transfer idempotency; without CryptoBot, at least one
+    # admin must exist to handle the operational fallback.
     if not _cryptopay_configured():
         admin_count = (
             await session.execute(select(User.id).where(User.is_admin.is_(True)).limit(1))
@@ -1019,6 +1112,7 @@ async def create_withdrawal(
     bal = await lock_user_balance(session, user.id, currency.id)
     amount_d = Decimal(str(amount))
     current = Decimal(str(bal.amount))
+    before_locked = Decimal(str(bal.locked))
     if current < amount_d:
         raise HTTPException(400, "Недостаточно средств")
 
@@ -1037,6 +1131,17 @@ async def create_withdrawal(
         status=WalletWithdrawStatus.pending,
     )
     session.add(withdrawal)
+    await session.flush()
+    record_balance_ledger(
+        session,
+        bal,
+        before_amount=current,
+        before_locked=before_locked,
+        event_type="withdrawal.lock",
+        source_type="withdrawal",
+        source_id=withdrawal.id,
+        meta={"status": withdrawal.status.value},
+    )
     await session.commit()
 
     # If auto-mode is on and CryptoBot is configured, fire the transfer
@@ -1187,9 +1292,22 @@ async def create_withdrawal(
                 )
             ).scalar_one_or_none()
             if bal_locked is not None:
+                sent_before_amount = Decimal(str(bal_locked.amount))
+                sent_before_locked = Decimal(str(bal_locked.locked))
                 bal_locked.locked = max(
                     Decimal(0),
                     Decimal(str(bal_locked.locked)) - amount_d,
+                )
+                record_balance_ledger(
+                    session,
+                    bal_locked,
+                    before_amount=sent_before_amount,
+                    before_locked=sent_before_locked,
+                    event_type="withdrawal.sent",
+                    source_type="withdrawal",
+                    source_id=w_locked.id,
+                    provider="cryptobot",
+                    provider_event_id=str(tr.transfer_id),
                 )
 
             w_locked.status = WalletWithdrawStatus.sent
@@ -1257,14 +1375,10 @@ async def create_withdrawal(
                     },
                 )
     else:
-        # Audit L4 — manual mode with no admins in the system means
-        # this row will sit in ``pending`` indefinitely with the user's
-        # balance trapped in ``locked``. We can't refuse the
-        # withdrawal here (Phase 1 has already committed the
-        # ``amount → locked`` debit; rolling back would require its
-        # own three-phase dance), so we log loudly instead. Operators
-        # should monitor this event in their observability stack and
-        # either provision an admin or process the row manually.
+        # CryptoBot is configured, but auto-send is disabled or failed and
+        # no admin exists to press Approve. The row is still recoverable by
+        # provisioning an admin later; emit a loud operational signal rather
+        # than silently hiding the queue item.
         logger.error(
             "create_withdrawal #%s queued in manual mode but no admins exist",
             withdrawal.id,

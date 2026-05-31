@@ -245,6 +245,25 @@ async def test_services_search_punctuation_only_returns_all(client):
 # ── /api/users?q= ──────────────────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+async def seed_searcher_user():
+    async with async_session() as session:
+        u1 = User(
+            tg_user_id=3999,
+            username="searcher",
+            display_name="Searcher",
+            deals_total=1,
+        )
+        u2 = User(
+            tg_user_id=2999,
+            username="buyer",
+            display_name="Buyer",
+            deals_total=1,
+        )
+        session.add_all([u1, u2])
+        await session.commit()
+
+
 async def _seed_user_only(tg: int, username: str, display_name: str = "") -> int:
     async with async_session() as session:
         u = User(

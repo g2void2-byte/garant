@@ -885,6 +885,37 @@ class Currency(Base):
     kind: Mapped[str] = mapped_column(String(8), default="crypto", server_default="crypto")
 
 
+class CurrencyUsdRate(Base):
+    """Admin-maintained USD rate for a currency.
+
+    The platform deliberately does not invent USD estimates by adding
+    native units together. A USD projection is available only when an
+    explicit rate row exists, with source and observation timestamp
+    carried alongside the estimate.
+    """
+
+    __tablename__ = "currency_usd_rates"
+    __table_args__ = (
+        UniqueConstraint("currency_id", name="uq_currency_usd_rates_currency_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
+    usd_rate: Mapped[float] = mapped_column(Numeric(28, 8))
+    source: Mapped[str] = mapped_column(String(64), default="manual", server_default="manual")
+    observed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    currency: Mapped[Currency] = relationship(foreign_keys=[currency_id], lazy="selectin")
+    updated_by: Mapped[User | None] = relationship(foreign_keys=[updated_by_id], lazy="selectin")
+
+
 class UserBalance(Base):
     """A user's balance in a specific currency.
 
@@ -915,6 +946,37 @@ class UserBalance(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+    user: Mapped[User] = relationship(foreign_keys=[user_id], lazy="selectin")
+    currency: Mapped[Currency] = relationship(foreign_keys=[currency_id], lazy="selectin")
+
+
+class WalletLedgerEntry(Base):
+    """Append-only wallet ledger entry for every balance mutation.
+
+    ``UserBalance`` remains the materialized balance. This table is
+    the forensic trail: before/after snapshots, deltas, source ids and
+    provider correlation keys for deposits/webhooks/deals/admin edits.
+    """
+
+    __tablename__ = "wallet_ledger_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    currency_id: Mapped[int] = mapped_column(ForeignKey("currencies.id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    source_type: Mapped[str] = mapped_column(String(32), index=True)
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    provider_event_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    amount_before: Mapped[float] = mapped_column(Numeric(28, 8), default=0)
+    amount_delta: Mapped[float] = mapped_column(Numeric(28, 8), default=0)
+    amount_after: Mapped[float] = mapped_column(Numeric(28, 8), default=0)
+    locked_before: Mapped[float] = mapped_column(Numeric(28, 8), default=0)
+    locked_delta: Mapped[float] = mapped_column(Numeric(28, 8), default=0)
+    locked_after: Mapped[float] = mapped_column(Numeric(28, 8), default=0)
+    meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
     user: Mapped[User] = relationship(foreign_keys=[user_id], lazy="selectin")
     currency: Mapped[Currency] = relationship(foreign_keys=[currency_id], lazy="selectin")
@@ -992,6 +1054,57 @@ class WalletDeposit(Base):
 
     user: Mapped[User] = relationship(foreign_keys=[user_id], lazy="selectin")
     currency: Mapped[Currency] = relationship(foreign_keys=[currency_id], lazy="selectin")
+
+
+class ProviderWebhookEvent(Base):
+    """Raw provider webhook inbox with dedupe and processing status."""
+
+    __tablename__ = "provider_webhook_events"
+    __table_args__ = (
+        UniqueConstraint("provider", "event_id", name="uq_provider_webhook_events_provider_event"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), index=True)
+    event_id: Mapped[str] = mapped_column(String(128), index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    provider_invoice_id: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(
+        String(16), default="received", server_default="received", index=True
+    )
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    raw_sha256: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    headers_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    payload_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    result_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ProviderWebhookOutbox(Base):
+    """Durable queue of follow-up work created by webhook intake."""
+
+    __tablename__ = "provider_webhook_outbox"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    webhook_event_id: Mapped[int] = mapped_column(
+        ForeignKey("provider_webhook_events.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(
+        String(16), default="ready", server_default="ready", index=True
+    )
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    payload_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+    webhook_event: Mapped[ProviderWebhookEvent] = relationship(
+        foreign_keys=[webhook_event_id], lazy="selectin"
+    )
 
 
 class WalletWithdrawal(Base):
@@ -1100,6 +1213,47 @@ class Broadcast(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     actor: Mapped[User] = relationship(foreign_keys=[actor_id], lazy="selectin")
+
+
+class AdminApprovalRequest(Base):
+    """Maker-checker request for high-risk admin money movement."""
+
+    __tablename__ = "admin_approval_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    target_type: Mapped[str] = mapped_column(String(32), index=True)
+    target_id: Mapped[int] = mapped_column(Integer, index=True)
+    status: Mapped[str] = mapped_column(
+        String(16), default="pending", server_default="pending", index=True
+    )
+    requested_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    approved_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    executed_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    currency_id: Mapped[int | None] = mapped_column(ForeignKey("currencies.id"), nullable=True)
+    rate_id: Mapped[int | None] = mapped_column(ForeignKey("currency_usd_rates.id"), nullable=True)
+    amount: Mapped[float | None] = mapped_column(Numeric(28, 8), nullable=True)
+    amount_usd_estimate: Mapped[float | None] = mapped_column(Numeric(28, 8), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    requested_by: Mapped[User | None] = relationship(
+        foreign_keys=[requested_by_id], lazy="selectin"
+    )
+    approved_by: Mapped[User | None] = relationship(foreign_keys=[approved_by_id], lazy="selectin")
+    executed_by: Mapped[User | None] = relationship(foreign_keys=[executed_by_id], lazy="selectin")
+    currency: Mapped[Currency | None] = relationship(foreign_keys=[currency_id], lazy="selectin")
+    rate: Mapped[CurrencyUsdRate | None] = relationship(foreign_keys=[rate_id], lazy="selectin")
 
 
 class AdminAuditLog(Base):

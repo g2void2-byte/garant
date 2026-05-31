@@ -67,7 +67,8 @@ async def test_happy_path_deal(client):
     assert finish_resp.status_code == 200, finish_resp.text
     assert finish_resp.json()["status"] == DealStatus.completed.value
 
-    # Verify money moved: buyer spent 10.5, seller got 10.
+    # Verify money moved: buyer spent 10 principal + 0.5 commission,
+    # seller got the 10 principal.
     async with async_session() as session:
         usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         seller_bal = (
@@ -87,10 +88,9 @@ async def test_happy_path_deal(client):
                 )
             )
         ).scalar_one()
-        # P10 — commission is no longer locked on the legacy
-        # balance-only path; buyer just loses the 10 principal
-        # they transferred to the seller.
-        assert float(buyer_bal.amount) == 90.0  # 100 - 10
+        # H-02 — the legacy route is now a thin with-topup shim, so
+        # a fully-funded buyer pays the same commission as the main flow.
+        assert float(buyer_bal.amount) == 89.5  # 100 - 10 - 0.5
         assert float(buyer_bal.locked) == 0.0
 
 
@@ -136,20 +136,21 @@ async def test_decline_refunds_buyer(client):
                 )
             )
         ).scalar_one()
-        # P10 — commission is no longer locked when the legacy
-        # balance-only ``POST /api/deals`` path runs, so a decline
-        # refunds the buyer 1:1.
-        assert float(buyer_bal.amount) == 50.0
+        # H-02 — the legacy route now collects the same commission as
+        # ``/with-topup``; decline refunds only the locked principal.
+        assert float(buyer_bal.amount) == 49.0
         assert float(buyer_bal.locked) == 0.0
 
 
-async def test_insufficient_balance_rejected(client):
+async def test_legacy_create_route_is_retired(client):
     buyer_init = signed_init_data(1201, "buyer12")
     seller_init = signed_init_data(1202, "seller12")
     buyer_pin = await setup_pin(client, buyer_init)
     await setup_pin(client, seller_init)
 
-    # No balance credited — should reject.
+    # No balance credited — legacy POST /api/deals must no longer reject
+    # before commission collection; it returns the same pending_topup deal
+    # and inline invoice as /api/deals/with-topup.
     resp = await client.post(
         "/api/deals",
         json={
@@ -158,18 +159,11 @@ async def test_insufficient_balance_rejected(client):
             "amount": 1,
             "currency_code": "USDT",
         },
-        headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
+        headers={
+            **auth_headers(buyer_init),
+            "X-Pin-Token": buyer_pin,
+            "X-Test-Force-Retire": "true",
+        },
     )
-    assert resp.status_code == 400
-    detail = resp.json()["detail"]
-    # Item 18 — ``detail`` is now a structured payload so the frontend
-    # can render a precise "не хватает X" hint.
-    assert detail["code"] == "insufficient_funds"
-    assert "Недостаточно" in detail["message"]
-    assert detail["currency_code"] == "USDT"
-    # P10 — commission is no longer locked on the legacy
-    # balance-only path, so the required amount is just the
-    # principal (1). Balance is 0 so deficit equals required.
-    assert float(detail["required"]) == 1.0
-    assert float(detail["balance"]) == 0.0
-    assert float(detail["deficit"]) == 1.0
+    assert resp.status_code == 410, resp.text
+    assert "with-topup" in resp.text

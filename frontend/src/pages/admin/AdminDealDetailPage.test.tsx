@@ -28,6 +28,8 @@ const mockState = vi.hoisted(() => ({
   release: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   refund: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   split: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
+  approve: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
+  reject: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   arb: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   assign: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   del: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
@@ -38,6 +40,8 @@ vi.mock("@/api/admin/hooks", () => ({
   useAdminForceRelease: () => mockState.release,
   useAdminForceRefund: () => mockState.refund,
   useAdminSplitDeal: () => mockState.split,
+  useAdminApproveDealApproval: () => mockState.approve,
+  useAdminRejectDealApproval: () => mockState.reject,
   useAdminForceArbitration: () => mockState.arb,
   useAdminAssignArbiter: () => mockState.assign,
   useAdminDeleteDeal: () => mockState.del,
@@ -162,6 +166,8 @@ beforeEach(() => {
   mockState.release = { mutateAsync: vi.fn(), isPending: false };
   mockState.refund = { mutateAsync: vi.fn(), isPending: false };
   mockState.split = { mutateAsync: vi.fn(), isPending: false };
+  mockState.approve = { mutateAsync: vi.fn(), isPending: false };
+  mockState.reject = { mutateAsync: vi.fn(), isPending: false };
   mockState.arb = { mutateAsync: vi.fn(), isPending: false };
   mockState.assign = { mutateAsync: vi.fn(), isPending: false };
   mockState.del = { mutateAsync: vi.fn(), isPending: false };

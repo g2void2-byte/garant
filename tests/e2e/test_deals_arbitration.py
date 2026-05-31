@@ -10,6 +10,7 @@ from tests.helpers import (
     get_user_id_by_tg,
     setup_pin,
     signed_init_data,
+    with_totp,
 )
 
 
@@ -23,7 +24,7 @@ async def test_arbitration_resolved_for_buyer_refunds(client):
 
     buyer_pin = await setup_pin(client, buyer_init)
     seller_pin = await setup_pin(client, seller_init)
-    admin_pin = await setup_pin(client, admin_init)
+    await setup_pin(client, admin_init)
 
     async with async_session() as session:
         buyer_id = await get_user_id_by_tg(session, 2001)
@@ -63,16 +64,14 @@ async def test_arbitration_resolved_for_buyer_refunds(client):
     resolve_resp = await client.post(
         f"/api/deals/{deal_id}/resolve",
         json={"winner": "buyer", "note": "Seller unresponsive"},
-        headers={**auth_headers(admin_init), "X-Pin-Token": admin_pin},
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resolve_resp.status_code == 200, resolve_resp.text
     assert resolve_resp.json()["status"] == DealStatus.resolved_for_buyer.value
 
-    # Buyer refunded the 20 principal 1:1. P10 — the legacy
-    # ``create_deal`` path never locks commission in ``UserBalance``
-    # (commission rides on the deposit invoice via
-    # ``create_deal_with_topup``), so the refund returns the full
-    # principal and the buyer ends at their pre-deal balance.
+    # Buyer gets the 20 principal back. H-02 routes legacy creation
+    # through the same commission path, so the 1 USDT commission stays
+    # paid and the buyer ends one unit below the starting balance.
     async with async_session() as session:
         usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         bal = (
@@ -83,7 +82,7 @@ async def test_arbitration_resolved_for_buyer_refunds(client):
                 )
             )
         ).scalar_one()
-        assert float(bal.amount) == 100.0
+        assert float(bal.amount) == 99.0
         assert float(bal.locked) == 0.0
 
 
@@ -105,7 +104,7 @@ async def test_arbitration_resolution_bumps_winner_and_loser_counters(client):
 
     buyer_pin = await setup_pin(client, buyer_init)
     seller_pin = await setup_pin(client, seller_init)
-    admin_pin = await setup_pin(client, admin_init)
+    await setup_pin(client, admin_init)
 
     async with async_session() as session:
         buyer_id = await get_user_id_by_tg(session, 2401)
@@ -144,7 +143,7 @@ async def test_arbitration_resolution_bumps_winner_and_loser_counters(client):
     resp = await client.post(
         f"/api/deals/{deal_id}/resolve",
         json={"winner": "buyer", "note": "buyer wins"},
-        headers={**auth_headers(admin_init), "X-Pin-Token": admin_pin},
+        headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == DealStatus.resolved_for_buyer.value

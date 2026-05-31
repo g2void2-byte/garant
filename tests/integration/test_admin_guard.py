@@ -25,9 +25,11 @@ from backend.app.admin_guard import (
     ADMIN_GUARD,
     ADMIN_GUARD_OR_ARBITER,
     ADMIN_GUARD_TOTP,
+    ADMIN_GUARD_TOTP_OR_ARBITER,
     AdminGuard,
     AdminOrArbiterUser,
     AdminUser,
+    TotpOrArbiterUser,
     TotpUser,
 )
 from backend.app.db import async_session
@@ -46,6 +48,8 @@ def test_singletons_have_expected_flags():
     assert ADMIN_GUARD_TOTP.allow_arbiter is False
     assert ADMIN_GUARD_OR_ARBITER.require_totp is False
     assert ADMIN_GUARD_OR_ARBITER.allow_arbiter is True
+    assert ADMIN_GUARD_TOTP_OR_ARBITER.require_totp is True
+    assert ADMIN_GUARD_TOTP_OR_ARBITER.allow_arbiter is True
 
 
 def test_kwargs_only_constructor():
@@ -239,11 +243,14 @@ def test_aliases_are_distinct():
     a_admin = get_args(AdminUser)
     a_totp = get_args(TotpUser)
     a_arb = get_args(AdminOrArbiterUser)
+    a_totp_arb = get_args(TotpOrArbiterUser)
     # User as the base type:
     assert a_admin[0] is User
     assert a_totp[0] is User
     assert a_arb[0] is User
+    assert a_totp_arb[0] is User
     # Depends(...) wrappers must wrap three different singletons:
     assert a_admin[1].dependency is ADMIN_GUARD
     assert a_totp[1].dependency is ADMIN_GUARD_TOTP
     assert a_arb[1].dependency is ADMIN_GUARD_OR_ARBITER
+    assert a_totp_arb[1].dependency is ADMIN_GUARD_TOTP_OR_ARBITER

@@ -36,7 +36,7 @@ def main() -> None:
         "DATABASE_URL",
         "postgresql+asyncpg://garant:garant@localhost/garant",
     )
-    os.environ.setdefault("TELEGRAM_BOT_TOKEN", "0:openapi-dump")
+    os.environ.setdefault("BOT_TOKEN", "0:openapi-dump")
 
     sys.path.insert(0, str(repo_root))
     # Late import: env vars must be set first.

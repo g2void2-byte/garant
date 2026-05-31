@@ -1,4 +1,4 @@
-import ky, { type BeforeRequestHook, HTTPError, type NormalizedOptions } from "ky";
+import ky, { type BeforeRequestHook, HTTPError } from "ky";
 import { clearPinToken, getPinToken } from "@/lib/pin";
 import {
   clearTotpSessionToken,
@@ -95,19 +95,38 @@ export interface TotpRequiredDetail {
   method: string;
   /** Fully-qualified URL of the failed request. */
   url: string;
-  /** Request body as a clone — undefined for GET / no-body requests. */
+  /** Replay-safe request body snapshot — undefined for GET / no-body requests. */
   body: BodyInit | null | undefined;
   /** Raw header bag of the failed request, for replay. */
   headers: Record<string, string>;
 }
 
-function bodyFromInit(req: Request): BodyInit | null | undefined {
-  // ``Request`` consumes its body on first read; we only get one
-  // shot per failed request. Clone so a successful retry inside
-  // ``TotpGate`` can still send the original payload.
-  const clone = req.clone();
-  if (clone.body == null) return undefined;
-  return clone.body as unknown as BodyInit;
+type ReplayRequestSnapshot = Omit<TotpRequiredDetail, "detail">;
+
+const replaySnapshots = new WeakMap<Request, ReplayRequestSnapshot>();
+const replaySnapshotQueues = new Map<string, ReplayRequestSnapshot[]>();
+
+function replayKey(req: Request): string {
+  return `${req.method} ${req.url}`;
+}
+
+function rememberReplaySnapshot(req: Request, snapshot: ReplayRequestSnapshot) {
+  replaySnapshots.set(req, snapshot);
+  const key = replayKey(req);
+  const queue = replaySnapshotQueues.get(key) ?? [];
+  queue.push(snapshot);
+  if (queue.length > 10) queue.shift();
+  replaySnapshotQueues.set(key, queue);
+}
+
+function takeReplaySnapshot(req: Request): ReplayRequestSnapshot | undefined {
+  const direct = replaySnapshots.get(req);
+  if (direct) return direct;
+  const key = replayKey(req);
+  const queue = replaySnapshotQueues.get(key);
+  const fallback = queue?.shift();
+  if (queue && queue.length === 0) replaySnapshotQueues.delete(key);
+  return fallback;
 }
 
 function headersFromRequest(req: Request): Record<string, string> {
@@ -118,13 +137,31 @@ function headersFromRequest(req: Request): Record<string, string> {
   return out;
 }
 
-const attachAuthHeaders: BeforeRequestHook = (req: Request, _opts: NormalizedOptions) => {
+function attachAuthHeaders(req: Request) {
   const initData = getInitData();
   if (initData) req.headers.set("Authorization", `tma ${initData}`);
   const pinToken = getPinToken();
   if (pinToken) req.headers.set("X-Pin-Token", pinToken);
   const totpToken = getTotpSessionToken();
   if (totpToken) req.headers.set("X-Totp-Session", totpToken);
+}
+
+const attachAuthHeadersAndSnapshot: BeforeRequestHook = async (req: Request) => {
+  attachAuthHeaders(req);
+  let body: BodyInit | null | undefined;
+  if (req.method !== "GET" && req.method !== "HEAD" && req.body !== null) {
+    try {
+      body = await req.clone().arrayBuffer();
+    } catch {
+      body = undefined;
+    }
+  }
+  rememberReplaySnapshot(req, {
+    method: req.method,
+    url: req.url,
+    body,
+    headers: headersFromRequest(req),
+  });
 };
 
 export const api = ky.create({
@@ -145,7 +182,7 @@ export const api = ky.create({
     statusCodes: [408, 500, 502, 503, 504],
   },
   hooks: {
-    beforeRequest: [attachAuthHeaders],
+    beforeRequest: [attachAuthHeadersAndSnapshot],
     beforeError: [
       async (err: HTTPError) => {
         let detail: unknown;
@@ -185,15 +222,18 @@ export const api = ky.create({
         ) {
           clearTotpSessionToken();
           try {
+            const replay = takeReplaySnapshot(err.request) ?? {
+              method: err.request.method,
+              url: err.request.url,
+              body: undefined,
+              headers: headersFromRequest(err.request),
+            };
             const evt = new CustomEvent<TotpRequiredDetail>(TOTP_REQUIRED_EVENT, {
               detail: {
                 detail: typeof detail === "object" && detail !== null && "detail" in detail
                   ? (detail as { detail: string }).detail
                   : String(detail),
-                method: err.request.method,
-                url: err.request.url,
-                body: bodyFromInit(err.request),
-                headers: headersFromRequest(err.request),
+                ...replay,
               },
             });
             window.dispatchEvent(evt);

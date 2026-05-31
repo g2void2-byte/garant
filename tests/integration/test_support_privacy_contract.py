@@ -119,7 +119,7 @@ def test_is_cryptopay_configured_recognises_dev_placeholder(monkeypatch):
     # regardless of ``settings.cryptobot_token``.
     assert is_cryptopay_configured("") is False
     assert is_cryptopay_configured("000000:FAKE") is False
-    assert is_cryptopay_configured("000-anything-else") is False
+    assert is_cryptopay_configured("000123:REAL_LOOKING") is True
     assert is_cryptopay_configured("123456:AAEXAMPLEAAEXAMPLEAAEXAMPLE") is True
     assert is_cryptopay_configured("9999:abc") is True
 

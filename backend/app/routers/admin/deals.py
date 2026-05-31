@@ -38,9 +38,12 @@ from sqlalchemy.orm import selectinload
 from ... import notifier
 from ...admin_audit import log_admin_action
 from ...admin_guard import TotpUser
+from ...config import settings
 from ...deps import AdminUser, SessionDep
 from ...models import (
+    AdminApprovalRequest,
     Currency,
+    CurrencyUsdRate,
     Deal,
     DealMessage,
     DealStatus,
@@ -52,6 +55,7 @@ from ...models import (
 from ...money import quantize_money
 from ...rate_limit import rate_limit
 from ...schemas import (
+    AdminApprovalOut,
     AdminBalanceSnapshot,
     AdminDealActionResult,
     AdminDealAssignArbiterIn,
@@ -63,6 +67,7 @@ from ...schemas import (
     AdminDealSplitIn,
     DealMessageOut,
 )
+from ...services_ledger import record_balance_ledger
 from ...services_wallet import get_or_create_balance, lock_user_balance
 from ...time_utils import utcnow
 
@@ -291,6 +296,22 @@ async def _to_detail(session: AsyncSession, deal: Deal) -> AdminDealDetailOut:
         if deal.commission_amount is not None
         else None
     )
+    approval_rows = (
+        (
+            await session.execute(
+                select(AdminApprovalRequest)
+                .where(
+                    AdminApprovalRequest.target_type == "deal",
+                    AdminApprovalRequest.target_id == deal.id,
+                    AdminApprovalRequest.status.in_(("pending", "approved")),
+                )
+                .options(selectinload(AdminApprovalRequest.currency))
+                .order_by(AdminApprovalRequest.created_at.desc(), AdminApprovalRequest.id.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     return AdminDealDetailOut(
         id=deal.id,
         status=deal.status.value,
@@ -318,6 +339,7 @@ async def _to_detail(session: AsyncSession, deal: Deal) -> AdminDealDetailOut:
         confirm_seller=deal.confirm_seller,
         events=_build_events(deal),
         messages=await _list_messages(session, deal.id),
+        pending_approvals=[_approval_out(row) for row in approval_rows],
     )
 
 
@@ -368,6 +390,160 @@ async def _audit(
         payload=payload,
         request=request,
     )
+
+
+def _approval_out(row: AdminApprovalRequest) -> AdminApprovalOut:
+    currency_code = row.currency.code if row.currency is not None else None
+    return AdminApprovalOut(
+        id=row.id,
+        action=row.action,
+        target_type=row.target_type,
+        target_id=row.target_id,
+        status=row.status,
+        requested_by_id=row.requested_by_id,
+        approved_by_id=row.approved_by_id,
+        executed_by_id=row.executed_by_id,
+        currency_code=currency_code,
+        amount=Decimal(str(row.amount)) if row.amount is not None else None,
+        amount_usd_estimate=(
+            Decimal(str(row.amount_usd_estimate)) if row.amount_usd_estimate is not None else None
+        ),
+        reason=row.reason,
+        payload=row.payload,
+        created_at=row.created_at,
+        approved_at=row.approved_at,
+        executed_at=row.executed_at,
+        rejected_at=row.rejected_at,
+    )
+
+
+async def _estimate_usd(
+    session: AsyncSession, currency: Currency, amount: Decimal
+) -> tuple[Decimal | None, CurrencyUsdRate | None]:
+    rate = (
+        await session.execute(
+            select(CurrencyUsdRate).where(CurrencyUsdRate.currency_id == currency.id)
+        )
+    ).scalar_one_or_none()
+    if rate is None:
+        return None, None
+    return amount * Decimal(str(rate.usd_rate)), rate
+
+
+def _normal_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, value in payload.items():
+        out[key] = str(value) if isinstance(value, Decimal) else value
+    return out
+
+
+async def _ensure_approval_or_create(
+    *,
+    session: AsyncSession,
+    request: Request,
+    admin: User,
+    deal: Deal,
+    currency: Currency,
+    action: str,
+    amount: Decimal,
+    reason: str | None,
+    payload: dict[str, Any],
+    approval_id: int | None,
+) -> AdminApprovalRequest | None:
+    threshold = Decimal(str(settings.admin_deal_approval_threshold_usd))
+    if threshold <= 0:
+        return None
+    amount_usd, rate = await _estimate_usd(session, currency, amount)
+    requires_approval = amount_usd is None or amount_usd >= threshold
+    if not requires_approval:
+        return None
+
+    normalized_payload = _normal_payload(payload)
+    if approval_id is None:
+        existing = (
+            await session.execute(
+                select(AdminApprovalRequest)
+                .where(
+                    AdminApprovalRequest.action == action,
+                    AdminApprovalRequest.target_type == "deal",
+                    AdminApprovalRequest.target_id == deal.id,
+                    AdminApprovalRequest.status == "pending",
+                    AdminApprovalRequest.payload == normalized_payload,
+                )
+                .options(selectinload(AdminApprovalRequest.currency))
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            await session.commit()
+            return existing
+
+        approval = AdminApprovalRequest(
+            action=action,
+            target_type="deal",
+            target_id=deal.id,
+            status="pending",
+            requested_by_id=admin.id,
+            currency_id=currency.id,
+            rate_id=rate.id if rate is not None else None,
+            amount=amount,
+            amount_usd_estimate=amount_usd,
+            reason=reason,
+            payload=normalized_payload,
+        )
+        approval.currency = currency
+        approval.rate = rate
+        session.add(approval)
+        await session.flush()
+        await _audit(
+            session=session,
+            request=request,
+            admin=admin,
+            deal=deal,
+            action="deal.approval_requested",
+            reason=reason,
+            payload={
+                "approval_id": approval.id,
+                "requested_action": action,
+                "currency": currency.code,
+                "amount": str(amount),
+                "amount_usd_estimate": str(amount_usd) if amount_usd is not None else None,
+                "threshold_usd": str(threshold),
+                "rate_missing": amount_usd is None,
+            },
+        )
+        await session.commit()
+        return approval
+
+    approval = (
+        await session.execute(
+            select(AdminApprovalRequest)
+            .where(AdminApprovalRequest.id == approval_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if approval is None:
+        raise HTTPException(404, "Approval request not found")
+    if approval.status != "approved":
+        raise HTTPException(409, "Approval request is not approved")
+    if approval.target_type != "deal" or approval.target_id != deal.id or approval.action != action:
+        raise HTTPException(400, "Approval request does not match this action")
+    if approval.payload != normalized_payload:
+        raise HTTPException(400, "Approval request payload does not match this action")
+    if approval.requested_by_id == admin.id and approval.approved_by_id is None:
+        raise HTTPException(400, "Approval request needs a second admin")
+    return approval
+
+
+async def _mark_approval_executed(
+    approval: AdminApprovalRequest | None,
+    admin: User,
+) -> None:
+    if approval is None:
+        return
+    approval.status = "executed"
+    approval.executed_by_id = admin.id
+    approval.executed_at = utcnow()
 
 
 async def _notify_party(
@@ -507,6 +683,110 @@ async def list_deals(
     )
 
 
+_APPROVAL_STATUS_CHOICES = ("any", "pending", "approved", "executed", "rejected")
+
+
+async def _get_approval_or_404(
+    session: AsyncSession,
+    approval_id: int,
+    *,
+    lock: bool = False,
+) -> AdminApprovalRequest:
+    stmt = (
+        select(AdminApprovalRequest)
+        .where(
+            AdminApprovalRequest.id == approval_id,
+            AdminApprovalRequest.target_type == "deal",
+        )
+        .options(selectinload(AdminApprovalRequest.currency))
+    )
+    if lock:
+        stmt = stmt.with_for_update()
+    approval = (await session.execute(stmt)).scalar_one_or_none()
+    if approval is None:
+        raise HTTPException(404, "Approval request not found")
+    return approval
+
+
+@router.get("/approvals", response_model=list[AdminApprovalOut])
+async def list_deal_approvals(
+    _admin: AdminUser,
+    session: SessionDep,
+    status: Annotated[str, Query()] = "pending",
+    target_id: Annotated[int | None, Query()] = None,
+) -> list[AdminApprovalOut]:
+    if status not in _APPROVAL_STATUS_CHOICES:
+        raise HTTPException(400, "Invalid approval status")
+    stmt = (
+        select(AdminApprovalRequest)
+        .where(AdminApprovalRequest.target_type == "deal")
+        .options(selectinload(AdminApprovalRequest.currency))
+        .order_by(AdminApprovalRequest.created_at.desc(), AdminApprovalRequest.id.desc())
+        .limit(200)
+    )
+    if status != "any":
+        stmt = stmt.where(AdminApprovalRequest.status == status)
+    if target_id is not None:
+        stmt = stmt.where(AdminApprovalRequest.target_id == target_id)
+    rows = (await session.execute(stmt)).scalars().all()
+    return [_approval_out(row) for row in rows]
+
+
+@router.post("/approvals/{approval_id}/approve", response_model=AdminApprovalOut)
+async def approve_deal_approval(
+    approval_id: int,
+    admin: TotpUser,
+    session: SessionDep,
+    request: Request,
+) -> AdminApprovalOut:
+    approval = await _get_approval_or_404(session, approval_id, lock=True)
+    if approval.status != "pending":
+        raise HTTPException(409, "Approval request is not pending")
+    if approval.requested_by_id == admin.id:
+        raise HTTPException(400, "Approval request needs a second admin")
+
+    approval.status = "approved"
+    approval.approved_by_id = admin.id
+    approval.approved_at = utcnow()
+    await log_admin_action(
+        session,
+        actor=admin,
+        action="deal.approval_approved",
+        target_type="deal",
+        target_id=approval.target_id,
+        payload={"approval_id": approval.id, "requested_action": approval.action},
+        request=request,
+    )
+    await session.commit()
+    return _approval_out(approval)
+
+
+@router.post("/approvals/{approval_id}/reject", response_model=AdminApprovalOut)
+async def reject_deal_approval(
+    approval_id: int,
+    admin: TotpUser,
+    session: SessionDep,
+    request: Request,
+) -> AdminApprovalOut:
+    approval = await _get_approval_or_404(session, approval_id, lock=True)
+    if approval.status != "pending":
+        raise HTTPException(409, "Approval request is not pending")
+
+    approval.status = "rejected"
+    approval.rejected_at = utcnow()
+    await log_admin_action(
+        session,
+        actor=admin,
+        action="deal.approval_rejected",
+        target_type="deal",
+        target_id=approval.target_id,
+        payload={"approval_id": approval.id, "requested_action": approval.action},
+        request=request,
+    )
+    await session.commit()
+    return _approval_out(approval)
+
+
 @router.get("/{deal_id}", response_model=AdminDealDetailOut)
 async def get_deal(deal_id: int, _admin: AdminUser, session: SessionDep) -> AdminDealDetailOut:
     deal = await _get_deal_or_404(session, deal_id)
@@ -548,9 +828,31 @@ async def _release_locked_to_seller(
     # buyer/seller) cannot read-modify-write a stale snapshot. See
     # ``services_deals._refund`` for the full lost-update rationale.
     buyer_balance = await lock_user_balance(session, deal.buyer_id, currency.id)
+    buyer_before_amount = Decimal(str(buyer_balance.amount))
+    buyer_before_locked = Decimal(str(buyer_balance.locked))
     buyer_balance.locked = max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked)
     seller_balance = await lock_user_balance(session, deal.seller_id, currency.id)
+    seller_before_amount = Decimal(str(seller_balance.amount))
+    seller_before_locked = Decimal(str(seller_balance.locked))
     seller_balance.amount = Decimal(str(seller_balance.amount)) + payout
+    record_balance_ledger(
+        session,
+        buyer_balance,
+        before_amount=buyer_before_amount,
+        before_locked=buyer_before_locked,
+        event_type="admin_deal.force_release.debit",
+        source_type="deal",
+        source_id=deal.id,
+    )
+    record_balance_ledger(
+        session,
+        seller_balance,
+        before_amount=seller_before_amount,
+        before_locked=seller_before_locked,
+        event_type="admin_deal.force_release.credit",
+        source_type="deal",
+        source_id=deal.id,
+    )
     return locked, payout
 
 
@@ -572,8 +874,19 @@ async def _refund_locked_to_buyer(
 
     # CRIT #1 — ``FOR UPDATE`` lock; see ``_release_locked_to_seller``.
     buyer_balance = await lock_user_balance(session, deal.buyer_id, currency.id)
+    before_amount = Decimal(str(buyer_balance.amount))
+    before_locked = Decimal(str(buyer_balance.locked))
     buyer_balance.locked = max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked)
     buyer_balance.amount = Decimal(str(buyer_balance.amount)) + refunded
+    record_balance_ledger(
+        session,
+        buyer_balance,
+        before_amount=before_amount,
+        before_locked=before_locked,
+        event_type="admin_deal.force_refund",
+        source_type="deal",
+        source_id=deal.id,
+    )
     return locked, refunded
 
 
@@ -599,10 +912,34 @@ async def _split_locked(
     # CRIT #1 — ``FOR UPDATE`` lock on both balances; see
     # ``_release_locked_to_seller`` for the lost-update rationale.
     buyer_balance = await lock_user_balance(session, deal.buyer_id, currency.id)
+    buyer_before_amount = Decimal(str(buyer_balance.amount))
+    buyer_before_locked = Decimal(str(buyer_balance.locked))
     buyer_balance.locked = max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked)
     buyer_balance.amount = Decimal(str(buyer_balance.amount)) + buyer_share
     seller_balance = await lock_user_balance(session, deal.seller_id, currency.id)
+    seller_before_amount = Decimal(str(seller_balance.amount))
+    seller_before_locked = Decimal(str(seller_balance.locked))
     seller_balance.amount = Decimal(str(seller_balance.amount)) + seller_share
+    record_balance_ledger(
+        session,
+        buyer_balance,
+        before_amount=buyer_before_amount,
+        before_locked=buyer_before_locked,
+        event_type="admin_deal.split.buyer",
+        source_type="deal",
+        source_id=deal.id,
+        meta={"buyer_percent": str(buyer_percent)},
+    )
+    record_balance_ledger(
+        session,
+        seller_balance,
+        before_amount=seller_before_amount,
+        before_locked=seller_before_locked,
+        event_type="admin_deal.split.seller",
+        source_type="deal",
+        source_id=deal.id,
+        meta={"buyer_percent": str(buyer_percent)},
+    )
     return locked, buyer_share, seller_share
 
 
@@ -648,6 +985,25 @@ async def force_release(
     if currency is None:
         raise HTTPException(500, "Внутренняя ошибка: валюта сделки не найдена")
 
+    amount_native = quantize_money(Decimal(str(deal.amount or 0)), currency.decimals)
+    approval = await _ensure_approval_or_create(
+        session=session,
+        request=request,
+        admin=admin,
+        deal=deal,
+        currency=currency,
+        action="deal.force_release",
+        amount=amount_native,
+        reason=body.reason,
+        payload={"currency": currency.code, "amount": str(amount_native)},
+        approval_id=body.approval_id,
+    )
+    if approval is not None and approval.status == "pending":
+        return AdminDealActionResult(
+            deal=await _to_detail(session, deal),
+            pending_approval=_approval_out(approval),
+        )
+
     before_status = deal.status.value
     locked, payout = await _release_locked_to_seller(session, deal, currency)
     deal.status = DealStatus.resolved_for_seller
@@ -671,8 +1027,10 @@ async def force_release(
             # M-23: keep Numeric(28,8) precision in the JSONB audit trail.
             "locked": str(locked),
             "payout": str(payout),
+            "approval_id": approval.id if approval is not None else None,
         },
     )
+    await _mark_approval_executed(approval, admin)
     # A9-M-2 — stage both party notifications before commit, dispatch after.
     pending: list[tuple[Notification, dict[str, Any] | None]] = []
     await _notify_party(
@@ -719,6 +1077,25 @@ async def force_refund(
     if currency is None:
         raise HTTPException(500, "Внутренняя ошибка: валюта сделки не найдена")
 
+    amount_native = quantize_money(Decimal(str(deal.amount or 0)), currency.decimals)
+    approval = await _ensure_approval_or_create(
+        session=session,
+        request=request,
+        admin=admin,
+        deal=deal,
+        currency=currency,
+        action="deal.force_refund",
+        amount=amount_native,
+        reason=body.reason,
+        payload={"currency": currency.code, "amount": str(amount_native)},
+        approval_id=body.approval_id,
+    )
+    if approval is not None and approval.status == "pending":
+        return AdminDealActionResult(
+            deal=await _to_detail(session, deal),
+            pending_approval=_approval_out(approval),
+        )
+
     before_status = deal.status.value
     locked, refunded = await _refund_locked_to_buyer(session, deal, currency)
     deal.status = DealStatus.resolved_for_buyer
@@ -742,8 +1119,10 @@ async def force_refund(
             # M-23: keep Numeric(28,8) precision in the JSONB audit trail.
             "locked": str(locked),
             "refunded": str(refunded),
+            "approval_id": approval.id if approval is not None else None,
         },
     )
+    await _mark_approval_executed(approval, admin)
     pending: list[tuple[Notification, dict[str, Any] | None]] = []
     await _notify_party(
         session,
@@ -789,9 +1168,32 @@ async def split_deal(
     if currency is None:
         raise HTTPException(500, "Внутренняя ошибка: валюта сделки не найдена")
 
+    amount_native = quantize_money(Decimal(str(deal.amount or 0)), currency.decimals)
+    approval = await _ensure_approval_or_create(
+        session=session,
+        request=request,
+        admin=admin,
+        deal=deal,
+        currency=currency,
+        action="deal.split",
+        amount=amount_native,
+        reason=body.reason,
+        payload={
+            "currency": currency.code,
+            "amount": str(amount_native),
+            "buyer_percent": str(body.buyer_percent),
+        },
+        approval_id=body.approval_id,
+    )
+    if approval is not None and approval.status == "pending":
+        return AdminDealActionResult(
+            deal=await _to_detail(session, deal),
+            pending_approval=_approval_out(approval),
+        )
+
     before_status = deal.status.value
     locked, buyer_share, seller_share = await _split_locked(
-        session, deal, currency, body.buyer_percent
+        session, deal, currency, float(body.buyer_percent)
     )
     deal.status = (
         DealStatus.resolved_for_buyer
@@ -820,8 +1222,10 @@ async def split_deal(
             "buyer_share": str(buyer_share),
             "seller_share": str(seller_share),
             "locked": str(locked),
+            "approval_id": approval.id if approval is not None else None,
         },
     )
+    await _mark_approval_executed(approval, admin)
     pending: list[tuple[Notification, dict[str, Any] | None]] = []
     await _notify_party(
         session,

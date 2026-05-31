@@ -49,7 +49,6 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
-import pytest
 from sqlalchemy import select
 
 from tests.helpers import (
@@ -59,57 +58,6 @@ from tests.helpers import (
     setup_pin,
     signed_init_data,
 )
-
-# ── CryptoPay stub ───────────────────────────────────────────────
-
-
-class _StubInvoice:
-    invoice_id = 99001
-    pay_url = "https://pay.crypt.bot/$cb-topup-stub"
-    bot_invoice_url = "https://pay.crypt.bot/$cb-topup-stub"
-    mini_app_invoice_url = ""
-    web_app_invoice_url = ""
-
-
-class _StubCryptoPay:
-    """Drop-in replacement that never hits the real CryptoBot API."""
-
-    _counter = 99000
-
-    def __init__(self, *_args, **_kwargs):
-        pass
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_exc):
-        return None
-
-    async def create_invoice(self, **_kwargs):
-        _StubCryptoPay._counter += 1
-        return type(
-            "_Inv",
-            (),
-            {
-                "invoice_id": _StubCryptoPay._counter,
-                "pay_url": f"https://pay.crypt.bot/$cb-{_StubCryptoPay._counter}",
-                "bot_invoice_url": (f"https://pay.crypt.bot/$cb-{_StubCryptoPay._counter}"),
-                "mini_app_invoice_url": "",
-                "web_app_invoice_url": "",
-            },
-        )()
-
-
-@pytest.fixture
-def _stub_cryptopay(monkeypatch):
-    import backend.app.services_wallet as services_wallet
-
-    monkeypatch.setattr(services_wallet, "CryptoPay", _StubCryptoPay)
-    monkeypatch.setattr(services_wallet, "is_cryptopay_configured", lambda: True)
-    yield
-
-
-# ── Helpers ──────────────────────────────────────────────────────
 
 
 async def _create_with_topup(
@@ -278,7 +226,14 @@ async def test_with_topup_commission_only(client, _stub_cryptopay):
 
 async def test_with_topup_underpayment_below_commission(client, _stub_cryptopay):
     from backend.app.db import async_session
-    from backend.app.models import Currency, Deal, DealStatus, UserBalance
+    from backend.app.models import (
+        Currency,
+        Deal,
+        DealStatus,
+        UserBalance,
+        WalletDeposit,
+        WalletDepositStatus,
+    )
 
     buyer_init, _seller_init, buyer_pin = await _setup_pair(client, 30201, 30202)
 
@@ -289,13 +244,20 @@ async def test_with_topup_underpayment_below_commission(client, _stub_cryptopay)
     deal_id = resp.json()["deal"]["id"]
 
     # Pay less than the 5 commission.
-    await _settle_deposit(deal_id, paid_amount=Decimal("2"))
+    old_deposit_id = await _settle_deposit(deal_id, paid_amount=Decimal("2"))
 
     async with async_session() as session:
         deal = await session.get(Deal, deal_id)
         assert deal is not None
         assert deal.status == DealStatus.pending_topup  # unchanged
         assert deal.commission_paid is False
+        assert deal.topup_deposit_id is not None
+        assert deal.topup_deposit_id != old_deposit_id
+        old_deposit = await session.get(WalletDeposit, old_deposit_id)
+        replacement = await session.get(WalletDeposit, deal.topup_deposit_id)
+        assert old_deposit is not None and old_deposit.status == WalletDepositStatus.paid
+        assert replacement is not None and replacement.status == WalletDepositStatus.pending
+        assert Decimal(str(replacement.amount)) == Decimal("103.00000000")
         usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         buyer_id = await get_user_id_by_tg(session, 30201)
         bal = (
@@ -316,7 +278,14 @@ async def test_with_topup_underpayment_below_commission(client, _stub_cryptopay)
 
 async def test_with_topup_underpayment_above_commission(client, _stub_cryptopay):
     from backend.app.db import async_session
-    from backend.app.models import Currency, Deal, DealStatus, UserBalance
+    from backend.app.models import (
+        Currency,
+        Deal,
+        DealStatus,
+        UserBalance,
+        WalletDeposit,
+        WalletDepositStatus,
+    )
 
     buyer_init, _seller_init, buyer_pin = await _setup_pair(client, 30301, 30302)
 
@@ -328,13 +297,20 @@ async def test_with_topup_underpayment_above_commission(client, _stub_cryptopay)
 
     # Pay commission (5) plus half the principal (50). Balance ends
     # at 50 which is still < 100, so the deal stays pending_topup.
-    await _settle_deposit(deal_id, paid_amount=Decimal("55"))
+    old_deposit_id = await _settle_deposit(deal_id, paid_amount=Decimal("55"))
 
     async with async_session() as session:
         deal = await session.get(Deal, deal_id)
         assert deal is not None
         assert deal.status == DealStatus.pending_topup
-        assert deal.commission_paid is False
+        assert deal.commission_paid is True
+        assert deal.topup_deposit_id is not None
+        assert deal.topup_deposit_id != old_deposit_id
+        old_deposit = await session.get(WalletDeposit, old_deposit_id)
+        replacement = await session.get(WalletDeposit, deal.topup_deposit_id)
+        assert old_deposit is not None and old_deposit.status == WalletDepositStatus.paid
+        assert replacement is not None and replacement.status == WalletDepositStatus.pending
+        assert Decimal(str(replacement.amount)) == Decimal("50.00000000")
         usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
         buyer_id = await get_user_id_by_tg(session, 30301)
         bal = (
@@ -348,6 +324,25 @@ async def test_with_topup_underpayment_above_commission(client, _stub_cryptopay)
         # 55 paid - 5 commission = 50 credited to spendable.
         assert Decimal(str(bal.amount)) == Decimal("50")
         assert Decimal(str(bal.locked)) == Decimal("0")
+
+    await _settle_deposit(deal_id, paid_amount=Decimal("50"))
+
+    async with async_session() as session:
+        deal = await session.get(Deal, deal_id)
+        assert deal is not None
+        assert deal.status == DealStatus.pending_confirmation
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
+        buyer_id = await get_user_id_by_tg(session, 30301)
+        bal = (
+            await session.execute(
+                select(UserBalance).where(
+                    UserBalance.user_id == buyer_id,
+                    UserBalance.currency_id == usdt.id,
+                )
+            )
+        ).scalar_one()
+        assert Decimal(str(bal.amount)) == Decimal("0E-8")
+        assert Decimal(str(bal.locked)) == Decimal("100.00000000")
 
 
 # ── §5 Overpayment ──────────────────────────────────────────────

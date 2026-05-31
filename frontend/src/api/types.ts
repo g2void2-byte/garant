@@ -156,6 +156,7 @@ export interface DealTopupInvoiceDto {
   total: string | number;
   topup_principal: string | number;
   commission: string | number;
+  paid_total?: string | number;
   currency_code: string;
   provider: string;
   expires_at?: string | null;
@@ -494,6 +495,32 @@ export interface AdminDealDetailDto {
   confirm_seller: boolean;
   events: AdminDealEventDto[];
   messages: AdminDealMessageDto[];
+  pending_approvals?: AdminApprovalDto[];
+}
+
+export interface AdminApprovalDto {
+  id: number;
+  action: string;
+  target_type: string;
+  target_id: number;
+  status: "pending" | "approved" | "executed" | "rejected" | string;
+  requested_by_id: number | null;
+  approved_by_id?: number | null;
+  executed_by_id?: number | null;
+  currency_code?: string | null;
+  amount?: string | number | null;
+  amount_usd_estimate?: string | number | null;
+  reason?: string | null;
+  payload?: Record<string, unknown> | null;
+  created_at: string;
+  approved_at?: string | null;
+  executed_at?: string | null;
+  rejected_at?: string | null;
+}
+
+export interface AdminDealActionResultDto {
+  deal: AdminDealDetailDto;
+  pending_approval?: AdminApprovalDto | null;
 }
 
 export interface AdminDealMessageDto {
@@ -618,6 +645,10 @@ export interface AdminUserBalanceDto {
   amount: string;
   locked: string;
   total: string;
+  usd_rate?: string | number | null;
+  usd_estimate?: string | number | null;
+  usd_rate_source?: string | null;
+  usd_rate_observed_at?: string | null;
   updated_at: string | null;
 }
 
@@ -632,7 +663,8 @@ export interface AdminWalletListItemDto {
   is_banned: boolean;
   is_frozen: boolean;
   balances: AdminUserBalanceDto[];
-  total_usd_estimate: string;
+  total_usd_estimate?: string | number | null;
+  usd_estimate_missing_rates?: string[];
 }
 
 export interface AdminWalletListDto {
@@ -646,6 +678,23 @@ export interface AdminWalletAdjustBody {
   currency_code: string;
   amount: number;
   reason?: string;
+}
+
+export interface AdminCurrencyRateDto {
+  currency_id: number;
+  currency_code: string;
+  usd_rate: string | number;
+  source: string;
+  observed_at: string;
+  updated_at?: string | null;
+  updated_by_id?: number | null;
+}
+
+export interface AdminCurrencyRateUpsertBody {
+  currency_code: string;
+  usd_rate: number;
+  source?: string;
+  observed_at?: string | null;
 }
 
 export interface AdminDepositDto {
@@ -868,6 +917,14 @@ export interface AdminSystemStatusDto {
   backend_version: string;
   started_at: string | null;
   uptime_seconds: number;
+  alerts?: OperationalAlertDto[];
+}
+
+export interface OperationalAlertDto {
+  name: string;
+  severity: "info" | "warning" | "critical";
+  count: number;
+  detail: string;
 }
 
 export interface Admin2faStatusDto {

@@ -489,6 +489,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/deals/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Deal Approvals */
+        get: operations["list_deal_approvals_api_admin_deals_approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/deals/approvals/{approval_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Deal Approval */
+        post: operations["approve_deal_approval_api_admin_deals_approvals__approval_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/deals/approvals/{approval_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Deal Approval */
+        post: operations["reject_deal_approval_api_admin_deals_approvals__approval_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/deals/{deal_id}": {
         parameters: {
             query?: never;
@@ -1219,6 +1270,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/wallets/rates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Currency Rates */
+        get: operations["list_currency_rates_api_admin_wallets_rates_get"];
+        put?: never;
+        /** Upsert Currency Rate */
+        post: operations["upsert_currency_rate_api_admin_wallets_rates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/wallets/{user_id}": {
         parameters: {
             query?: never;
@@ -1355,8 +1424,7 @@ export interface paths {
         /** List Deals */
         get: operations["list_deals_api_deals_get"];
         put?: never;
-        /** Create Deal Endpoint */
-        post: operations["create_deal_endpoint_api_deals_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2488,6 +2556,48 @@ export interface components {
             /** Value */
             value: number;
         };
+        /** AdminApprovalOut */
+        AdminApprovalOut: {
+            /** Action */
+            action: string;
+            /** Amount */
+            amount?: string | null;
+            /** Amount Usd Estimate */
+            amount_usd_estimate?: string | null;
+            /** Approved At */
+            approved_at?: string | null;
+            /** Approved By Id */
+            approved_by_id?: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Currency Code */
+            currency_code?: string | null;
+            /** Executed At */
+            executed_at?: string | null;
+            /** Executed By Id */
+            executed_by_id?: number | null;
+            /** Id */
+            id: number;
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            } | null;
+            /** Reason */
+            reason?: string | null;
+            /** Rejected At */
+            rejected_at?: string | null;
+            /** Requested By Id */
+            requested_by_id: number | null;
+            /** Status */
+            status: string;
+            /** Target Id */
+            target_id: number;
+            /** Target Type */
+            target_type: string;
+        };
         /** AdminArbitrationCounters */
         AdminArbitrationCounters: {
             /** Closed */
@@ -2766,6 +2876,40 @@ export interface components {
             /** Sort Order */
             sort_order: number;
         };
+        /** AdminCurrencyRateOut */
+        AdminCurrencyRateOut: {
+            /** Currency Code */
+            currency_code: string;
+            /** Currency Id */
+            currency_id: number;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Source */
+            source: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By Id */
+            updated_by_id?: number | null;
+            /** Usd Rate */
+            usd_rate: string;
+        };
+        /** AdminCurrencyRateUpsertIn */
+        AdminCurrencyRateUpsertIn: {
+            /** Currency Code */
+            currency_code: string;
+            /** Observed At */
+            observed_at?: string | null;
+            /**
+             * Source
+             * @default manual
+             */
+            source: string;
+            /** Usd Rate */
+            usd_rate: number | string;
+        };
         /** AdminCurrencyUpsertIn */
         AdminCurrencyUpsertIn: {
             /** Address Regex */
@@ -2831,6 +2975,7 @@ export interface components {
          */
         AdminDealActionResult: {
             deal: components["schemas"]["AdminDealDetailOut"];
+            pending_approval?: components["schemas"]["AdminApprovalOut"] | null;
         };
         /**
          * AdminDealAssignArbiterIn
@@ -2899,6 +3044,8 @@ export interface components {
             in_progress_at: string | null;
             /** Messages */
             messages: components["schemas"]["DealMessageOut"][];
+            /** Pending Approvals */
+            pending_approvals?: components["schemas"]["AdminApprovalOut"][];
             seller: components["schemas"]["AdminBalanceSnapshot"];
             /** Status */
             status: string;
@@ -2933,6 +3080,8 @@ export interface components {
          *     Optional ``reason`` is propagated into the audit log and DMs.
          */
         AdminDealForceOut: {
+            /** Approval Id */
+            approval_id?: number | null;
             /** Reason */
             reason?: string | null;
         };
@@ -2999,6 +3148,8 @@ export interface components {
          *     locked principal.
          */
         AdminDealSplitIn: {
+            /** Approval Id */
+            approval_id?: number | null;
             /** Buyer Percent */
             buyer_percent: number | string;
             /** Reason */
@@ -3319,6 +3470,8 @@ export interface components {
         };
         /** AdminSystemStatusOut */
         AdminSystemStatusOut: {
+            /** Alerts */
+            alerts?: components["schemas"]["OperationalAlertOut"][];
             /** Backend Version */
             backend_version: string;
             /** Bot Configured */
@@ -3365,6 +3518,14 @@ export interface components {
             total: string;
             /** Updated At */
             updated_at: string | null;
+            /** Usd Estimate */
+            usd_estimate?: string | null;
+            /** Usd Rate */
+            usd_rate?: string | null;
+            /** Usd Rate Observed At */
+            usd_rate_observed_at?: string | null;
+            /** Usd Rate Source */
+            usd_rate_source?: string | null;
             /** User Id */
             user_id: number;
             /** Username */
@@ -3545,7 +3706,9 @@ export interface components {
             /** Photo Url */
             photo_url: string | null;
             /** Total Usd Estimate */
-            total_usd_estimate: string;
+            total_usd_estimate?: string | null;
+            /** Usd Estimate Missing Rates */
+            usd_estimate_missing_rates?: string[];
             /** User Id */
             user_id: number;
             /** Username */
@@ -3697,44 +3860,14 @@ export interface components {
              */
             reason: string;
         };
-        /** DealCreate */
-        DealCreate: {
-            /** Amount */
-            amount: number | string;
-            /** Counterparty */
-            counterparty: string;
-            /**
-             * Currency Code
-             * @default USDT
-             */
-            currency_code: string;
-            /**
-             * Description
-             * @default
-             */
-            description: string;
-            /**
-             * Payment Provider
-             * @default cryptobot
-             * @enum {string}
-             */
-            payment_provider: "cryptobot" | "crystalpay";
-            /**
-             * Role
-             * @default buyer
-             * @constant
-             */
-            role: "buyer";
-        };
         /**
          * DealCreateWithTopup
          * @description P10 — input for ``POST /api/deals/with-topup``.
          *
          *     Exactly the same shape as :class:`DealCreate` but routed through
-         *     the commission-via-invoice service entry point. Kept as a
-         *     separate class so the OpenAPI surface stays explicit and the
-         *     legacy ``POST /api/deals`` (balance-only) path can be removed
-         *     independently in a follow-up.
+         *     the commission-via-invoice service entry point. Kept as a separate
+         *     class so the OpenAPI surface stays explicit; the legacy
+         *     ``POST /api/deals`` route now delegates to the same service.
          */
         DealCreateWithTopup: {
             /** Amount */
@@ -3908,6 +4041,11 @@ export interface components {
             deposit_id: number;
             /** Expires At */
             expires_at?: string | null;
+            /**
+             * Paid Total
+             * @default 0
+             */
+            paid_total: number;
             /** Pay Url */
             pay_url: string;
             /** Provider */
@@ -4030,6 +4168,20 @@ export interface components {
             title: string;
             /** Type */
             type: string;
+        };
+        /** OperationalAlertOut */
+        OperationalAlertOut: {
+            /** Count */
+            count: number;
+            /** Detail */
+            detail: string;
+            /** Name */
+            name: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "info" | "warning" | "critical";
         };
         /** PinChangeIn */
         PinChangeIn: {
@@ -5721,6 +5873,112 @@ export interface operations {
             };
         };
     };
+    list_deal_approvals_api_admin_deals_approvals_get: {
+        parameters: {
+            query?: {
+                status?: string;
+                target_id?: number | null;
+            };
+            header?: {
+                authorization?: string | null;
+                "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminApprovalOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_deal_approval_api_admin_deals_approvals__approval_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
+            };
+            path: {
+                approval_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminApprovalOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_deal_approval_api_admin_deals_approvals__approval_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
+            };
+            path: {
+                approval_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminApprovalOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_deal_api_admin_deals__deal_id__get: {
         parameters: {
             query?: never;
@@ -7156,6 +7414,76 @@ export interface operations {
             };
         };
     };
+    list_currency_rates_api_admin_wallets_rates_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCurrencyRateOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_currency_rate_api_admin_wallets_rates_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCurrencyRateUpsertIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCurrencyRateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     user_wallet_detail_api_admin_wallets__user_id__get: {
         parameters: {
             query?: never;
@@ -7411,42 +7739,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DealOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_deal_endpoint_api_deals_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-Pin-Token"?: string | null;
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DealCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DealOut"];
                 };
             };
             /** @description Validation Error */
@@ -7888,6 +8180,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                "X-Totp-Code"?: string | null;
+                "X-Totp-Session"?: string | null;
                 authorization?: string | null;
             };
             path: {

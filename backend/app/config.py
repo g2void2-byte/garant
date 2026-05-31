@@ -39,6 +39,24 @@ class Settings(BaseSettings):
     crystalpay_secret: str = ""
 
     webapp_url: str = "http://localhost:5173"
+    # Public backend/API origin used for provider webhooks and optional
+    # split-origin CSP. Leave empty for same-origin monolith deploys.
+    public_api_url: str = ""
+    # More specific callback base for payment providers. Defaults to
+    # ``public_api_url`` and then ``webapp_url`` for backwards compatibility.
+    webhook_base_url: str = ""
+    # Space-separated CSP sources for ``connect-src``. Empty means
+    # ``'self'`` plus the origin from ``public_api_url`` when set.
+    csp_connect_src: str = ""
+    # ``None`` means production/staging only; set explicitly for a
+    # custom staging/dev HTTPS domain.
+    enable_hsts: bool | None = None
+    # Maker-checker threshold for privileged admin deal money movement.
+    # Native deal amounts are converted through admin-maintained
+    # ``currency_usd_rates``; when a rate is missing, approval is
+    # required because the system cannot prove the action is below the
+    # threshold. Set 0 to disable.
+    admin_deal_approval_threshold_usd: float = 10000.0
     webapp_port: int = 8080
     allowed_origins: str = "http://localhost:5173"
 

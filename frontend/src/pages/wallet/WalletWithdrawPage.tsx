@@ -48,11 +48,9 @@ export default function WalletWithdrawPage() {
   const create = useCreateWalletWithdrawal();
   const toast = useToast();
   const { data: admins } = useAdmins();
-  // Bug-10 — when the admin has wired CryptoBot Transfer the
-  // recipient is identified by ``users.tg_user_id`` upstream, so the
-  // on-chain address input is hidden and the request body omits the
-  // ``address`` field entirely. Manual mode (no token / flag off)
-  // falls back to the legacy address-input UX.
+  // CryptoBot payouts identify the recipient by Telegram user id. When
+  // auto-withdraw is enabled we omit the legacy address field entirely;
+  // queued/admin-reviewed withdrawals use the same recipient model.
   const { data: publicSettings } = usePublicSettings();
   const autoWithdraw = publicSettings?.auto_withdraw_enabled === true;
   // Item 13 — ProfilePage's "Вывести" CTA can hint at a preferred

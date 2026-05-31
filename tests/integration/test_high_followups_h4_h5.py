@@ -36,6 +36,12 @@ async def _bootstrap_caller(client, *, tg: int, username: str) -> dict[str, str]
     init = signed_init_data(tg, username)
     resp = await client.get("/api/me", headers=auth_headers(init))
     assert resp.status_code == 200, resp.text
+    async with async_session() as session:
+        from sqlalchemy import select
+        u = (await session.execute(select(User).where(User.tg_user_id == tg))).scalar_one_or_none()
+        if u:
+            u.deals_total = 1
+            await session.commit()
     return auth_headers(init)
 
 

@@ -15,21 +15,33 @@ from __future__ import annotations
 
 import time
 from collections.abc import Awaitable
+from datetime import timedelta
 from typing import cast
 
 from fastapi import APIRouter, Depends, Request
 from redis.exceptions import RedisError
-from sqlalchemy import text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ... import version as app_version
 from ...admin_audit import log_admin_action
 from ...admin_guard import TotpUser
 from ...config import settings as app_settings_env
 from ...deps import AdminUser, SessionDep
+from ...models import (
+    AdminApprovalRequest,
+    AppSettings,
+    CurrencyUsdRate,
+    Deal,
+    DealStatus,
+    ProviderWebhookEvent,
+    ProviderWebhookOutbox,
+    UserBalance,
+)
 from ...rate_limit import rate_limit
 from ...redis_client import get_redis
-from ...schemas import AdminSystemStatusOut
+from ...schemas import AdminSystemStatusOut, OperationalAlertOut
 from ...services_wallet import is_cryptopay_configured
 from ...time_utils import utcnow
 
@@ -41,6 +53,123 @@ router = APIRouter(
 
 
 _STARTED_AT = utcnow()
+
+
+async def _count(session: AsyncSession, stmt) -> int:
+    return int((await session.execute(stmt)).scalar_one() or 0)
+
+
+async def _operational_alerts(session: AsyncSession) -> list[OperationalAlertOut]:
+    now = utcnow()
+    webhook_grace = now - timedelta(minutes=15)
+    settings_row = (
+        await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
+    ).scalar_one_or_none()
+    pending_topup_hours = int(
+        (settings_row.pending_topup_expiry_hours if settings_row is not None else None) or 24
+    )
+    pending_topup_cutoff = now - timedelta(hours=pending_topup_hours)
+
+    pending_approvals = await _count(
+        session,
+        select(func.count())
+        .select_from(AdminApprovalRequest)
+        .where(AdminApprovalRequest.status == "pending"),
+    )
+    stale_topups = await _count(
+        session,
+        select(func.count())
+        .select_from(Deal)
+        .where(
+            Deal.status == DealStatus.pending_topup,
+            Deal.created_at < pending_topup_cutoff,
+        ),
+    )
+    stuck_webhooks = await _count(
+        session,
+        select(func.count())
+        .select_from(ProviderWebhookEvent)
+        .where(
+            or_(
+                ProviderWebhookEvent.status == "failed",
+                ProviderWebhookEvent.status.in_(("received", "processing"))
+                & (ProviderWebhookEvent.created_at < webhook_grace),
+            )
+        ),
+    )
+    outbox_backlog = await _count(
+        session,
+        select(func.count())
+        .select_from(ProviderWebhookOutbox)
+        .where(
+            or_(
+                ProviderWebhookOutbox.status == "failed",
+                (ProviderWebhookOutbox.status == "ready")
+                & or_(
+                    ProviderWebhookOutbox.next_attempt_at.is_(None),
+                    ProviderWebhookOutbox.next_attempt_at <= now,
+                ),
+            )
+        ),
+    )
+    missing_rate_currencies = await _count(
+        session,
+        select(func.count(func.distinct(UserBalance.currency_id)))
+        .select_from(UserBalance)
+        .outerjoin(CurrencyUsdRate, CurrencyUsdRate.currency_id == UserBalance.currency_id)
+        .where(
+            (UserBalance.amount + UserBalance.locked) > 0,
+            CurrencyUsdRate.id.is_(None),
+        ),
+    )
+
+    alerts: list[OperationalAlertOut] = []
+    if pending_approvals:
+        alerts.append(
+            OperationalAlertOut(
+                name="admin_approvals_pending",
+                severity="warning",
+                count=pending_approvals,
+                detail="High-risk admin deal actions are waiting for a second admin.",
+            )
+        )
+    if stale_topups:
+        alerts.append(
+            OperationalAlertOut(
+                name="pending_topup_stale",
+                severity="warning",
+                count=stale_topups,
+                detail=f"Deals stayed pending_topup for more than {pending_topup_hours} hours.",
+            )
+        )
+    if stuck_webhooks:
+        alerts.append(
+            OperationalAlertOut(
+                name="webhook_inbox_attention",
+                severity="critical",
+                count=stuck_webhooks,
+                detail="Webhook inbox rows are failed or stuck in processing.",
+            )
+        )
+    if outbox_backlog:
+        alerts.append(
+            OperationalAlertOut(
+                name="webhook_outbox_backlog",
+                severity="warning",
+                count=outbox_backlog,
+                detail="Webhook outbox rows are ready or failed and need reconciliation.",
+            )
+        )
+    if missing_rate_currencies:
+        alerts.append(
+            OperationalAlertOut(
+                name="usd_rates_missing",
+                severity="info",
+                count=missing_rate_currencies,
+                detail="Currencies with non-zero balances are missing USD rates.",
+            )
+        )
+    return alerts
 
 
 @router.get("/status", response_model=AdminSystemStatusOut)
@@ -94,6 +223,7 @@ async def status(_admin: AdminUser, session: SessionDep):
         backend_version=app_version.BACKEND_VERSION,
         started_at=_STARTED_AT,
         uptime_seconds=(utcnow() - _STARTED_AT).total_seconds(),
+        alerts=await _operational_alerts(session),
     )
 
 

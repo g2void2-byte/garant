@@ -73,6 +73,29 @@ export default function AdminSystemPage() {
                     : "API ключ не задан"
                 }
               />
+              {data.alerts && data.alerts.length > 0 && (
+                <div className="bg-panel rounded-card p-3 space-y-2">
+                  <div className="text-xs uppercase tracking-wide text-text-muted">Operational alerts</div>
+                  {data.alerts.map((alert) => (
+                    <div key={alert.name} className="flex items-start gap-2 text-sm">
+                      <ShieldAlert
+                        size={14}
+                        className={
+                          alert.severity === "critical"
+                            ? "text-danger mt-0.5"
+                            : alert.severity === "warning"
+                              ? "text-warning mt-0.5"
+                              : "text-text-muted mt-0.5"
+                        }
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium">{alert.name} · {alert.count}</div>
+                        <div className="text-xs text-text-muted">{alert.detail}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div
                 className="bg-panel rounded-card p-3 text-xs text-text-muted space-y-1"
               >
