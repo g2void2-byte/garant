@@ -177,6 +177,7 @@ rules, and the telemetry path through `/api/csp-report` — lives in
 | `WEBHOOK_BASE_URL` | _empty_ | Public backend origin used for provider callbacks; falls back to `PUBLIC_API_URL`, then `WEBAPP_URL`. |
 | `CSP_CONNECT_SRC` | _empty_ | Optional full `connect-src` source list. Empty means `'self'` plus `PUBLIC_API_URL` origin when set. |
 | `ENABLE_HSTS` | _empty_ | Empty = enable HSTS only in production/staging; set `1`/`0` to override. |
+| `ADMIN_DEAL_APPROVAL_THRESHOLD_USD` | `10000` | Maker-checker threshold for admin force-release/refund/split. Set `0` to disable; missing USD rates require approval. |
 | `WEBAPP_PORT` | `8080` | Backend listen port |
 | `ALLOWED_ORIGINS` | `http://localhost:5173` | CORS origins (comma-separated) |
 | `DATABASE_URL` | `postgresql+asyncpg://garant:garant@localhost:5432/garant` | SQLAlchemy async DB URL |

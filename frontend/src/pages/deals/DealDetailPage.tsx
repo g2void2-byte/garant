@@ -308,7 +308,10 @@ export default function DealDetailPage() {
                   {topupInvoice && (
                     <div className="space-y-2">
                       <TopupInvoiceRow label="Провайдер" value={topupInvoice.provider === "crystalpay" ? "Crystal Pay" : "CryptoBot"} currency={topupInvoice.currency_code} />
-                      <TopupInvoiceRow label="Сумма" value={topupInvoice.total} currency={topupInvoice.currency_code} strong />
+                      {topupInvoice.paid_total && Number(topupInvoice.paid_total) > 0 && (
+                        <TopupInvoiceRow label="Уже оплачено" value={topupInvoice.paid_total} currency={topupInvoice.currency_code} />
+                      )}
+                      <TopupInvoiceRow label="К оплате сейчас" value={topupInvoice.total} currency={topupInvoice.currency_code} strong />
                       {topupInvoice.expires_at && (
                         <TopupInvoiceRow label="Истекает" value={new Date(topupInvoice.expires_at).toLocaleString()} currency={topupInvoice.currency_code} />
                       )}

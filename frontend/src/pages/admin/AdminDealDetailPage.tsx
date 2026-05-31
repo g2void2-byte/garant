@@ -22,12 +22,14 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
 import {
+  useAdminApproveDealApproval,
   useAdminAssignArbiter,
   useAdminDeal,
   useAdminDeleteDeal,
   useAdminForceArbitration,
   useAdminForceRefund,
   useAdminForceRelease,
+  useAdminRejectDealApproval,
   useAdminSplitDeal,
 } from "@/api/admin/hooks";
 import { useMe } from "@/api/hooks";
@@ -127,7 +129,7 @@ export default function AdminDealDetailPage() {
             commissionPaid={deal.commission_paid}
             topupDepositId={deal.topup_deposit_id}
           />
-          {me?.is_admin && <ActionPanel deal={deal} />}
+          {me?.is_admin && <ActionPanel deal={deal} currentAdminId={me.id} />}
           <EventsTimeline deal={deal} />
           <MessagesFeed deal={deal} />
         </div>
@@ -231,29 +233,59 @@ function PartyCard({ side, snap }: { side: string; snap: AdminBalanceSnapshotDto
 
 // ── Actions ───────────────────────────────────────────────────────────────
 
-function ActionPanel({ deal }: { deal: AdminDealDetailDto }) {
+function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; currentAdminId?: number }) {
   const navigate = useNavigate();
   const toast = useToast();
   const [sheet, setSheet] = useState<null | "release" | "refund" | "split" | "arbitration" | "assign" | "delete">(null);
   const release = useAdminForceRelease();
   const refund = useAdminForceRefund();
   const split = useAdminSplitDeal();
+  const approve = useAdminApproveDealApproval();
+  const reject = useAdminRejectDealApproval();
   const arb = useAdminForceArbitration();
   const assign = useAdminAssignArbiter();
   const del = useAdminDeleteDeal();
   const [reason, setReason] = useState("");
   const [splitBuyerPct, setSplitBuyerPct] = useState("50");
+  const [approvalId, setApprovalId] = useState("");
   const [arbiterUsername, setArbiterUsername] = useState("");
   const terminal = TERMINAL.has(deal.status);
+  const approvals = deal.pending_approvals ?? [];
+
+  const actionName = (action: "release" | "refund" | "split") => ({
+    release: "deal.force_release",
+    refund: "deal.force_refund",
+    split: "deal.split",
+  })[action];
+
+  const approvedApprovalId = (action: "release" | "refund" | "split") => {
+    const direct = Number(approvalId);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    return approvals.find((a) => a.status === "approved" && a.action === actionName(action))?.id;
+  };
 
   const run = async (action: "release" | "refund" | "split" | "arbitration" | "assign" | "delete") => {
     haptic("light");
     try {
       if (action === "release") {
-        await release.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined } });
+        const result = await release.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined, approval_id: approvedApprovalId("release") } });
+        if ("pending_approval" in result && result.pending_approval) {
+          toast.show({ kind: "success", title: "Needs second admin", body: `Approval #${result.pending_approval.id}` });
+          setSheet(null);
+          setReason("");
+          setApprovalId("");
+          return;
+        }
         toast.show({ kind: "success", title: "Средства переданы продавцу" });
       } else if (action === "refund") {
-        await refund.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined } });
+        const result = await refund.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined, approval_id: approvedApprovalId("refund") } });
+        if ("pending_approval" in result && result.pending_approval) {
+          toast.show({ kind: "success", title: "Needs second admin", body: `Approval #${result.pending_approval.id}` });
+          setSheet(null);
+          setReason("");
+          setApprovalId("");
+          return;
+        }
         toast.show({ kind: "success", title: "Возврат покупателю" });
       } else if (action === "split") {
         const buyer_percent = Number(splitBuyerPct);
@@ -261,10 +293,17 @@ function ActionPanel({ deal }: { deal: AdminDealDetailDto }) {
           toast.show({ kind: "error", title: "Доля покупателя должна быть 0..100" });
           return;
         }
-        await split.mutateAsync({
+        const result = await split.mutateAsync({
           dealId: deal.id,
-          body: { buyer_percent, reason: reason || undefined },
+          body: { buyer_percent, reason: reason || undefined, approval_id: approvedApprovalId("split") },
         });
+        if ("pending_approval" in result && result.pending_approval) {
+          toast.show({ kind: "success", title: "Needs second admin", body: `Approval #${result.pending_approval.id}` });
+          setSheet(null);
+          setReason("");
+          setApprovalId("");
+          return;
+        }
         toast.show({ kind: "success", title: `Сплит ${buyer_percent}% / ${100 - buyer_percent}%` });
       } else if (action === "arbitration") {
         await arb.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined } });
@@ -305,6 +344,7 @@ function ActionPanel({ deal }: { deal: AdminDealDetailDto }) {
       }
       setSheet(null);
       setReason("");
+      setApprovalId("");
     } catch (e: unknown) {
       toast.show({ kind: "error", title: "Ошибка", body: (e as Error)?.message ?? "" });
     }
@@ -358,6 +398,56 @@ function ActionPanel({ deal }: { deal: AdminDealDetailDto }) {
   return (
     <section className="bg-panel rounded-card p-4 space-y-2">
       <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-1">Действия</h3>
+      {approvals.length > 0 && (
+        <div className="rounded-card border border-border bg-panel-2 p-3 space-y-2">
+          <div className="text-xs uppercase tracking-wide text-text-muted">Approvals</div>
+          {approvals.map((a) => (
+            <div key={a.id} className="flex items-center gap-2 text-xs">
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">#{a.id} · {a.action} · {a.status}</div>
+                <div className="text-text-muted truncate">
+                  {a.amount ?? "?"} {a.currency_code ?? ""}
+                  {a.amount_usd_estimate ? ` · ~$${a.amount_usd_estimate}` : ""}
+                </div>
+              </div>
+              {a.status === "pending" && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={a.requested_by_id === currentAdminId || approve.isPending}
+                    onClick={async () => {
+                      try {
+                        await approve.mutateAsync(a.id);
+                        toast.show({ kind: "success", title: "Approved" });
+                      } catch (e) {
+                        toast.show({ kind: "error", title: "Error", body: (e as Error).message });
+                      }
+                    }}
+                  >
+                    OK
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={reject.isPending}
+                    onClick={async () => {
+                      try {
+                        await reject.mutateAsync(a.id);
+                        toast.show({ kind: "success", title: "Rejected" });
+                      } catch (e) {
+                        toast.show({ kind: "error", title: "Error", body: (e as Error).message });
+                      }
+                    }}
+                  >
+                    Reject
+                  </Button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2">
         {buttons.map((btn, _idx) => (
           <div
@@ -394,6 +484,15 @@ function ActionPanel({ deal }: { deal: AdminDealDetailDto }) {
               placeholder="@arbiter1"
               value={arbiterUsername}
               onChange={(e) => setArbiterUsername(e.target.value)}
+            />
+          )}
+          {(sheet === "release" || sheet === "refund" || sheet === "split") && (
+            <Input
+              label="Approval ID"
+              inputMode="numeric"
+              value={approvalId}
+              placeholder={String(approvedApprovalId(sheet) ?? "auto")}
+              onChange={(e) => setApprovalId(e.target.value)}
             />
           )}
           {sheet !== "assign" && (

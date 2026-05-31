@@ -286,6 +286,173 @@
         "title": "AdminAnalyticsTopUserOut",
         "type": "object"
       },
+      "AdminApprovalOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "amount_usd_estimate": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Usd Estimate"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "approved_by_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved By Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code"
+          },
+          "executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executed At"
+          },
+          "executed_by_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executed By Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "rejected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejected At"
+          },
+          "requested_by_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "integer"
+          },
+          "target_type": {
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "target_type",
+          "target_id",
+          "status",
+          "requested_by_id",
+          "created_at"
+        ],
+        "title": "AdminApprovalOut",
+        "type": "object"
+      },
       "AdminArbitrationCounters": {
         "properties": {
           "closed": {
@@ -1104,6 +1271,107 @@
         "title": "AdminCurrencyOut",
         "type": "object"
       },
+      "AdminCurrencyRateOut": {
+        "properties": {
+          "currency_code": {
+            "title": "Currency Code",
+            "type": "string"
+          },
+          "currency_id": {
+            "title": "Currency Id",
+            "type": "integer"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          },
+          "usd_rate": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Usd Rate",
+            "type": "string"
+          }
+        },
+        "required": [
+          "currency_id",
+          "currency_code",
+          "usd_rate",
+          "source",
+          "observed_at"
+        ],
+        "title": "AdminCurrencyRateOut",
+        "type": "object"
+      },
+      "AdminCurrencyRateUpsertIn": {
+        "properties": {
+          "currency_code": {
+            "title": "Currency Code",
+            "type": "string"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "source": {
+            "default": "manual",
+            "title": "Source",
+            "type": "string"
+          },
+          "usd_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Usd Rate"
+          }
+        },
+        "required": [
+          "currency_code",
+          "usd_rate"
+        ],
+        "title": "AdminCurrencyRateUpsertIn",
+        "type": "object"
+      },
       "AdminCurrencyUpsertIn": {
         "properties": {
           "address_regex": {
@@ -1323,6 +1591,16 @@
         "properties": {
           "deal": {
             "$ref": "#/components/schemas/AdminDealDetailOut"
+          },
+          "pending_approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminApprovalOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1548,6 +1826,13 @@
             "title": "Messages",
             "type": "array"
           },
+          "pending_approvals": {
+            "items": {
+              "$ref": "#/components/schemas/AdminApprovalOut"
+            },
+            "title": "Pending Approvals",
+            "type": "array"
+          },
           "seller": {
             "$ref": "#/components/schemas/AdminBalanceSnapshot"
           },
@@ -1636,6 +1921,17 @@
       "AdminDealForceOut": {
         "description": "Body for ``POST /api/admin/deals/:id/force-release`` and similar.\n\nOptional ``reason`` is propagated into the audit log and DMs.",
         "properties": {
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Id"
+          },
           "reason": {
             "anyOf": [
               {
@@ -1811,6 +2107,17 @@
       "AdminDealSplitIn": {
         "description": "Body for ``POST /api/admin/deals/:id/split``.\n\n``buyer_percent`` is the share returned to the buyer; the seller\ngets ``100 - buyer_percent`` of the same locked pot. Commission\nis collected on the platform via the deposit invoice (P10) and\nis *never* refunded \u2014 admin-forced splits operate only on the\nlocked principal.",
         "properties": {
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Id"
+          },
           "buyer_percent": {
             "anyOf": [
               {
@@ -2744,6 +3051,13 @@
       },
       "AdminSystemStatusOut": {
         "properties": {
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/OperationalAlertOut"
+            },
+            "title": "Alerts",
+            "type": "array"
+          },
           "backend_version": {
             "title": "Backend Version",
             "type": "string"
@@ -2866,6 +3180,53 @@
               }
             ],
             "title": "Updated At"
+          },
+          "usd_estimate": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Estimate"
+          },
+          "usd_rate": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Rate"
+          },
+          "usd_rate_observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Rate Observed At"
+          },
+          "usd_rate_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Rate Source"
           },
           "user_id": {
             "title": "User Id",
@@ -3381,6 +3742,25 @@
             ],
             "title": "Photo Url"
           },
+          "total_usd_estimate": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Usd Estimate"
+          },
+          "usd_estimate_missing_rates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Usd Estimate Missing Rates",
+            "type": "array"
+          },
           "user_id": {
             "title": "User Id",
             "type": "integer"
@@ -3747,58 +4127,6 @@
           }
         },
         "title": "DealCancelRequest",
-        "type": "object"
-      },
-      "DealCreate": {
-        "properties": {
-          "amount": {
-            "anyOf": [
-              {
-                "minimum": 1e-08,
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              }
-            ],
-            "title": "Amount"
-          },
-          "counterparty": {
-            "title": "Counterparty",
-            "type": "string"
-          },
-          "currency_code": {
-            "default": "USDT",
-            "title": "Currency Code",
-            "type": "string"
-          },
-          "description": {
-            "default": "",
-            "title": "Description",
-            "type": "string"
-          },
-          "payment_provider": {
-            "default": "cryptobot",
-            "enum": [
-              "cryptobot",
-              "crystalpay"
-            ],
-            "title": "Payment Provider",
-            "type": "string"
-          },
-          "role": {
-            "const": "buyer",
-            "default": "buyer",
-            "title": "Role",
-            "type": "string"
-          }
-        },
-        "required": [
-          "counterparty",
-          "amount"
-        ],
-        "title": "DealCreate",
         "type": "object"
       },
       "DealCreateWithTopup": {
@@ -4265,6 +4593,11 @@
             ],
             "title": "Expires At"
           },
+          "paid_total": {
+            "default": 0.0,
+            "title": "Paid Total",
+            "type": "number"
+          },
           "pay_url": {
             "title": "Pay Url",
             "type": "string"
@@ -4501,6 +4834,39 @@
           "created_at"
         ],
         "title": "NotificationOut",
+        "type": "object"
+      },
+      "OperationalAlertOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "severity",
+          "count",
+          "detail"
+        ],
+        "title": "OperationalAlertOut",
         "type": "object"
       },
       "PinChangeIn": {
@@ -9047,6 +9413,297 @@
         ]
       }
     },
+    "/api/admin/deals/approvals": {
+      "get": {
+        "operationId": "list_deal_approvals_api_admin_deals_approvals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminApprovalOut"
+                  },
+                  "title": "Response List Deal Approvals Api Admin Deals Approvals Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Deal Approvals",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/deals/approvals/{approval_id}/approve": {
+      "post": {
+        "operationId": "approve_deal_approval_api_admin_deals_approvals__approval_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "title": "Approval Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminApprovalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Deal Approval",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/deals/approvals/{approval_id}/reject": {
+      "post": {
+        "operationId": "reject_deal_approval_api_admin_deals_approvals__approval_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "title": "Approval Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminApprovalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Deal Approval",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/deals/{deal_id}": {
       "get": {
         "operationId": "get_deal_api_admin_deals__deal_id__get",
@@ -12914,6 +13571,180 @@
         ]
       }
     },
+    "/api/admin/wallets/rates": {
+      "get": {
+        "operationId": "list_currency_rates_api_admin_wallets_rates_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminCurrencyRateOut"
+                  },
+                  "title": "Response List Currency Rates Api Admin Wallets Rates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Currency Rates",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "operationId": "upsert_currency_rate_api_admin_wallets_rates_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Totp-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCurrencyRateUpsertIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCurrencyRateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upsert Currency Rate",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/wallets/{user_id}": {
       "get": {
         "operationId": "user_wallet_detail_api_admin_wallets__user_id__get",
@@ -13568,80 +14399,6 @@
           }
         },
         "summary": "List Deals",
-        "tags": [
-          "deals"
-        ]
-      },
-      "post": {
-        "description": "Legacy route kept as a compatibility shim over ``/with-topup``.\n\nIt no longer creates balance-only commission-paid deals. Direct API\ncallers still get a ``DealOut`` response, but the deal goes through\nthe same commission/top-up invoice flow as the frontend endpoint.",
-        "operationId": "create_deal_endpoint_api_deals_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "X-Pin-Token",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Pin-Token"
-            }
-          },
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DealCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DealOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Deal Endpoint",
         "tags": [
           "deals"
         ]

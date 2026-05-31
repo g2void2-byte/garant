@@ -46,6 +46,7 @@ from ...schemas import (
     AdminWithdrawalListOut,
     AdminWithdrawalOut,
 )
+from ...services_ledger import record_balance_ledger
 from ...services_wallet import is_cryptopay_configured
 from ...sql_filters import escape_like_wildcards
 from ...time_utils import utcnow
@@ -366,9 +367,22 @@ async def decide_withdrawal(
                     )
                 ).scalar_one_or_none()
                 if bal is not None:
+                    before_amount = Decimal(str(bal.amount))
+                    before_locked = Decimal(str(bal.locked))
                     bal.locked = max(
                         Decimal(0),
                         Decimal(str(bal.locked)) - Decimal(str(w_locked.amount)),
+                    )
+                    record_balance_ledger(
+                        session,
+                        bal,
+                        before_amount=before_amount,
+                        before_locked=before_locked,
+                        event_type="withdrawal.sent",
+                        source_type="withdrawal",
+                        source_id=w_locked.id,
+                        provider="cryptobot",
+                        provider_event_id=str(transfer_id) if transfer_id is not None else None,
                     )
                 w_locked.status = WalletWithdrawStatus.sent
                 w_locked.processed_at = utcnow()
@@ -453,8 +467,20 @@ async def decide_withdrawal(
             )
         ).scalar_one_or_none()
         if bal is not None:
+            before_amount = Decimal(str(bal.amount))
+            before_locked = Decimal(str(bal.locked))
             bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - Decimal(str(w.amount)))
             bal.amount = Decimal(str(bal.amount)) + Decimal(str(w.amount))
+            record_balance_ledger(
+                session,
+                bal,
+                before_amount=before_amount,
+                before_locked=before_locked,
+                event_type="withdrawal.reject",
+                source_type="withdrawal",
+                source_id=w.id,
+                meta={"admin_id": admin.id},
+            )
         w.status = WalletWithdrawStatus.rejected
         w.admin_note = body.note or ""
         w.processed_at = utcnow()
@@ -497,7 +523,19 @@ async def decide_withdrawal(
             )
         ).scalar_one_or_none()
         if bal is not None:
+            before_amount = Decimal(str(bal.amount))
+            before_locked = Decimal(str(bal.locked))
             bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - Decimal(str(w.amount)))
+            record_balance_ledger(
+                session,
+                bal,
+                before_amount=before_amount,
+                before_locked=before_locked,
+                event_type="withdrawal.sent",
+                source_type="withdrawal",
+                source_id=w.id,
+                meta={"admin_id": admin.id, "manual": True},
+            )
         w.status = WalletWithdrawStatus.sent
         w.admin_note = body.note or w.admin_note
         w.processed_at = utcnow()

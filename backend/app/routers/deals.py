@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from ..admin_guard import TotpOrArbiterUser
 from ..deps import CurrentUser, PinUser, SessionDep
@@ -36,7 +36,10 @@ router = APIRouter(prefix="/api/deals", tags=["deals"])
 
 
 def _topup_invoice_from_deposit(
-    deal: Deal, deposit: WalletDeposit | None
+    deal: Deal,
+    deposit: WalletDeposit | None,
+    *,
+    paid_total: Decimal = Decimal("0"),
 ) -> DealTopupInvoiceOut | None:
     if deposit is None or deposit.status != WalletDepositStatus.pending:
         return None
@@ -49,6 +52,7 @@ def _topup_invoice_from_deposit(
         total=total,
         topup_principal=topup_principal,
         commission=commission,
+        paid_total=paid_total,
         currency_code=deposit.currency.code if deposit.currency else "",
         provider=(
             deposit.provider.value if hasattr(deposit.provider, "value") else str(deposit.provider)
@@ -110,7 +114,21 @@ async def _hydrate_topup_invoice(session, deal: Deal) -> DealTopupInvoiceOut | N
     if deal.status != DealStatus.pending_topup or deal.topup_deposit_id is None:
         return None
     deposit = await session.get(WalletDeposit, deal.topup_deposit_id)
-    return _topup_invoice_from_deposit(deal, deposit)
+    paid_total = Decimal("0")
+    if deposit is not None and deposit.linked_deal_id is not None:
+        paid_total = Decimal(
+            str(
+                (
+                    await session.execute(
+                        select(func.coalesce(func.sum(WalletDeposit.paid_amount), 0)).where(
+                            WalletDeposit.linked_deal_id == deposit.linked_deal_id,
+                            WalletDeposit.status == WalletDepositStatus.paid,
+                        )
+                    )
+                ).scalar_one()
+            )
+        )
+    return _topup_invoice_from_deposit(deal, deposit, paid_total=paid_total)
 
 
 def _role_for(deal: Deal, user_id: int | None) -> str | None:
@@ -200,6 +218,7 @@ async def list_deals(
         if d.status == DealStatus.pending_topup and d.topup_deposit_id is not None
     }
     deposits_by_id: dict[int, WalletDeposit] = {}
+    paid_by_deal_id: dict[int, Decimal] = {}
     if deposit_ids:
         rows = (
             await session.execute(
@@ -207,11 +226,29 @@ async def list_deals(
             )
         ).scalars().all()
         deposits_by_id = {dp.id: dp for dp in rows}
+        linked_ids = {dp.linked_deal_id for dp in rows if dp.linked_deal_id is not None}
+        if linked_ids:
+            paid_rows = (
+                await session.execute(
+                    select(
+                        WalletDeposit.linked_deal_id,
+                        func.coalesce(func.sum(WalletDeposit.paid_amount), 0),
+                    )
+                    .where(
+                        WalletDeposit.linked_deal_id.in_(linked_ids),
+                        WalletDeposit.status == WalletDepositStatus.paid,
+                    )
+                    .group_by(WalletDeposit.linked_deal_id)
+                )
+            ).all()
+            paid_by_deal_id = {int(deal_id): Decimal(str(total)) for deal_id, total in paid_rows}
 
     def _invoice_for(deal: Deal) -> DealTopupInvoiceOut | None:
         if deal.status != DealStatus.pending_topup or deal.topup_deposit_id is None:
             return None
-        return _topup_invoice_from_deposit(deal, deposits_by_id.get(deal.topup_deposit_id))
+        deposit = deposits_by_id.get(deal.topup_deposit_id)
+        paid_total = paid_by_deal_id.get(deal.id, Decimal("0"))
+        return _topup_invoice_from_deposit(deal, deposit, paid_total=paid_total)
 
     return [_deal_out(d, user.id, topup_invoice=_invoice_for(d)) for d in deals]
 
@@ -223,7 +260,7 @@ async def get_deal(deal_id: int, user: CurrentUser, session: SessionDep):
     return _deal_out(deal, user.id, topup_invoice=await _hydrate_topup_invoice(session, deal))
 
 
-@router.post("", response_model=DealOut, status_code=201)
+@router.post("", include_in_schema=False)
 async def create_deal_endpoint(
     body: DealCreate, user: PinUser, session: SessionDep, _rl: RLDealCreate
 ):
@@ -233,6 +270,8 @@ async def create_deal_endpoint(
     callers still get a ``DealOut`` response, but the deal goes through
     the same commission/top-up invoice flow as the frontend endpoint.
     """
+    _ = (body, user, session, _rl)
+    raise HTTPException(410, "POST /api/deals is retired; use /api/deals/with-topup")
     # Audit C1 — every deal is initiated by the buyer, i.e. the caller
     # of this endpoint. The previous ``role="seller"`` branch let any
     # user lock an arbitrary counterparty's balance into an escrow row

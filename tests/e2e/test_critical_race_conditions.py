@@ -139,13 +139,13 @@ async def test_concurrent_deal_creation_cannot_overdraw(client, _stub_cryptopay)
     }
 
     r1, r2 = await asyncio.gather(
-        client.post("/api/deals", json=body, headers=headers),
-        client.post("/api/deals", json=body, headers=headers),
+        client.post("/api/deals/with-topup", json=body, headers=headers),
+        client.post("/api/deals/with-topup", json=body, headers=headers),
     )
 
     statuses = sorted([r1.status_code, r2.status_code])
     assert statuses == [201, 201], (r1.status_code, r1.text, r2.status_code, r2.text)
-    deal_statuses = {r1.json()["status"], r2.json()["status"]}
+    deal_statuses = {r1.json()["deal"]["status"], r2.json()["deal"]["status"]}
     assert deal_statuses == {
         DealStatus.pending_confirmation.value,
         DealStatus.pending_topup.value,

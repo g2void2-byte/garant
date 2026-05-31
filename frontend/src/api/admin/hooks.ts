@@ -17,6 +17,7 @@ import type {
   AdminAnalyticsKpiDto,
   AdminAnalyticsSeriesDto,
   AdminAnalyticsTopListsDto,
+  AdminApprovalDto,
   AdminArbitrationListDto,
   AdminAuditLogListDto,
   AdminBroadcastCreateBody,
@@ -28,8 +29,11 @@ import type {
   AdminCommentItemDto,
   AdminCommentUpdateBody,
   AdminCurrencyDto,
+  AdminCurrencyRateDto,
+  AdminCurrencyRateUpsertBody,
   AdminCurrencyUpsertBody,
   AdminDashboardDto,
+  AdminDealActionResultDto,
   AdminDealDetailDto,
   AdminDealListDto,
   AdminDepositDto,
@@ -219,32 +223,53 @@ interface DealActionVars {
 
 function useAdminDealAction(action: string) {
   const qc = useQueryClient();
-  return useMutation<AdminDealDetailDto | { deleted?: boolean }, Error, DealActionVars>({
+  return useMutation<AdminDealActionResultDto | { deleted?: boolean; deal_id?: number; refunded?: string | null }, Error, DealActionVars>({
     mutationFn: async ({ dealId, body }) => {
-      const json = await api
+      return api
         .post(`api/admin/deals/${dealId}/${action}`, { json: body ?? {} })
-        .json<{ deal?: AdminDealDetailDto; deleted?: boolean }>();
-      return json.deal ?? json;
+        .json<AdminDealActionResultDto | { deleted?: boolean; deal_id?: number; refunded?: string | null }>();
     },
     onSuccess: (data, vars) => {
       qc.invalidateQueries({ queryKey: qk.admin.deals.all() });
       qc.invalidateQueries({ queryKey: qk.admin.deal.detail(vars.dealId) });
       qc.invalidateQueries({ queryKey: qk.admin.arbitration.all() });
       qc.invalidateQueries({ queryKey: qk.admin.dashboard() });
+      qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
       // V5-F-5: when the response carries the full AdminDealDetailDto,
       // also invalidate the buyer + seller user-detail queries so an
       // admin viewing one of the parties sees the post-action balance.
       // The other branch of the union is `{ deleted?: boolean }`, which
       // has no party ids and is intentionally skipped.
-      if (
-        data &&
-        typeof data === "object" &&
-        "buyer" in data &&
-        "seller" in data
-      ) {
-        qc.invalidateQueries({ queryKey: qk.admin.user.detail(data.buyer.user_id) });
-        qc.invalidateQueries({ queryKey: qk.admin.user.detail(data.seller.user_id) });
+      if (data && typeof data === "object" && "deal" in data) {
+        qc.invalidateQueries({ queryKey: qk.admin.user.detail(data.deal.buyer.user_id) });
+        qc.invalidateQueries({ queryKey: qk.admin.user.detail(data.deal.seller.user_id) });
       }
+    },
+  });
+}
+
+export function useAdminApproveDealApproval() {
+  const qc = useQueryClient();
+  return useMutation<AdminApprovalDto, Error, number>({
+    mutationFn: (approvalId) => api.post(`api/admin/deals/approvals/${approvalId}/approve`).json(),
+    onSuccess: (approval) => {
+      qc.invalidateQueries({ queryKey: qk.admin.deals.all() });
+      qc.invalidateQueries({ queryKey: qk.admin.deal.detail(approval.target_id) });
+      qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+    },
+  });
+}
+
+export function useAdminRejectDealApproval() {
+  const qc = useQueryClient();
+  return useMutation<AdminApprovalDto, Error, number>({
+    mutationFn: (approvalId) => api.post(`api/admin/deals/approvals/${approvalId}/reject`).json(),
+    onSuccess: (approval) => {
+      qc.invalidateQueries({ queryKey: qk.admin.deals.all() });
+      qc.invalidateQueries({ queryKey: qk.admin.deal.detail(approval.target_id) });
+      qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
     },
   });
 }
@@ -470,6 +495,25 @@ export function useAdminAdjustBalance(userId: number) {
 }
 
 // ── Deposits ────────────────────────────────────────────────────────────
+
+export function useAdminCurrencyRates() {
+  return useQuery<AdminCurrencyRateDto[]>({
+    queryKey: [...qk.admin.wallets.all(), "rates"] as const,
+    queryFn: () => api.get("api/admin/wallets/rates").json(),
+  });
+}
+
+export function useAdminUpsertCurrencyRate() {
+  const qc = useQueryClient();
+  return useMutation<AdminCurrencyRateDto, Error, AdminCurrencyRateUpsertBody>({
+    mutationFn: (body) => api.post("api/admin/wallets/rates", { json: body }).json(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.admin.wallets.all() });
+      qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+    },
+  });
+}
 
 export function useAdminDeposits(params: {
   status?: string;

@@ -46,6 +46,7 @@ from .models import (
     WalletDepositStatus,
 )
 from .money import quantize_money
+from .services_ledger import record_balance_ledger
 from .services_wallet import get_currency_by_code, lock_user_balance
 from .time_utils import utcnow
 
@@ -154,6 +155,7 @@ async def _debit(
     # not both pass the ``amount >= locked`` check on the same balance.
     bal = await lock_user_balance(session, user_id, currency_id)
     current = Decimal(str(bal.amount))
+    before_locked = Decimal(str(bal.locked))
     if current < amount:
         currency = await session.get(Currency, currency_id)
         raise InsufficientFundsError(
@@ -168,6 +170,15 @@ async def _debit(
     # digits, and the *next* read-modify-write compounds the loss.
     bal.amount = current - amount
     bal.locked = Decimal(str(bal.locked)) + amount
+    record_balance_ledger(
+        session,
+        bal,
+        before_amount=current,
+        before_locked=before_locked,
+        event_type="deal.lock",
+        source_type="deal",
+        meta={"amount": str(amount)},
+    )
     return bal
 
 
@@ -186,8 +197,19 @@ async def _refund(
     # path (decline / accept_cancel / sweep / arbitration-for-buyer)
     # inherits the lock without duplicating the boilerplate.
     bal = await lock_user_balance(session, user_id, currency_id)
+    before_amount = Decimal(str(bal.amount))
+    before_locked = Decimal(str(bal.locked))
     bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - amount)
     bal.amount = Decimal(str(bal.amount)) + amount
+    record_balance_ledger(
+        session,
+        bal,
+        before_amount=before_amount,
+        before_locked=before_locked,
+        event_type="deal.refund",
+        source_type="deal",
+        meta={"amount": str(amount)},
+    )
     return bal
 
 
@@ -212,8 +234,19 @@ async def _refund_principal(
     # Same ``FOR UPDATE`` lock as ``_refund`` above — see that helper's
     # comment for the lost-update rationale.
     bal = await lock_user_balance(session, user_id, currency_id)
+    before_amount = Decimal(str(bal.amount))
+    before_locked = Decimal(str(bal.locked))
     bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - principal)
     bal.amount = Decimal(str(bal.amount)) + principal
+    record_balance_ledger(
+        session,
+        bal,
+        before_amount=before_amount,
+        before_locked=before_locked,
+        event_type="deal.refund_principal",
+        source_type="deal",
+        meta={"amount": str(principal)},
+    )
     return bal
 
 
@@ -251,8 +284,30 @@ async def _release_to(
     first = await lock_user_balance(session, first_id, currency_id)
     second = await lock_user_balance(session, second_id, currency_id)
     payer, payee = (first, second) if payer_id == first_id else (second, first)
+    payer_before_amount = Decimal(str(payer.amount))
+    payer_before_locked = Decimal(str(payer.locked))
+    payee_before_amount = Decimal(str(payee.amount))
+    payee_before_locked = Decimal(str(payee.locked))
     payer.locked = max(Decimal(0), Decimal(str(payer.locked)) - locked_amount)
     payee.amount = Decimal(str(payee.amount)) + payout_amount
+    record_balance_ledger(
+        session,
+        payer,
+        before_amount=payer_before_amount,
+        before_locked=payer_before_locked,
+        event_type="deal.release_debit",
+        source_type="deal",
+        meta={"locked_amount": str(locked_amount), "payout_amount": str(payout_amount)},
+    )
+    record_balance_ledger(
+        session,
+        payee,
+        before_amount=payee_before_amount,
+        before_locked=payee_before_locked,
+        event_type="deal.release_credit",
+        source_type="deal",
+        meta={"locked_amount": str(locked_amount), "payout_amount": str(payout_amount)},
+    )
 
 
 # ── Lifecycle ──────────────────────────────────────────
@@ -476,6 +531,8 @@ async def create_deal_with_topup(
     # (CryptoBot keeps the commission portion of the upstream
     # invoice, so the user-side ledger never sees that money).
     if balance_amount >= needed:
+        balance_before_amount = Decimal(str(bal.amount))
+        balance_before_locked = Decimal(str(bal.locked))
         bal.amount = balance_amount - needed
         bal.locked = Decimal(str(bal.locked)) + amt
         deal = Deal(
@@ -491,6 +548,16 @@ async def create_deal_with_topup(
         )
         session.add(deal)
         await session.flush()
+        record_balance_ledger(
+            session,
+            bal,
+            before_amount=balance_before_amount,
+            before_locked=balance_before_locked,
+            event_type="deal.create_balance_funded",
+            source_type="deal",
+            source_id=deal.id,
+            meta={"commission": str(commission), "principal": str(amt)},
+        )
         notif, ws_payload = await notifier.insert(
             session,
             seller.id,
@@ -704,7 +771,21 @@ async def complete_deal_topup_payment(
 
     if deal.status != DealStatus.pending_topup:
         bal = await lock_user_balance(session, deal.buyer_id, currency.id)
+        before_amount = Decimal(str(bal.amount))
+        before_locked = Decimal(str(bal.locked))
         bal.amount = Decimal(str(bal.amount)) + paid
+        record_balance_ledger(
+            session,
+            bal,
+            before_amount=before_amount,
+            before_locked=before_locked,
+            event_type="deal_topup.late_credit",
+            source_type="deposit",
+            source_id=deposit.id,
+            provider=deposit.provider.value,
+            provider_event_id=deposit.provider_invoice_id,
+            meta={"deal_id": deal.id, "paid": str(paid)},
+        )
         deposit.status = WalletDepositStatus.paid
         deposit.paid_at = utcnow()
         deposit.paid_amount = paid
@@ -735,6 +816,7 @@ async def complete_deal_topup_payment(
 
     bal = await lock_user_balance(session, deal.buyer_id, currency.id)
     balance_amount = Decimal(str(bal.amount))
+    balance_locked = Decimal(str(bal.locked))
 
     pending: list[tuple[Notification, dict[str, Any] | None]] = []
 
@@ -746,6 +828,18 @@ async def complete_deal_topup_payment(
         # spec). Buyer is asked to top up the rest.
         new_balance = balance_amount + paid
         bal.amount = new_balance
+        record_balance_ledger(
+            session,
+            bal,
+            before_amount=balance_amount,
+            before_locked=balance_locked,
+            event_type="deal_topup.partial_credit",
+            source_type="deposit",
+            source_id=deposit.id,
+            provider=deposit.provider.value,
+            provider_event_id=deposit.provider_invoice_id,
+            meta={"deal_id": deal.id, "paid": str(paid), "commission_due": str(commission_due)},
+        )
         deposit.status = WalletDepositStatus.paid
         deposit.paid_at = utcnow()
         deposit.paid_amount = paid
@@ -795,6 +889,18 @@ async def complete_deal_topup_payment(
         deposit.status = WalletDepositStatus.paid
         deposit.paid_at = utcnow()
         deposit.paid_amount = paid
+        record_balance_ledger(
+            session,
+            bal,
+            before_amount=balance_amount,
+            before_locked=balance_locked,
+            event_type="deal_topup.partial_credit",
+            source_type="deposit",
+            source_id=deposit.id,
+            provider=deposit.provider.value,
+            provider_event_id=deposit.provider_invoice_id,
+            meta={"deal_id": deal.id, "paid": str(paid), "commission_due": str(commission_due)},
+        )
         replacement = await _issue_remaining_topup_invoice(session, deal, currency, new_balance)
         deficit = Decimal(str(replacement.amount)) if replacement is not None else Decimal("0")
         notif, ws_payload = await notifier.insert(
@@ -824,6 +930,18 @@ async def complete_deal_topup_payment(
     # Happy path — lock the principal and advance the deal.
     bal.amount = new_balance - amt
     bal.locked = Decimal(str(bal.locked)) + amt
+    record_balance_ledger(
+        session,
+        bal,
+        before_amount=balance_amount,
+        before_locked=balance_locked,
+        event_type="deal_topup.activate",
+        source_type="deposit",
+        source_id=deposit.id,
+        provider=deposit.provider.value,
+        provider_event_id=deposit.provider_invoice_id,
+        meta={"deal_id": deal.id, "paid": str(paid), "commission_due": str(commission_due)},
+    )
     deposit.status = WalletDepositStatus.paid
     deposit.paid_at = utcnow()
     deposit.paid_amount = paid

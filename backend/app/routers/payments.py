@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -14,10 +16,49 @@ from ..services_payments import (
     verify_webhook_signature,
     webhook_secret,
 )
+from ..services_webhooks import (
+    acquire_webhook_event,
+    enqueue_webhook_outbox,
+    mark_webhook_event,
+    raw_event_id,
+    safe_headers,
+)
+from ..time_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
+
+_WEBHOOK_PROCESSING_RETRY_AFTER = timedelta(minutes=10)
+
+
+def _webhook_processing_is_fresh(event: Any) -> bool:
+    processing_since: datetime | None = event.processed_at or event.created_at
+    return (
+        processing_since is not None
+        and utcnow() - processing_since < _WEBHOOK_PROCESSING_RETRY_AFTER
+    )
+
+
+async def _mark_webhook_failed(session: SessionDep, event: Any, exc: BaseException) -> None:
+    await session.rollback()
+    try:
+        fresh = await session.get(type(event), event.id)
+        if fresh is None:
+            return
+        mark_webhook_event(
+            fresh,
+            status="failed",
+            result={"ok": False, "reason": "processing failed"},
+            error=repr(exc),
+        )
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        logger.exception(
+            "Failed to persist webhook processing failure",
+            extra={"event": "payments.webhook.failure_mark_failed", "webhook_event_id": event.id},
+        )
 
 
 @router.post("/webhook/cryptobot")
@@ -69,6 +110,8 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
         body = await request.json()
     except ValueError as e:
         raise HTTPException(400, "Body must be JSON") from e
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Body must be a JSON object")
 
     # Crypto Pay's webhook envelope has ALWAYS used
     # ``update_type`` (per their public docs, `https://help.crypt.bot/
@@ -80,20 +123,64 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
     # invoice-paid handler. Drop the fallback so we only accept
     # genuinely-shaped payloads.
     update_type = body.get("update_type")
-    payload = body.get("payload") or {}
+    payload_raw = body.get("payload") or {}
+    payload: dict[str, Any] = payload_raw if isinstance(payload_raw, dict) else {}
+    provider_invoice_id = payload.get("invoice_id")
+    event_id = str(body.get("update_id") or raw_event_id(raw))
+    event, duplicate = await acquire_webhook_event(
+        session,
+        provider="cryptobot",
+        event_id=event_id,
+        event_type=str(update_type or "unknown"),
+        provider_invoice_id=str(provider_invoice_id) if provider_invoice_id is not None else None,
+        payload=body,
+        headers=safe_headers(request.headers),
+        raw=raw,
+    )
+    if duplicate and event.status in {"processed", "ignored"}:
+        cached = (
+            event.result_json if isinstance(event.result_json, dict) else {"status": event.status}
+        )
+        await session.commit()
+        return {"ok": True, "duplicate": True, **cached}
+    if duplicate and event.status == "processing" and _webhook_processing_is_fresh(event):
+        await session.commit()
+        return {"ok": True, "duplicate": True, "status": event.status}
+    if duplicate and event.status == "processing":
+        logger.warning(
+            "Retrying stale CryptoBot webhook event still marked processing",
+            extra={"event": "cryptobot.webhook.processing_stale", "webhook_event_id": event.id},
+        )
+    event.status = "processing"
+    event.processed_at = utcnow()
+    await session.commit()
 
     if update_type == "invoice_paid":
         # Crypto Pay sometimes posts ``status="expired"`` on the
         # ``invoice_paid`` channel too — route those through the
         # expired handler so we don't accidentally credit a dead row.
-        if payload.get("status") == "expired":
-            result = await handle_invoice_expired(session, payload)
-        else:
-            result = await handle_invoice_paid(session, payload)
+        try:
+            if payload.get("status") == "expired":
+                result = await handle_invoice_expired(session, payload)
+            else:
+                result = await handle_invoice_paid(session, payload)
+        except Exception as exc:
+            await _mark_webhook_failed(session, event, exc)
+            raise
+        enqueue_webhook_outbox(session, event, kind="deposit_reconcile", payload=result)
+        mark_webhook_event(event, status="processed", result=result)
+        await session.commit()
         return {"ok": True, **result}
 
     if update_type == "invoice_expired":
-        result = await handle_invoice_expired(session, payload)
+        try:
+            result = await handle_invoice_expired(session, payload)
+        except Exception as exc:
+            await _mark_webhook_failed(session, event, exc)
+            raise
+        enqueue_webhook_outbox(session, event, kind="deposit_reconcile", payload=result)
+        mark_webhook_event(event, status="processed", result=result)
+        await session.commit()
         return {"ok": True, **result}
 
     # M-14: a Crypto Pay delivery that doesn't match any handled
@@ -109,7 +196,10 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
             "update_type": update_type or "unknown",
         },
     )
-    return {"ok": True, "ignored": update_type or "unknown"}
+    result = {"ignored": update_type or "unknown"}
+    mark_webhook_event(event, status="ignored", result=result)
+    await session.commit()
+    return {"ok": True, **result}
 
 
 @router.post("/webhook/crystalpay")
@@ -134,6 +224,7 @@ async def crystalpay_webhook(request: Request, session: SessionDep):
         )
         raise HTTPException(503, "Webhooks disabled (Crystalpay not configured)")
 
+    raw = await request.body()
     try:
         body = await request.json()
     except ValueError as e:
@@ -157,5 +248,41 @@ async def crystalpay_webhook(request: Request, session: SessionDep):
         )
         raise HTTPException(401, "Bad signature")
 
-    result = await handle_crystalpay_invoice(session, body)
+    event_id = f"{invoice_id_str or raw_event_id(raw)}:{body.get('state') or 'unknown'}"
+    event, duplicate = await acquire_webhook_event(
+        session,
+        provider="crystalpay",
+        event_id=event_id,
+        event_type=str(body.get("state") or "unknown"),
+        provider_invoice_id=invoice_id_str,
+        payload=body,
+        headers=safe_headers(request.headers),
+        raw=raw,
+    )
+    if duplicate and event.status in {"processed", "ignored"}:
+        cached = (
+            event.result_json if isinstance(event.result_json, dict) else {"status": event.status}
+        )
+        await session.commit()
+        return {"ok": True, "duplicate": True, **cached}
+    if duplicate and event.status == "processing" and _webhook_processing_is_fresh(event):
+        await session.commit()
+        return {"ok": True, "duplicate": True, "status": event.status}
+    if duplicate and event.status == "processing":
+        logger.warning(
+            "Retrying stale Crystalpay webhook event still marked processing",
+            extra={"event": "crystalpay.webhook.processing_stale", "webhook_event_id": event.id},
+        )
+    event.status = "processing"
+    event.processed_at = utcnow()
+    await session.commit()
+
+    try:
+        result = await handle_crystalpay_invoice(session, body)
+    except Exception as exc:
+        await _mark_webhook_failed(session, event, exc)
+        raise
+    enqueue_webhook_outbox(session, event, kind="deposit_reconcile", payload=result)
+    mark_webhook_event(event, status="processed", result=result)
+    await session.commit()
     return {"ok": True, **result}

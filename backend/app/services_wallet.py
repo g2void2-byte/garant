@@ -44,6 +44,7 @@ from .models import (
     WalletWithdrawStatus,
 )
 from .money import quantize_money
+from .services_ledger import record_balance_ledger, record_synthetic_ledger
 from .time_utils import utcnow
 
 logger = logging.getLogger(__name__)
@@ -638,14 +639,34 @@ async def credit_deposit(
             return deposit
         # See M5 in services_deals._debit for why this stays Decimal
         # end-to-end instead of round-tripping through ``float``.
+        before_trust = Decimal(str(user_row.trust_deposit_balance))
+        after_trust = before_trust + credit_amount
         user_row.trust_deposit_balance = (
-            Decimal(str(user_row.trust_deposit_balance)) + credit_amount
+            after_trust
         )
         deposit.amount = credit_amount
         if reported_amount is not None:
             deposit.paid_amount = reported_amount
         deposit.status = WalletDepositStatus.paid
         deposit.paid_at = utcnow()
+        record_synthetic_ledger(
+            session,
+            user_id=user_row.id,
+            currency_id=deposit.currency_id,
+            before_amount=before_trust,
+            after_amount=after_trust,
+            event_type="deposit.trust_credit",
+            source_type="deposit",
+            source_id=deposit.id,
+            provider=deposit.provider.value,
+            provider_event_id=deposit.provider_invoice_id,
+            meta={
+                "purpose": purpose,
+                "reported_amount": str(reported_amount)
+                if reported_amount is not None
+                else None,
+            },
+        )
     else:
         # take a FOR UPDATE lock on the user's balance row before
         # mutating it. Two concurrent webhook deliveries that race past
@@ -673,12 +694,31 @@ async def credit_deposit(
             return deposit
         # See M5 in services_deals._debit for why this stays Decimal end-
         # to-end instead of round-tripping through ``float``.
+        before_amount = Decimal(str(bal.amount))
+        before_locked = Decimal(str(bal.locked))
         bal.amount = Decimal(str(bal.amount)) + credit_amount
         deposit.amount = credit_amount
         if reported_amount is not None:
             deposit.paid_amount = reported_amount
         deposit.status = WalletDepositStatus.paid
         deposit.paid_at = utcnow()
+        record_balance_ledger(
+            session,
+            bal,
+            before_amount=before_amount,
+            before_locked=before_locked,
+            event_type="deposit.wallet_credit",
+            source_type="deposit",
+            source_id=deposit.id,
+            provider=deposit.provider.value,
+            provider_event_id=deposit.provider_invoice_id,
+            meta={
+                "purpose": purpose,
+                "reported_amount": str(reported_amount)
+                if reported_amount is not None
+                else None,
+            },
+        )
 
     # A9-M-2 — split-API: insert the notification row atomically with
     # the balance credit + deposit-status flip, dispatch WS/DM after
@@ -1072,6 +1112,7 @@ async def create_withdrawal(
     bal = await lock_user_balance(session, user.id, currency.id)
     amount_d = Decimal(str(amount))
     current = Decimal(str(bal.amount))
+    before_locked = Decimal(str(bal.locked))
     if current < amount_d:
         raise HTTPException(400, "Недостаточно средств")
 
@@ -1090,6 +1131,17 @@ async def create_withdrawal(
         status=WalletWithdrawStatus.pending,
     )
     session.add(withdrawal)
+    await session.flush()
+    record_balance_ledger(
+        session,
+        bal,
+        before_amount=current,
+        before_locked=before_locked,
+        event_type="withdrawal.lock",
+        source_type="withdrawal",
+        source_id=withdrawal.id,
+        meta={"status": withdrawal.status.value},
+    )
     await session.commit()
 
     # If auto-mode is on and CryptoBot is configured, fire the transfer
@@ -1240,9 +1292,22 @@ async def create_withdrawal(
                 )
             ).scalar_one_or_none()
             if bal_locked is not None:
+                sent_before_amount = Decimal(str(bal_locked.amount))
+                sent_before_locked = Decimal(str(bal_locked.locked))
                 bal_locked.locked = max(
                     Decimal(0),
                     Decimal(str(bal_locked.locked)) - amount_d,
+                )
+                record_balance_ledger(
+                    session,
+                    bal_locked,
+                    before_amount=sent_before_amount,
+                    before_locked=sent_before_locked,
+                    event_type="withdrawal.sent",
+                    source_type="withdrawal",
+                    source_id=w_locked.id,
+                    provider="cryptobot",
+                    provider_event_id=str(tr.transfer_id),
                 )
 
             w_locked.status = WalletWithdrawStatus.sent

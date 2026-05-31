@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     # ``None`` means production/staging only; set explicitly for a
     # custom staging/dev HTTPS domain.
     enable_hsts: bool | None = None
+    # Maker-checker threshold for privileged admin deal money movement.
+    # Native deal amounts are converted through admin-maintained
+    # ``currency_usd_rates``; when a rate is missing, approval is
+    # required because the system cannot prove the action is below the
+    # threshold. Set 0 to disable.
+    admin_deal_approval_threshold_usd: float = 10000.0
     webapp_port: int = 8080
     allowed_origins: str = "http://localhost:5173"
 

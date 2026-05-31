@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 from sqlalchemy import select
 
 from tests.helpers import (
@@ -144,9 +142,7 @@ async def test_decline_refunds_buyer(client):
         assert float(buyer_bal.locked) == 0.0
 
 
-async def test_legacy_create_without_balance_issues_topup_invoice(client, _stub_cryptopay):
-    from backend.app.models import DealStatus
-
+async def test_legacy_create_route_is_retired(client, _stub_cryptopay):
     buyer_init = signed_init_data(1201, "buyer12")
     seller_init = signed_init_data(1202, "seller12")
     buyer_pin = await setup_pin(client, buyer_init)
@@ -165,12 +161,5 @@ async def test_legacy_create_without_balance_issues_topup_invoice(client, _stub_
         },
         headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
     )
-    assert resp.status_code == 201, resp.text
-    body = resp.json()
-    assert body["status"] == DealStatus.pending_topup.value
-    assert body["commission_paid"] is False
-    invoice = body["topup_invoice"]
-    assert invoice is not None
-    assert Decimal(str(invoice["topup_principal"])) == Decimal("1")
-    assert Decimal(str(invoice["commission"])) == Decimal("0.05")
-    assert Decimal(str(invoice["total"])) == Decimal("1.05")
+    assert resp.status_code == 410, resp.text
+    assert "with-topup" in resp.text

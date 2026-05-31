@@ -11,10 +11,12 @@ import { useToast } from "@/components/ui/Toast";
 import {
   useAdminAdjustBalance,
   useAdminCurrencies,
+  useAdminCurrencyRates,
+  useAdminUpsertCurrencyRate,
   useAdminWallets,
 } from "@/api/admin/hooks";
 import { parseDecimal } from "@/lib/format";
-import type { AdminWalletListItemDto } from "@/api/types";
+import type { AdminCurrencyRateDto, AdminWalletListItemDto } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 /**
@@ -32,6 +34,7 @@ export default function AdminWalletsPage() {
   const [page, setPage] = useState(1);
   const { data, isLoading } = useAdminWallets({ q, page });
   const [target, setTarget] = useState<AdminWalletListItemDto | null>(null);
+  const [ratesOpen, setRatesOpen] = useState(false);
 
   const __guard = useAdminRedirect();
   if (!__guard.shouldRender) return null;
@@ -43,26 +46,31 @@ export default function AdminWalletsPage() {
         subtitle={data ? `${data.total} пользователей` : undefined}
       />
       <div className="px-4 mb-3">
-        <div className="flex items-center gap-2 bg-panel rounded-button px-3 py-2">
-          <Search size={16} className="text-text-muted" />
-          <input
-            value={draftQ}
-            onChange={(e) => setDraftQ(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                setQ(draftQ.trim());
-                setPage(1);
-              }
-            }}
-            onBlur={() => {
-              if (draftQ.trim() !== q) {
-                setQ(draftQ.trim());
-                setPage(1);
-              }
-            }}
-            placeholder="@username"
-            className="flex-1 bg-transparent outline-none text-sm"
-          />
+        <div className="flex items-center gap-2">
+          <div className="flex flex-1 items-center gap-2 bg-panel rounded-button px-3 py-2">
+            <Search size={16} className="text-text-muted" />
+            <input
+              value={draftQ}
+              onChange={(e) => setDraftQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  setQ(draftQ.trim());
+                  setPage(1);
+                }
+              }}
+              onBlur={() => {
+                if (draftQ.trim() !== q) {
+                  setQ(draftQ.trim());
+                  setPage(1);
+                }
+              }}
+              placeholder="@username"
+              className="flex-1 bg-transparent outline-none text-sm"
+            />
+          </div>
+          <Button type="button" size="sm" variant="secondary" onClick={() => setRatesOpen(true)}>
+            USD
+          </Button>
         </div>
       </div>
       <div className="px-4 space-y-2 pb-24">
@@ -96,6 +104,15 @@ export default function AdminWalletsPage() {
                 </div>
                 <Wallet size={16} className="text-text-muted" />
               </div>
+              {it.total_usd_estimate !== undefined && it.total_usd_estimate !== null ? (
+                <div className="mt-2 text-xs text-success">
+                  USD estimate: ${parseDecimal(it.total_usd_estimate).toFixed(2)}
+                </div>
+              ) : it.usd_estimate_missing_rates?.length ? (
+                <div className="mt-2 text-xs text-warning">
+                  No USD rate: {it.usd_estimate_missing_rates.join(", ")}
+                </div>
+              ) : null}
               {(() => {
                 // Filter once so we know both whether to render the grid
                 // at all *and* what to put in it — otherwise users with
@@ -146,7 +163,72 @@ export default function AdminWalletsPage() {
       >
         {target && <AdjustForm target={target} onClose={() => setTarget(null)} />}
       </Sheet>
+      <Sheet open={ratesOpen} onClose={() => setRatesOpen(false)} title="USD rates">
+        <RatesForm onClose={() => setRatesOpen(false)} />
+      </Sheet>
     </Page>
+  );
+}
+
+function RatesForm({ onClose }: { onClose: () => void }) {
+  const { data: currencies } = useAdminCurrencies();
+  const { data: rates } = useAdminCurrencyRates();
+  const upsert = useAdminUpsertCurrencyRate();
+  const toast = useToast();
+  const [currency, setCurrency] = useState("USDT");
+  const current = (rates ?? []).find((r: AdminCurrencyRateDto) => r.currency_code === currency);
+  const [rate, setRate] = useState<string | null>(null);
+  const [source, setSource] = useState("manual");
+  const value = rate ?? (current ? String(current.usd_rate) : "");
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-1.5">
+        {(currencies ?? []).map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => {
+              setCurrency(c.code);
+              setRate(null);
+              setSource((rates ?? []).find((r) => r.currency_code === c.code)?.source ?? "manual");
+            }}
+            className={`rounded-button px-3 py-1.5 text-sm transition ${
+              c.code === currency ? "bg-accent text-accent-fg font-medium" : "bg-panel-2 text-text-muted"
+            }`}
+          >
+            {c.code}
+          </button>
+        ))}
+      </div>
+      <Input
+        label={`USD rate for ${currency}`}
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => setRate(e.target.value)}
+      />
+      <Input label="Source" value={source} onChange={(e) => setSource(e.target.value)} />
+      {current?.observed_at && (
+        <div className="text-xs text-text-muted">Last observed: {new Date(current.observed_at).toLocaleString()}</div>
+      )}
+      <Button
+        type="button"
+        fullWidth
+        disabled={upsert.isPending || !Number(value)}
+        onClick={async () => {
+          try {
+            await upsert.mutateAsync({ currency_code: currency, usd_rate: Number(value), source: source.trim() || "manual" });
+            toast.show({ kind: "success", title: "USD rate saved" });
+            setRate(null);
+            onClose();
+          } catch (e) {
+            toast.show({ kind: "error", title: "Error", body: (e as Error).message });
+          }
+        }}
+      >
+        Save rate
+      </Button>
+    </div>
   );
 }
 
