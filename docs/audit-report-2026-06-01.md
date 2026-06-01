@@ -18,7 +18,7 @@
 - `uv run --frozen ruff check .` - успешно.
 - `uv run --frozen --extra dev pyright` - успешно.
 - `node scripts/check-pinned-deps.cjs frontend\package.json` - успешно.
-- Alembic: один head `zh8c9d0e1f2g`.
+- Alembic: один head `zi9d0e1f2g3h`.
 - `uv run --frozen --extra dev pytest -q` - не прошел из-за инфраструктуры БД: `asyncpg.exceptions.ConnectionDoesNotExistError: connection was closed in the middle of operation` в bootstrap из `tests/conftest.py`.
 - `docker compose ps` - Docker недоступен в текущей среде.
 - `uv run --frozen --extra dev python scripts/dump_openapi.py` - успешно; `frontend/openapi.json` перегенерирован под текущие backend schemas.

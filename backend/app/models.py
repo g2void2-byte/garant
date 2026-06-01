@@ -1173,7 +1173,8 @@ class Broadcast(Base):
     Stores the *intent* (audience filter + body + dispatch flags); the
     actual recipients are computed at send time and counted into
     ``total_recipients`` / ``delivered_count``.  ``status`` is ``draft``
-    when scheduled (``scheduled_at`` set), ``sent`` once dispatched.
+    when scheduled (``scheduled_at`` set), ``sending`` while dispatch is
+    in progress, and ``sent`` once dispatched.
     """
 
     __tablename__ = "broadcasts"

@@ -4507,6 +4507,8 @@ export interface components {
         };
         /** TransferStartOut */
         TransferStartOut: {
+            /** Code Length */
+            code_length: number;
             /** Delivered */
             delivered: boolean;
             /**
@@ -4514,13 +4516,19 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+            /** Ttl Seconds */
+            ttl_seconds: number;
         };
         /** TransferStatusOut */
         TransferStatusOut: {
+            /** Code Length */
+            code_length: number;
             /** Expires At */
             expires_at?: string | null;
             /** Has Active */
             has_active: boolean;
+            /** Ttl Seconds */
+            ttl_seconds: number;
         };
         /**
          * UserOut

@@ -43,6 +43,7 @@ from sqlalchemy import select
 from tests.helpers import (
     auth_headers,
     credit_balance,
+    ensure_admin_user,
     get_user_id_by_tg,
     setup_pin,
     signed_init_data,
@@ -73,6 +74,7 @@ async def test_concurrent_withdrawals_cannot_overdraw(client):
 
     init = signed_init_data(7101, "race_withdraw")
     pin_token = await setup_pin(client, init)
+    await ensure_admin_user(client, tg_user_id=7199, username="race_withdraw_admin")
 
     async with async_session() as session:
         user_id = await get_user_id_by_tg(session, 7101)

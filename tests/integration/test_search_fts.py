@@ -230,8 +230,8 @@ async def test_services_search_empty_query_returns_all(client):
 
 
 @pytest.mark.asyncio
-async def test_services_search_punctuation_only_returns_all(client):
-    """User typed only punctuation → ts_q is None → no FTS filter applied."""
+async def test_services_search_punctuation_only_returns_empty(client):
+    """Non-empty punctuation-only search should not fall back to browsing all services."""
     cat = await _seed_category()
     await _seed_user_and_service(2051, "alice", title="A service", category_id=cat)
     await _seed_user_and_service(2052, "bob", title="B service", category_id=cat)
@@ -239,7 +239,7 @@ async def test_services_search_punctuation_only_returns_all(client):
     init = signed_init_data(2999, "buyer")
     resp = await client.get("/api/services", params={"q": "??!"}, headers=auth_headers(init))
     assert resp.status_code == 200, resp.text
-    assert len(resp.json()) == 2
+    assert resp.json() == []
 
 
 # ── /api/users?q= ──────────────────────────────────────────────────────────
