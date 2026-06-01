@@ -6,7 +6,7 @@
  * so the UI stays consistent without manually patching the cache.
  */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api } from "../client";
 import { qk } from "../queryKeys";
 import type {
@@ -385,12 +385,30 @@ export function useAdminUserReviews(userId: number | undefined, direction: "rece
   });
 }
 
+function invalidateAdminReviewSideEffects(qc: QueryClient, review?: AdminReviewItemDto) {
+  qc.invalidateQueries({ queryKey: qk.admin.userReviews.all() });
+  qc.invalidateQueries({ queryKey: qk.admin.users.all() });
+  if (review) {
+    qc.invalidateQueries({ queryKey: qk.admin.user.detail(review.target_id) });
+    qc.invalidateQueries({ queryKey: qk.admin.user.detail(review.author_id) });
+  } else {
+    qc.invalidateQueries({ queryKey: qk.admin.user.all() });
+  }
+  qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+  qc.invalidateQueries({ queryKey: qk.reviews.all() });
+  qc.invalidateQueries({ queryKey: qk.users.all() });
+  qc.invalidateQueries({ queryKey: qk.user.all() });
+}
+
 export function useAdminCreateReview(userId?: number) {
   const qc = useQueryClient();
   return useMutation<AdminReviewItemDto, Error, AdminReviewUpsertBody>({
     mutationFn: (body) => api.post("api/admin/reviews", { json: body }).json(),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.admin.userReviews.forUser(userId) });
+    onSuccess: (review) => {
+      invalidateAdminReviewSideEffects(qc, review);
+      if (userId !== undefined) {
+        qc.invalidateQueries({ queryKey: qk.admin.userReviews.forUser(userId) });
+      }
     },
   });
 }
@@ -404,8 +422,11 @@ export function useAdminUpdateReview(userId?: number) {
   >({
     mutationFn: ({ reviewId, body }) =>
       api.post(`api/admin/reviews/${reviewId}`, { json: body }).json(),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.admin.userReviews.forUser(userId) });
+    onSuccess: (review) => {
+      invalidateAdminReviewSideEffects(qc, review);
+      if (userId !== undefined) {
+        qc.invalidateQueries({ queryKey: qk.admin.userReviews.forUser(userId) });
+      }
     },
   });
 }
@@ -416,7 +437,10 @@ export function useAdminDeleteReview(userId?: number) {
     mutationFn: (reviewId) =>
       api.post(`api/admin/reviews/${reviewId}/delete`).json(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.admin.userReviews.forUser(userId) });
+      invalidateAdminReviewSideEffects(qc);
+      if (userId !== undefined) {
+        qc.invalidateQueries({ queryKey: qk.admin.userReviews.forUser(userId) });
+      }
     },
   });
 }

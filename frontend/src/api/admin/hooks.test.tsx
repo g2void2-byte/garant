@@ -6,6 +6,7 @@ import type {
   AdminBalanceSnapshotDto,
   AdminDealDetailDto,
   AdminDepositDto,
+  AdminReviewItemDto,
   AdminWithdrawalDto,
 } from "../types";
 
@@ -42,11 +43,14 @@ vi.mock("../client", () => ({
 
 import {
   useAdminClaimArbitration,
+  useAdminCreateReview,
+  useAdminDeleteReview,
   useAdminDecideWithdrawal,
   useAdminDepositMarkPaid,
   useAdminDepositRefund,
   useAdminForceRefund,
   useAdminForceRelease,
+  useAdminUpdateReview,
 } from "./hooks";
 
 function makeBalance(overrides: Partial<AdminBalanceSnapshotDto>): AdminBalanceSnapshotDto {
@@ -124,6 +128,21 @@ function makeWithdrawal(overrides: Partial<AdminWithdrawalDto> = {}): AdminWithd
     admin_note: "",
     created_at: "2026-01-01T00:00:00Z",
     processed_at: "2026-01-01T02:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeReview(overrides: Partial<AdminReviewItemDto> = {}): AdminReviewItemDto {
+  return {
+    id: 12,
+    deal_id: 7,
+    author_id: 99,
+    author_username: "seller",
+    target_id: 42,
+    target_username: "buyer",
+    rating: 5,
+    text: "ok",
+    created_at: "2026-01-01T00:00:00Z",
     ...overrides,
   };
 }
@@ -342,6 +361,69 @@ describe("admin withdrawal decisions — side-effect cache invalidations", () =>
       ["admin", "system-status"],
       ["admin", "audit"],
       ["wallet"],
+    ] as const) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+});
+
+describe("admin review mutations — rating side-effect cache invalidations", () => {
+  const expectedReviewKeys = [
+    ["admin", "user-reviews"],
+    ["admin", "users"],
+    ["admin", "user", 42],
+    ["admin", "user", 99],
+    ["admin", "audit"],
+    ["reviews"],
+    ["users"],
+    ["user"],
+  ] as const;
+
+  it("create invalidates target rating, review lists, public users and audit caches", async () => {
+    apiState.postResponse = makeReview();
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminCreateReview(42), { wrapper });
+    await result.current.mutateAsync({ author_id: 99, target_id: 42, rating: 5, text: "ok" });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of expectedReviewKeys) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+
+  it("update invalidates target rating, review lists, public users and audit caches", async () => {
+    apiState.postResponse = makeReview({ rating: 2 });
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminUpdateReview(42), { wrapper });
+    await result.current.mutateAsync({ reviewId: 12, body: { rating: 2, text: "bad" } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of expectedReviewKeys) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+
+  it("delete falls back to broad user invalidations because the response has no target id", async () => {
+    apiState.postResponse = { deleted: true };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminDeleteReview(99), { wrapper });
+    await result.current.mutateAsync(12);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of [
+      ["admin", "user-reviews"],
+      ["admin", "users"],
+      ["admin", "user"],
+      ["admin", "audit"],
+      ["reviews"],
+      ["users"],
+      ["user"],
     ] as const) {
       expect(hasKey(keys, expected)).toBe(true);
     }
