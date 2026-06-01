@@ -1,8 +1,8 @@
 # Аудит кода Garant от 2026-06-01
 
 Репозиторий: `g2void2-byte/garant`
-Ветка: `devin/1778660441-fresh-rewrite-sqlalchemy`
-Коммит: `8b52761247b31697face725aba183d3b3ee6a1be`
+Ветка аудита/PR: `audit-fixes-2026-06-01`, PR #253
+База исходного аудита: `devin/1778660441-fresh-rewrite-sqlalchemy` @ `8b52761247b31697face725aba183d3b3ee6a1be`
 
 ## Область проверки
 
@@ -41,6 +41,7 @@
 - M-07: bot runner/notify/admin system используют общий validator configured bot token.
 - M-08: nullable withdrawal address отражен во frontend types/admin UI.
 - M-09: `TRUSTED_PROXIES` comment/startup guard приведены к фактической семантике.
+- M-11: media upload удаляет уже записанный файл, если commit `Media`-строки в БД падает.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -205,6 +206,16 @@ Backend schemas допускают `address: str | None`, что соответ�
 Риск: у пользователя есть два разных withdrawal UX с разными security/contract ожиданиями. Старый tab может ломаться на новом backend contract или обходить нужный PIN flow.
 
 Исправление: удалить withdraw tab из per-currency page или переиспользовать канонический `WalletWithdrawPage`/hook.
+
+### M-11. Media upload оставлял orphan-файл при падении commit БД
+
+Ссылки: `backend/app/routers/media.py:347-375`, regression `tests/unit/test_media_upload_cleanup.py`.
+
+После re-encode upload handler записывал файл на диск, создавал `Media` ORM-row и делал `session.commit()`. Если commit падал из-за БД/constraint/connection failure, HTTP-запрос завершался ошибкой, строки `media` не появлялось, но файл уже оставался в `MEDIA_ROOT` без владельца и без DB-ссылки.
+
+Риск: накопление orphan-файлов после transient DB failures, расход диска и рассинхрон между storage и базой. Для приватных deal attachments это также усложняет последующую чистку, потому что файл не достижим из `Media`/deal graph.
+
+Исправление: commit обернут в `try/except`; при ошибке handler best-effort удаляет только что записанный файл через `Path.unlink(missing_ok=True)`, логирует вторичную ошибку cleanup и пробрасывает исходную ошибку. Добавлен unit-regression на прямой вызов upload path с искусственным падением commit.
 
 ## Наблюдения без отдельного finding
 

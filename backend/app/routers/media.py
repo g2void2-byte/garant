@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 import secrets
 from pathlib import Path
 from typing import Any, Final
@@ -28,6 +29,7 @@ from ..schemas import MediaOut
 from ..time_utils import utcnow
 
 router = APIRouter(prefix="/api/media", tags=["media"])
+logger = logging.getLogger(__name__)
 
 
 # L-6 — stream uploads in 64 KiB chunks instead of buffering the full
@@ -366,5 +368,12 @@ async def upload_media(
         content_type=content_type,
     )
     session.add(media)
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception:
+        try:
+            await asyncio.to_thread(path.unlink, missing_ok=True)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to remove media file after DB commit failure: %s", path)
+        raise
     return _media_out(media)
