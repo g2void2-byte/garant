@@ -4,9 +4,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type {
   AdminBalanceSnapshotDto,
+  AdminCommentItemDto,
   AdminDealDetailDto,
   AdminDepositDto,
   AdminReviewItemDto,
+  AdminServiceItemDto,
   AdminWithdrawalDto,
 } from "../types";
 
@@ -44,13 +46,17 @@ vi.mock("../client", () => ({
 import {
   useAdminClaimArbitration,
   useAdminCreateReview,
+  useAdminDeleteComment,
   useAdminDeleteReview,
+  useAdminDeleteService,
   useAdminDecideWithdrawal,
   useAdminDepositMarkPaid,
   useAdminDepositRefund,
   useAdminForceRefund,
   useAdminForceRelease,
+  useAdminUpdateComment,
   useAdminUpdateReview,
+  useAdminUpdateService,
 } from "./hooks";
 
 function makeBalance(overrides: Partial<AdminBalanceSnapshotDto>): AdminBalanceSnapshotDto {
@@ -142,6 +148,39 @@ function makeReview(overrides: Partial<AdminReviewItemDto> = {}): AdminReviewIte
     target_username: "buyer",
     rating: 5,
     text: "ok",
+    created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeService(overrides: Partial<AdminServiceItemDto> = {}): AdminServiceItemDto {
+  return {
+    id: 55,
+    owner_id: 42,
+    category_id: 3,
+    category_slug: "dev",
+    title: "Build API",
+    description: "Backend work",
+    price: 100,
+    status: "active",
+    ban_reason: null,
+    views: 10,
+    deals_count: 2,
+    deposit: 0,
+    rating_manual: null,
+    created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeComment(overrides: Partial<AdminCommentItemDto> = {}): AdminCommentItemDto {
+  return {
+    id: 77,
+    service_id: 55,
+    author_id: 42,
+    author_username: "alice",
+    text: "good",
+    rating: 5,
     created_at: "2026-01-01T00:00:00Z",
     ...overrides,
   };
@@ -269,6 +308,90 @@ describe("useAdminClaimArbitration — V5-F-5 prefix invalidation", () => {
     // Existing invalidations are preserved.
     expect(hasKey(keys, ["admin", "arbitration"])).toBe(true);
     expect(hasKey(keys, ["admin", "deals"])).toBe(true);
+  });
+});
+
+describe("admin service/comment mutations - public cache invalidations", () => {
+  it("service update invalidates admin content, public catalog, detail, comments and audit caches", async () => {
+    apiState.postResponse = makeService({ title: "Updated API" });
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminUpdateService(42), { wrapper });
+    await result.current.mutateAsync({ serviceId: 55, body: { title: "Updated API" } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of [
+      ["admin", "user-services", 42],
+      ["admin", "user", 42],
+      ["admin", "audit"],
+      ["services"],
+      ["categories"],
+      ["service", 55],
+      ["service", 55, "comments"],
+    ] as const) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+
+  it("service delete invalidates public catalog/detail/comment caches", async () => {
+    apiState.postResponse = { deleted: true, service_id: 55 };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminDeleteService(42), { wrapper });
+    await result.current.mutateAsync(55);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of [
+      ["admin", "user-services", 42],
+      ["admin", "user", 42],
+      ["admin", "audit"],
+      ["services"],
+      ["categories"],
+      ["service", 55],
+      ["service", 55, "comments"],
+    ] as const) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+
+  it("comment update invalidates public service comments/detail and audit caches", async () => {
+    apiState.postResponse = makeComment({ rating: 1, text: "edited" });
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminUpdateComment(42), { wrapper });
+    await result.current.mutateAsync({ commentId: 77, body: { text: "edited", rating: 1 } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of [
+      ["admin", "user-comments", 42],
+      ["admin", "audit"],
+      ["service", 55, "comments"],
+      ["service", 55],
+    ] as const) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+
+  it("comment delete uses backend side-effect ids for precise invalidation", async () => {
+    apiState.postResponse = { deleted: true, comment_id: 77, service_id: 55, author_id: 42 };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminDeleteComment(), { wrapper });
+    await result.current.mutateAsync(77);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of [
+      ["admin", "user-comments", 42],
+      ["admin", "audit"],
+      ["service", 55, "comments"],
+      ["service", 55],
+    ] as const) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
   });
 });
 

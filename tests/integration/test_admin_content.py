@@ -359,5 +359,7 @@ async def test_delete_comment(client):
         headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200
+    assert resp.json()["service_id"] == sid
+    assert resp.json()["author_id"] == author_id
     async with async_session() as session:
         assert await session.get(ServiceComment, cid) is None

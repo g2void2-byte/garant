@@ -760,4 +760,9 @@ async def delete_comment(
             "author_id": snapshot["author_id"],
         },
     )
-    return {"deleted": True, "comment_id": comment_id}
+    return {
+        "deleted": True,
+        "comment_id": comment_id,
+        "service_id": snapshot["service_id"],
+        "author_id": snapshot["author_id"],
+    }

@@ -341,6 +341,28 @@ export function useAdminUserServices(userId: number | undefined) {
   });
 }
 
+function invalidateAdminServiceSideEffects(
+  qc: QueryClient,
+  serviceId: number | undefined,
+  ownerId?: number,
+) {
+  if (ownerId !== undefined) {
+    qc.invalidateQueries({ queryKey: qk.admin.userServices.forUser(ownerId) });
+    qc.invalidateQueries({ queryKey: qk.admin.user.detail(ownerId) });
+  } else {
+    qc.invalidateQueries({ queryKey: qk.admin.userServices.all() });
+  }
+  qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+  qc.invalidateQueries({ queryKey: qk.services.all() });
+  qc.invalidateQueries({ queryKey: qk.categories() });
+  if (serviceId !== undefined) {
+    qc.invalidateQueries({ queryKey: qk.service.detail(serviceId) });
+    qc.invalidateQueries({ queryKey: qk.service.comments(serviceId) });
+  } else {
+    qc.invalidateQueries({ queryKey: qk.service.all() });
+  }
+}
+
 export function useAdminUpdateService(userId?: number) {
   const qc = useQueryClient();
   return useMutation<
@@ -350,24 +372,23 @@ export function useAdminUpdateService(userId?: number) {
   >({
     mutationFn: ({ serviceId, body }) =>
       api.post(`api/admin/services/${serviceId}`, { json: body }).json(),
-    onSuccess: () => {
-      if (userId !== undefined) {
-        qc.invalidateQueries({ queryKey: qk.admin.userServices.forUser(userId) });
-      }
-      qc.invalidateQueries({ queryKey: qk.admin.user.detail(userId) });
+    onSuccess: (service, vars) => {
+      invalidateAdminServiceSideEffects(
+        qc,
+        service.id ?? vars.serviceId,
+        service.owner_id ?? userId,
+      );
     },
   });
 }
 
 export function useAdminDeleteService(userId?: number) {
   const qc = useQueryClient();
-  return useMutation<{ deleted: true }, Error, number>({
+  return useMutation<{ deleted: true; service_id?: number }, Error, number>({
     mutationFn: (serviceId) =>
       api.post(`api/admin/services/${serviceId}/delete`).json(),
-    onSuccess: () => {
-      if (userId !== undefined) {
-        qc.invalidateQueries({ queryKey: qk.admin.userServices.forUser(userId) });
-      }
+    onSuccess: (data, serviceId) => {
+      invalidateAdminServiceSideEffects(qc, data.service_id ?? serviceId, userId);
     },
   });
 }
@@ -453,6 +474,26 @@ export function useAdminUserComments(userId: number | undefined) {
   });
 }
 
+function invalidateAdminCommentSideEffects(
+  qc: QueryClient,
+  comment?: Partial<Pick<AdminCommentItemDto, "service_id" | "author_id">>,
+  userId?: number,
+) {
+  const authorId = userId ?? comment?.author_id;
+  if (authorId !== undefined) {
+    qc.invalidateQueries({ queryKey: qk.admin.userComments.forUser(authorId) });
+  } else {
+    qc.invalidateQueries({ queryKey: qk.admin.userComments.all() });
+  }
+  qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+  if (comment?.service_id !== undefined) {
+    qc.invalidateQueries({ queryKey: qk.service.comments(comment.service_id) });
+    qc.invalidateQueries({ queryKey: qk.service.detail(comment.service_id) });
+  } else {
+    qc.invalidateQueries({ queryKey: qk.service.all() });
+  }
+}
+
 export function useAdminUpdateComment(userId?: number) {
   const qc = useQueryClient();
   return useMutation<
@@ -462,19 +503,23 @@ export function useAdminUpdateComment(userId?: number) {
   >({
     mutationFn: ({ commentId, body }) =>
       api.post(`api/admin/comments/${commentId}`, { json: body }).json(),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.admin.userComments.forUser(userId) });
+    onSuccess: (comment) => {
+      invalidateAdminCommentSideEffects(qc, comment, userId);
     },
   });
 }
 
 export function useAdminDeleteComment(userId?: number) {
   const qc = useQueryClient();
-  return useMutation<{ deleted: true }, Error, number>({
+  return useMutation<
+    { deleted: true; comment_id?: number; service_id?: number; author_id?: number },
+    Error,
+    number
+  >({
     mutationFn: (commentId) =>
       api.post(`api/admin/comments/${commentId}/delete`).json(),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.admin.userComments.forUser(userId) });
+    onSuccess: (data) => {
+      invalidateAdminCommentSideEffects(qc, data, userId);
     },
   });
 }
