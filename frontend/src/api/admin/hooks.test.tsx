@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import type {
   AdminBalanceSnapshotDto,
   AdminDealDetailDto,
+  AdminDepositDto,
 } from "../types";
 
 /**
@@ -40,6 +41,8 @@ vi.mock("../client", () => ({
 
 import {
   useAdminClaimArbitration,
+  useAdminDepositMarkPaid,
+  useAdminDepositRefund,
   useAdminForceRefund,
   useAdminForceRelease,
 } from "./hooks";
@@ -85,6 +88,23 @@ function makeDealDetail(overrides: Partial<AdminDealDetailDto> = {}): AdminDealD
     confirm_seller: true,
     events: [],
     messages: [],
+    ...overrides,
+  };
+}
+
+function makeDeposit(overrides: Partial<AdminDepositDto> = {}): AdminDepositDto {
+  return {
+    id: 10,
+    user_id: 42,
+    username: "alice",
+    display_name: "Alice",
+    currency_code: "USDT",
+    amount: "50.00",
+    status: "paid",
+    provider_invoice_id: "inv-10",
+    pay_url: "https://pay.example/inv-10",
+    created_at: "2026-01-01T00:00:00Z",
+    paid_at: "2026-01-01T01:00:00Z",
     ...overrides,
   };
 }
@@ -211,5 +231,47 @@ describe("useAdminClaimArbitration — V5-F-5 prefix invalidation", () => {
     // Existing invalidations are preserved.
     expect(hasKey(keys, ["admin", "arbitration"])).toBe(true);
     expect(hasKey(keys, ["admin", "deals"])).toBe(true);
+  });
+});
+
+describe("admin deposit actions — side-effect cache invalidations", () => {
+  const expectedKeys = [
+    ["admin", "deposits"],
+    ["admin", "wallets"],
+    ["admin", "user-wallet", 42],
+    ["admin", "user", 42],
+    ["admin", "dashboard"],
+    ["admin", "system-status"],
+    ["admin", "audit"],
+    ["wallet"],
+    ["me"],
+  ] as const;
+
+  it("mark-paid invalidates every cache touched by the backend side effects", async () => {
+    apiState.postResponse = makeDeposit({ status: "paid" });
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminDepositMarkPaid(), { wrapper });
+    await result.current.mutateAsync({ id: 10, reason: "manual reconcile" });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of expectedKeys) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+
+  it("refund invalidates every cache touched by the backend side effects", async () => {
+    apiState.postResponse = makeDeposit({ status: "refunded" });
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminDepositRefund(), { wrapper });
+    await result.current.mutateAsync({ id: 10, reason: "duplicate payment" });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of expectedKeys) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
   });
 });

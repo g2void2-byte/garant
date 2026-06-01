@@ -542,7 +542,17 @@ export function useAdminDepositMarkPaid() {
   return useMutation<AdminDepositDto, Error, { id: number; reason?: string }>({
     mutationFn: ({ id, reason }) =>
       api.post(`api/admin/deposits/${id}/mark-paid`, { json: { reason } }).json(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.admin.deposits.all() }),
+    onSuccess: (deposit) => {
+      qc.invalidateQueries({ queryKey: qk.admin.deposits.all() });
+      qc.invalidateQueries({ queryKey: qk.admin.wallets.all() });
+      qc.invalidateQueries({ queryKey: qk.admin.userWallet.forUser(deposit.user_id) });
+      qc.invalidateQueries({ queryKey: qk.admin.user.detail(deposit.user_id) });
+      qc.invalidateQueries({ queryKey: qk.admin.dashboard() });
+      qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+      qc.invalidateQueries({ queryKey: qk.wallet.all() });
+      qc.invalidateQueries({ queryKey: qk.me() });
+    },
   });
 }
 
@@ -551,7 +561,17 @@ export function useAdminDepositRefund() {
   return useMutation<AdminDepositDto, Error, { id: number; reason?: string }>({
     mutationFn: ({ id, reason }) =>
       api.post(`api/admin/deposits/${id}/refund`, { json: { reason } }).json(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.admin.deposits.all() }),
+    onSuccess: (deposit) => {
+      qc.invalidateQueries({ queryKey: qk.admin.deposits.all() });
+      qc.invalidateQueries({ queryKey: qk.admin.wallets.all() });
+      qc.invalidateQueries({ queryKey: qk.admin.userWallet.forUser(deposit.user_id) });
+      qc.invalidateQueries({ queryKey: qk.admin.user.detail(deposit.user_id) });
+      qc.invalidateQueries({ queryKey: qk.admin.dashboard() });
+      qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+      qc.invalidateQueries({ queryKey: qk.wallet.all() });
+      qc.invalidateQueries({ queryKey: qk.me() });
+    },
   });
 }
 
