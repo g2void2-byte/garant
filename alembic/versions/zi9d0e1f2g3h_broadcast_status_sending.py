@@ -1,4 +1,4 @@
-﻿"""Allow in-progress broadcast status.
+"""Allow in-progress broadcast status.
 
 Revision ID: zi9d0e1f2g3h
 Revises: zh8c9d0e1f2g

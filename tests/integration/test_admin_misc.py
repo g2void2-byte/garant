@@ -483,7 +483,9 @@ async def test_broadcasts_round_trip_serialises_new_fields(client):
         audit = (
             (
                 await session.execute(
-                    select(AdminAuditLog).where(AdminAuditLog.action == "broadcast.send")
+                    select(AdminAuditLog).where(
+                        AdminAuditLog.action == "broadcast.send.finished"
+                    )
                 )
             )
             .scalars()
