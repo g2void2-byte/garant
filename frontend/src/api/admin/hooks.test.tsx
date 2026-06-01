@@ -4,7 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type {
   AdminBalanceSnapshotDto,
+  AdminCategoryDto,
   AdminCommentItemDto,
+  AdminCurrencyDto,
   AdminDealDetailDto,
   AdminDepositDto,
   AdminReviewItemDto,
@@ -33,12 +35,20 @@ const apiState = vi.hoisted(() => ({
   // this before each render. Default is a minimal AdminDealDetailDto so
   // useAdminDealAction's existing return-shape contract is honoured.
   postResponse: undefined as unknown,
+  putResponse: undefined as unknown,
+  deleteResponse: undefined as unknown,
 }));
 
 vi.mock("../client", () => ({
   api: {
     post: (..._args: unknown[]) => ({
       json: async () => apiState.postResponse,
+    }),
+    put: (..._args: unknown[]) => ({
+      json: async () => apiState.putResponse,
+    }),
+    delete: (..._args: unknown[]) => ({
+      json: async () => apiState.deleteResponse,
     }),
   },
 }));
@@ -47,6 +57,8 @@ import {
   useAdminClaimArbitration,
   useAdminCreateReview,
   useAdminDeleteComment,
+  useAdminDeleteCategory,
+  useAdminDeleteCurrency,
   useAdminDeleteReview,
   useAdminDeleteService,
   useAdminDecideWithdrawal,
@@ -54,6 +66,8 @@ import {
   useAdminDepositRefund,
   useAdminForceRefund,
   useAdminForceRelease,
+  useAdminUpsertCategory,
+  useAdminUpsertCurrency,
   useAdminUpdateComment,
   useAdminUpdateReview,
   useAdminUpdateService,
@@ -182,6 +196,34 @@ function makeComment(overrides: Partial<AdminCommentItemDto> = {}): AdminComment
     text: "good",
     rating: 5,
     created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeCategory(overrides: Partial<AdminCategoryDto> = {}): AdminCategoryDto {
+  return {
+    id: 3,
+    slug: "dev",
+    name: "Development",
+    icon: "code",
+    ...overrides,
+  };
+}
+
+function makeCurrency(overrides: Partial<AdminCurrencyDto> = {}): AdminCurrencyDto {
+  return {
+    id: 4,
+    code: "USD",
+    name: "US Dollar",
+    network: "fiat",
+    icon_url: "",
+    decimals: 2,
+    min_deposit: 1,
+    min_withdraw: 1,
+    is_active: true,
+    sort_order: 1,
+    address_regex: "",
+    kind: "fiat",
     ...overrides,
   };
 }
@@ -548,6 +590,88 @@ describe("admin review mutations — rating side-effect cache invalidations", ()
       ["users"],
       ["user"],
     ] as const) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+});
+
+describe("admin taxonomy mutations - public cache invalidations", () => {
+  const expectedCategoryKeys = [
+    ["admin", "categories"],
+    ["admin", "audit"],
+    ["categories"],
+    ["services"],
+    ["service"],
+  ] as const;
+
+  const expectedCurrencyKeys = [
+    ["admin", "currencies"],
+    ["admin", "wallets"],
+    ["admin", "user-wallet"],
+    ["admin", "deals"],
+    ["admin", "deal"],
+    ["admin", "deposits"],
+    ["admin", "withdrawals"],
+    ["admin", "analytics-kpi"],
+    ["admin", "analytics-series"],
+    ["admin", "analytics-top"],
+    ["admin", "system-status"],
+    ["admin", "audit"],
+    ["wallet"],
+  ] as const;
+
+  it("category upsert invalidates public category/service projections and audit", async () => {
+    apiState.putResponse = makeCategory({ name: "Updated" });
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminUpsertCategory(), { wrapper });
+    await result.current.mutateAsync({ slug: "dev", name: "Updated" });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of expectedCategoryKeys) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+
+  it("category delete invalidates public category/service projections and audit", async () => {
+    apiState.deleteResponse = { ok: true };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminDeleteCategory(), { wrapper });
+    await result.current.mutateAsync(3);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of expectedCategoryKeys) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+
+  it("currency upsert invalidates wallet/admin projections and audit", async () => {
+    apiState.putResponse = makeCurrency({ min_deposit: 2 });
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminUpsertCurrency(), { wrapper });
+    await result.current.mutateAsync({ code: "USD", min_deposit: 2 });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of expectedCurrencyKeys) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+
+  it("currency delete uses the backend DELETE route and invalidates wallet/admin projections", async () => {
+    apiState.deleteResponse = { ok: true };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminDeleteCurrency(), { wrapper });
+    await result.current.mutateAsync(4);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of expectedCurrencyKeys) {
       expect(hasKey(keys, expected)).toBe(true);
     }
   });

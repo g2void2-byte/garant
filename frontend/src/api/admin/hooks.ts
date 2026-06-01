@@ -716,11 +716,19 @@ export function useAdminCategories() {
   });
 }
 
+function invalidateAdminCategorySideEffects(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: qk.admin.categories() });
+  qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+  qc.invalidateQueries({ queryKey: qk.categories() });
+  qc.invalidateQueries({ queryKey: qk.services.all() });
+  qc.invalidateQueries({ queryKey: qk.service.all() });
+}
+
 export function useAdminUpsertCategory() {
   const qc = useQueryClient();
   return useMutation<AdminCategoryDto, Error, AdminCategoryUpsertBody>({
     mutationFn: (body) => api.put("api/admin/categories", { json: body }).json(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.admin.categories() }),
+    onSuccess: () => invalidateAdminCategorySideEffects(qc),
   });
 }
 
@@ -728,7 +736,7 @@ export function useAdminDeleteCategory() {
   const qc = useQueryClient();
   return useMutation<{ ok: boolean }, Error, number>({
     mutationFn: (id) => api.delete(`api/admin/categories/${id}`).json(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.admin.categories() }),
+    onSuccess: () => invalidateAdminCategorySideEffects(qc),
   });
 }
 
@@ -739,11 +747,35 @@ export function useAdminCurrencies() {
   });
 }
 
+function invalidateAdminCurrencySideEffects(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: qk.admin.currencies() });
+  qc.invalidateQueries({ queryKey: qk.admin.wallets.all() });
+  qc.invalidateQueries({ queryKey: qk.admin.userWallet.all() });
+  qc.invalidateQueries({ queryKey: qk.admin.deals.all() });
+  qc.invalidateQueries({ queryKey: qk.admin.deal.all() });
+  qc.invalidateQueries({ queryKey: qk.admin.deposits.all() });
+  qc.invalidateQueries({ queryKey: qk.admin.withdrawals.all() });
+  qc.invalidateQueries({ queryKey: qk.admin.analytics.kpi() });
+  qc.invalidateQueries({ queryKey: qk.admin.analytics.series() });
+  qc.invalidateQueries({ queryKey: qk.admin.analytics.top() });
+  qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
+  qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+  qc.invalidateQueries({ queryKey: qk.wallet.all() });
+}
+
 export function useAdminUpsertCurrency() {
   const qc = useQueryClient();
   return useMutation<AdminCurrencyDto, Error, AdminCurrencyUpsertBody>({
     mutationFn: (body) => api.put("api/admin/currencies", { json: body }).json(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.admin.currencies() }),
+    onSuccess: () => invalidateAdminCurrencySideEffects(qc),
+  });
+}
+
+export function useAdminDeleteCurrency() {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean }, Error, number>({
+    mutationFn: (id) => api.delete(`api/admin/currencies/${id}`).json(),
+    onSuccess: () => invalidateAdminCurrencySideEffects(qc),
   });
 }
 
