@@ -25,9 +25,11 @@ effects (DMs, in-app notifications) run after commit.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -51,6 +53,7 @@ from ...models import (
     Notification,
     NotificationType,
     User,
+    UserBalance,
 )
 from ...money import quantize_money
 from ...rate_limit import rate_limit
@@ -806,6 +809,17 @@ def _is_terminal(status: DealStatus) -> bool:
     )
 
 
+async def _lock_buyer_seller_balances(
+    session: AsyncSession, deal: Deal, currency_id: int
+) -> tuple[UserBalance, UserBalance]:
+    first_id, second_id = sorted((deal.buyer_id, deal.seller_id))
+    first = await lock_user_balance(session, first_id, currency_id)
+    second = await lock_user_balance(session, second_id, currency_id)
+    if deal.buyer_id == first_id:
+        return first, second
+    return second, first
+
+
 async def _release_locked_to_seller(
     session: AsyncSession, deal: Deal, currency: Currency
 ) -> tuple[Decimal, Decimal]:
@@ -822,16 +836,13 @@ async def _release_locked_to_seller(
     locked = amt
     payout = amt
 
-    # CRIT #1 — ``FOR UPDATE`` row lock on both balances so an admin
-    # force-release racing with the buyer's own ``finish_deal`` (or a
-    # parallel admin acting on a sibling deal that shares the same
-    # buyer/seller) cannot read-modify-write a stale snapshot. See
-    # ``services_deals._refund`` for the full lost-update rationale.
-    buyer_balance = await lock_user_balance(session, deal.buyer_id, currency.id)
+    # Lock both rows in the same order as ``services_deals._release_to``.
+    # Opposite-direction deals between the same users can otherwise acquire
+    # buyer/seller locks in opposite order and deadlock under admin force flows.
+    buyer_balance, seller_balance = await _lock_buyer_seller_balances(session, deal, currency.id)
     buyer_before_amount = Decimal(str(buyer_balance.amount))
     buyer_before_locked = Decimal(str(buyer_balance.locked))
     buyer_balance.locked = max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked)
-    seller_balance = await lock_user_balance(session, deal.seller_id, currency.id)
     seller_before_amount = Decimal(str(seller_balance.amount))
     seller_before_locked = Decimal(str(seller_balance.locked))
     seller_balance.amount = Decimal(str(seller_balance.amount)) + payout
@@ -909,14 +920,13 @@ async def _split_locked(
     buyer_share = quantize_money(amt * Decimal(str(buyer_percent)) / Decimal(100), decimals)
     seller_share = amt - buyer_share
 
-    # CRIT #1 — ``FOR UPDATE`` lock on both balances; see
-    # ``_release_locked_to_seller`` for the lost-update rationale.
-    buyer_balance = await lock_user_balance(session, deal.buyer_id, currency.id)
+    # Lock both rows in the same order as ``services_deals._release_to``.
+    # See ``_release_locked_to_seller`` for the deadlock geometry.
+    buyer_balance, seller_balance = await _lock_buyer_seller_balances(session, deal, currency.id)
     buyer_before_amount = Decimal(str(buyer_balance.amount))
     buyer_before_locked = Decimal(str(buyer_balance.locked))
     buyer_balance.locked = max(Decimal(0), Decimal(str(buyer_balance.locked)) - locked)
     buyer_balance.amount = Decimal(str(buyer_balance.amount)) + buyer_share
-    seller_balance = await lock_user_balance(session, deal.seller_id, currency.id)
     seller_before_amount = Decimal(str(seller_balance.amount))
     seller_before_locked = Decimal(str(seller_balance.locked))
     seller_balance.amount = Decimal(str(seller_balance.amount)) + seller_share
@@ -1417,6 +1427,7 @@ async def delete_deal(
     for attachments_json in messages:
         all_media_ids.update(_parse_attachment_ids(attachments_json))
 
+    paths_to_delete: list[Path] = []
     if all_media_ids:
         media_rows = (
             await session.execute(
@@ -1424,13 +1435,7 @@ async def delete_deal(
             )
         ).scalars().all()
 
-        import asyncio
-        from pathlib import Path
-
-        from ...config import settings
-
         media_root = Path(settings.media_root).expanduser().resolve()
-        paths_to_delete = []
         for m in media_rows:
             filename = m.url.split("/")[-1]
             file_path = media_root / m.kind / filename
@@ -1444,8 +1449,6 @@ async def delete_deal(
                     p.unlink(missing_ok=True)
                 except Exception:
                     logger.exception("Failed to delete orphaned media file: %s", p)
-
-        await asyncio.to_thread(delete_files, paths_to_delete)
 
     await session.execute(DealMessage.__table__.delete().where(DealMessage.deal_id == deal.id))
 
@@ -1481,6 +1484,8 @@ async def delete_deal(
             pending,
         )
     await session.commit()
+    if paths_to_delete:
+        await asyncio.to_thread(delete_files, paths_to_delete)
     await _dispatch_pending(session, pending, event="deal.delete.dispatch.failed")
 
     return {

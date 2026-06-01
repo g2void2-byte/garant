@@ -150,7 +150,7 @@ describe("api ky client — beforeError", () => {
     });
   });
 
-  it("dispatches TOTP event with a replay-safe body snapshot for consumed POSTs", async () => {
+  it("dispatches TOTP event without replaying the failed mutation", async () => {
     fetchSpy.mockImplementation(async (input: RequestInfo | URL) => {
       if (input instanceof Request && input.body !== null) {
         await input.text();
@@ -178,10 +178,7 @@ describe("api ky client — beforeError", () => {
     }
 
     expect(events).toHaveLength(1);
-    expect(events[0].method).toBe("POST");
-    expect(events[0].body).toBeInstanceOf(ArrayBuffer);
-    const body = new TextDecoder().decode(events[0].body as ArrayBuffer);
-    expect(JSON.parse(body)).toEqual({ support_username: "support" });
+    expect(events[0]).toEqual({ detail: "Введите код 2FA" });
   });
 
   it("does NOT clear PIN on 401 with an unrelated detail string", async () => {

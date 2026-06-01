@@ -13,6 +13,7 @@ import pytest
 from tests.helpers import (
     auth_headers,
     credit_balance,
+    ensure_admin_user,
     get_user_id_by_tg,
     setup_pin,
     signed_init_data,
@@ -51,6 +52,7 @@ async def test_withdrawal_succeeds_with_pin_token(client):
 
     init = signed_init_data(7002, "withdraw_user_b")
     pin_token = await setup_pin(client, init)
+    await ensure_admin_user(client, tg_user_id=7099, username="withdraw_admin_b")
 
     async with async_session() as session:
         user_id = await get_user_id_by_tg(session, 7002)

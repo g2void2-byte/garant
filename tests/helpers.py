@@ -134,3 +134,25 @@ async def credit_balance(session: AsyncSession, user_id: int, code: str, amount:
     bal = await get_or_create_balance(session, user_id, cur.id)
     bal.amount = float(amount)
     await session.commit()
+
+
+async def ensure_admin_user(
+    client: AsyncClient,
+    *,
+    tg_user_id: int = 990001,
+    username: str = "ops_admin",
+) -> int:
+    """Create or promote one admin so manual operational paths exist in tests."""
+    from backend.app.db import async_session
+    from backend.app.models import User
+
+    init = signed_init_data(tg_user_id, username)
+    resp = await client.get("/api/me", headers=auth_headers(init))
+    assert resp.status_code == 200, resp.text
+    admin_id = int(resp.json()["id"])
+    async with async_session() as session:
+        admin = await session.get(User, admin_id)
+        assert admin is not None
+        admin.is_admin = True
+        await session.commit()
+    return admin_id

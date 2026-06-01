@@ -35,6 +35,7 @@ export interface WsHandlers {
 
 const MIN_BACKOFF = 1_000;
 const MAX_BACKOFF = 30_000;
+const TERMINAL_CLOSE_CODES = new Set([4001, 4002, 4003]);
 
 // Plain URL — initData no longer rides in the query string. The
 // backend authenticates via the first JSON frame after ``accept()``
@@ -131,6 +132,11 @@ export function connectNotifications(handlers: WsHandlers): () => void {
         );
       }
       handlers.onClose?.();
+      if (TERMINAL_CLOSE_CODES.has(ev.code)) {
+        stopped = true;
+        if (reconnectTimer) window.clearTimeout(reconnectTimer);
+        return;
+      }
       scheduleReconnect();
     });
     socket.addEventListener("error", () => {

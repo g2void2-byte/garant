@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
-import { ArrowDownToLine, ArrowUpFromLine, History } from "lucide-react";
+import { ArrowDownToLine, History } from "lucide-react";
 import {
   useCreateWalletDeposit,
-  useCreateWalletWithdrawal,
   useCurrencies,
   useWalletBalances,
   useWalletDeposits,
@@ -19,7 +18,7 @@ import { useToast } from "@/components/ui/Toast";
 import { formatCurrency, relativeTime } from "@/lib/format";
 import { haptic, openPaymentLink } from "@/lib/tg";
 
-type Tab = "deposit" | "withdraw" | "history";
+type Tab = "deposit" | "history";
 
 const DEPOSIT_STATUS_TEXT: Record<string, string> = {
   pending: "Ожидание",
@@ -115,22 +114,12 @@ export default function WalletCurrencyPage() {
           onChange={setTab}
           options={[
             { value: "deposit", label: "Пополнить", icon: <ArrowDownToLine className="size-4" /> },
-            { value: "withdraw", label: "Вывести", icon: <ArrowUpFromLine className="size-4" /> },
             { value: "history", label: "История", icon: <History className="size-4" /> },
           ]}
         />
 
         {tab === "deposit" && (
           <DepositForm currencyCode={currency.code} minDeposit={currency.min_deposit} decimals={currency.decimals} />
-        )}
-        {tab === "withdraw" && (
-          <WithdrawForm
-            currencyCode={currency.code}
-            minWithdraw={currency.min_withdraw}
-            decimals={currency.decimals}
-            available={balance?.amount ?? 0}
-            availableStr={balance?.amount_str ?? "0"}
-          />
         )}
         {tab === "history" && (
           <HistoryList
@@ -162,8 +151,8 @@ function DepositForm({
   const [amount, setAmount] = useState(String(minDeposit));
 
   async function submit() {
-    const value = parseFloat(amount);
-    if (!Number.isFinite(value) || value <= 0) {
+    const value = amount.trim();
+    if (!_DECIMAL_RE.test(value) || /^0+(?:\.0+)?$/.test(value)) {
       haptic("error");
       toast.show({ kind: "error", title: "Введите корректную сумму" });
       return;
@@ -205,94 +194,9 @@ function DepositForm({
   );
 }
 
-// Audit M-7 — see ``WalletWithdrawPage.tsx`` for the full rationale.
-// Reject anything that isn't a well-formed decimal so we never round-trip
-// through ``parseFloat``.
+// Reject anything that isn't a well-formed decimal so deposit requests
+// send the user-visible string without a float round-trip.
 const _DECIMAL_RE = /^\d+(?:\.\d{1,18})?$|^\.\d{1,18}$/;
-
-function WithdrawForm({
-  currencyCode,
-  minWithdraw,
-  decimals,
-  available,
-  availableStr,
-}: {
-  currencyCode: string;
-  minWithdraw: number;
-  decimals: number;
-  available: number;
-  availableStr: string;
-}) {
-  const create = useCreateWalletWithdrawal();
-  const toast = useToast();
-  const [amount, setAmount] = useState("");
-  const [address, setAddress] = useState("");
-
-  async function submit() {
-    const trimmed = amount.trim();
-    if (!_DECIMAL_RE.test(trimmed) || /^0+(?:\.0+)?$/.test(trimmed)) {
-      haptic("error");
-      toast.show({ kind: "error", title: "Введите корректную сумму" });
-      return;
-    }
-    if (!address.trim()) {
-      haptic("error");
-      toast.show({ kind: "error", title: "Введите адрес кошелька" });
-      return;
-    }
-    try {
-      // Audit M-7 — send the user-visible decimal string straight to
-      // the backend; ``WalletWithdrawCreateReq.amount: Decimal``
-      // accepts it without ``float`` truncation.
-      await create.mutateAsync({ currency_code: currencyCode, amount: trimmed, address });
-      haptic("success");
-      toast.show({
-        kind: "success",
-        title: "Заявка отправлена",
-        body: "Администратор обработает её в ближайшее время.",
-      });
-      setAmount("");
-      setAddress("");
-    } catch (e: unknown) {
-      haptic("error");
-      toast.show({ kind: "error", title: (e as Error)?.message || "Не удалось создать заявку" });
-    }
-  }
-
-  return (
-    <div className="bg-panel border border-border rounded-card p-4 space-y-3">
-      <div className="flex items-center justify-between text-sm text-text-muted">
-        <span>Доступно: {formatCurrency(available, currencyCode, decimals)}</span>
-        <button
-          type="button"
-          onClick={() => setAmount(availableStr)}
-          className="text-accent text-xs underline"
-          disabled={available <= 0}
-        >
-          Всё
-        </button>
-      </div>
-      <Input
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
-        type="number"
-        inputMode="decimal"
-        placeholder={`Минимум ${minWithdraw}`}
-      />
-      <Input
-        value={address}
-        onChange={(e) => setAddress(e.target.value)}
-        placeholder={`Адрес ${currencyCode}`}
-      />
-      <Button fullWidth onClick={submit} disabled={create.isPending || available <= 0}>
-        {create.isPending ? "Создаю заявку..." : "Запросить вывод"}
-      </Button>
-      <p className="text-xs text-text-muted">
-        Заявки обрабатываются администратором вручную. До подтверждения сумма блокируется на балансе.
-      </p>
-    </div>
-  );
-}
 
 function HistoryList({
   currencyCode,
@@ -315,7 +219,7 @@ function HistoryList({
   withdrawals: {
     id: number;
     amount: number;
-    address: string;
+    address: string | null;
     status: string;
     created_at: string;
     admin_note: string;

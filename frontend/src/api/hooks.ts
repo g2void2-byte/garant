@@ -454,7 +454,7 @@ export function useCreateDeal() {
     mutationFn: (body: {
       counterparty: string;
       role: "buyer";
-      amount: number;
+      amount: string;
       description: string;
       currency_code: string;
       payment_provider?: "cryptobot" | "crystalpay";
@@ -472,7 +472,7 @@ export function useCreateDealWithTopup() {
     mutationFn: (body: {
       counterparty: string;
       role: "buyer";
-      amount: number;
+      amount: string;
       description: string;
       currency_code: string;
       payment_provider?: "cryptobot" | "crystalpay";
@@ -860,7 +860,7 @@ export function useWalletDeposit(id: number | undefined) {
 // ``User.trust_deposit_balance``, no spend / withdraw path).
 export interface CreateWalletDepositBody {
   currency_code: string;
-  amount: number;
+  amount: string;
   purpose?: "wallet" | "trust";
   // Selects the upstream payment provider. Defaults to
   // ``"cryptobot"`` on the back-end when omitted; clients only need

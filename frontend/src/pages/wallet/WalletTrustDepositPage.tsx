@@ -19,6 +19,8 @@ import { cn } from "@/lib/cn";
 import { formatCurrency, formatMoney } from "@/lib/format";
 import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
 
+const DECIMAL_RE = /^\d+(?:\.\d{1,18})?$|^\.\d{1,18}$/;
+
 /**
  * "Депозит доверия" page.
  * Displays trust balance and includes both "Внести депозит" and "Вывести депозит" buttons
@@ -67,8 +69,8 @@ export default function WalletTrustDepositPage() {
 
   async function submit() {
     if (!current) return;
-    const value = parseFloat(amount);
-    if (!Number.isFinite(value) || value <= 0) {
+    const value = amount.trim();
+    if (!DECIMAL_RE.test(value) || /^0+(?:\.0+)?$/.test(value)) {
       haptic("error");
       toast.show({ kind: "error", title: "Введите корректную сумму" });
       return;

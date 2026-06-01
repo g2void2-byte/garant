@@ -13,13 +13,20 @@ import type { AccountTransferStatusDto } from "@/api/types";
  *   - status hint when an active code already exists
  *   - "Send" tab: start / cancel buttons + their toast / haptic
  *     side-effects
- *   - "Receive" tab: 6-digit code validation + happy path that
+ *   - "Receive" tab: policy-length code validation + happy path that
  *     clears the PIN token and navigates to /profile
- *   - non-numeric input is stripped and capped at 6 digits
+ *   - non-numeric input is stripped and capped at the configured length
  */
 
+const transferPolicy = { code_length: 6, ttl_seconds: 15 * 60 };
+
 const mockState = vi.hoisted(() => ({
-  status: { has_active: false, expires_at: null } as AccountTransferStatusDto,
+  status: {
+    has_active: false,
+    expires_at: null,
+    code_length: 6,
+    ttl_seconds: 15 * 60,
+  } as AccountTransferStatusDto,
   start: {
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
@@ -69,7 +76,7 @@ function renderPage() {
 beforeEach(() => {
   hapticSpy.mockClear();
   clearPinTokenSpy.mockClear();
-  mockState.status = { has_active: false, expires_at: null };
+  mockState.status = { has_active: false, expires_at: null, ...transferPolicy };
   mockState.start = { mutateAsync: vi.fn(), isPending: false };
   mockState.cancel = { mutateAsync: vi.fn(), isPending: false };
   mockState.confirm = { mutateAsync: vi.fn(), isPending: false };
@@ -90,6 +97,7 @@ describe("<AccountTransferPage />", () => {
     mockState.status = {
       has_active: true,
       expires_at: new Date(Date.now() + 8 * 60_000).toISOString(),
+      ...transferPolicy,
     };
     renderPage();
     expect(screen.getByText("Код уже выпущен")).toBeInTheDocument();
@@ -105,6 +113,7 @@ describe("<AccountTransferPage />", () => {
     mockState.start.mutateAsync.mockResolvedValue({
       delivered: true,
       expires_at: new Date().toISOString(),
+      ...transferPolicy,
     });
     const user = userEvent.setup();
     renderPage();
@@ -129,6 +138,7 @@ describe("<AccountTransferPage />", () => {
     mockState.status = {
       has_active: true,
       expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+      ...transferPolicy,
     };
     mockState.cancel.mutateAsync.mockResolvedValue({ ok: true });
     const user = userEvent.setup();
@@ -140,7 +150,7 @@ describe("<AccountTransferPage />", () => {
     expect(hapticSpy).toHaveBeenCalledWith("success");
   });
 
-  it("'Receive' tab: blocks confirm with haptic('error') for non-6-digit input", async () => {
+  it("'Receive' tab: blocks confirm until the code matches policy length", async () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByRole("button", { name: "Ввести код" }));
@@ -150,11 +160,11 @@ describe("<AccountTransferPage />", () => {
     expect(mockState.confirm.mutateAsync).not.toHaveBeenCalled();
   });
 
-  it("'Receive' tab strips non-digits and caps the input at 6 characters", async () => {
+  it("'Receive' tab strips non-digits and caps the input at the configured length", async () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByRole("button", { name: "Ввести код" }));
-    const input = screen.getByPlaceholderText("123456") as HTMLInputElement;
+    const input = screen.getByPlaceholderText("000000") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "1a2b3c4d5e6f7g" } });
     expect(input.value).toBe("123456");
     expect(screen.getByRole("button", { name: /Перенести аккаунт/ })).not.toBeDisabled();
@@ -165,7 +175,7 @@ describe("<AccountTransferPage />", () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByRole("button", { name: "Ввести код" }));
-    const input = screen.getByPlaceholderText("123456") as HTMLInputElement;
+    const input = screen.getByPlaceholderText("000000") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "123456" } });
     // ``fireEvent.click`` avoids userEvent's pointer/event-loop dance,
     // which interacts badly with the 15s ``setInterval`` mounted by
@@ -186,7 +196,7 @@ describe("<AccountTransferPage />", () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByRole("button", { name: "Ввести код" }));
-    const input = screen.getByPlaceholderText("123456") as HTMLInputElement;
+    const input = screen.getByPlaceholderText("000000") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "999999" } });
     fireEvent.click(
       screen.getByRole("button", { name: /Перенести аккаунт/ }),

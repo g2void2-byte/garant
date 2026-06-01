@@ -58,6 +58,12 @@ class FakeSocket {
     this.handlers.close?.({ code: 1000, reason: "", wasClean: true });
   }
 
+  closeWith(code: number, reason = "") {
+    if (this.closed) return;
+    this.closed = true;
+    this.handlers.close?.({ code, reason, wasClean: false });
+  }
+
   // Test helpers — drive the socket lifecycle from outside.
   triggerOpen() {
     this.handlers.open?.();
@@ -201,5 +207,18 @@ describe("connectNotifications — reconnect", () => {
     vi.advanceTimersByTime(60_000);
     expect(FakeSocket.instances).toHaveLength(1);
     expect(first.closed).toBe(true);
+  });
+
+  it("does not reconnect after terminal backend close codes", () => {
+    const onClose = vi.fn();
+    const disconnect = connectNotifications({ onEvent: vi.fn(), onClose });
+    const first = FakeSocket.instances[0];
+
+    first.closeWith(4003, "Account is locked out");
+    vi.advanceTimersByTime(60_000);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(FakeSocket.instances).toHaveLength(1);
+    disconnect();
   });
 });

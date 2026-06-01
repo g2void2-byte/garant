@@ -602,11 +602,10 @@ async def create_deal_with_topup(
         # commission rate range later.
         raise ValueError("Сумма комиссии меньше точности валюты — используйте обычную сделку")
 
-    # Issue the deposit invoice on the buyer's chosen provider. Note
-    # the float() coercion: ``create_deposit_invoice`` accepts
-    # ``float`` because the upstream provider clients (CryptoBot,
-    # Crystalpay) consume floats; the row itself stores the Decimal
-    # back via ``Numeric(28,8)`` so no precision is lost on the way.
+    # Issue the deposit invoice on the buyer's chosen provider. Keep
+    # ``invoice_total`` as ``Decimal`` all the way into the provider
+    # adapter so the local row and upstream invoice are formatted from
+    # the same exact value.
     #
     # P11-D1 — ``min_check=False`` is the escape hatch for the
     # commission-only edge case: when the buyer's balance covers
@@ -622,7 +621,7 @@ async def create_deal_with_topup(
         session,
         buyer,
         currency.code,
-        float(invoice_total),
+        invoice_total,
         purpose="deal_topup",
         provider=payment_provider,
         min_check=not skip_min,
@@ -677,7 +676,7 @@ async def _issue_remaining_topup_invoice(
         session,
         buyer,
         currency.code,
-        float(invoice_total),
+        invoice_total,
         purpose="deal_topup",
         provider=deal.payment_provider or "cryptobot",
         min_check=False,
@@ -883,9 +882,9 @@ async def complete_deal_topup_payment(
     if new_balance < amt:
         # Commission was paid but the balance is still short of the
         # principal. Stay pending_topup; the buyer needs to top up
-        # the remaining gap. ``commission_paid`` stays False per
-        # spec — the field flips only when the deal actually
-        # advances.
+        # the remaining gap. ``commission_paid`` has already flipped
+        # above when the paid amount covered ``commission_due``; later
+        # replacement invoices charge only the remaining principal gap.
         deposit.status = WalletDepositStatus.paid
         deposit.paid_at = utcnow()
         deposit.paid_amount = paid

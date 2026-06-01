@@ -26,6 +26,11 @@ function relativeMinutes(expiresAt: string | null | undefined): string {
   return `${minutes} мин.`;
 }
 
+function ttlLabel(seconds: number | null | undefined): string {
+  const minutes = Math.max(1, Math.round((seconds ?? 15 * 60) / 60));
+  return `${minutes} мин.`;
+}
+
 export default function AccountTransferPage() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -37,6 +42,8 @@ export default function AccountTransferPage() {
   const confirmMutation = useConfirmAccountTransfer();
 
   const [code, setCode] = useState("");
+  const codeLength = status.data?.code_length ?? 6;
+  const ttlText = ttlLabel(status.data?.ttl_seconds);
 
   // Re-render every 15s so the countdown stays roughly fresh without
   // pulling the data again.
@@ -54,7 +61,7 @@ export default function AccountTransferPage() {
         toast.show({
           kind: "success",
           title: "Код отправлен в Telegram",
-          body: "Откройте чат с ботом — код действует 15 минут.",
+          body: `Откройте чат с ботом — код действует ${ttlLabel(res.ttl_seconds)}.`,
         });
       } else {
         toast.show({
@@ -81,9 +88,9 @@ export default function AccountTransferPage() {
   };
 
   const onConfirm = async () => {
-    if (!/^\d{6}$/.test(code)) {
+    if (!new RegExp(`^\\d{${codeLength}}$`).test(code)) {
       haptic("error");
-      toast.show({ kind: "error", title: "Введите 6-значный код" });
+      toast.show({ kind: "error", title: `Введите ${codeLength}-значный код` });
       return;
     }
     try {
@@ -138,7 +145,7 @@ export default function AccountTransferPage() {
           <div className="bg-panel border border-border rounded-card p-4 space-y-3">
             <div className="text-sm text-text-muted">
               Выпустите одноразовый код на этом аккаунте. Код придёт в
-              чат с ботом и действует 15 минут.
+              чат с ботом и действует {ttlText}.
             </div>
 
             {hasActive && (
@@ -182,15 +189,15 @@ export default function AccountTransferPage() {
             <Input
               label="Код из бота"
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              placeholder="123456"
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, codeLength))}
+              placeholder={"0".repeat(codeLength)}
               inputMode="numeric"
               autoComplete="one-time-code"
             />
             <Button
               fullWidth
               onClick={onConfirm}
-              disabled={confirmMutation.isPending || code.length !== 6}
+              disabled={confirmMutation.isPending || code.length !== codeLength}
             >
               <ArrowRightLeft className="size-4" />
               {confirmMutation.isPending ? "Переношу..." : "Перенести аккаунт"}

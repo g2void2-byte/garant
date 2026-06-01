@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ... import version as app_version
 from ...admin_audit import log_admin_action
 from ...admin_guard import TotpUser
+from ...bot.notify import is_bot_token_configured
 from ...config import settings as app_settings_env
 from ...deps import AdminUser, SessionDep
 from ...models import (
@@ -217,9 +218,7 @@ async def status(_admin: AdminUser, session: SessionDep):
         redis_ok=redis_ok,
         redis_latency_ms=redis_latency,
         cryptobot_configured=is_cryptopay_configured(app_settings_env.cryptobot_token),
-        bot_configured=bool(
-            app_settings_env.bot_token and not app_settings_env.bot_token.startswith("0000")
-        ),
+        bot_configured=is_bot_token_configured(app_settings_env.bot_token),
         backend_version=app_version.BACKEND_VERSION,
         started_at=_STARTED_AT,
         uptime_seconds=(utcnow() - _STARTED_AT).total_seconds(),

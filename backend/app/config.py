@@ -238,9 +238,9 @@ class Settings(BaseSettings):
     # attachment link in flight.
     media_url_signing_secret: str = ""
 
-    # Comma-separated list of trusted proxy IPs/CIDRs. When set, X-Forwarded-For
-    # is only honoured if the direct peer is in this list. Empty = trust all
-    # (backwards-compatible, suitable for single-proxy setups).
+    # Comma-separated list of trusted proxy IPs/CIDRs. X-Forwarded-For
+    # is honoured only when the direct peer is in this list. Empty means
+    # no proxy headers are trusted; the direct socket peer is used.
     trusted_proxies: str = ""
 
     # P3.5 — Redis. Empty disables Redis and all features fall back to

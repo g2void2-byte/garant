@@ -30,6 +30,8 @@ const PROVIDER_LABELS: Record<DepositProvider, string> = {
   crystalpay: "Crystalpay",
 };
 
+const DECIMAL_RE = /^\d+(?:\.\d{1,18})?$|^\.\d{1,18}$/;
+
 /**
  * Continental "Пополнение баланса" page.
  *
@@ -111,8 +113,8 @@ export default function WalletDepositPage() {
 
   async function submit() {
     if (!current) return;
-    const value = parseFloat(amount);
-    if (!Number.isFinite(value) || value <= 0) {
+    const value = amount.trim();
+    if (!DECIMAL_RE.test(value) || /^0+(?:\.0+)?$/.test(value)) {
       haptic("error");
       toast.show({ kind: "error", title: "Введите корректную сумму" });
       return;

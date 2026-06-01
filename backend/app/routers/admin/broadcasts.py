@@ -139,6 +139,34 @@ def _to_out(b: Broadcast, actor: User | None) -> AdminBroadcastOut:
     )
 
 
+def _audit_payload(
+    body: AdminBroadcastCreateIn,
+    *,
+    total: int,
+    delivered: int,
+    failed: int,
+) -> dict[str, Any]:
+    return {
+        "audience_role": body.audience_role,
+        "audience_active_days": body.audience_active_days,
+        "audience_min_deals": body.audience_min_deals,
+        "audience_created_after": (
+            body.audience_created_after.isoformat()
+            if body.audience_created_after is not None
+            else None
+        ),
+        "audience_created_before": (
+            body.audience_created_before.isoformat()
+            if body.audience_created_before is not None
+            else None
+        ),
+        "audience_language": body.audience_language,
+        "total_recipients": total,
+        "delivered": delivered,
+        "failed": failed,
+    }
+
+
 @router.post("/preview", response_model=AdminBroadcastPreviewOut)
 async def preview_audience(body: AdminBroadcastCreateIn, _admin: AdminUser, session: SessionDep):
     stmt = select(func.count()).select_from(User)
@@ -178,6 +206,37 @@ async def create_broadcast(
         user_id_stmt = user_id_stmt.where(clause)
     user_id_stmt = user_id_stmt.order_by(User.id)
     all_user_ids = list((await session.execute(user_id_stmt)).scalars().all())
+
+    bcast = Broadcast(
+        actor_id=admin.id,
+        title=body.title,
+        body=body.body,
+        deeplink=body.deeplink,
+        audience_role=body.audience_role,
+        audience_active_days=body.audience_active_days,
+        audience_min_deals=body.audience_min_deals,
+        audience_created_after=body.audience_created_after,
+        audience_created_before=body.audience_created_before,
+        audience_language=body.audience_language,
+        dispatch_inapp=body.dispatch_inapp,
+        dispatch_dm=body.dispatch_dm,
+        status="sending",
+        total_recipients=total_recipients,
+        delivered_count=0,
+        failed_count=0,
+    )
+    session.add(bcast)
+    await session.flush()
+    await log_admin_action(
+        session,
+        actor=admin,
+        action="broadcast.send.started",
+        target_type="broadcast",
+        target_id=bcast.id,
+        payload=_audit_payload(body, total=total_recipients, delivered=0, failed=0),
+        request=request,
+    )
+    await session.commit()
 
     delivered = 0
     failed = 0
@@ -296,63 +355,31 @@ async def create_broadcast(
                 else:
                     failed += 1
 
-    bcast = Broadcast(
-        actor_id=admin.id,
-        title=body.title,
-        body=body.body,
-        deeplink=body.deeplink,
-        audience_role=body.audience_role,
-        audience_active_days=body.audience_active_days,
-        audience_min_deals=body.audience_min_deals,
-        audience_created_after=body.audience_created_after,
-        audience_created_before=body.audience_created_before,
-        audience_language=body.audience_language,
-        dispatch_inapp=body.dispatch_inapp,
-        dispatch_dm=body.dispatch_dm,
-        status="sent",
-        total_recipients=total_recipients,
-        delivered_count=delivered,
-        failed_count=failed,
-        sent_at=utcnow(),
-    )
-    session.add(bcast)
-    await session.flush()
+        bcast.delivered_count = delivered
+        bcast.failed_count = failed
+        bcast.status = "sending"
+        await session.commit()
 
+    bcast.status = "sent"
+    bcast.total_recipients = total_recipients
+    bcast.delivered_count = delivered
+    bcast.failed_count = failed
+    bcast.sent_at = utcnow()
     await log_admin_action(
         session,
         actor=admin,
-        action="broadcast.send",
+        action="broadcast.send.finished",
         target_type="broadcast",
         target_id=bcast.id,
-        payload={
-            "audience_role": body.audience_role,
-            "audience_active_days": body.audience_active_days,
-            "audience_min_deals": body.audience_min_deals,
-            # A-6 — capture the new cohort filters in the audit payload
-            # so the forensic viewer can reconstruct *exactly* who was
-            # targeted. Datetimes are serialised as ISO-8601 strings
-            # because the JSONB column can't store ``datetime`` directly.
-            "audience_created_after": (
-                body.audience_created_after.isoformat()
-                if body.audience_created_after is not None
-                else None
-            ),
-            "audience_created_before": (
-                body.audience_created_before.isoformat()
-                if body.audience_created_before is not None
-                else None
-            ),
-            "audience_language": body.audience_language,
-            "total_recipients": total_recipients,
-            "delivered": delivered,
-            "failed": failed,
-        },
+        payload=_audit_payload(
+            body,
+            total=total_recipients,
+            delivered=delivered,
+            failed=failed,
+        ),
         request=request,
     )
     await session.commit()
-    # Audit §3.2 — WS dispatch already happened per-chunk above; the
-    # broadcast row + audit log entry are the only writes in this
-    # final transaction, so there is nothing left to fan out here.
     return _to_out(bcast, admin)
 
 

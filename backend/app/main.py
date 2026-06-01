@@ -284,23 +284,16 @@ async def lifespan(app: FastAPI):
             extra={"event": "lifespan.pin_pepper.empty"},
         )
 
-    # LOW #1 — empty ``TRUSTED_PROXIES`` means ``deps._is_trusted_peer``
-    # returns ``True`` for every direct peer, so the
-    # ``X-Forwarded-For`` / ``X-Real-IP`` headers are honoured
-    # unconditionally. That is safe behind a single trusted edge
-    # proxy but lets any unauthenticated caller spoof
-    # ``users.last_ip`` (and any future IP-based rate-limit /
-    # geo-block) when the API is exposed directly. The default is
-    # kept empty for backwards-compat on single-node dev/test
-    # deploys; production/staging must enumerate the trusted CIDRs
-    # explicitly so we refuse to boot rather than silently admit
-    # spoofed headers.
+    # Empty ``TRUSTED_PROXIES`` is fail-closed for proxy headers:
+    # ``deps._is_trusted_peer`` returns False and the API uses the direct
+    # socket peer. Log this in production/staging so operators know why
+    # ``X-Forwarded-For`` is ignored, but do not block direct deploys.
     if not settings.trusted_proxies.strip() and settings.environment in ("production", "staging"):
-        raise RuntimeError(
-            "TRUSTED_PROXIES must be set when ENVIRONMENT is "
-            f"'{settings.environment}'; an empty list causes the API to honour "
-            "X-Forwarded-For / X-Real-IP from any caller, which lets the "
-            "client spoof users.last_ip and any IP-based rate limiter."
+        logger.warning(
+            "TRUSTED_PROXIES is empty in %s; proxy headers will be ignored "
+            "and direct peer IPs will be used.",
+            settings.environment,
+            extra={"event": "lifespan.trusted_proxies.empty"},
         )
 
     # Audit L-7 — surface mis-paired Crystalpay credentials at startup

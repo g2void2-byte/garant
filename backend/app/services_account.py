@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import delete, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
@@ -260,16 +261,30 @@ async def issue_code(session: AsyncSession, source: User) -> tuple[str, datetime
     await _purge_expired(session)
     await _invalidate_active_for(session, source.id)
 
-    code = await _generate_unique_code(session)
-    expires = _now() + timedelta(seconds=settings.account_transfer_code_ttl_seconds)
-    row = AccountTransferCode(
-        source_user_id=source.id,
-        code_hash=_hash_code(code),
-        expires_at=expires,
+    max_attempts = settings.account_transfer_max_code_generation_attempts
+    for _attempt in range(1, max_attempts + 1):
+        code = await _generate_unique_code(session)
+        expires = _now() + timedelta(seconds=settings.account_transfer_code_ttl_seconds)
+        row = AccountTransferCode(
+            source_user_id=source.id,
+            code_hash=_hash_code(code),
+            expires_at=expires,
+        )
+        session.add(row)
+        try:
+            await session.commit()
+            return code, expires
+        except IntegrityError:
+            await session.rollback()
+            logger.warning(
+                "account-transfer code insert collided despite pre-check; retrying",
+                extra={"event": "account_transfer.code_insert.unique_collision"},
+            )
+            await _purge_expired(session)
+            await _invalidate_active_for(session, source.id)
+    raise RuntimeError(
+        f"unable to insert a unique account-transfer code after {max_attempts} tries"
     )
-    session.add(row)
-    await session.commit()
-    return code, expires
 
 
 async def cancel_active(session: AsyncSession, source: User) -> int:

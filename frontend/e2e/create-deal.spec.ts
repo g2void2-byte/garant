@@ -127,7 +127,7 @@ test.describe("Create-deal page", () => {
     expect(postedBody).toMatchObject({
       counterparty: "alice",
       role: "buyer",
-      amount: 150,
+      amount: "150",
       description: "Custom illustration",
       currency_code: "USD",
     });
