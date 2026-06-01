@@ -226,7 +226,7 @@ Backend schemas допускают `address: str | None`, что соответ�
 
 Риск: после смены runner runtime старые actions могут начать падать или работать не так, а security/backend jobs завязаны на них в каждом PR.
 
-Исправление: `actions/setup-python` обновлен до `v6`, `astral-sh/setup-uv` до `v8`; остальные actions в workflow уже на актуальных major-версиях без этой annotation.
+Исправление: `actions/setup-python` обновлен до `v6`, `astral-sh/setup-uv` до `v8.1.0` (у action нет major-тега `v8`, поэтому закреплен существующий semver tag); остальные actions в workflow уже на актуальных major-версиях без этой annotation.
 
 ## Наблюдения без отдельного finding
 
