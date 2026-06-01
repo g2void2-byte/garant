@@ -550,6 +550,7 @@ export function useAdminDepositMarkPaid() {
       qc.invalidateQueries({ queryKey: qk.admin.dashboard() });
       qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+      qc.invalidateQueries({ queryKey: qk.admin.analytics.series() });
       qc.invalidateQueries({ queryKey: qk.wallet.all() });
       qc.invalidateQueries({ queryKey: qk.me() });
     },
@@ -569,6 +570,7 @@ export function useAdminDepositRefund() {
       qc.invalidateQueries({ queryKey: qk.admin.dashboard() });
       qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+      qc.invalidateQueries({ queryKey: qk.admin.analytics.series() });
       qc.invalidateQueries({ queryKey: qk.wallet.all() });
       qc.invalidateQueries({ queryKey: qk.me() });
     },
@@ -596,13 +598,21 @@ export function useAdminDecideWithdrawal() {
   return useMutation<AdminWithdrawalDto, Error, { id: number; body: AdminWithdrawalDecisionBody }>({
     mutationFn: ({ id, body }) =>
       api.post(`api/admin/withdrawals/${id}/decide`, { json: body }).json(),
-    onSuccess: () => {
+    onSettled: (withdrawal) => {
       qc.invalidateQueries({ queryKey: qk.admin.withdrawals.all() });
       qc.invalidateQueries({ queryKey: qk.admin.wallets.all() });
-      // V5-F-2: invalidate wallet detail + audit caches.
-      qc.invalidateQueries({ queryKey: qk.admin.userWallet.all() });
-      qc.invalidateQueries({ queryKey: qk.admin.user.all() });
+      if (withdrawal?.user_id !== undefined) {
+        qc.invalidateQueries({ queryKey: qk.admin.userWallet.forUser(withdrawal.user_id) });
+        qc.invalidateQueries({ queryKey: qk.admin.user.detail(withdrawal.user_id) });
+      } else {
+        qc.invalidateQueries({ queryKey: qk.admin.userWallet.all() });
+        qc.invalidateQueries({ queryKey: qk.admin.user.all() });
+      }
+      qc.invalidateQueries({ queryKey: qk.admin.analytics.kpi() });
+      qc.invalidateQueries({ queryKey: qk.admin.analytics.series() });
+      qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+      qc.invalidateQueries({ queryKey: qk.wallet.all() });
     },
   });
 }

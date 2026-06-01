@@ -6,6 +6,7 @@ import type {
   AdminBalanceSnapshotDto,
   AdminDealDetailDto,
   AdminDepositDto,
+  AdminWithdrawalDto,
 } from "../types";
 
 /**
@@ -41,6 +42,7 @@ vi.mock("../client", () => ({
 
 import {
   useAdminClaimArbitration,
+  useAdminDecideWithdrawal,
   useAdminDepositMarkPaid,
   useAdminDepositRefund,
   useAdminForceRefund,
@@ -105,6 +107,23 @@ function makeDeposit(overrides: Partial<AdminDepositDto> = {}): AdminDepositDto 
     pay_url: "https://pay.example/inv-10",
     created_at: "2026-01-01T00:00:00Z",
     paid_at: "2026-01-01T01:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeWithdrawal(overrides: Partial<AdminWithdrawalDto> = {}): AdminWithdrawalDto {
+  return {
+    id: 11,
+    user_id: 42,
+    username: "alice",
+    display_name: "Alice",
+    currency_code: "USDT",
+    amount: "25.00",
+    address: null,
+    status: "sent",
+    admin_note: "",
+    created_at: "2026-01-01T00:00:00Z",
+    processed_at: "2026-01-01T02:00:00Z",
     ...overrides,
   };
 }
@@ -243,6 +262,7 @@ describe("admin deposit actions — side-effect cache invalidations", () => {
     ["admin", "dashboard"],
     ["admin", "system-status"],
     ["admin", "audit"],
+    ["admin", "analytics-series"],
     ["wallet"],
     ["me"],
   ] as const;
@@ -271,6 +291,58 @@ describe("admin deposit actions — side-effect cache invalidations", () => {
 
     const keys = invalidatedKeys(invalidateSpy);
     for (const expected of expectedKeys) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+});
+
+describe("admin withdrawal decisions — side-effect cache invalidations", () => {
+  it("invalidates admin analytics and user-facing wallet caches", async () => {
+    apiState.postResponse = makeWithdrawal({ status: "sent" });
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminDecideWithdrawal(), { wrapper });
+    await result.current.mutateAsync({ id: 11, body: { action: "mark_sent" } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of [
+      ["admin", "withdrawals"],
+      ["admin", "wallets"],
+      ["admin", "user-wallet", 42],
+      ["admin", "user", 42],
+      ["admin", "analytics-kpi"],
+      ["admin", "analytics-series"],
+      ["admin", "system-status"],
+      ["admin", "audit"],
+      ["wallet"],
+    ] as const) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+
+  it("invalidates broad caches when the backend reports an error after a partial commit", async () => {
+    apiState.postResponse = Promise.reject(new Error("CryptoBot failed"));
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminDecideWithdrawal(), { wrapper });
+    await expect(
+      result.current.mutateAsync({ id: 11, body: { action: "approve" } }),
+    ).rejects.toThrow("CryptoBot failed");
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of [
+      ["admin", "withdrawals"],
+      ["admin", "wallets"],
+      ["admin", "user-wallet"],
+      ["admin", "user"],
+      ["admin", "analytics-kpi"],
+      ["admin", "analytics-series"],
+      ["admin", "system-status"],
+      ["admin", "audit"],
+      ["wallet"],
+    ] as const) {
       expect(hasKey(keys, expected)).toBe(true);
     }
   });
