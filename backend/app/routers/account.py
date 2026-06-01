@@ -7,9 +7,10 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ..bot.notify import send_dm
+from ..config import settings
 from ..deps import CurrentUser, PinUser, SessionDep
 from ..rate_limit import RLAccountTransferStart, RLPin
 from ..services_account import (
@@ -29,15 +30,29 @@ router = APIRouter(prefix="/api/account/transfer", tags=["account"])
 class TransferStatusOut(BaseModel):
     has_active: bool
     expires_at: datetime | None = None
+    code_length: int
+    ttl_seconds: int
 
 
 class TransferStartOut(BaseModel):
     delivered: bool
     expires_at: datetime
+    code_length: int
+    ttl_seconds: int
 
 
 class TransferConfirmIn(BaseModel):
-    code: str = Field(..., min_length=6, max_length=6)
+    code: str = Field(..., min_length=1, max_length=32)
+
+    @field_validator("code")
+    @classmethod
+    def code_matches_policy(cls, v: str) -> str:
+        v = v.strip()
+        if not v.isdigit() or len(v) != settings.account_transfer_code_len:
+            raise ValueError(
+                f"Код должен состоять из {settings.account_transfer_code_len} цифр"
+            )
+        return v
 
 
 class TransferConfirmOut(BaseModel):
@@ -52,8 +67,17 @@ class TransferConfirmOut(BaseModel):
 async def transfer_status(user: CurrentUser, session: SessionDep) -> TransferStatusOut:
     row = await get_active_code(session, user.id)
     if row is None:
-        return TransferStatusOut(has_active=False)
-    return TransferStatusOut(has_active=True, expires_at=row.expires_at)
+        return TransferStatusOut(
+            has_active=False,
+            code_length=settings.account_transfer_code_len,
+            ttl_seconds=settings.account_transfer_code_ttl_seconds,
+        )
+    return TransferStatusOut(
+        has_active=True,
+        expires_at=row.expires_at,
+        code_length=settings.account_transfer_code_len,
+        ttl_seconds=settings.account_transfer_code_ttl_seconds,
+    )
 
 
 @router.post("/start", response_model=TransferStartOut)
@@ -63,6 +87,7 @@ async def transfer_start(
     _rl: RLAccountTransferStart,
 ) -> TransferStartOut:
     code, expires = await issue_code(session, user)
+    ttl_minutes = max(1, round(settings.account_transfer_code_ttl_seconds / 60))
     # 5.4 (MED) — ``send_dm`` ships ``text`` with ``parse_mode=HTML``
     # (see ``bot/notify.py::get_bot``). Every interpolated value
     # below MUST pass through ``html.escape`` even when the source is
@@ -77,7 +102,7 @@ async def transfer_start(
         "🔁 Перенос аккаунта в Garant\n\n"
         f"Ваш код: <b>{html.escape(code)}</b>\n\n"
         "Введите его в приложении на новом Telegram-аккаунте, чтобы "
-        "перенести профиль. Код действителен 15 минут.\n\n"
+        f"перенести профиль. Код действителен {ttl_minutes} минут.\n\n"
         "Если вы не запрашивали перенос — игнорируйте это сообщение."
     )
     delivered = await send_dm(user.tg_user_id, text)
@@ -95,13 +120,22 @@ async def transfer_start(
                 "user_id": user.id,
             },
         )
-    return TransferStartOut(delivered=delivered, expires_at=expires)
+    return TransferStartOut(
+        delivered=delivered,
+        expires_at=expires,
+        code_length=settings.account_transfer_code_len,
+        ttl_seconds=settings.account_transfer_code_ttl_seconds,
+    )
 
 
 @router.post("/cancel", response_model=TransferStatusOut)
 async def transfer_cancel(user: PinUser, session: SessionDep) -> TransferStatusOut:
     await cancel_active(session, user)
-    return TransferStatusOut(has_active=False)
+    return TransferStatusOut(
+        has_active=False,
+        code_length=settings.account_transfer_code_len,
+        ttl_seconds=settings.account_transfer_code_ttl_seconds,
+    )
 
 
 @router.post("/confirm", response_model=TransferConfirmOut)
@@ -111,11 +145,8 @@ async def transfer_confirm(
     session: SessionDep,
     _rl: RLPin,
 ) -> TransferConfirmOut:
-    # Brute-force protection for the 6-digit code: ``RLPin`` caps each
-    # caller at 5 req/min, codes live for 15 min, and the keyspace is
-    # 10⁶ — combined per-attempt success probability ≤0.005 %. There is
-    # no per-code attempt counter; see ``services_account`` for the
-    # security argument.
+    # Brute-force protection is policy-driven: ``RLPin`` caps each
+    # caller at 5 req/min, while code length and TTL come from config.
     try:
         source = await confirm_transfer(session, user, body.code)
     except ValueError as e:

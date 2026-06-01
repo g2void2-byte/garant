@@ -43,11 +43,18 @@ def _reset_unconfigured_warned() -> None:
     _unconfigured_warned = False
 
 
+def is_bot_token_configured(token: str | None = None) -> bool:
+    if token is None:
+        token = settings.bot_token
+    token = (token or "").strip()
+    return bool(token) and not token.startswith("0000")
+
+
 def get_bot() -> Bot | None:
     global _bot
     if _bot is not None:
         return _bot
-    if not settings.bot_token:
+    if not is_bot_token_configured():
         return None
     _bot = Bot(
         token=settings.bot_token,

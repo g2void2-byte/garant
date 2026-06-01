@@ -21,6 +21,8 @@ import { formatCurrency } from "@/lib/format";
 import { haptic } from "@/lib/tg";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 
+const DECIMAL_RE = /^\d+(?:\.\d{1,18})?$|^\.\d{1,18}$/;
+
 // Item 18 — backend can return a structured ``insufficient_funds``
 // payload on the create-deal 400. The ky ``beforeError`` hook
 // JSON-stringifies that payload into ``err.message`` so we re-parse
@@ -161,8 +163,13 @@ export default function CreateDealPage() {
     !!activeBalance && activeBalance.amount >= totalFromBalance && parsedAmount > 0;
 
   function validate(): boolean {
-    const amount = parseFloat(sum);
-    if (!counterparty || !description || !Number.isFinite(amount) || amount <= 0) {
+    const amount = sum.trim();
+    if (
+      !counterparty ||
+      !description ||
+      !DECIMAL_RE.test(amount) ||
+      /^0+(?:\.0+)?$/.test(amount)
+    ) {
       haptic("error");
       return false;
     }
@@ -170,7 +177,7 @@ export default function CreateDealPage() {
   }
 
   async function submitDeal() {
-    const amount = parseFloat(sum);
+    const amount = sum.trim();
     setInsufficient(null);
     try {
       const deal = await create.mutateAsync({

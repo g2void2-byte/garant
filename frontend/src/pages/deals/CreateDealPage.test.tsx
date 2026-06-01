@@ -292,7 +292,7 @@ describe("<CreateDealPage />", () => {
         expect.objectContaining({
           counterparty: "alice",
           role: "buyer",
-          amount: 100.25,
+          amount: "100.25",
           description: "deal description",
           currency_code: "USD",
           payment_provider: "cryptobot",

@@ -93,20 +93,24 @@ export default function AdminWithdrawalsPage() {
                 </div>
               </div>
               <div className="bg-panel-2 rounded-button px-2 py-1.5 flex items-center gap-1.5">
-                <span className="text-[11px] text-text-muted">Адрес:</span>
+                <span className="text-[11px] text-text-muted">
+                  {w.address ? "Адрес:" : "Получатель:"}
+                </span>
                 <code className="text-xs flex-1 truncate font-mono">
-                  {w.address}
+                  {w.address ?? "CryptoBot Transfer"}
                 </code>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(w.address);
-                    toast.show({ kind: "info", title: "Скопировано" });
-                  }}
-                  className="text-text-muted active:scale-90"
-                >
-                  <Copy size={14} />
-                </button>
+                {w.address && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(w.address ?? "");
+                      toast.show({ kind: "info", title: "Скопировано" });
+                    }}
+                    className="text-text-muted active:scale-90"
+                  >
+                    <Copy size={14} />
+                  </button>
+                )}
               </div>
               {w.admin_note && (
                 <div className="text-xs text-text-muted italic">

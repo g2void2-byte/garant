@@ -89,52 +89,7 @@ function isLockoutDetail(value: unknown): value is LockoutDetail {
 }
 
 export interface TotpRequiredDetail {
-  /** Server-supplied detail string we used to flip into the gate. */
   detail: string;
-  /** HTTP method of the failed request (for retry on success). */
-  method: string;
-  /** Fully-qualified URL of the failed request. */
-  url: string;
-  /** Replay-safe request body snapshot — undefined for GET / no-body requests. */
-  body: BodyInit | null | undefined;
-  /** Raw header bag of the failed request, for replay. */
-  headers: Record<string, string>;
-}
-
-type ReplayRequestSnapshot = Omit<TotpRequiredDetail, "detail">;
-
-const replaySnapshots = new WeakMap<Request, ReplayRequestSnapshot>();
-const replaySnapshotQueues = new Map<string, ReplayRequestSnapshot[]>();
-
-function replayKey(req: Request): string {
-  return `${req.method} ${req.url}`;
-}
-
-function rememberReplaySnapshot(req: Request, snapshot: ReplayRequestSnapshot) {
-  replaySnapshots.set(req, snapshot);
-  const key = replayKey(req);
-  const queue = replaySnapshotQueues.get(key) ?? [];
-  queue.push(snapshot);
-  if (queue.length > 10) queue.shift();
-  replaySnapshotQueues.set(key, queue);
-}
-
-function takeReplaySnapshot(req: Request): ReplayRequestSnapshot | undefined {
-  const direct = replaySnapshots.get(req);
-  if (direct) return direct;
-  const key = replayKey(req);
-  const queue = replaySnapshotQueues.get(key);
-  const fallback = queue?.shift();
-  if (queue && queue.length === 0) replaySnapshotQueues.delete(key);
-  return fallback;
-}
-
-function headersFromRequest(req: Request): Record<string, string> {
-  const out: Record<string, string> = {};
-  req.headers.forEach((v, k) => {
-    out[k] = v;
-  });
-  return out;
 }
 
 function attachAuthHeaders(req: Request) {
@@ -145,24 +100,6 @@ function attachAuthHeaders(req: Request) {
   const totpToken = getTotpSessionToken();
   if (totpToken) req.headers.set("X-Totp-Session", totpToken);
 }
-
-const attachAuthHeadersAndSnapshot: BeforeRequestHook = async (req: Request) => {
-  attachAuthHeaders(req);
-  let body: BodyInit | null | undefined;
-  if (req.method !== "GET" && req.method !== "HEAD" && req.body !== null) {
-    try {
-      body = await req.clone().arrayBuffer();
-    } catch {
-      body = undefined;
-    }
-  }
-  rememberReplaySnapshot(req, {
-    method: req.method,
-    url: req.url,
-    body,
-    headers: headersFromRequest(req),
-  });
-};
 
 export const api = ky.create({
   prefixUrl: baseURL ? `${baseURL.replace(/\/$/, "")}/` : "/",
@@ -182,7 +119,7 @@ export const api = ky.create({
     statusCodes: [408, 500, 502, 503, 504],
   },
   hooks: {
-    beforeRequest: [attachAuthHeadersAndSnapshot],
+    beforeRequest: [attachAuthHeaders as BeforeRequestHook],
     beforeError: [
       async (err: HTTPError) => {
         let detail: unknown;
@@ -222,18 +159,11 @@ export const api = ky.create({
         ) {
           clearTotpSessionToken();
           try {
-            const replay = takeReplaySnapshot(err.request) ?? {
-              method: err.request.method,
-              url: err.request.url,
-              body: undefined,
-              headers: headersFromRequest(err.request),
-            };
             const evt = new CustomEvent<TotpRequiredDetail>(TOTP_REQUIRED_EVENT, {
               detail: {
                 detail: typeof detail === "object" && detail !== null && "detail" in detail
                   ? (detail as { detail: string }).detail
                   : String(detail),
-                ...replay,
               },
             });
             window.dispatchEvent(evt);

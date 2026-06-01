@@ -178,7 +178,7 @@ async def create_deposit(
         session,
         user,
         body.currency_code,
-        float(body.amount),
+        body.amount,
         purpose=body.purpose,
         provider=body.provider,
     )

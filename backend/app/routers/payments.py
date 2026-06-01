@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -30,6 +31,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
 _WEBHOOK_PROCESSING_RETRY_AFTER = timedelta(minutes=10)
+_MAX_WEBHOOK_BODY_BYTES = 64 * 1024
+
+
+async def _read_limited_webhook_body(request: Request) -> bytes:
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > _MAX_WEBHOOK_BODY_BYTES:
+                raise HTTPException(413, "Webhook body too large")
+        except ValueError as exc:
+            raise HTTPException(400, "Invalid Content-Length") from exc
+
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > _MAX_WEBHOOK_BODY_BYTES:
+            raise HTTPException(413, "Webhook body too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _webhook_processing_is_fresh(event: Any) -> bool:
@@ -77,7 +98,7 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
     The webhook URL stays at ``POST /api/payments/webhook/cryptobot``
     so existing CryptoBot configurations keep working.
     """
-    raw = await request.body()
+    raw = await _read_limited_webhook_body(request)
     signature = request.headers.get("crypto-pay-api-signature")
     secret = webhook_secret()
 
@@ -107,7 +128,7 @@ async def cryptobot_webhook(request: Request, session: SessionDep):
         raise HTTPException(401, "Bad signature")
 
     try:
-        body = await request.json()
+        body = json.loads(raw)
     except ValueError as e:
         raise HTTPException(400, "Body must be JSON") from e
     if not isinstance(body, dict):
@@ -224,9 +245,9 @@ async def crystalpay_webhook(request: Request, session: SessionDep):
         )
         raise HTTPException(503, "Webhooks disabled (Crystalpay not configured)")
 
-    raw = await request.body()
+    raw = await _read_limited_webhook_body(request)
     try:
-        body = await request.json()
+        body = json.loads(raw)
     except ValueError as e:
         raise HTTPException(400, "Body must be JSON") from e
     if not isinstance(body, dict):

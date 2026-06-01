@@ -5730,8 +5730,8 @@
       "TransferConfirmIn": {
         "properties": {
           "code": {
-            "maxLength": 6,
-            "minLength": 6,
+            "maxLength": 32,
+            "minLength": 1,
             "title": "Code",
             "type": "string"
           }
@@ -5762,6 +5762,10 @@
       },
       "TransferStartOut": {
         "properties": {
+          "code_length": {
+            "title": "Code Length",
+            "type": "integer"
+          },
           "delivered": {
             "title": "Delivered",
             "type": "boolean"
@@ -5770,17 +5774,27 @@
             "format": "date-time",
             "title": "Expires At",
             "type": "string"
+          },
+          "ttl_seconds": {
+            "title": "Ttl Seconds",
+            "type": "integer"
           }
         },
         "required": [
           "delivered",
-          "expires_at"
+          "expires_at",
+          "code_length",
+          "ttl_seconds"
         ],
         "title": "TransferStartOut",
         "type": "object"
       },
       "TransferStatusOut": {
         "properties": {
+          "code_length": {
+            "title": "Code Length",
+            "type": "integer"
+          },
           "expires_at": {
             "anyOf": [
               {
@@ -5796,10 +5810,16 @@
           "has_active": {
             "title": "Has Active",
             "type": "boolean"
+          },
+          "ttl_seconds": {
+            "title": "Ttl Seconds",
+            "type": "integer"
           }
         },
         "required": [
-          "has_active"
+          "has_active",
+          "code_length",
+          "ttl_seconds"
         ],
         "title": "TransferStatusOut",
         "type": "object"

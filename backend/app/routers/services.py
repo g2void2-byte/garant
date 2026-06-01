@@ -183,8 +183,12 @@ async def list_services(
     stmt = select(Service).join(Service.owner)
     if category:
         stmt = stmt.join(Category).where(Category.slug == category)
-    ts_q = build_prefix_tsquery(q) if q else None
+    q_trimmed = (q or "").strip()
+    ts_q = build_prefix_tsquery(q_trimmed) if q_trimmed else None
     fts_rank = None
+    if q_trimmed and ts_q is None:
+        response.headers["X-Total-Count"] = "0"
+        return []
     if ts_q:
         tsq = func.to_tsquery("simple", ts_q)
         stmt = stmt.where(Service.search_vector.op("@@")(tsq))
@@ -599,7 +603,10 @@ async def admin_list_services(
     stmt = select(Service)
     if status is not None:
         stmt = stmt.where(Service.status == status)
-    ts_q = build_prefix_tsquery(q) if q else None
+    q_trimmed = (q or "").strip()
+    ts_q = build_prefix_tsquery(q_trimmed) if q_trimmed else None
+    if q_trimmed and ts_q is None:
+        return []
     if ts_q:
         tsq = func.to_tsquery("simple", ts_q)
         stmt = stmt.where(Service.search_vector.op("@@")(tsq))

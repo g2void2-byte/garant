@@ -230,11 +230,15 @@ export interface PinResetRequestDto {
 export interface AccountTransferStatusDto {
   has_active: boolean;
   expires_at: string | null;
+  code_length: number;
+  ttl_seconds: number;
 }
 
 export interface AccountTransferStartDto {
   delivered: boolean;
   expires_at: string;
+  code_length: number;
+  ttl_seconds: number;
 }
 
 export interface AccountTransferConfirmDto {
@@ -300,7 +304,7 @@ export interface WalletDepositDto {
 
 export interface WalletDepositCreateBody {
   currency_code: string;
-  amount: number;
+  amount: string;
   // See ``WalletDepositDto.purpose``. Optional on the wire; the
   // backend defaults to ``"wallet"`` when omitted.
   purpose?: "wallet" | "trust";
@@ -313,7 +317,7 @@ export interface WalletWithdrawalDto {
   id: number;
   currency: CurrencyDto;
   amount: number;
-  address: string;
+  address: string | null;
   status: "pending" | "approved" | "sent" | "rejected" | string;
   admin_note: string;
   created_at: string;
@@ -725,7 +729,7 @@ export interface AdminWithdrawalDto {
   display_name: string;
   currency_code: string;
   amount: string;
-  address: string;
+  address: string | null;
   status: string;
   admin_note: string;
   created_at: string;

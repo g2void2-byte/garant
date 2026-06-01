@@ -195,7 +195,7 @@ describe("<WalletCurrencyPage />", () => {
     await waitFor(() => {
       expect(mockState.createDeposit.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USDT",
-        amount: 20,
+        amount: "20",
       });
     });
     expect(openTelegramLinkSpy).toHaveBeenCalledWith(
@@ -204,37 +204,10 @@ describe("<WalletCurrencyPage />", () => {
     expect(hapticSpy).toHaveBeenCalledWith("success");
   });
 
-  it("switches to the withdraw tab and submits a withdrawal", async () => {
-    mockState.createWithdrawal.mutateAsync.mockResolvedValue({});
-    const user = userEvent.setup();
+  it("does not render the legacy per-currency withdrawal tab", () => {
     renderPage("USDT");
-    await user.click(screen.getByRole("button", { name: /Вывести/ }));
-
-    const amount = document.querySelector('input[type="number"]') as HTMLInputElement;
-    fireEvent.change(amount, { target: { value: "10" } });
-    const address = screen.getByPlaceholderText("Адрес USDT") as HTMLInputElement;
-    fireEvent.change(address, { target: { value: "TX-addr" } });
-    await user.click(screen.getByRole("button", { name: /Запросить вывод/ }));
-
-    await waitFor(() => {
-      expect(mockState.createWithdrawal.mutateAsync).toHaveBeenCalledWith({
-        currency_code: "USDT",
-        // Audit M-7 — wire format is now ``string`` to avoid the
-        // ``parseFloat`` round-trip that truncated big balances.
-        amount: "10",
-        address: "TX-addr",
-      });
-    });
-    expect(hapticSpy).toHaveBeenCalledWith("success");
-  });
-
-  it("withdraw 'Всё' button copies available balance into the amount", async () => {
-    const user = userEvent.setup();
-    renderPage("USDT");
-    await user.click(screen.getByRole("button", { name: /Вывести/ }));
-    await user.click(screen.getByRole("button", { name: "Всё" }));
-    const amount = document.querySelector('input[type="number"]') as HTMLInputElement;
-    expect(amount.value).toBe("100");
+    expect(screen.queryByRole("button", { name: /Вывести/ })).not.toBeInTheDocument();
+    expect(mockState.createWithdrawal.mutateAsync).not.toHaveBeenCalled();
   });
 
   it("history tab merges deposits + withdrawals with Russian status text", async () => {

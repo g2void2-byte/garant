@@ -12,6 +12,7 @@ from ..config import settings
 from . import keyboards
 from .handlers import router
 from .maintenance import MaintenanceMiddleware
+from .notify import is_bot_token_configured
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ async def start_polling() -> None:
     # regexing the message body. ``BOT_TOKEN`` is deliberately
     # NOT in ``extra`` (token literal) — only the configured/
     # placeholder shape is captured.
-    if not settings.bot_token or settings.bot_token.startswith("0000"):
+    if not is_bot_token_configured():
         # Audit §16.2.2 — RUN_BOT=1 with a missing / docker-compose-default
         # ("0000...") BOT_TOKEN is a deployment-misconfiguration smoke
         # signal: the operator explicitly asked the runtime to start

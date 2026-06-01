@@ -1152,10 +1152,13 @@ class AccountTransferCode(Base):
     """
 
     __tablename__ = "account_transfer_codes"
+    __table_args__ = (
+        UniqueConstraint("code_hash", name="uq_account_transfer_codes_code_hash"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    code_hash: Mapped[str] = mapped_column(String(64), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     target_tg_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

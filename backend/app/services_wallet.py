@@ -147,6 +147,10 @@ def _truncate_address(addr: str, *, head: int = 6, tail: int = 6) -> str:
     return f"{addr[:head]}…{addr[-tail:]}"
 
 
+def _withdraw_destination_label(address: str | None) -> str:
+    return _truncate_address(address) if address else "в @CryptoBot"
+
+
 def _sanitise_withdraw_address(raw: str) -> str:
     """Strip control bytes, backslashes and trailing whitespace.
 
@@ -312,7 +316,7 @@ async def create_deposit_invoice(
     session: AsyncSession,
     user: User,
     currency_code: str,
-    amount: float,
+    amount: Decimal | str,
     purpose: str = "wallet",
     provider: str = "cryptobot",
     *,
@@ -340,7 +344,8 @@ async def create_deposit_invoice(
     even though the buyer's balance already covers the principal.
     """
     currency = await get_currency_by_code(session, currency_code)
-    if min_check and amount < currency.min_deposit:
+    amount_d = quantize_money(amount, currency.decimals)
+    if min_check and amount_d < Decimal(str(currency.min_deposit)):
         raise HTTPException(
             400, f"Минимальная сумма пополнения: {currency.min_deposit} {currency.code}"
         )
@@ -354,11 +359,11 @@ async def create_deposit_invoice(
 
     if provider == "crystalpay":
         return await _create_crystalpay_deposit(
-            session, user, currency, amount, purpose, commit=commit
+            session, user, currency, amount_d, purpose, commit=commit
         )
     if provider == "cryptobot":
         return await _create_cryptobot_deposit(
-            session, user, currency, amount, purpose, commit=commit
+            session, user, currency, amount_d, purpose, commit=commit
         )
     raise HTTPException(400, f"Неизвестный провайдер: {provider}")
 
@@ -374,7 +379,7 @@ async def _create_cryptobot_deposit(
     session: AsyncSession,
     user: User,
     currency: Currency,
-    amount: float,
+    amount: Decimal,
     purpose: str,
     *,
     commit: bool = True,
@@ -399,13 +404,13 @@ async def _create_cryptobot_deposit(
                     currency_type="fiat",
                     fiat=currency.code,
                     accepted_assets=_CRYPTOBOT_FIAT_ACCEPTED_ASSETS,
-                    amount=amount,
+                    amount=str(amount),
                     expires_in=expiry_seconds if expiry_seconds > 0 else None,
                 )
             else:
                 invoice = await crypto.create_invoice(
                     asset=currency.code,
-                    amount=amount,
+                    amount=str(amount),
                     expires_in=expiry_seconds if expiry_seconds > 0 else None,
                 )
     except CryptoPayError as e:
@@ -419,7 +424,7 @@ async def _create_cryptobot_deposit(
                 "event": "cryptobot.create_invoice.failed",
                 "user_id": user.id,
                 "currency": currency.code,
-                "amount": amount,
+                "amount": str(amount),
             },
         )
         raise HTTPException(502, f"Ошибка CryptoBot: {e}") from e
@@ -474,7 +479,7 @@ async def _create_crystalpay_deposit(
     session: AsyncSession,
     user: User,
     currency: Currency,
-    amount: float,
+    amount: Decimal,
     purpose: str,
     *,
     commit: bool = True,
@@ -519,7 +524,7 @@ async def _create_crystalpay_deposit(
             # pivot on it. The visible ``description`` is reduced
             # to a generic top-up label.
             invoice = await cp.create_invoice(
-                amount=amount,
+                amount=str(amount),
                 currency=currency.code,
                 lifetime=lifetime_minutes,
                 description="Garant wallet top-up",
@@ -534,7 +539,7 @@ async def _create_crystalpay_deposit(
                 "event": "crystalpay.create_invoice.failed",
                 "user_id": user.id,
                 "currency": currency.code,
-                "amount": amount,
+                "amount": str(amount),
             },
         )
         raise HTTPException(502, f"Ошибка Crystalpay: {e}") from e
@@ -1083,29 +1088,27 @@ async def create_withdrawal(
         ):
             raise HTTPException(400, "Адрес не соответствует формату валюты")
 
-    # Refuse before the Phase 1 debit when neither CryptoBot nor a human
-    # admin can process the queued row. If CryptoBot is configured, a
-    # pending row is recoverable through the admin Approve path and
-    # CryptoBot transfer idempotency; without CryptoBot, at least one
-    # admin must exist to handle the operational fallback.
-    if not _cryptopay_configured():
-        admin_count = (
-            await session.execute(select(User.id).where(User.is_admin.is_(True)).limit(1))
-        ).first()
-        if admin_count is None:
-            logger.error(
-                "create_withdrawal refused: manual mode but no admins exist",
-                extra={
-                    "event": "create_withdrawal.refused.no_admins",
-                    "user_id": user.id,
-                    "currency": currency.code,
-                    "amount": str(amount),
-                },
-            )
-            raise HTTPException(
-                503,
-                "Вывод временно недоступен: нет администраторов для обработки заявки",
-            )
+    cryptopay_configured = _cryptopay_configured()
+    auto_withdraw_enabled = await _auto_withdraw_enabled(session) if cryptopay_configured else False
+    admin_exists = (
+        await session.execute(select(User.id).where(User.is_admin.is_(True)).limit(1))
+    ).first() is not None
+    if not auto_withdraw_enabled and not admin_exists:
+        logger.error(
+            "create_withdrawal refused: no automatic or manual delivery path",
+            extra={
+                "event": "create_withdrawal.refused.no_delivery_path",
+                "user_id": user.id,
+                "currency": currency.code,
+                "amount": str(amount),
+                "cryptopay_configured": cryptopay_configured,
+                "auto_withdraw_enabled": auto_withdraw_enabled,
+            },
+        )
+        raise HTTPException(
+            503,
+            "Вывод временно недоступен: нет доступного способа обработки заявки",
+        )
 
     # Row-lock the balance: two concurrent withdrawals must not both
     # pass the ``amount >= price`` check on the same balance.
@@ -1183,7 +1186,7 @@ async def create_withdrawal(
     #   this branch mutated the stale ``bal`` Python object and
     #   committed it, which silently overwrote any concurrent write
     #   to ``user_balances`` (classic lost-update).
-    if await _auto_withdraw_enabled(session) and _cryptopay_configured():
+    if auto_withdraw_enabled and cryptopay_configured:
         try:
             async with CryptoPay(
                 settings.cryptobot_token, testnet=settings.cryptobot_testnet
@@ -1215,6 +1218,64 @@ async def create_withdrawal(
                     "amount": amount,
                 },
             )
+            if not admin_exists:
+                w_locked = (
+                    await session.execute(
+                        select(WalletWithdrawal)
+                        .where(WalletWithdrawal.id == withdrawal.id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                ).scalar_one_or_none()
+                bal_locked = (
+                    await session.execute(
+                        select(UserBalance)
+                        .where(
+                            UserBalance.user_id == user.id,
+                            UserBalance.currency_id == currency.id,
+                        )
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                ).scalar_one_or_none()
+                if w_locked is not None and bal_locked is not None:
+                    refund_before_amount = Decimal(str(bal_locked.amount))
+                    refund_before_locked = Decimal(str(bal_locked.locked))
+                    bal_locked.locked = max(Decimal(0), refund_before_locked - amount_d)
+                    bal_locked.amount = refund_before_amount + amount_d
+                    w_locked.status = WalletWithdrawStatus.rejected
+                    w_locked.processed_at = utcnow()
+                    w_locked.admin_note = "auto-withdraw failed; no admins available"
+                    record_balance_ledger(
+                        session,
+                        bal_locked,
+                        before_amount=refund_before_amount,
+                        before_locked=refund_before_locked,
+                        event_type="withdrawal.auto_failed_refund",
+                        source_type="withdrawal",
+                        source_id=w_locked.id,
+                    )
+                    notif, ws_payload = await notifier.insert(
+                        session,
+                        user.id,
+                        NotificationType.deposits,
+                        "Вывод не выполнен",
+                        f"{amount} {currency.code} возвращены на баланс: CryptoBot недоступен.",
+                        {"withdrawal_id": w_locked.id},
+                    )
+                    await session.commit()
+                    try:
+                        await notifier.dispatch_after_commit(session, notif, ws_payload)
+                    except (TimeoutError, SQLAlchemyError, OSError, RuntimeError):
+                        logger.exception(
+                            "create_withdrawal: auto-fail refund dispatch failed for notif id=%s",
+                            notif.id,
+                            extra={
+                                "event": "create_withdrawal.auto_failed_refund.dispatch.failed",
+                                "notif_id": notif.id,
+                            },
+                        )
+                    return w_locked
         else:
             # Phase 3: re-lock the withdrawal + balance and apply the
             # ``locked`` decrement against the fresh row. We must NOT
@@ -1320,7 +1381,8 @@ async def create_withdrawal(
                 user.id,
                 NotificationType.deposits,
                 "Вывод выполнен",
-                f"-{amount} {currency.code} отправлены на {address}",
+                f"-{amount} {currency.code} отправлены на "
+                f"{_withdraw_destination_label(address)}",
                 {"withdrawal_id": w_locked.id},
             )
             await session.commit()
@@ -1354,7 +1416,7 @@ async def create_withdrawal(
             (
                 f"@{user.username or user.tg_user_id}: "
                 f"{amount} {currency.code} → "
-                f"{_truncate_address(address) if address else 'CryptoBot Transfer'}"
+                f"{_withdraw_destination_label(address)}"
             ),
             {"withdrawal_id": withdrawal.id},
         )
@@ -1564,7 +1626,8 @@ async def sweep_stale_withdrawals(session: AsyncSession) -> int:
                 wd_user_id,
                 NotificationType.deposits,
                 "Вывод выполнен",
-                f"-{wd_amount} {currency_code} отправлены на {wd_address}",
+                f"-{wd_amount} {currency_code} отправлены на "
+                f"{_withdraw_destination_label(wd_address)}",
                 {"withdrawal_id": wd_id},
             )
         else:

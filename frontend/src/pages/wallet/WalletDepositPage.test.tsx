@@ -206,7 +206,7 @@ describe("<WalletDepositPage />", () => {
     await waitFor(() => {
       expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USD",
-        amount: 10,
+        amount: "10",
         provider: "cryptobot",
       });
     });
@@ -242,7 +242,7 @@ describe("<WalletDepositPage />", () => {
     await waitFor(() => {
       expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USD",
-        amount: 10,
+        amount: "10",
         provider: "crystalpay",
       });
     });
