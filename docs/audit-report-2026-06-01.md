@@ -42,6 +42,7 @@
 - M-08: nullable withdrawal address отражен во frontend types/admin UI.
 - M-09: `TRUSTED_PROXIES` comment/startup guard приведены к фактической семантике.
 - M-11: media upload удаляет уже записанный файл, если commit `Media`-строки в БД падает.
+- M-12: GitHub Actions больше не используют Node.js 20-based `setup-python@v5` / `setup-uv@v3`.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -216,6 +217,16 @@ Backend schemas допускают `address: str | None`, что соответ�
 Риск: накопление orphan-файлов после transient DB failures, расход диска и рассинхрон между storage и базой. Для приватных deal attachments это также усложняет последующую чистку, потому что файл не достижим из `Media`/deal graph.
 
 Исправление: commit обернут в `try/except`; при ошибке handler best-effort удаляет только что записанный файл через `Path.unlink(missing_ok=True)`, логирует вторичную ошибку cleanup и пробрасывает исходную ошибку. Добавлен unit-regression на прямой вызов upload path с искусственным падением commit.
+
+### M-12. CI использовал actions на deprecated Node.js 20 runtime
+
+Ссылки: `.github/workflows/ci.yml`, `.github/workflows/security.yml`, GitHub Actions annotation в свежем run PR #253.
+
+Свежие CI/Security runs после PR-fix проходили, но GitHub выдавал annotation: `actions/setup-python@v5` и `astral-sh/setup-uv@v3` работают на Node.js 20, который GitHub Actions начнет принудительно заменять на Node.js 24 с 2026-06-16 и удалит 2026-09-16. Это не красный тест сегодня, но это будущий CI breakage surface с конкретной датой.
+
+Риск: после смены runner runtime старые actions могут начать падать или работать не так, а security/backend jobs завязаны на них в каждом PR.
+
+Исправление: `actions/setup-python` обновлен до `v6`, `astral-sh/setup-uv` до `v8`; остальные actions в workflow уже на актуальных major-версиях без этой annotation.
 
 ## Наблюдения без отдельного finding
 
