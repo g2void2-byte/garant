@@ -219,46 +219,34 @@ def _build_events(deal: Deal) -> list[AdminDealEventItem]:
     return items
 
 
-async def _serialize_message(session: AsyncSession, msg: DealMessage) -> DealMessageOut:
-    # Lazy import to avoid a circular dependency with deal_messages router.
-    from ..deal_messages import _serialize  # type: ignore[attr-defined]
-
-    return await _serialize(session, msg)
-
-
 async def _list_messages(session: AsyncSession, deal_id: int) -> list[DealMessageOut]:
-    """Admin chat transcript — batched media load (Audit M-4).
+    """Latest admin chat transcript page — batched media load.
 
-    Pre-fix this helper called ``_serialize_message`` for every row,
-    which in turn fired one ``SELECT Media WHERE id IN (...)`` *per
-    message* through ``deal_messages._serialize``. An arbitration
-    deal with N messages produced N round-trips on every admin
-    transcript view. The fix mirrors the user-side
-    ``deal_messages.list_messages`` batched pattern: load all media
-    referenced by the whole transcript in a single
-    ``SELECT Media WHERE id IN (... union ...)`` then serialise each
-    row against the pre-built dict.
+    Audit M-37 — the admin deal detail endpoint embeds a small chat
+    preview, not the full transcript. The full history is paged by the
+    shared ``GET /api/deals/{id}/messages`` cursor endpoint that the
+    admin UI also uses for "load older".
     """
     # Lazy import to avoid a circular dependency with deal_messages router.
-    from ..deal_messages import _parse_attachment_ids, _serialize_one
+    from ..deal_messages import _DEFAULT_MESSAGE_PAGE, _parse_attachment_ids, _serialize_one
 
-    rows = (
+    page = (
         (
             await session.execute(
                 select(DealMessage)
                 .where(DealMessage.deal_id == deal_id)
                 .options(selectinload(DealMessage.sender))
-                .order_by(DealMessage.created_at.asc(), DealMessage.id.asc())
+                .order_by(DealMessage.id.desc())
+                .limit(_DEFAULT_MESSAGE_PAGE)
             )
         )
         .scalars()
         .all()
     )
-    # Audit M-4 — collect every attachment id across the whole
-    # transcript in one pass, then issue a single ``WHERE id IN (...)``
-    # SELECT. ``set`` collapses duplicate ids (a media file linked
-    # from multiple messages, which the chat actively allows on the
-    # client) into one DB-side fetch.
+    rows = list(reversed(page))
+    # Audit M-4 — collect every attachment id across the page in one
+    # pass, then issue a single ``WHERE id IN (...)`` SELECT. ``set``
+    # collapses duplicate ids into one DB-side fetch.
     all_media_ids: set[int] = set()
     for msg in rows:
         all_media_ids.update(_parse_attachment_ids(msg.attachments_json))

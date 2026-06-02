@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 61 файл, 543 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 61 файл, 545 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -67,6 +67,7 @@
 - M-34: admin broadcasts history больше не запирает админа на первой странице рассылок.
 - M-35: admin arbitration queue больше не запирает админа/арбитра на первой странице.
 - M-36: admin user content sections больше не грузят неограниченные services/reviews/comments и не запирают админа на первой странице.
+- M-37: admin deal detail больше не встраивает полный чат сделки; история грузится курсорными страницами.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -491,6 +492,16 @@ Backend endpoints для админского редактирования ко�
 Риск: админская карточка пользователя деградировала по памяти/latency на high-volume аккаунтах. Если backend просто ограничить лимитом без UI, старые services/reviews/comments стали бы недоступны из штатной админки, что ломает модерацию, миграционные правки и forensic review контента.
 
 Исправление: list endpoints теперь принимают `page/page_size`, возвращают `items/total/page/page_size` и сортируют стабильно по `created_at desc, id desc`. Admin hooks включают pagination params в query key/search params, а `ServicesSection`, `ReviewsSection` и `CommentsSection` показывают total и prev/next controls; page сбрасывается при смене пользователя/направления отзывов и корректируется после удаления последнего элемента страницы. OpenAPI snapshot/generated types обновлены, добавлены regression-проверки backend envelope и frontend page reset.
+
+### M-37. Admin deal detail встраивал полный чат сделки
+
+Ссылки: `backend/app/routers/admin/deals.py:219-271`, `frontend/src/pages/admin/AdminDealDetailPage.tsx`, `frontend/src/api/hooks.ts:392-455`, regressions `tests/integration/test_admin_deals.py`, `frontend/src/pages/admin/AdminDealDetailPage.test.tsx`.
+
+`GET /api/admin/deals/{id}` строил detail DTO вместе со всем transcript из `deal_messages`, хотя пользовательский chat endpoint уже имеет `limit/before_id` пагинацию. В длинной арбитражной сделке админское открытие карточки могло тянуть тысячи сообщений и attachments одним JSON-ответом; frontend при этом отрисовывал только встроенный `deal.messages` и не давал подгрузить более ранние сообщения отдельными страницами.
+
+Риск: одна тяжелая сделка превращала обычный admin detail view в большой DB/JSON/render spike. Это особенно плохо для споров, где администратор открывает карточку именно в момент нагрузки, а история может содержать месяцы переписки и вложений.
+
+Исправление: admin detail теперь встраивает только newest page размера `_DEFAULT_MESSAGE_PAGE` с тем же batched media load. `AdminDealDetailPage` перешел на общие chat hooks `useDealMessages`, `useLoadOlderDealMessages` и `useSendDealMessage`, показывает control "Показать более ранние" и отправляет сообщения через typed mutation. Добавлены backend regression на лимит/порядок latest 50 и frontend regression на cursor load + send hook.
 
 ## Наблюдения без отдельного finding
 

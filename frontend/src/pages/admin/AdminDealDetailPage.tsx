@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -32,7 +32,13 @@ import {
   useAdminRejectDealApproval,
   useAdminSplitDeal,
 } from "@/api/admin/hooks";
-import { useMe } from "@/api/hooks";
+import {
+  DEAL_MESSAGE_PAGE_SIZE,
+  useDealMessages,
+  useLoadOlderDealMessages,
+  useMe,
+  useSendDealMessage,
+} from "@/api/hooks";
 import { parseDecimal } from "@/lib/format";
 import type {
   AdminDealDetailDto,
@@ -564,34 +570,71 @@ function EventsTimeline({ deal }: { deal: AdminDealDetailDto }) {
 
 function MessagesFeed({ deal }: { deal: AdminDealDetailDto }) {
   const toast = useToast();
+  const { data: messages, isLoading } = useDealMessages(deal.id);
+  const loadOlder = useLoadOlderDealMessages(deal.id);
+  const sendMessage = useSendDealMessage(deal.id);
   const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
+  const [reachedOldest, setReachedOldest] = useState(false);
+
+  useEffect(() => {
+    setReachedOldest(false);
+  }, [deal.id]);
+
+  const items = messages ?? [];
+  const canLoadOlder = !reachedOldest && items.length >= DEAL_MESSAGE_PAGE_SIZE;
+
+  const onLoadOlder = async () => {
+    if (!items.length || loadOlder.isPending) return;
+    try {
+      const page = await loadOlder.mutateAsync({ beforeId: items[0].id });
+      if (page.length < DEAL_MESSAGE_PAGE_SIZE) {
+        setReachedOldest(true);
+      }
+    } catch (e: unknown) {
+      toast.show({
+        kind: "error",
+        title: "Не удалось загрузить историю",
+        body: (e as Error)?.message ?? "",
+      });
+    }
+  };
 
   const send = async () => {
     const t = text.trim();
     if (!t) return;
-    setSending(true);
     try {
-      await api.post(`api/deals/${deal.id}/messages`, { json: { text: t, attachments: [] } });
+      await sendMessage.mutateAsync({ text: t, attachments: [] });
       toast.show({ kind: "success", title: "Сообщение отправлено" });
       setText("");
       // Refresh the page-level query
       window.dispatchEvent(new CustomEvent("admin-deal-refetch"));
     } catch (e: unknown) {
       toast.show({ kind: "error", title: "Не отправлено", body: (e as Error)?.message ?? "" });
-    } finally {
-      setSending(false);
     }
   };
 
   return (
     <section className="bg-panel rounded-card p-4">
       <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-2">Чат сделки</h3>
-      {deal.messages.length === 0 ? (
+      {isLoading ? (
+        <Skeleton className="h-16 mb-3" />
+      ) : items.length === 0 ? (
         <div className="text-sm text-text-muted py-4 text-center">Пока пусто</div>
       ) : (
         <ul className="space-y-2 mb-3">
-          {deal.messages.map((m) => {
+          {canLoadOlder && (
+            <li className="flex justify-center pb-1">
+              <button
+                type="button"
+                onClick={onLoadOlder}
+                disabled={loadOlder.isPending}
+                className="text-xs text-text-muted hover:text-text disabled:opacity-50 underline-offset-2 hover:underline"
+              >
+                {loadOlder.isPending ? "Загружаю..." : "Показать более ранние"}
+              </button>
+            </li>
+          )}
+          {items.map((m) => {
             const isBuyer = m.sender_id === deal.buyer.user_id;
             const isSeller = m.sender_id === deal.seller.user_id;
             const side = isBuyer ? "buyer" : isSeller ? "seller" : "staff";
@@ -624,7 +667,7 @@ function MessagesFeed({ deal }: { deal: AdminDealDetailDto }) {
           placeholder="Сообщение в чат сделки от админа"
           className="flex-1 bg-panel-2 rounded-button px-3 py-2 text-sm placeholder:text-text-muted focus:outline-none resize-y"
         />
-        <Button onClick={send} disabled={sending || !text.trim()}>
+        <Button onClick={send} disabled={sendMessage.isPending || !text.trim()}>
           <Send size={14} />
         </Button>
       </div>

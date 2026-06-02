@@ -8,6 +8,16 @@ import type {
   AdminBalanceSnapshotDto,
 } from "@/api/types";
 
+type MessageDto = {
+  id: number;
+  deal_id: number;
+  sender_id: number;
+  sender_username: string | null;
+  text: string;
+  attachments: unknown[];
+  created_at: string;
+};
+
 /**
  * Tests for `/admin/deals/:id`.
  *
@@ -25,6 +35,8 @@ const mockState = vi.hoisted(() => ({
     | undefined,
   shouldRender: true as boolean,
   lastRedirectOpts: undefined as { allowArbiter?: boolean } | undefined,
+  messages: [] as MessageDto[] | undefined,
+  messagesLoading: false,
   release: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   refund: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   split: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
@@ -33,6 +45,8 @@ const mockState = vi.hoisted(() => ({
   arb: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   assign: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   del: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
+  loadOlder: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
+  sendMessage: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
@@ -48,6 +62,10 @@ vi.mock("@/api/admin/hooks", () => ({
 }));
 
 vi.mock("@/api/hooks", () => ({
+  DEAL_MESSAGE_PAGE_SIZE: 50,
+  useDealMessages: () => ({ data: mockState.messages, isLoading: mockState.messagesLoading }),
+  useLoadOlderDealMessages: () => mockState.loadOlder,
+  useSendDealMessage: () => mockState.sendMessage,
   useMe: () => ({ data: mockState.me }),
 }));
 
@@ -157,12 +175,33 @@ function makeDeal(
   };
 }
 
+function makeMessage(overrides: Partial<MessageDto> = {}): MessageDto {
+  return {
+    id: 1,
+    deal_id: 10,
+    sender_id: 1,
+    sender_username: "buyer",
+    text: "message",
+    attachments: [],
+    created_at: "2026-01-03T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function getLoadOlderButton(): HTMLElement | undefined {
+  return screen
+    .getAllByRole("button")
+    .find((button) => button.className.includes("underline-offset-2"));
+}
+
 beforeEach(() => {
   mockState.deal = undefined;
   mockState.loading = false;
   mockState.me = { id: 999, is_admin: true };
   mockState.shouldRender = true;
   mockState.lastRedirectOpts = undefined;
+  mockState.messages = [];
+  mockState.messagesLoading = false;
   mockState.release = { mutateAsync: vi.fn(), isPending: false };
   mockState.refund = { mutateAsync: vi.fn(), isPending: false };
   mockState.split = { mutateAsync: vi.fn(), isPending: false };
@@ -171,6 +210,8 @@ beforeEach(() => {
   mockState.arb = { mutateAsync: vi.fn(), isPending: false };
   mockState.assign = { mutateAsync: vi.fn(), isPending: false };
   mockState.del = { mutateAsync: vi.fn(), isPending: false };
+  mockState.loadOlder = { mutateAsync: vi.fn(), isPending: false };
+  mockState.sendMessage = { mutateAsync: vi.fn(), isPending: false };
   toastSpy.mockClear();
 });
 
@@ -267,6 +308,46 @@ describe("<AdminDealDetailPage />", () => {
     renderPage();
     expect(screen.getByText("Создана")).toBeInTheDocument();
     expect(screen.getByText("Запущена")).toBeInTheDocument();
+  });
+
+  it("loads older chat messages through the cursor hook", async () => {
+    mockState.deal = makeDeal();
+    mockState.messages = Array.from({ length: 50 }, (_, index) =>
+      makeMessage({ id: 100 + index, text: `message ${index}` }),
+    );
+    mockState.loadOlder.mutateAsync.mockResolvedValue([
+      makeMessage({ id: 99, text: "older" }),
+    ]);
+    const user = userEvent.setup();
+
+    renderPage();
+    const loadOlderButton = getLoadOlderButton();
+    expect(loadOlderButton).toBeDefined();
+    await user.click(loadOlderButton!);
+
+    await waitFor(() =>
+      expect(mockState.loadOlder.mutateAsync).toHaveBeenCalledWith({ beforeId: 100 }),
+    );
+    await waitFor(() => expect(getLoadOlderButton()).toBeUndefined());
+  });
+
+  it("sends admin chat messages through the shared message hook", async () => {
+    mockState.deal = makeDeal();
+    mockState.messages = [makeMessage({ id: 1, text: "existing" })];
+    mockState.sendMessage.mutateAsync.mockResolvedValue(makeMessage({ id: 2, text: "hello" }));
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.type(screen.getByRole("textbox"), "hello");
+    const buttons = screen.getAllByRole("button");
+    await user.click(buttons[buttons.length - 1]);
+
+    await waitFor(() =>
+      expect(mockState.sendMessage.mutateAsync).toHaveBeenCalledWith({
+        text: "hello",
+        attachments: [],
+      }),
+    );
   });
 
   it("disables admin action buttons when status is terminal (completed)", () => {

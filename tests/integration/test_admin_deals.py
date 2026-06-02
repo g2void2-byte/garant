@@ -203,6 +203,33 @@ async def test_admin_deal_detail_balance_snapshot(client):
     assert any(ev["kind"] == "in_progress" for ev in detail["events"])
 
 
+async def test_admin_deal_detail_embeds_latest_message_page(client):
+    deal_id, *_ = await _make_deal(client)
+    async with async_session() as session:
+        deal = await session.get(Deal, deal_id)
+        assert deal is not None
+        rows = [
+            DealMessage(
+                deal_id=deal_id,
+                sender_id=deal.buyer_id,
+                text=f"admin detail seed {index}",
+            )
+            for index in range(60)
+        ]
+        session.add_all(rows)
+        await session.commit()
+        inserted_ids = [row.id for row in rows]
+
+    admin_init = await _make_admin(client)
+    resp = await client.get(f"/api/admin/deals/{deal_id}", headers=auth_headers(admin_init))
+    assert resp.status_code == 200, resp.text
+    messages = resp.json()["messages"]
+    assert len(messages) == 50
+    assert [msg["id"] for msg in messages] == inserted_ids[-50:]
+    assert messages[0]["text"] == "admin detail seed 10"
+    assert messages[-1]["text"] == "admin detail seed 59"
+
+
 # ── force-release / refund / split ─────────────────────────────────────────
 
 
