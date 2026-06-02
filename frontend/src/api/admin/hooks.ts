@@ -795,10 +795,16 @@ export function useAdminDeleteCurrency() {
 
 // ── Broadcasts ──────────────────────────────────────────────────────────
 
-export function useAdminBroadcasts() {
+export function useAdminBroadcasts(params: { page?: number; page_size?: number } = {}) {
   return useQuery<AdminBroadcastListDto>({
-    queryKey: qk.admin.broadcasts(),
-    queryFn: () => api.get("api/admin/broadcasts").json(),
+    queryKey: [...qk.admin.broadcasts(), params] as const,
+    queryFn: () => {
+      const sp = new URLSearchParams();
+      sp.set("page", String(params.page ?? 1));
+      sp.set("page_size", String(params.page_size ?? 50));
+      return api.get("api/admin/broadcasts", { searchParams: sp }).json();
+    },
+    placeholderData: (prev) => prev,
   });
 }
 

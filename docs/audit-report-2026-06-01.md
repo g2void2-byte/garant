@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 61 файл, 540 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 61 файл, 541 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -64,6 +64,7 @@
 - M-31: admin deal/claim mutations сбрасывают audit log и точечный deal detail cache.
 - M-32: admin deposit/withdrawal queues больше не запирают админа на первой странице.
 - M-33: admin wallets inspector больше не запирает админа на первой странице пользователей.
+- M-34: admin broadcasts history больше не запирает админа на первой странице рассылок.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -458,6 +459,16 @@ Backend `/api/admin/wallets` уже принимает `page/page_size` и во�
 Риск: ручные корректировки баланса, проверка locked balances и USD-rate gaps становились недоступны для пользователей за пределами первого page slice. Это особенно опасно для recovery/debug сценариев: данные и endpoint есть, но оператор не может выбрать нужного пользователя без точного search query.
 
 Исправление: `AdminWalletsPage` теперь передает явный `page_size`, показывает pagination по backend `total/page_size` и сохраняет reset page на поиске. Regression test проверяет переход на page 2 и возврат на page 1 после search.
+
+### M-34. Admin broadcasts history был заперт на первой странице
+
+Ссылки: `backend/app/routers/admin/broadcasts.py:383-413`, `frontend/src/api/admin/hooks.ts`, `frontend/src/pages/admin/AdminBroadcastsPage.tsx`, regression `frontend/src/pages/admin/AdminBroadcastsPage.test.tsx`.
+
+Backend `/api/admin/broadcasts` уже возвращает paginated history: `items/total/page/page_size`. Frontend hook всегда дергал endpoint без `page/page_size`, а page component не имел навигации. Поэтому история рассылок в админке показывала только первые 50 live rows, даже если backend корректно отдавал следующие pages.
+
+Риск: старые broadcast records, delivery counts и soft-delete recovery context исчезали из штатного UI. Для аудита отправленных сообщений это плохой режим: запись существует и доступна API, но оператор не может дойти до нее без внешних инструментов.
+
+Исправление: `useAdminBroadcasts` принимает pagination params и включает их в query key/search params. `AdminBroadcastsPage` получил page state и prev/next controls по backend `total/page_size`. Regression test проверяет переход на вторую страницу.
 
 ## Наблюдения без отдельного finding
 

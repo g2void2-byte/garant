@@ -30,13 +30,17 @@ const mockState = vi.hoisted(() => ({
     isPending: false,
   },
   shouldRender: true as boolean,
+  lastBroadcastsQuery: undefined as { page?: number; page_size?: number } | undefined,
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
-  useAdminBroadcasts: () => ({
-    data: mockState.list,
-    isLoading: mockState.loading,
-  }),
+  useAdminBroadcasts: (params: { page?: number; page_size?: number } = {}) => {
+    mockState.lastBroadcastsQuery = params;
+    return {
+      data: mockState.list,
+      isLoading: mockState.loading,
+    };
+  },
   useAdminBroadcastPreview: () => mockState.preview,
   useAdminCreateBroadcast: () => mockState.create,
   useAdminDeleteBroadcast: () => mockState.del,
@@ -110,6 +114,7 @@ beforeEach(() => {
   mockState.preview = { mutateAsync: vi.fn(), isPending: false };
   mockState.create = { mutateAsync: vi.fn(), isPending: false };
   mockState.shouldRender = true;
+  mockState.lastBroadcastsQuery = undefined;
   toastSpy.mockClear();
 });
 
@@ -144,6 +149,22 @@ describe("<AdminBroadcastsPage />", () => {
     expect(screen.getByText("Test body")).toBeInTheDocument();
     expect(screen.getByText(/500 получателей/)).toBeInTheDocument();
     expect(screen.getByText(/доставлено 480/)).toBeInTheDocument();
+  });
+
+  it("pagination advances beyond the first broadcasts page", async () => {
+    mockState.list = {
+      items: [makeRow()],
+      total: 80,
+      page: 1,
+      page_size: 50,
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    expect(mockState.lastBroadcastsQuery?.page_size).toBe(50);
+    await user.click(screen.getByLabelText("\u0412\u043f\u0435\u0440\u0451\u0434"));
+    await waitFor(() => expect(mockState.lastBroadcastsQuery?.page).toBe(2));
   });
 
   it("delete row with confirm fires mutation and toasts success", async () => {
