@@ -562,11 +562,27 @@ export function useCreateReview() {
   });
 }
 
-export function useNotifications(type?: string) {
+export interface NotificationsQueryParams {
+  type?: string;
+  before_created_at?: string;
+  before_id?: number;
+  limit?: number;
+}
+
+export function buildNotificationsSearchParams(params: NotificationsQueryParams) {
+  const searchParams: Record<string, string> = {};
+  if (params.type) searchParams.type = params.type;
+  if (params.before_created_at) searchParams.before_created_at = params.before_created_at;
+  if (params.before_id !== undefined) searchParams.before_id = String(params.before_id);
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  return searchParams;
+}
+
+export function useNotifications(params: NotificationsQueryParams = {}) {
+  const searchParams = buildNotificationsSearchParams(params);
   return useQuery<NotificationDto[]>({
-    queryKey: qk.notifications.list(type),
-    queryFn: () =>
-      api.get("api/notifications", { searchParams: type ? { type } : {} }).json(),
+    queryKey: qk.notifications.list(params),
+    queryFn: () => api.get("api/notifications", { searchParams }).json(),
     refetchInterval: 30_000,
   });
 }

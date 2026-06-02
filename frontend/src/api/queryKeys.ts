@@ -104,6 +104,13 @@ export interface DealsQueryKey {
   offset?: number;
 }
 
+export interface NotificationsQueryKey {
+  type?: string;
+  before_created_at?: string;
+  before_id?: number;
+  limit?: number;
+}
+
 export const qk = {
   // ── Public / user-facing ─────────────────────────────────────
   me: () => ["me"] as const,
@@ -155,10 +162,7 @@ export const qk = {
   },
   notifications: {
     all: () => ["notifications"] as const,
-    // ``type ?? "all"`` mirrors the original useNotifications hook so
-    // a caller that omits the filter still hits the same cache slot.
-    list: (type: string | undefined) =>
-      ["notifications", type ?? "all"] as const,
+    list: (params: NotificationsQueryKey) => ["notifications", params] as const,
     detail: (id: number | undefined) =>
       ["notifications", "detail", id] as const,
     counters: () => ["notifications", "counters"] as const,

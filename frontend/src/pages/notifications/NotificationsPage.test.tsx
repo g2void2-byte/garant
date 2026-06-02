@@ -28,21 +28,39 @@ const mockState = vi.hoisted(() => ({
     dm_system?: boolean;
   } | undefined,
   lastType: undefined as string | undefined,
+  lastParams: undefined as Record<string, unknown> | undefined,
   updateMe: { mutate: vi.fn() as ReturnType<typeof vi.fn> },
   markRead: { mutate: vi.fn() as ReturnType<typeof vi.fn> },
   markAll: { mutate: vi.fn() as ReturnType<typeof vi.fn> },
 }));
+const apiMock = vi.hoisted(() => ({ get: vi.fn() }));
+const buildNotificationsSearchParamsMock = vi.hoisted(() =>
+  vi.fn((params: Record<string, unknown>) => {
+    const searchParams: Record<string, string> = {};
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === "") continue;
+      searchParams[key] = String(value);
+    }
+    return searchParams;
+  }),
+);
 
 vi.mock("@/api/hooks", () => ({
+  buildNotificationsSearchParams: buildNotificationsSearchParamsMock,
   useMe: () => ({ data: mockState.me }),
   useNotificationCounters: () => ({ data: mockState.counters }),
-  useNotifications: (type?: string) => {
-    mockState.lastType = type;
+  useNotifications: (params: Record<string, unknown>) => {
+    mockState.lastParams = params;
+    mockState.lastType = params.type as string | undefined;
     return { data: mockState.list, isLoading: mockState.loading };
   },
   useUpdateMe: () => mockState.updateMe,
   useMarkNotificationRead: () => mockState.markRead,
   useMarkAllRead: () => mockState.markAll,
+}));
+
+vi.mock("@/api/client", () => ({
+  api: apiMock,
 }));
 
 vi.mock("@/lib/tg", () => ({
@@ -90,9 +108,12 @@ beforeEach(() => {
   mockState.loading = false;
   mockState.me = { id: 1, dm_deals: true, dm_deposits: true, dm_system: true };
   mockState.lastType = undefined;
+  mockState.lastParams = undefined;
   mockState.updateMe = { mutate: vi.fn() };
   mockState.markRead = { mutate: vi.fn() };
   mockState.markAll = { mutate: vi.fn() };
+  apiMock.get.mockReset();
+  buildNotificationsSearchParamsMock.mockClear();
 });
 
 describe("<NotificationsPage />", () => {
@@ -153,6 +174,7 @@ describe("<NotificationsPage />", () => {
     mockState.list = [];
     renderPage();
     expect(mockState.lastType).toBeUndefined();
+    expect(mockState.lastParams).toEqual({ type: undefined, limit: 50 });
   });
 
   it("clicking a tab passes the matching type to useNotifications", async () => {
@@ -161,6 +183,32 @@ describe("<NotificationsPage />", () => {
     renderPage();
     await user.click(screen.getByRole("button", { name: /^Депозиты/ }));
     await waitFor(() => expect(mockState.lastType).toBe("deposits"));
+  });
+
+  it("loads older notifications with a keyset cursor", async () => {
+    const user = userEvent.setup();
+    mockState.list = Array.from({ length: 50 }, (_, idx) =>
+      makeNotification({
+        id: 100 - idx,
+        title: `Notification ${idx}`,
+        created_at: `2026-01-01T00:${String(59 - idx).padStart(2, "0")}:00Z`,
+      }),
+    );
+    apiMock.get.mockReturnValue({
+      json: async () => [makeNotification({ id: 49, title: "Older notification" })],
+    });
+
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Показать еще" }));
+
+    expect(apiMock.get).toHaveBeenCalledWith("api/notifications", {
+      searchParams: {
+        limit: "50",
+        before_created_at: "2026-01-01T00:10:00Z",
+        before_id: "51",
+      },
+    });
+    expect(await screen.findByText("Older notification")).toBeInTheDocument();
   });
 
   it("clicking a notification row navigates to /notifications/<id>", async () => {

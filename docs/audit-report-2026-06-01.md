@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 62 файла, 549 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 62 файла, 550 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -71,6 +71,7 @@
 - M-38: user-facing arbitration page больше не запирает пользователя/арбитра на первых 50 спорах.
 - M-39: user search больше не обрезает выдачу первыми 100 пользователями без возможности догрузки.
 - M-40: user deal list больше не отправляет invalid `role=all` и не грузит весь список сделок одним ответом.
+- M-41: notifications page больше не запирает пользователя на первой странице уведомлений.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -535,6 +536,16 @@ Backend endpoints для админского редактирования ко�
 Риск: основной экран сделок мог ломаться на дефолтной вкладке после ужесточения backend validation. У активных пользователей с длинной историей сделок API/UI также сохраняли unbounded payload/render path, в отличие от уже исправленных admin и arbitration списков.
 
 Исправление: frontend теперь нормализует вкладку "Все" в отсутствие `role`, а shared `buildDealsSearchParams` дополнительно защищает raw callers от `role=all`. Public deals endpoint принимает `limit/offset`, выставляет `X-Total-Count`, сортирует стабильно по `created_at desc, id desc` и гидратит top-up invoice data только для текущей страницы. `DealsPage` запрашивает первые 50 сделок и догружает следующие через offset `deals.length`. Добавлены backend regression на `limit/offset` и frontend regressions на omission `role=all` и load-more offset.
+
+### M-41. Notifications page не подгружал следующие cursor pages
+
+Ссылки: `backend/app/routers/notifications.py:18-110`, `frontend/src/api/hooks.ts:565-587`, `frontend/src/pages/notifications/NotificationsPage.tsx`, regression `frontend/src/pages/notifications/NotificationsPage.test.tsx`.
+
+Backend `GET /api/notifications` уже имел keyset pagination по `(created_at, id)` и по умолчанию возвращал ограниченную страницу. Но `NotificationsPage` вызывал endpoint только один раз на выбранный tab и не передавал cursor последнего элемента. Пользователь с длинной историей видел только первую страницу уведомлений, несмотря на то что backend уже отдавал следующие страницы через `before_created_at/before_id`.
+
+Риск: старые уведомления становились недоступны из основного экрана, а фильтрованные вкладки `deals/deposits/system` выглядели неполными. Это особенно заметно после broadcast fan-out и у активных пользователей, где первые 50-200 событий быстро вытесняют более старые.
+
+Исправление: `useNotifications` теперь принимает structured pagination params и строит search params через shared helper. `NotificationsPage` запрашивает первую страницу по 50 уведомлений, хранит загруженные rows локально и догружает следующую страницу кнопкой "Показать еще" с keyset cursor последнего row. Regression test проверяет передачу `before_created_at` и `before_id`.
 
 ## Наблюдения без отдельного finding
 
