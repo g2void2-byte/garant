@@ -46,10 +46,8 @@ async def list_reviews(
 ):
     # Cap the page at 100 to avoid an attacker (or a misbehaving
     # client) walking every review on a popular profile in one shot.
-    # The frontend's ``useReviews`` doesn't pass ``limit``/``offset``
-    # yet — it receives the first 50 rows which is enough for the
-    # current profile UI; pagination params let admins/tools page
-    # through the rest without DoS-ing the DB.
+    # ``useReviews`` now passes explicit pagination params; the default
+    # still keeps older clients on the first bounded page.
     #
     # R7/H-12 — if the target has flipped ``is_hidden_profile`` we
     # return 404 to mirror ``GET /api/users/{username}``. The owner
