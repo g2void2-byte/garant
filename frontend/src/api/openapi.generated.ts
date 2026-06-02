@@ -9531,7 +9531,13 @@ export interface operations {
     };
     list_user_deposits_api_wallet_deposits_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional currency code filter for wallet history. */
+                currency?: string | null;
+                limit?: number;
+                /** @description Row offset for cursorless pagination. */
+                offset?: number;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -9630,7 +9636,13 @@ export interface operations {
     };
     list_user_withdrawals_api_wallet_withdrawals_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional currency code filter for wallet history. */
+                currency?: string | null;
+                limit?: number;
+                /** @description Row offset for cursorless pagination. */
+                offset?: number;
+            };
             header?: {
                 authorization?: string | null;
             };

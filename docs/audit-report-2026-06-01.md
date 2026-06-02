@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 62 файла, 550 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 62 файла, 552 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -72,6 +72,7 @@
 - M-39: user search больше не обрезает выдачу первыми 100 пользователями без возможности догрузки.
 - M-40: user deal list больше не отправляет invalid `role=all` и не грузит весь список сделок одним ответом.
 - M-41: notifications page больше не запирает пользователя на первой странице уведомлений.
+- M-42: per-currency wallet history больше не обрезается первыми 100 unfiltered deposit/withdrawal rows.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -546,6 +547,16 @@ Backend `GET /api/notifications` уже имел keyset pagination по `(create
 Риск: старые уведомления становились недоступны из основного экрана, а фильтрованные вкладки `deals/deposits/system` выглядели неполными. Это особенно заметно после broadcast fan-out и у активных пользователей, где первые 50-200 событий быстро вытесняют более старые.
 
 Исправление: `useNotifications` теперь принимает structured pagination params и строит search params через shared helper. `NotificationsPage` запрашивает первую страницу по 50 уведомлений, хранит загруженные rows локально и догружает следующую страницу кнопкой "Показать еще" с keyset cursor последнего row. Regression test проверяет передачу `before_created_at` и `before_id`.
+
+### M-42. Per-currency wallet history был обрезан первыми 100 unfiltered rows
+
+Ссылки: `backend/app/routers/wallet.py:191-282`, `frontend/src/api/hooks.ts:904-970`, `frontend/src/pages/wallet/WalletCurrencyPage.tsx`, regressions `tests/integration/test_wallet_history_pagination.py`, `frontend/src/pages/wallet/WalletCurrencyPage.test.tsx`, OpenAPI snapshot `frontend/openapi.json`.
+
+`GET /api/wallet/deposits` и `GET /api/wallet/withdrawals` всегда возвращали только последние 100 операций пользователя по всем валютам, а `WalletCurrencyPage` затем фильтровал массив на клиенте по текущей валюте. Если у пользователя больше 100 операций или более свежие операции другой валюты вытесняли нужную валюту из первого ответа, per-currency history становился неполным. UI также не имел кнопки догрузки.
+
+Риск: пользователь видел неполную историю пополнений/выводов по валюте, не мог штатно добраться до старых операций и pending invoice link мог исчезнуть из истории при большом количестве более свежих строк другой валюты.
+
+Исправление: wallet deposit/withdrawal list endpoints принимают `currency`, `limit`, `offset`, выставляют `X-Total-Count` и сортируют стабильно по `created_at desc, id desc`. Frontend hooks прокидывают structured history params, а `WalletCurrencyPage` запрашивает первые 50 операций текущей валюты и догружает следующие страницы кнопкой "Показать еще" через offset. Добавлены backend regression на currency-scoped `limit/offset` и frontend regression на first-page params + load-more offsets.
 
 ## Наблюдения без отдельного finding
 

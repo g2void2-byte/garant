@@ -111,6 +111,12 @@ export interface NotificationsQueryKey {
   limit?: number;
 }
 
+export interface WalletHistoryQueryKey {
+  currency?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export const qk = {
   // ── Public / user-facing ─────────────────────────────────────
   me: () => ["me"] as const,
@@ -194,10 +200,16 @@ export const qk = {
     balances: () => ["wallet", "balances"] as const,
     balancesByKind: (kind: "fiat" | "crypto") =>
       ["wallet", "balances", kind] as const,
-    deposits: () => ["wallet", "deposits"] as const,
+    deposits: (params?: WalletHistoryQueryKey) =>
+      params
+        ? (["wallet", "deposits", params] as const)
+        : (["wallet", "deposits"] as const),
     deposit: (id: number | undefined) =>
       ["wallet", "deposit", id] as const,
-    withdrawals: () => ["wallet", "withdrawals"] as const,
+    withdrawals: (params?: WalletHistoryQueryKey) =>
+      params
+        ? (["wallet", "withdrawals", params] as const)
+        : (["wallet", "withdrawals"] as const),
   },
   arbitration: {
     deals: () => ["arbitration", "deals"] as const,

@@ -901,10 +901,25 @@ export function useWalletBalances(opts: { kind?: "fiat" | "crypto" } = {}) {
   });
 }
 
-export function useWalletDeposits() {
+export interface WalletHistoryQueryParams {
+  currency?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function buildWalletHistorySearchParams(params: WalletHistoryQueryParams = {}) {
+  const searchParams: Record<string, string> = {};
+  if (params.currency) searchParams.currency = params.currency;
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  if (params.offset !== undefined) searchParams.offset = String(params.offset);
+  return searchParams;
+}
+
+export function useWalletDeposits(params: WalletHistoryQueryParams = {}) {
+  const searchParams = buildWalletHistorySearchParams(params);
   return useQuery<WalletDepositDto[]>({
-    queryKey: qk.wallet.deposits(),
-    queryFn: () => api.get("api/wallet/deposits").json(),
+    queryKey: qk.wallet.deposits(params),
+    queryFn: () => api.get("api/wallet/deposits", { searchParams }).json(),
   });
 }
 
@@ -947,10 +962,11 @@ export function useCreateWalletDeposit() {
   });
 }
 
-export function useWalletWithdrawals() {
+export function useWalletWithdrawals(params: WalletHistoryQueryParams = {}) {
+  const searchParams = buildWalletHistorySearchParams(params);
   return useQuery<WalletWithdrawalDto[]>({
-    queryKey: qk.wallet.withdrawals(),
-    queryFn: () => api.get("api/wallet/withdrawals").json(),
+    queryKey: qk.wallet.withdrawals(params),
+    queryFn: () => api.get("api/wallet/withdrawals", { searchParams }).json(),
   });
 }
 

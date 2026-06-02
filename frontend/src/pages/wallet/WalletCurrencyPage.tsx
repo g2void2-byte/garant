@@ -1,13 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { ArrowDownToLine, History } from "lucide-react";
 import {
+  buildWalletHistorySearchParams,
   useCreateWalletDeposit,
   useCurrencies,
   useWalletBalances,
   useWalletDeposits,
   useWalletWithdrawals,
 } from "@/api/hooks";
+import { api } from "@/api/client";
+import type { WalletDepositDto, WalletWithdrawalDto } from "@/api/types";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/Button";
@@ -19,6 +22,8 @@ import { formatCurrency, relativeTime } from "@/lib/format";
 import { haptic, openPaymentLink } from "@/lib/tg";
 
 type Tab = "deposit" | "history";
+
+const WALLET_HISTORY_PAGE_SIZE = 50;
 
 const DEPOSIT_STATUS_TEXT: Record<string, string> = {
   pending: "Ожидание",
@@ -48,8 +53,18 @@ export default function WalletCurrencyPage() {
 
   const currencies = useCurrencies();
   const balances = useWalletBalances();
-  const deposits = useWalletDeposits();
-  const withdrawals = useWalletWithdrawals();
+  const historyParams = useMemo(
+    () => ({ currency: upper, limit: WALLET_HISTORY_PAGE_SIZE, offset: 0 }),
+    [upper],
+  );
+  const deposits = useWalletDeposits(historyParams);
+  const withdrawals = useWalletWithdrawals(historyParams);
+  const [depositItems, setDepositItems] = useState<WalletDepositDto[]>([]);
+  const [withdrawalItems, setWithdrawalItems] = useState<WalletWithdrawalDto[]>([]);
+  const [depositsReachedEnd, setDepositsReachedEnd] = useState(false);
+  const [withdrawalsReachedEnd, setWithdrawalsReachedEnd] = useState(false);
+  const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const currency = useMemo(
     () => currencies.data?.find((c) => c.code === upper),
@@ -61,6 +76,68 @@ export default function WalletCurrencyPage() {
   );
 
   const [tab, setTab] = useState<Tab>("deposit");
+
+  useEffect(() => {
+    const page = deposits.data ?? [];
+    setDepositItems(page);
+    setDepositsReachedEnd(page.length < WALLET_HISTORY_PAGE_SIZE);
+    setHistoryError(null);
+  }, [deposits.data]);
+
+  useEffect(() => {
+    const page = withdrawals.data ?? [];
+    setWithdrawalItems(page);
+    setWithdrawalsReachedEnd(page.length < WALLET_HISTORY_PAGE_SIZE);
+    setHistoryError(null);
+  }, [withdrawals.data]);
+
+  const loadMoreHistory = async () => {
+    if (loadingMoreHistory || (depositsReachedEnd && withdrawalsReachedEnd)) return;
+    setLoadingMoreHistory(true);
+    setHistoryError(null);
+    try {
+      const tasks: Promise<void>[] = [];
+      if (!depositsReachedEnd) {
+        tasks.push(
+          api
+            .get("api/wallet/deposits", {
+              searchParams: buildWalletHistorySearchParams({
+                currency: upper,
+                limit: WALLET_HISTORY_PAGE_SIZE,
+                offset: depositItems.length,
+              }),
+            })
+            .json<WalletDepositDto[]>()
+            .then((page) => {
+              setDepositItems((prev) => [...prev, ...page]);
+              if (page.length < WALLET_HISTORY_PAGE_SIZE) setDepositsReachedEnd(true);
+            }),
+        );
+      }
+      if (!withdrawalsReachedEnd) {
+        tasks.push(
+          api
+            .get("api/wallet/withdrawals", {
+              searchParams: buildWalletHistorySearchParams({
+                currency: upper,
+                limit: WALLET_HISTORY_PAGE_SIZE,
+                offset: withdrawalItems.length,
+              }),
+            })
+            .json<WalletWithdrawalDto[]>()
+            .then((page) => {
+              setWithdrawalItems((prev) => [...prev, ...page]);
+              if (page.length < WALLET_HISTORY_PAGE_SIZE) setWithdrawalsReachedEnd(true);
+            }),
+        );
+      }
+      await Promise.all(tasks);
+    } catch (e: unknown) {
+      setHistoryError((e as Error)?.message || "Не удалось загрузить еще операций");
+    } finally {
+      setLoadingMoreHistory(false);
+    }
+  };
 
   if (currencies.isLoading || balances.isLoading) {
     return (
@@ -126,10 +203,12 @@ export default function WalletCurrencyPage() {
             currencyCode={currency.code}
             decimals={currency.decimals}
             depositsLoading={deposits.isLoading || withdrawals.isLoading}
-            deposits={deposits.data?.filter((d) => d.currency.code === currency.code) ?? []}
-            withdrawals={
-              withdrawals.data?.filter((w) => w.currency.code === currency.code) ?? []
-            }
+            deposits={depositItems}
+            withdrawals={withdrawalItems}
+            hasMore={!depositsReachedEnd || !withdrawalsReachedEnd}
+            loadingMore={loadingMoreHistory}
+            loadMoreError={historyError}
+            onLoadMore={loadMoreHistory}
           />
         )}
       </div>
@@ -204,26 +283,20 @@ function HistoryList({
   depositsLoading,
   deposits,
   withdrawals,
+  hasMore,
+  loadingMore,
+  loadMoreError,
+  onLoadMore,
 }: {
   currencyCode: string;
   decimals: number;
   depositsLoading: boolean;
-  deposits: {
-    id: number;
-    amount: number;
-    status: string;
-    created_at: string;
-    pay_url: string;
-    provider: string;
-  }[];
-  withdrawals: {
-    id: number;
-    amount: number;
-    address: string | null;
-    status: string;
-    created_at: string;
-    admin_note: string;
-  }[];
+  deposits: WalletDepositDto[];
+  withdrawals: WalletWithdrawalDto[];
+  hasMore: boolean;
+  loadingMore: boolean;
+  loadMoreError: string | null;
+  onLoadMore: () => void;
 }) {
   type Row = {
     key: string;
@@ -325,6 +398,12 @@ function HistoryList({
           </div>
         </div>
       ))}
+      {hasMore && rows.length >= WALLET_HISTORY_PAGE_SIZE && (
+        <Button onClick={onLoadMore} disabled={loadingMore} className="w-full">
+          {loadingMore ? "Загружаю..." : "Показать еще"}
+        </Button>
+      )}
+      {loadMoreError && <div className="text-xs text-danger text-center">{loadMoreError}</div>}
     </div>
   );
 }

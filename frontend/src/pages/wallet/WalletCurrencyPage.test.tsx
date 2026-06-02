@@ -32,6 +32,8 @@ const mockState = vi.hoisted(() => ({
   depositsLoading: false,
   withdrawals: [] as WalletWithdrawalDto[],
   withdrawalsLoading: false,
+  lastDepositsParams: undefined as unknown,
+  lastWithdrawalsParams: undefined as unknown,
   createDeposit: {
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
@@ -42,7 +44,24 @@ const mockState = vi.hoisted(() => ({
   },
 }));
 
+const apiGetMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/api/client", () => ({
+  api: { get: apiGetMock },
+}));
+
 vi.mock("@/api/hooks", () => ({
+  buildWalletHistorySearchParams: (params: {
+    currency?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const searchParams: Record<string, string> = {};
+    if (params.currency) searchParams.currency = params.currency;
+    if (params.limit !== undefined) searchParams.limit = String(params.limit);
+    if (params.offset !== undefined) searchParams.offset = String(params.offset);
+    return searchParams;
+  },
   useCurrencies: () => ({
     data: mockState.currencies,
     isLoading: mockState.currenciesLoading,
@@ -51,14 +70,20 @@ vi.mock("@/api/hooks", () => ({
     data: mockState.balances,
     isLoading: mockState.balancesLoading,
   }),
-  useWalletDeposits: () => ({
-    data: mockState.deposits,
-    isLoading: mockState.depositsLoading,
-  }),
-  useWalletWithdrawals: () => ({
-    data: mockState.withdrawals,
-    isLoading: mockState.withdrawalsLoading,
-  }),
+  useWalletDeposits: (params: unknown) => {
+    mockState.lastDepositsParams = params;
+    return {
+      data: mockState.deposits,
+      isLoading: mockState.depositsLoading,
+    };
+  },
+  useWalletWithdrawals: (params: unknown) => {
+    mockState.lastWithdrawalsParams = params;
+    return {
+      data: mockState.withdrawals,
+      isLoading: mockState.withdrawalsLoading,
+    };
+  },
   useCreateWalletDeposit: () => mockState.createDeposit,
   useCreateWalletWithdrawal: () => mockState.createWithdrawal,
 }));
@@ -124,13 +149,46 @@ function makeBalance(amount: number, locked = 0): WalletBalanceDto {
   };
 }
 
+function makeDeposit(id: number, over: Partial<WalletDepositDto> = {}): WalletDepositDto {
+  return {
+    id,
+    currency: makeCurrency(),
+    amount: id,
+    status: "paid",
+    pay_url: "",
+    invoice_id: `I${id}`,
+    purpose: "wallet",
+    provider: "cryptobot",
+    created_at: `2026-01-${String(Math.min(id, 28)).padStart(2, "0")}T00:00:00Z`,
+    paid_at: null,
+    ...over,
+  };
+}
+
+function makeWithdrawal(id: number, over: Partial<WalletWithdrawalDto> = {}): WalletWithdrawalDto {
+  return {
+    id,
+    currency: makeCurrency(),
+    amount: id,
+    address: "TX-1",
+    status: "approved",
+    admin_note: "",
+    created_at: `2026-02-${String(Math.min(id, 28)).padStart(2, "0")}T00:00:00Z`,
+    processed_at: null,
+    ...over,
+  };
+}
+
 beforeEach(() => {
   hapticSpy.mockClear();
   openTelegramLinkSpy.mockClear();
+  apiGetMock.mockReset();
   mockState.currenciesLoading = false;
   mockState.balancesLoading = false;
   mockState.depositsLoading = false;
   mockState.withdrawalsLoading = false;
+  mockState.lastDepositsParams = undefined;
+  mockState.lastWithdrawalsParams = undefined;
   mockState.currencies = [makeCurrency()];
   mockState.balances = [makeBalance(100)];
   mockState.deposits = [];
@@ -208,6 +266,42 @@ describe("<WalletCurrencyPage />", () => {
     renderPage("USDT");
     expect(screen.queryByRole("button", { name: /Вывести/ })).not.toBeInTheDocument();
     expect(mockState.createWithdrawal.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("requests the first currency-scoped history page", () => {
+    renderPage("usdt");
+    expect(mockState.lastDepositsParams).toEqual({
+      currency: "USDT",
+      limit: 50,
+      offset: 0,
+    });
+    expect(mockState.lastWithdrawalsParams).toEqual({
+      currency: "USDT",
+      limit: 50,
+      offset: 0,
+    });
+  });
+
+  it("loads more currency history with backend offsets", async () => {
+    mockState.deposits = Array.from({ length: 50 }, (_, idx) => makeDeposit(idx + 1));
+    mockState.withdrawals = Array.from({ length: 50 }, (_, idx) => makeWithdrawal(idx + 1));
+    apiGetMock.mockImplementation((url: string) => ({
+      json: async () =>
+        url === "api/wallet/deposits" ? [makeDeposit(101)] : [makeWithdrawal(101)],
+    }));
+
+    const user = userEvent.setup();
+    renderPage("USDT");
+    await user.click(screen.getByRole("button", { name: /История/ }));
+    await user.click(screen.getByRole("button", { name: "Показать еще" }));
+
+    await waitFor(() => expect(apiGetMock).toHaveBeenCalledTimes(2));
+    expect(apiGetMock).toHaveBeenCalledWith("api/wallet/deposits", {
+      searchParams: { currency: "USDT", limit: "50", offset: "50" },
+    });
+    expect(apiGetMock).toHaveBeenCalledWith("api/wallet/withdrawals", {
+      searchParams: { currency: "USDT", limit: "50", offset: "50" },
+    });
   });
 
   it("history tab merges deposits + withdrawals with Russian status text", async () => {
