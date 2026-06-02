@@ -559,10 +559,33 @@ export function useCancelPendingTopup() {
   });
 }
 
-export function useReviews(username: string | undefined) {
+export interface ReviewsQueryParams {
+  limit?: number;
+  offset?: number;
+}
+
+export function buildReviewsSearchParams(
+  username: string,
+  params: ReviewsQueryParams = {},
+) {
+  const searchParams: Record<string, string> = { user: username };
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  if (params.offset !== undefined) searchParams.offset = String(params.offset);
+  return searchParams;
+}
+
+export function useReviews(
+  username: string | undefined,
+  params: ReviewsQueryParams = {},
+) {
   return useQuery<ReviewDto[]>({
-    queryKey: qk.reviews.forUser(username),
-    queryFn: () => api.get("api/reviews", { searchParams: { user: username! } }).json(),
+    queryKey: qk.reviews.forUser(username, params),
+    queryFn: () =>
+      api
+        .get("api/reviews", {
+          searchParams: buildReviewsSearchParams(username!, params),
+        })
+        .json(),
     enabled: !!username,
   });
 }

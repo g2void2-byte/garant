@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MessageSquare, HandCoins, Flag, Star } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Button } from "@/components/ui/Button";
@@ -10,9 +10,13 @@ import { ProfileHeader } from "@/components/domain/ProfileHeader";
 import { ProfileStatsGrid } from "@/components/domain/ProfileStatsGrid";
 import { ProfileForumsCard } from "@/components/domain/ProfileForumsCard";
 import { ServiceCard } from "@/components/domain/ServiceCard";
-import { useMe, useReviews, useServices, useUser } from "@/api/hooks";
+import { buildReviewsSearchParams, useMe, useReviews, useServices, useUser } from "@/api/hooks";
+import { api } from "@/api/client";
+import type { ReviewDto } from "@/api/types";
 import { openTelegramLink } from "@/lib/tg";
-import { relativeTime } from "@/lib/format";
+import { parseDecimal, relativeTime } from "@/lib/format";
+
+const PROFILE_REVIEWS_PAGE_SIZE = 50;
 
 export default function UserProfilePage() {
   const navigate = useNavigate();
@@ -23,7 +27,49 @@ export default function UserProfilePage() {
 
   const [tab, setTab] = useState<"services" | "reviews">("services");
   const { data: services } = useServices({ owner: username });
-  const { data: reviews } = useReviews(username);
+  const firstReviewsParams = useMemo(
+    () => ({ limit: PROFILE_REVIEWS_PAGE_SIZE, offset: 0 }),
+    [],
+  );
+  const { data: reviews } = useReviews(username, firstReviewsParams);
+  const [reviewItems, setReviewItems] = useState<ReviewDto[]>([]);
+  const [reviewsReachedEnd, setReviewsReachedEnd] = useState(false);
+  const [loadingMoreReviews, setLoadingMoreReviews] = useState(false);
+  const [reviewsError, setReviewsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const page = reviews ?? [];
+    setReviewItems(page);
+    setReviewsReachedEnd(page.length < PROFILE_REVIEWS_PAGE_SIZE);
+    setReviewsError(null);
+  }, [reviews, username]);
+
+  const loadMoreReviews = async () => {
+    if (!username || loadingMoreReviews || reviewsReachedEnd) return;
+    setLoadingMoreReviews(true);
+    setReviewsError(null);
+    try {
+      const page = await api
+        .get("api/reviews", {
+          searchParams: buildReviewsSearchParams(username, {
+            limit: PROFILE_REVIEWS_PAGE_SIZE,
+            offset: reviewItems.length,
+          }),
+        })
+        .json<ReviewDto[]>();
+      setReviewItems((prev) => [...prev, ...page]);
+      if (page.length < PROFILE_REVIEWS_PAGE_SIZE) setReviewsReachedEnd(true);
+    } catch (e: unknown) {
+      setReviewsError((e as Error)?.message || "Не удалось загрузить еще отзывы");
+    } finally {
+      setLoadingMoreReviews(false);
+    }
+  };
+
+  const hasMoreReviews =
+    !reviewsReachedEnd &&
+    reviewItems.length >= PROFILE_REVIEWS_PAGE_SIZE &&
+    reviewItems.length < (user?.reviews_count ?? 0);
 
   if (isLoading || !user) {
     return (
@@ -64,7 +110,7 @@ export default function UserProfilePage() {
           value={tab}
           options={[
             { value: "services", label: "Услуги", count: services?.length ?? 0 },
-            { value: "reviews", label: "Отзывы", count: reviews?.length ?? 0 },
+            { value: "reviews", label: "Отзывы", count: user.reviews_count },
           ]}
           onChange={setTab}
         />
@@ -81,23 +127,31 @@ export default function UserProfilePage() {
 
         {tab === "reviews" && (
           <div className="space-y-2">
-            {!reviews || reviews.length === 0 ? (
+            {reviewItems.length === 0 ? (
               <EmptyState
                 icon={<Star className="size-5" />}
                 title="Отзывов нет"
                 description="Тут будут собираться отзывы по успешным сделкам"
               />
             ) : (
-              reviews.map((r) => (
+              <>
+                {reviewItems.map((r) => (
                 <div key={r.id} className="bg-panel border border-border rounded-card p-3">
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="text-accent font-bold">★ {r.rating.toFixed(1)}</span>
+                    <span className="text-accent font-bold">★ {parseDecimal(r.rating).toFixed(1)}</span>
                     <span className="text-text-muted">от @{r.author_username}</span>
                     <span className="text-text-muted ml-auto">{relativeTime(r.created_at)}</span>
                   </div>
                   {r.text && <div className="mt-2 text-sm">{r.text}</div>}
                 </div>
-              ))
+                ))}
+                {hasMoreReviews && (
+                  <Button onClick={loadMoreReviews} disabled={loadingMoreReviews} className="w-full">
+                    {loadingMoreReviews ? "Загружаю..." : "Показать еще"}
+                  </Button>
+                )}
+                {reviewsError && <div className="text-xs text-danger text-center">{reviewsError}</div>}
+              </>
             )}
           </div>
         )}

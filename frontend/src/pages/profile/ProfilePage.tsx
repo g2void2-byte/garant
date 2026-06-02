@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Pause,
   Play,
@@ -22,15 +22,20 @@ import { ProfileForumsCard } from "@/components/domain/ProfileForumsCard";
 import { ProfileFiatBalanceCard } from "@/components/domain/ProfileFiatBalanceCard";
 import { ServiceCard } from "@/components/domain/ServiceCard";
 import {
+  buildReviewsSearchParams,
   useDeleteService,
   useMe,
   useReviews,
   useServices,
   useUpdateService,
 } from "@/api/hooks";
+import { api } from "@/api/client";
+import type { ReviewDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 import { confirmDialog } from "@/lib/dialog";
 import { parseDecimal, relativeTime } from "@/lib/format";
+
+const PROFILE_REVIEWS_PAGE_SIZE = 50;
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -45,7 +50,49 @@ export default function ProfilePage() {
     { owner: me?.username },
     { enabled: !!me?.username },
   );
-  const { data: reviews } = useReviews(me?.username);
+  const firstReviewsParams = useMemo(
+    () => ({ limit: PROFILE_REVIEWS_PAGE_SIZE, offset: 0 }),
+    [],
+  );
+  const { data: reviews } = useReviews(me?.username, firstReviewsParams);
+  const [reviewItems, setReviewItems] = useState<ReviewDto[]>([]);
+  const [reviewsReachedEnd, setReviewsReachedEnd] = useState(false);
+  const [loadingMoreReviews, setLoadingMoreReviews] = useState(false);
+  const [reviewsError, setReviewsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const page = reviews ?? [];
+    setReviewItems(page);
+    setReviewsReachedEnd(page.length < PROFILE_REVIEWS_PAGE_SIZE);
+    setReviewsError(null);
+  }, [reviews, me?.username]);
+
+  const loadMoreReviews = async () => {
+    if (!me?.username || loadingMoreReviews || reviewsReachedEnd) return;
+    setLoadingMoreReviews(true);
+    setReviewsError(null);
+    try {
+      const page = await api
+        .get("api/reviews", {
+          searchParams: buildReviewsSearchParams(me.username, {
+            limit: PROFILE_REVIEWS_PAGE_SIZE,
+            offset: reviewItems.length,
+          }),
+        })
+        .json<ReviewDto[]>();
+      setReviewItems((prev) => [...prev, ...page]);
+      if (page.length < PROFILE_REVIEWS_PAGE_SIZE) setReviewsReachedEnd(true);
+    } catch (e: unknown) {
+      setReviewsError((e as Error)?.message || "Не удалось загрузить еще отзывы");
+    } finally {
+      setLoadingMoreReviews(false);
+    }
+  };
+
+  const hasMoreReviews =
+    !reviewsReachedEnd &&
+    reviewItems.length >= PROFILE_REVIEWS_PAGE_SIZE &&
+    reviewItems.length < (me?.reviews_count ?? 0);
 
   const updateService = useUpdateService();
   const deleteService = useDeleteService();
@@ -120,7 +167,7 @@ export default function ProfilePage() {
           value={tab}
           options={[
             { value: "services", label: "Услуги", count: services?.length ?? 0 },
-            { value: "reviews", label: "Отзывы", count: reviews?.length ?? 0 },
+            { value: "reviews", label: "Отзывы", count: me.reviews_count },
           ]}
           onChange={setTab}
         />
@@ -179,14 +226,15 @@ export default function ProfilePage() {
           ))}
 
         {tab === "reviews" &&
-          (!reviews || reviews.length === 0 ? (
+          (reviewItems.length === 0 ? (
             <EmptyState
               icon={<Star className="size-5" />}
               title="Отзывов нет"
               description="Завершайте сделки, чтобы получить отзывы"
             />
           ) : (
-            reviews.map((r) => (
+            <>
+              {reviewItems.map((r) => (
               <div key={r.id} className="bg-panel border border-border rounded-card p-3">
                 <div className="flex items-center gap-2 text-sm">
                   {/* Audit (continuation) M-2 — defence-in-depth.
@@ -202,7 +250,14 @@ export default function ProfilePage() {
                 </div>
                 {r.text && <div className="mt-2 text-sm">{r.text}</div>}
               </div>
-            ))
+              ))}
+              {hasMoreReviews && (
+                <Button onClick={loadMoreReviews} disabled={loadingMoreReviews} className="w-full">
+                  {loadingMoreReviews ? "Загружаю..." : "Показать еще"}
+                </Button>
+              )}
+              {reviewsError && <div className="text-xs text-danger text-center">{reviewsError}</div>}
+            </>
           ))}
       </div>
 

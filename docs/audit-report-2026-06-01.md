@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 62 файла, 554 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 62 файла, 558 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -74,6 +74,7 @@
 - M-41: notifications page больше не запирает пользователя на первой странице уведомлений.
 - M-42: per-currency wallet history больше не обрезается первыми 100 unfiltered deposit/withdrawal rows.
 - M-43: service detail comments больше не запирают пользователя на первой странице комментариев.
+- M-44: profile reviews больше не запирают пользователя на первой странице отзывов.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -568,6 +569,16 @@ Backend `GET /api/notifications` уже имел keyset pagination по `(create
 Риск: старые комментарии и оценки услуги становились недоступны из публичного service detail UI. Для услуг с большим числом отзывов это ломало пользовательскую проверку репутации и модераторскую/владельческую работу с более старыми комментариями.
 
 Исправление: comments endpoint принимает `limit/offset`, выставляет `X-Total-Count` и сортирует стабильно по `created_at desc, id desc`. `useServiceComments` принимает structured params, а `ServiceDetailPage` запрашивает первую страницу по 50 комментариев и показывает "Показать еще", пока локально загружено меньше `comments_count`. Добавлены backend regression на `limit/offset` и frontend regressions на first-page params + load-more offset.
+
+### M-44. Profile reviews не подгружали следующие страницы
+
+Ссылки: `backend/app/routers/reviews.py:29-78`, `frontend/src/api/hooks.ts:559-591`, `frontend/src/pages/profile/ProfilePage.tsx`, `frontend/src/pages/search/UserProfilePage.tsx`, regressions `tests/integration/test_reviews_hidden_target.py`, `frontend/src/pages/profile/ProfilePage.test.tsx`, `frontend/src/pages/search/UserProfilePage.test.tsx`.
+
+`GET /api/reviews` уже принимал `limit/offset`, но frontend `useReviews` не прокидывал pagination params. `ProfilePage` и `UserProfilePage` рендерили только первые 50 отзывов, хотя рядом в user DTO был полный `reviews_count`. На профиле с большим числом отзывов пользователь видел общий счетчик, но не мог открыть отзывы после первой страницы.
+
+Риск: старые отзывы становились недоступны из собственного и публичного профиля. Это ухудшало проверку репутации пользователя и могло скрывать контекст по давним сделкам, хотя backend эти данные уже хранил.
+
+Исправление: reviews endpoint выставляет `X-Total-Count` и сортирует стабильно по `created_at desc, id desc`. `useReviews` принимает structured params, а оба profile UI запрашивают первую страницу по 50 отзывов, показывают общий `reviews_count` в табе и догружают следующие страницы кнопкой "Показать еще" через offset. Добавлены backend regression на `limit/offset` + total header и frontend regressions на first-page params + load-more offsets для собственного и публичного профиля.
 
 ## Наблюдения без отдельного finding
 

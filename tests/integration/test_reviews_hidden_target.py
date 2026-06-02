@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from backend.app.db import async_session
 from backend.app.models import Review, User
+from backend.app.time_utils import utcnow
 from tests.helpers import auth_headers, signed_init_data
 
 
@@ -132,6 +133,44 @@ async def test_visible_target_still_returns_review_list(client):
     )
     assert resp.status_code == 200, resp.text
     assert len(resp.json()) == 4
+
+
+async def test_reviews_limit_offset_exposes_total_and_stable_order(client):
+    target_id = await _bootstrap(client, tg_user_id=20081, username="reviews_page_target")
+
+    async with async_session() as session:
+        author = User(
+            tg_user_id=20082,
+            username="reviews_page_author",
+            display_name="reviews_page_author",
+        )
+        session.add(author)
+        await session.flush()
+        now = utcnow()
+        reviews = [
+            Review(
+                deal_id=None,
+                author_id=author.id,
+                target_id=target_id,
+                rating=5,
+                text=f"paged-review-{idx}",
+                created_at=now,
+            )
+            for idx in range(4)
+        ]
+        session.add_all(reviews)
+        await session.commit()
+        expected_ids = [reviews[2].id, reviews[1].id]
+
+    caller_init = signed_init_data(20083, "reviews_page_viewer")
+    resp = await client.get(
+        "/api/reviews",
+        params={"user": "reviews_page_target", "limit": 2, "offset": 1},
+        headers=auth_headers(caller_init),
+    )
+    assert resp.status_code == 200, resp.text
+    assert int(resp.headers["X-Total-Count"]) == 4
+    assert [row["id"] for row in resp.json()] == expected_ids
 
 
 # ── V5-D-4 — offset cap on the reviews list ──────────────────────────────

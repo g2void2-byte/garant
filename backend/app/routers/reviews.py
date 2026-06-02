@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException, Query, Response
+from sqlalchemy import func, select
 
 from ..deps import CurrentUser, SessionDep
 from ..models import Review, User
@@ -33,6 +33,7 @@ async def list_reviews(
     session: SessionDep,
     viewer: CurrentUser,
     _rl: RLReviewsList,
+    response: Response,
     user: str = Query(...),
     limit: int = Query(50, ge=1, le=100),
     # cap ``offset`` at 10 000. Without an upper bound a
@@ -60,10 +61,17 @@ async def list_reviews(
         raise HTTPException(404, "Пользователь не найден")
     if target.is_hidden_profile and not (viewer.is_admin or viewer.id == target.id):
         raise HTTPException(404, "Пользователь не найден")
+    total = (
+        await session.execute(
+            select(func.count(Review.id)).where(Review.target_id == target.id)
+        )
+    ).scalar_one()
+    response.headers["X-Total-Count"] = str(int(total))
+
     stmt = (
         select(Review)
         .where(Review.target_id == target.id)
-        .order_by(Review.created_at.desc())
+        .order_by(Review.created_at.desc(), Review.id.desc())
         .limit(limit)
         .offset(offset)
     )

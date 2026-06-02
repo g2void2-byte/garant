@@ -122,6 +122,11 @@ export interface ServiceCommentsQueryKey {
   offset?: number;
 }
 
+export interface ReviewsQueryKey {
+  limit?: number;
+  offset?: number;
+}
+
 export const qk = {
   // ── Public / user-facing ─────────────────────────────────────
   me: () => ["me"] as const,
@@ -170,8 +175,10 @@ export const qk = {
   },
   reviews: {
     all: () => ["reviews"] as const,
-    forUser: (username: string | undefined) =>
-      ["reviews", username] as const,
+    forUser: (username: string | undefined, params?: ReviewsQueryKey) =>
+      params
+        ? (["reviews", username, params] as const)
+        : (["reviews", username] as const),
   },
   notifications: {
     all: () => ["notifications"] as const,
