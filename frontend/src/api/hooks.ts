@@ -286,6 +286,8 @@ export interface UsersQueryParams {
   status?: string;
   reg_from?: string;
   reg_to?: string;
+  limit?: number;
+  offset?: number;
   /**
    * When true, the request is for a counterparty picker (e.g.
    * /deals/new) — the backend bypasses the "min 1 deal" search gate
@@ -294,10 +296,7 @@ export interface UsersQueryParams {
   picker?: boolean;
 }
 
-export function useUsers(
-  params: UsersQueryParams = {},
-  options: { enabled?: boolean } = {},
-) {
+export function buildUsersSearchParams(params: UsersQueryParams = {}) {
   const searchParams: Record<string, string> = {};
   if (params.q) searchParams.q = params.q;
   if (params.filter) searchParams.filter = params.filter;
@@ -306,7 +305,17 @@ export function useUsers(
   if (params.status) searchParams.status = params.status;
   if (params.reg_from) searchParams.reg_from = params.reg_from;
   if (params.reg_to) searchParams.reg_to = params.reg_to;
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  if (params.offset !== undefined) searchParams.offset = String(params.offset);
   if (params.picker) searchParams.picker = "1";
+  return searchParams;
+}
+
+export function useUsers(
+  params: UsersQueryParams = {},
+  options: { enabled?: boolean } = {},
+) {
+  const searchParams = buildUsersSearchParams(params);
   return useQuery<UserCardDto[]>({
     queryKey: qk.users.list(params),
     queryFn: () => api.get("api/users", { searchParams }).json(),

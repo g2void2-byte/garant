@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { UserCardDto } from "@/api/types";
@@ -39,11 +40,29 @@ const meState = vi.hoisted(() => ({
 const mockState = vi.hoisted(() => ({
   data: undefined as UserCardDto[] | undefined,
   isLoading: false,
+  lastParams: undefined as Record<string, unknown> | undefined,
+}));
+
+const apiMock = vi.hoisted(() => ({
+  get: vi.fn(),
+}));
+
+vi.mock("@/api/client", () => ({
+  api: apiMock,
 }));
 
 vi.mock("@/api/hooks", () => ({
-  useUsers: () => mockState,
+  useUsers: (params: Record<string, unknown>) => {
+    mockState.lastParams = params;
+    return mockState;
+  },
   useMe: () => meState,
+  buildUsersSearchParams: (params: Record<string, unknown>) =>
+    Object.fromEntries(
+      Object.entries(params)
+        .filter(([, value]) => value !== undefined && value !== "")
+        .map(([key, value]) => [key, String(value)]),
+    ),
 }));
 
 import SearchPage from "./SearchPage";
@@ -63,6 +82,8 @@ function renderPage() {
 beforeEach(() => {
   mockState.data = undefined;
   mockState.isLoading = false;
+  mockState.lastParams = undefined;
+  apiMock.get.mockReset();
   meState.data = makeUser({ id: 100, deals_count: 5, is_admin: false });
   meState.isLoading = false;
   useUI.setState({ searchMode: "users" });
@@ -96,6 +117,34 @@ describe("<SearchPage />", () => {
     renderPage();
     expect(screen.getByText("Alice")).toBeInTheDocument();
     expect(screen.getByText("Bob")).toBeInTheDocument();
+  });
+
+  it("loads the next user-search page by offset", async () => {
+    mockState.data = Array.from({ length: 50 }, (_, index) =>
+      makeUser({
+        id: index + 1,
+        username: `user${index}`,
+        display_name: `User ${index}`,
+      }),
+    );
+    apiMock.get.mockReturnValue({
+      json: async () => [makeUser({ id: 51, username: "user50", display_name: "User 50" })],
+    });
+    const user = userEvent.setup();
+
+    renderPage();
+
+    expect(mockState.lastParams).toEqual(expect.objectContaining({ limit: 50, offset: 0 }));
+    expect(screen.getByText("User 49")).toBeInTheDocument();
+    const buttons = screen.getAllByRole("button");
+    await user.click(buttons[buttons.length - 1]);
+
+    expect(await screen.findByText("User 50")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(apiMock.get).toHaveBeenCalledWith("api/users", {
+        searchParams: expect.objectContaining({ limit: "50", offset: "50" }),
+      }),
+    );
   });
 
   it("offers the filter toggle and the filter sheet button", () => {

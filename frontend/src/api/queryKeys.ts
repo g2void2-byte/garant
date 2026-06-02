@@ -93,6 +93,8 @@ export interface UsersQueryKey {
   status?: string;
   reg_from?: string;
   reg_to?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export interface DealsQueryKey {

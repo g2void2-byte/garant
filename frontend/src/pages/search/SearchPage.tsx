@@ -18,7 +18,8 @@ import {
 } from "@/components/domain/SearchFilterSheet";
 import { ActiveFilterChips } from "@/components/domain/ActiveFilterChips";
 import { useUI } from "@/stores/ui";
-import { useMe, useUsers } from "@/api/hooks";
+import { buildUsersSearchParams, useMe, useUsers } from "@/api/hooks";
+import { api } from "@/api/client";
 import { staggerDelay } from "@/lib/animate";
 import { dealsLabel, formatMoney } from "@/lib/format";
 import { countryFromCode } from "@/lib/countries";
@@ -35,6 +36,8 @@ const FILTER_OPTIONS = [
   { value: "top_rating", label: "Топ рейтинг" },
 ];
 
+const USER_SEARCH_PAGE_SIZE = 50;
+
 export default function SearchPage() {
   const navigate = useNavigate();
   const mode = useUI((s) => s.searchMode);
@@ -44,6 +47,10 @@ export default function SearchPage() {
   const [filter, setFilter] = useState("all");
   const [filters, setFilters] = useState<SearchFilters>({});
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [users, setUsers] = useState<UserCardDto[]>([]);
+  const [reachedEnd, setReachedEnd] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
   // Live-search debounce: avoid hitting ``/api/users?q=…`` on every
   // keystroke. 250 ms mirrors :class:`UserPicker` which the plan
@@ -68,7 +75,45 @@ export default function SearchPage() {
   );
   const { data: me, isLoading: meLoading } = useMe();
   const isGated = me !== undefined && me.deals_count === 0 && !me.is_admin;
-  const { data: users, isLoading } = useUsers(queryParams, { enabled: me !== undefined && !isGated });
+  const firstPageParams = useMemo(
+    () => ({ ...queryParams, limit: USER_SEARCH_PAGE_SIZE, offset: 0 }),
+    [queryParams],
+  );
+  const { data: usersPage, isLoading } = useUsers(firstPageParams, {
+    enabled: me !== undefined && !isGated,
+  });
+
+  useEffect(() => {
+    const page = usersPage ?? [];
+    setUsers(page);
+    setReachedEnd(page.length < USER_SEARCH_PAGE_SIZE);
+    setLoadMoreError(null);
+  }, [usersPage]);
+
+  const loadMoreUsers = async () => {
+    if (loadingMore || reachedEnd) return;
+    setLoadingMore(true);
+    setLoadMoreError(null);
+    try {
+      const page = await api
+        .get("api/users", {
+          searchParams: buildUsersSearchParams({
+            ...queryParams,
+            limit: USER_SEARCH_PAGE_SIZE,
+            offset: users.length,
+          }),
+        })
+        .json<UserCardDto[]>();
+      setUsers((prev) => [...prev, ...page]);
+      if (page.length < USER_SEARCH_PAGE_SIZE) {
+        setReachedEnd(true);
+      }
+    } catch (e: unknown) {
+      setLoadMoreError((e as Error)?.message || "Не удалось загрузить еще пользователей");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const showSkeleton = meLoading || (!me && !isGated) || isLoading;
 
@@ -153,32 +198,40 @@ export default function SearchPage() {
                 </div>
                 <SearchGateOverlay message="В целях безопасности и защиты от спама детальный поиск пользователей доступен только участникам, совершившим хотя бы 1 сделку." />
               </div>
-            ) : !users || users.length === 0 ? (
+            ) : users.length === 0 ? (
               <EmptyState
                 icon={<SearchIcon className="size-6" />}
                 title="Никого не найдено"
                 description="Попробуйте другой запрос или фильтр"
               />
             ) : (
-              <div
-                role="listbox"
-                aria-label="Результаты поиска пользователей"
-                className={cn(
-                  "rounded-card bg-panel border border-border shadow-pop overflow-hidden",
-                  "animate-fade-in-down",
+              <>
+                <div
+                  role="listbox"
+                  aria-label="Результаты поиска пользователей"
+                  className={cn(
+                    "rounded-card bg-panel border border-border shadow-pop overflow-hidden",
+                    "animate-fade-in-down",
+                  )}
+                >
+                  <ul className="py-1.5">
+                    {users.map((u, i) => (
+                      <SearchUserRow
+                        key={u.id}
+                        user={u}
+                        index={i}
+                        onPick={() => navigate(`/users/${u.username}`)}
+                      />
+                    ))}
+                  </ul>
+                </div>
+                {!reachedEnd && users.length >= USER_SEARCH_PAGE_SIZE && (
+                  <Button onClick={loadMoreUsers} disabled={loadingMore} className="w-full">
+                    {loadingMore ? "Загружаю..." : "Показать еще"}
+                  </Button>
                 )}
-              >
-                <ul className="py-1.5">
-                  {users.map((u, i) => (
-                    <SearchUserRow
-                      key={u.id}
-                      user={u}
-                      index={i}
-                      onPick={() => navigate(`/users/${u.username}`)}
-                    />
-                  ))}
-                </ul>
-              </div>
+                {loadMoreError && <div className="text-xs text-danger text-center">{loadMoreError}</div>}
+              </>
             )}
           </>
         )}

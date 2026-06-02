@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 62 файла, 546 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 62 файла, 547 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -69,6 +69,7 @@
 - M-36: admin user content sections больше не грузят неограниченные services/reviews/comments и не запирают админа на первой странице.
 - M-37: admin deal detail больше не встраивает полный чат сделки; история грузится курсорными страницами.
 - M-38: user-facing arbitration page больше не запирает пользователя/арбитра на первых 50 спорах.
+- M-39: user search больше не обрезает выдачу первыми 100 пользователями без возможности догрузки.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -513,6 +514,16 @@ Backend endpoints для админского редактирования ко�
 Риск: старые или более поздние споры были фактически недоступны из user-facing arbitration tab, хотя backend их отдавал через offset. Пользователь видел неполную историю, а арбитр мог пропустить часть очереди при работе из основной вкладки.
 
 Исправление: `ArbitrationPage` теперь явно запрашивает `limit=50&offset=0`, хранит локально загруженные страницы и показывает кнопку "Показать еще", пока backend возвращает полные страницы. Следующая загрузка идет с `offset=items.length`, короткая страница скрывает кнопку. Добавлен frontend regression на offset 50 и append второй страницы.
+
+### M-39. User search был hard-capped без pagination affordance
+
+Ссылки: `backend/app/routers/users.py:58-179`, `frontend/src/api/hooks.ts:284-333`, `frontend/src/pages/search/SearchPage.tsx`, regressions `tests/integration/test_users_filters.py`, `frontend/src/pages/search/SearchPage.test.tsx`.
+
+`GET /api/users` всегда делал `LIMIT 100` без `offset`, а `SearchPage` отрисовывал только этот массив. При широком поиске, фильтре "все" или популярных rating/deals buckets пользователь видел первые 100 профилей и не имел способа открыть следующие результаты. Это расходилось с уже paginated `/api/services` и admin-list surfaces.
+
+Риск: пользователи за пределами top-100 по текущему sort order были практически скрыты из search UI. Для маркетплейса это не только UX-проблема, но и skew ранжирования: новые или менее активные профили могли быть недоступны даже при валидном фильтре.
+
+Исправление: public users endpoint теперь принимает `limit/offset`, выставляет `X-Total-Count` и сортирует стабильно с `User.id.desc()` tie-breaker. `useUsers` прокидывает pagination params, а `SearchPage` запрашивает первую страницу по 50 пользователей и догружает следующую кнопкой "Показать еще" через offset `users.length`. Добавлены backend regression на `limit/offset` и frontend regression на append следующей страницы.
 
 ## Наблюдения без отдельного finding
 

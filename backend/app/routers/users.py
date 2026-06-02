@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy import case, func, literal, select
 
 from ..deps import CurrentUser, SessionDep
@@ -58,6 +58,7 @@ def _parse_date(value: str | None) -> datetime | None:
 @router.get("", response_model=list[UserPublicOut])
 async def list_users(
     session: SessionDep,
+    response: Response,
     # Audit M-1 — ``user: CurrentUser`` gates the endpoint behind
     # initData verification (pre-fix it was anonymous, so a scraper
     # didn't even need a valid Telegram session) and ``_rl:
@@ -81,6 +82,17 @@ async def list_users(
             " counterparty to do their first deal with."
         ),
     ),
+    limit: int = Query(
+        100,
+        ge=1,
+        le=200,
+        description="Max rows to return. Capped at 200 to protect the DB.",
+    ),
+    offset: int = Query(
+        0,
+        ge=0,
+        description="Row offset for cursorless pagination.",
+    ),
 ):
     """List users, optionally filtered by Continental's search-page schema.
 
@@ -103,6 +115,7 @@ async def list_users(
         # "nothing found" state.
         ts_q = build_prefix_tsquery(q_trimmed)
         if ts_q is None:
+            response.headers["X-Total-Count"] = "0"
             return []
         tsq = func.to_tsquery("simple", ts_q)
         stmt = stmt.where(User.search_vector.op("@@")(tsq))
@@ -110,9 +123,10 @@ async def list_users(
         stmt = stmt.order_by(
             func.ts_rank(User.search_vector, tsq).desc(),
             User.deals_total.desc(),
+            User.id.desc(),
         )
     else:
-        stmt = stmt.order_by(User.deals_total.desc())
+        stmt = stmt.order_by(User.deals_total.desc(), User.id.desc())
     if filter == "arbiters":
         stmt = stmt.where(User.is_arbiter.is_(True))
     elif filter == "admins":
@@ -166,8 +180,12 @@ async def list_users(
         end = datetime.combine(reg_to_dt.date(), time.max)
         stmt = stmt.where(User.created_at <= end)
 
-    stmt = stmt.limit(100)
+    total = (
+        await session.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))
+    ).scalar_one()
+    stmt = stmt.offset(offset).limit(limit)
     result = await session.execute(stmt)
+    response.headers["X-Total-Count"] = str(int(total))
     # Comment 29/30 (audit v9): public listing exposes ``UserPublicOut``
     # — no ``tg_user_id`` leak, no DM preferences, no ban/freeze flags.
     return [user_to_public_out(u) for u in result.scalars().all()]

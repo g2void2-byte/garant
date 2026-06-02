@@ -101,6 +101,25 @@ async def test_users_default_listing_unchanged(client):
 
 
 @pytest.mark.asyncio
+async def test_users_listing_supports_limit_offset(client):
+    await _make_user(110, "rank0", deals_total=100)
+    await _make_user(111, "rank1", deals_total=90)
+    await _make_user(112, "rank2", deals_total=80)
+    await _make_user(113, "rank3", deals_total=70)
+    headers = await _caller_headers(client)
+
+    resp = await client.get(
+        "/api/users",
+        params={"limit": 2, "offset": 1},
+        headers=headers,
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert int(resp.headers["X-Total-Count"]) >= 4
+    assert [u["username"] for u in resp.json()] == ["rank1", "rank2"]
+
+
+@pytest.mark.asyncio
 async def test_rating_bucket_5_0(client):
     """Bucket ``5.0`` only matches users with a perfect rating."""
     await _make_user(200, "perfect", good=20, bad=0)
