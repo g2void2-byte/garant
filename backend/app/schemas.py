@@ -491,6 +491,16 @@ def _validate_optional_positive_int_id(v: object, *, what: str = "ID") -> object
     return v
 
 
+def _validate_optional_non_negative_int(v: object, *, what: str = "Значение") -> int | None:
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, int):
+        raise ValueError(f"{what} должно быть целым числом")
+    if v < 0:
+        raise ValueError(f"{what} не может быть отрицательным")
+    return v
+
+
 def _validate_service_photos(v: list[str] | None) -> list[str] | None:
     # V12-UI — gatekeep the photo list (length + each entry's scheme)
     # in one place so both ``ServiceCreate`` and ``ServiceUpdate``
@@ -1329,12 +1339,11 @@ class AdminSetStatsIn(BaseModel):
         "deals_arbitrage",
         "good",
         "bad",
+        mode="before",
     )
     @classmethod
-    def _non_negative_int(cls, v: int | None) -> int | None:
-        if v is not None and v < 0:
-            raise ValueError("Значение не может быть отрицательным")
-        return v
+    def _non_negative_int(cls, v: object) -> int | None:
+        return _validate_optional_non_negative_int(v)
 
     @field_validator("deals_sum_override")
     @classmethod
@@ -1694,12 +1703,10 @@ class AdminServiceUpdateIn(BaseModel):
             raise ValueError("Значение не может быть отрицательным")
         return d
 
-    @field_validator("views", "deals_count")
+    @field_validator("views", "deals_count", mode="before")
     @classmethod
-    def _non_negative_int(cls, v: int | None) -> int | None:
-        if v is not None and v < 0:
-            raise ValueError("Значение не может быть отрицательным")
-        return v
+    def _non_negative_int(cls, v: object) -> int | None:
+        return _validate_optional_non_negative_int(v)
 
     @field_validator("rating_manual")
     @classmethod
@@ -2116,14 +2123,11 @@ class AdminSettingsUpdateIn(BaseModel):
         "pending_topup_expiry_hours",
         "faq_stats_users",
         "faq_stats_deals",
+        mode="before",
     )
     @classmethod
-    def _int_ok(cls, v: int | None) -> int | None:
-        if v is None:
-            return v
-        if v < 0:
-            raise ValueError("Значение не может быть отрицательным")
-        return v
+    def _int_ok(cls, v: object) -> int | None:
+        return _validate_optional_non_negative_int(v)
 
     @field_validator("faq_stats_total_usd")
     @classmethod

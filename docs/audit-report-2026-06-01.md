@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-67: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings и strict admin deal action ids исправлены.
+- M-50-M-68: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids и strict admin counter integers исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -815,6 +815,16 @@ Maintenance middleware держал module-level `_cache_lock = asyncio.Lock()`.
 Риск: TOTP-защищенные admin deal actions могли выполнять ручную операцию с неявно выбранной approval-заявкой id `1` или назначать арбитра id `1` из boolean/string payload. Даже когда такие значения дальше падали в 404, API contract оставался tolerant к malformed primary keys в денежных deal actions вместо раннего 422.
 
 Исправление: добавлен общий helper strict optional positive int id. `AdminDealForceOut.approval_id`, `AdminDealSplitIn.approval_id`, `AdminDealAssignArbiterIn.arbiter_id` и ранее исправленный `AdminReviewUpsertIn` теперь требуют настоящий положительный `int` или `None`. Unit regression покрывает accepted positive/None и rejected `true`, `false`, `"1"`, `1.0`, `0`, `-1` для всех трех admin deal action ids.
+
+### M-68. Admin counter/stat/settings integers принимали bool/string/float как числа
+
+Ссылки: `backend/app/schemas.py:1298-1334`, `backend/app/schemas.py:1621-1688`, `backend/app/schemas.py:2051-2118`, regression `tests/unit/test_admin_counter_schema.py`.
+
+Admin stats (`deals_total`, `good`, `bad` и соседние счетчики), admin service counters (`views`, `deals_count`) и integer settings (`max_active_services_per_user`, FAQ counters, inactivity/topup windows) были `int | None` с after-validator на неотрицательность. Pydantic до валидатора приводил `true` к `1`, `false` к `0`, строку `"5"` к `5` и float `1.0` к `1`.
+
+Риск: операторская корректировка статистики/счетчиков и production settings принимали malformed JSON как реальные числовые значения. Особенно опасны `false -> 0` для лимитов/окон и `true -> 1` для публичных stats/FAQ counters: фронтендовая ошибка или ручной API-call мог тихо поменять бизнес-лимит вместо явного 422.
+
+Исправление: добавлен общий helper strict optional non-negative int. `AdminSetStatsIn`, `AdminServiceUpdateIn` и integer-поля `AdminSettingsUpdateIn` теперь валидируются в `mode="before"`: разрешены только настоящий `int >= 0` или `None`; bool, строки и float отвергаются до coercion. Unit regression покрывает accepted explicit ints и rejected `true`, `false`, `"5"`, `1.0`, `-1` для всех затронутых полей.
 
 ## Наблюдения без отдельного finding
 
