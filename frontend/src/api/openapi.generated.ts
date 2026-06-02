@@ -4024,6 +4024,16 @@ export interface components {
             winner: string;
         };
         /**
+         * DealStatus
+         * @description Deal lifecycle. Values match the Continental reference bundle
+         *     (`pending_confirmation`, `in_progress`, `arbitration`, ...).
+         *
+         *     Terminal states: ``cancelled``, ``completed``, ``resolved_for_buyer``,
+         *     ``resolved_for_seller``, ``cancelled_for_inactivity``.
+         * @enum {string}
+         */
+        DealStatus: "cancelled" | "pending_confirmation" | "pending_payment" | "in_progress" | "completed" | "arbitration" | "resolved_for_buyer" | "resolved_for_seller" | "pending_cancellation" | "cancelled_for_inactivity" | "pending_topup";
+        /**
          * DealTopupInvoiceOut
          * @description P10 — deposit-invoice descriptor returned from the with-topup endpoint.
          *
@@ -7729,8 +7739,8 @@ export interface operations {
     list_deals_api_deals_get: {
         parameters: {
             query?: {
-                role?: string | null;
-                status?: string | null;
+                role?: ("buyer" | "seller") | null;
+                status?: components["schemas"]["DealStatus"] | null;
             };
             header?: {
                 authorization?: string | null;

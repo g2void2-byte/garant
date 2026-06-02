@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
@@ -192,19 +193,16 @@ async def _get_locked(session, deal_id: int) -> Deal:
 async def list_deals(
     user: CurrentUser,
     session: SessionDep,
-    role: str | None = Query(None),
-    status: str | None = Query(None),
+    role: Literal["buyer", "seller"] | None = Query(None),
+    status: DealStatus | None = Query(None),
 ):
     stmt = select(Deal).where(or_(Deal.buyer_id == user.id, Deal.seller_id == user.id))
     if role == "buyer":
         stmt = select(Deal).where(Deal.buyer_id == user.id)
     elif role == "seller":
         stmt = select(Deal).where(Deal.seller_id == user.id)
-    if status:
-        try:
-            stmt = stmt.where(Deal.status == DealStatus(status))
-        except ValueError:
-            pass
+    if status is not None:
+        stmt = stmt.where(Deal.status == status)
     stmt = stmt.order_by(Deal.created_at.desc())
     result = await session.execute(stmt)
     deals = result.scalars().all()

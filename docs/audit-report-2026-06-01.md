@@ -59,6 +59,7 @@
 - M-26: user service update/delete обновляют category/detail/comment кэши после catalog side effects.
 - M-27: profile hidden/public update обновляет service/category/review кэши, а category counters больше не считают hidden-owner services.
 - M-28: create-deal frontend корректно обрабатывает `invoice: null`, когда сделка полностью оплачена с баланса.
+- M-29: user deal list больше не игнорирует неизвестные `role`/`status` фильтры.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -403,6 +404,16 @@ Backend `POST /api/deals/with-topup` намеренно возвращает `in
 Риск: пользователь с достаточным балансом создавал сделку, backend успешно списывал баланс/комиссию и возвращал 201, но frontend падал на `Cannot read properties of null`, вместо карточки "сделка создана, оплата с баланса". Это особенно опасно тем, что money mutation уже произошла, а UI выглядел как сломанная операция.
 
 Исправление: `DealCreateWithTopupResponseDto.invoice` приведен к backend/OpenAPI контракту `DealTopupInvoiceDto | null`. `CreateDealPage` теперь отделяет invoices, требующие оплаты, от `invoice: null`/zero-total paths и показывает balance-funded confirmation без попытки открыть payment modal. Добавлены frontend regression test на `invoice=null` ответ и OpenAPI compile-time fixture для nullable invoice branch.
+
+### M-29. Deal list silently ignored unknown `role`/`status` filters
+
+Ссылки: `backend/app/routers/deals.py:196-207`, regression `tests/integration/test_deals_list_filters.py`, OpenAPI snapshot `frontend/openapi.json`, generated contract `frontend/src/api/openapi.generated.ts`.
+
+Backend `GET /api/deals` принимал `role` и `status` как plain string. Неизвестный `role` просто не попадал ни в одну ветку, а неизвестный `status` ловился через `try/except ValueError` и тоже игнорировался. В результате запросы вроде `?role=all` или `?status=wat` возвращали весь список сделок пользователя вместо typed validation error.
+
+Риск: опечатка или рассинхрон frontend фильтра выглядели как корректный широкий запрос. Пользователь мог получить смешанный buyer/seller список или все статусы, хотя UI/интеграция ожидали отфильтрованные данные; OpenAPI тоже не описывал допустимый enum, так что клиентская типизация не ловила drift.
+
+Исправление: `role` переведен на `Literal["buyer", "seller"]`, `status` — на `DealStatus | None`, чтобы FastAPI/Pydantic возвращали `422` для неизвестных значений. OpenAPI snapshot и generated types обновлены; добавлен regression test на оба invalid filter paths.
 
 ## Наблюдения без отдельного finding
 

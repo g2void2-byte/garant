@@ -4566,6 +4566,24 @@
         "title": "DealResolveRequest",
         "type": "object"
       },
+      "DealStatus": {
+        "description": "Deal lifecycle. Values match the Continental reference bundle\n(`pending_confirmation`, `in_progress`, `arbitration`, ...).\n\nTerminal states: ``cancelled``, ``completed``, ``resolved_for_buyer``,\n``resolved_for_seller``, ``cancelled_for_inactivity``.",
+        "enum": [
+          "cancelled",
+          "pending_confirmation",
+          "pending_payment",
+          "in_progress",
+          "completed",
+          "arbitration",
+          "resolved_for_buyer",
+          "resolved_for_seller",
+          "pending_cancellation",
+          "cancelled_for_inactivity",
+          "pending_topup"
+        ],
+        "title": "DealStatus",
+        "type": "string"
+      },
       "DealTopupInvoiceOut": {
         "description": "P10 \u2014 deposit-invoice descriptor returned from the with-topup endpoint.\n\nMirrors the shape the frontend already consumes for wallet\ntop-ups (``WalletDepositOut``) but renames the fields to match\nthe spec's vocabulary (``topup_principal`` + ``commission`` +\n``total``).",
         "properties": {
@@ -14350,6 +14368,10 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "buyer",
+                    "seller"
+                  ],
                   "type": "string"
                 },
                 {
@@ -14366,7 +14388,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/DealStatus"
                 },
                 {
                   "type": "null"
