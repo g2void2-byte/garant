@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-60: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race и Crystalpay webhook dedupe исправлены.
+- M-50-M-61: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe и refunded-deposit re-credit guards исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -745,6 +745,16 @@ Crystalpay не присылает отдельный `update_id`, и router с�
 Риск: оплаченный Crystalpay invoice мог навсегда остаться `pending`, если первый webhook был неполным, stale или отличался по amount. Пользователь платил, но баланс не пополнялся, потому что исправленная доставка подавлялась dedupe-слоем до бизнес-логики; ручная сверка требовалась даже при последующем корректном webhook.
 
 Исправление: для Crystalpay dedupe-key теперь строится по `raw_event_id(raw)`, то есть по sha256 всего тела доставки. Точный повтор того же payload по-прежнему dedupe-ится, но payload с исправленной `amount` получает отдельную inbox-row и проходит в idempotent deposit handler, где `WalletDeposit.status` защищает от double-credit. Regression сначала отправляет `payed` с `amount=1` для invoice на `10`, затем корректный `payed` с `amount=10`; после исправления второй webhook кредитует баланс и переводит deposit в `paid`.
+
+### M-61. Refunded CryptoBot deposit можно было заново зачислить свежим paid event или mark-paid
+
+Ссылки: `backend/app/services_payments.py:157-243`, `backend/app/routers/admin/deposits.py:122-198`, regressions `tests/integration/test_cryptobot_webhook.py`, `tests/integration/test_admin_deposits_refund.py`.
+
+`handle_invoice_paid` считал idempotent только `status=paid`. Если депозит уже был админом возвращен (`status=refunded`), а CryptoBot позже присылал новый `invoice_paid` event по тому же invoice id (например, с новым `update_id`, поэтому inbox-dedupe не считал его точным дублем), код проходил обычный amount-check и вызывал `credit_deposit`. Аналогично admin `mark-paid` не отличал `refunded` от обычного missed-webhook состояния и мог вручную снова зачислить уже возвращенный депозит.
+
+Риск: admin refund переставал быть терминальным состоянием. Пользователь мог получить баланс обратно после возврата депозита, а audit trail показывал бы отдельное повторное зачисление вместо отказа на терминальной строке. Это особенно опасно для спорных/мошеннических пополнений, где refund уже был явным операторским решением.
+
+Исправление: CryptoBot paid handler теперь отдельно отсекает `WalletDepositStatus.refunded`, логирует `cryptobot.webhook.paid_on_refunded` и возвращает `deposit not pending` без изменения баланса. Admin `mark-paid` на `refunded` отвечает 409 `Депозит уже возвращен`. Добавлены regressions: свежий signed `invoice_paid` для refunded deposit не меняет статус/баланс, а ручной `mark-paid` не может заново открыть возвращенный депозит.
 
 ## Наблюдения без отдельного finding
 

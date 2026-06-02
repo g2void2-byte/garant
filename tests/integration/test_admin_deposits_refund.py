@@ -132,6 +132,55 @@ async def test_refund_debits_balance_and_marks_refunded(client):
         assert log.reason == "fraud"
 
 
+async def test_mark_paid_rejects_refunded_deposit(client):
+    """A manual mark-paid must not undo an admin refund."""
+    admin_init, _ = await _make_admin(client, tg=1)
+    bob_id = await _bootstrap(client, tg_user_id=21, username="bob_refunded_mark_paid")
+    cur = await _currency("USDT")
+    async with async_session() as session:
+        d = WalletDeposit(
+            user_id=bob_id,
+            currency_id=cur.id,
+            amount=Decimal("12"),
+            status=WalletDepositStatus.refunded,
+            provider_invoice_id="refunded-mark-paid-test-1",
+            pay_url="http://example.com/pay",
+        )
+        session.add(d)
+        session.add(
+            UserBalance(
+                user_id=bob_id,
+                currency_id=cur.id,
+                amount=Decimal("0"),
+                locked=Decimal("0"),
+            )
+        )
+        await session.commit()
+        dep_id = d.id
+
+    resp = await client.post(
+        f"/api/admin/deposits/{dep_id}/mark-paid",
+        json={"reason": "retry"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"] == "Депозит уже возвращен"
+
+    async with async_session() as session:
+        d = await session.get(WalletDeposit, dep_id)
+        assert d is not None
+        assert d.status == WalletDepositStatus.refunded
+        bal = (
+            await session.execute(
+                select(UserBalance).where(
+                    UserBalance.user_id == bob_id,
+                    UserBalance.currency_id == cur.id,
+                )
+            )
+        ).scalar_one()
+        assert Decimal(str(bal.amount)) == Decimal("0E-8")
+
+
 async def test_refund_rejected_when_user_already_spent_funds(client):
     """If the user has spent the deposit, ``balance < amount``. The
     handler must refuse the refund so we don't push the balance

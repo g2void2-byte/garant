@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from decimal import Decimal
 
 from sqlalchemy import select
 
@@ -98,6 +99,82 @@ async def test_webhook_credits_pending_deposit_and_is_idempotent(client):
             )
         ).scalar_one()
         assert float(bal.amount) == 42.0
+
+
+async def test_webhook_paid_does_not_recredit_refunded_deposit(client):
+    """A fresh paid delivery for an admin-refunded deposit is terminal.
+
+    Pre-fix, ``handle_invoice_paid`` only treated ``paid`` as
+    idempotent. A later CryptoBot paid event with a new update id could
+    load a ``refunded`` row and credit the user's balance again.
+    """
+    from backend.app.db import async_session
+    from backend.app.models import (
+        Currency,
+        UserBalance,
+        WalletDeposit,
+        WalletDepositStatus,
+    )
+
+    init_data = signed_init_data(3002, "alice_refunded_cb")
+    await setup_pin(client, init_data)
+
+    async with async_session() as session:
+        user_id = await get_user_id_by_tg(session, 3002)
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
+        dep = WalletDeposit(
+            user_id=user_id,
+            currency_id=usdt.id,
+            amount=Decimal("25.0"),
+            provider_invoice_id="cb-refunded-paid-1",
+            pay_url="http://example.com/pay",
+            status=WalletDepositStatus.refunded,
+        )
+        session.add(dep)
+        session.add(
+            UserBalance(
+                user_id=user_id,
+                currency_id=usdt.id,
+                amount=Decimal("0"),
+                locked=Decimal("0"),
+            )
+        )
+        await session.commit()
+        dep_id = dep.id
+        usdt_id = usdt.id
+
+    body = json.dumps(
+        {
+            "update_id": 3002001,
+            "update_type": "invoice_paid",
+            "payload": {"invoice_id": "cb-refunded-paid-1", "status": "paid", "amount": "25.0"},
+        }
+    ).encode()
+    resp = await client.post(
+        "/api/payments/webhook/cryptobot",
+        content=body,
+        headers={
+            "crypto-pay-api-signature": _sign(body),
+            "Content-Type": "application/json",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ok"] is False
+    assert resp.json()["reason"] == "deposit not pending"
+
+    async with async_session() as session:
+        dep = await session.get(WalletDeposit, dep_id)
+        assert dep is not None
+        assert dep.status == WalletDepositStatus.refunded
+        bal = (
+            await session.execute(
+                select(UserBalance).where(
+                    UserBalance.user_id == user_id,
+                    UserBalance.currency_id == usdt_id,
+                )
+            )
+        ).scalar_one()
+        assert Decimal(str(bal.amount)) == Decimal("0E-8")
 
 
 async def test_webhook_bad_signature_rejected(client):

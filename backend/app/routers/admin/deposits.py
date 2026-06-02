@@ -140,6 +140,8 @@ async def mark_paid(
         c = await session.get(Currency, d.currency_id)
         u = await session.get(User, d.user_id)
         return _to_out(d, c, u)
+    if d.status == WalletDepositStatus.refunded:
+        raise HTTPException(409, "Депозит уже возвращен")
 
     currency = await session.get(Currency, d.currency_id)
     if currency is None:
