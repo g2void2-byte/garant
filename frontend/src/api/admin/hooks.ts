@@ -558,7 +558,9 @@ export function useAdminAdjustBalance(userId: number) {
       qc.invalidateQueries({ queryKey: qk.admin.userWallet.forUser(userId) });
       // V5-F-3: invalidate user detail + audit caches.
       qc.invalidateQueries({ queryKey: qk.admin.user.detail(userId) });
+      qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+      qc.invalidateQueries({ queryKey: qk.wallet.all() });
     },
   });
 }
@@ -578,6 +580,7 @@ export function useAdminUpsertCurrencyRate() {
     mutationFn: (body) => api.post("api/admin/wallets/rates", { json: body }).json(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.admin.wallets.all() });
+      qc.invalidateQueries({ queryKey: qk.admin.userWallet.all() });
       qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
     },

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 60 файлов, 526 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 60 файлов, 528 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -51,6 +51,7 @@
 - M-18: backend `DELETE /api/admin/currencies/{id}` больше не является недоступной из UI операцией.
 - M-19: admin broadcast delete обновляет audit cache после backend audit-log side effect.
 - M-20: admin settings/system mutations обновляют maintenance/system/audit кэши после side effects.
+- M-21: admin wallet adjust/rate mutations обновляют system/user-wallet/user-facing wallet кэши.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -315,6 +316,16 @@ Backend `PATCH /api/admin/settings` меняет `AppSettings`, пишет `sett
 Риск: после включения/выключения maintenance админская сессия могла не увидеть публичный maintenance banner до следующего 30-секундного poll; system page мог показывать старый stale-topup alert threshold после изменения `pending_topup_expiry_hours`; audit UI не показывал `settings.update` или `system.redis_flush` сразу после действия.
 
 Исправление: `useAdminUpdateSettings` теперь инвалидирует `qk.maintenance()`, `qk.admin.systemStatus()` и `qk.admin.audit.all()` дополнительно к прежним settings/public кэшам. `useAdminFlushRedis` инвалидирует system status и audit log. Добавлены hook regression tests для settings update и redis flush.
+
+### M-21. Admin wallet adjust/rate mutations оставляли stale wallet/system projections
+
+Ссылки: `backend/app/routers/admin/wallets.py:105-188`, `backend/app/routers/admin/wallets.py:206-248`, `backend/app/routers/admin/wallets.py:278-410`, `backend/app/routers/admin/system.py:118-170`, `frontend/src/api/admin/hooks.ts:551-585`, regression `frontend/src/api/admin/hooks.test.tsx`.
+
+Backend `POST /api/admin/wallets/{user_id}/adjust` меняет `UserBalance.amount`, пишет ledger/audit row и может изменить `admin/system/status` alert `usd_rates_missing`, потому что status считает валюты с ненулевыми балансами без USD rate. Если админ корректирует собственный кошелек, тот же side effect виден и в user-facing `/api/wallet/balances`. Frontend сбрасывал только admin wallet list, конкретный admin user-wallet, admin user detail и audit. Backend `POST /api/admin/wallets/rates` меняет `CurrencyUsdRate`, который используется не только wallet list/rates endpoint, но и `GET /api/admin/wallets/{user_id}` для `usd_rate`/`usd_estimate`; frontend не сбрасывал `qk.admin.userWallet.all()`.
+
+Риск: после ручной корректировки баланса system page мог продолжать скрывать или показывать устаревший missing-rate alert, а wallet page администратора мог держать старые balances. После изменения USD rate карточка конкретного admin user wallet могла показывать старый `usd_estimate`, хотя общий wallet list уже пересчитался.
+
+Исправление: `useAdminAdjustBalance` теперь дополнительно инвалидирует admin system status и user-facing wallet prefix. `useAdminUpsertCurrencyRate` инвалидирует broad admin user-wallet prefix вместе с wallet/rates, system status и audit. Добавлены hook regression tests для balance adjust и rate upsert.
 
 ## Наблюдения без отдельного finding
 

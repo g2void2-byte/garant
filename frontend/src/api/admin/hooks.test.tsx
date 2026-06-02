@@ -58,6 +58,7 @@ vi.mock("../client", () => ({
 }));
 
 import {
+  useAdminAdjustBalance,
   useAdminClaimArbitration,
   useAdminCreateBroadcast,
   useAdminCreateReview,
@@ -73,6 +74,7 @@ import {
   useAdminForceRefund,
   useAdminForceRelease,
   useAdminFlushRedis,
+  useAdminUpsertCurrencyRate,
   useAdminUpdateSettings,
   useAdminUpsertCategory,
   useAdminUpsertCurrency,
@@ -509,6 +511,52 @@ describe("admin settings/system mutations - side-effect cache invalidations", ()
     const keys = invalidatedKeys(invalidateSpy);
     expect(hasKey(keys, ["admin", "system-status"])).toBe(true);
     expect(hasKey(keys, ["admin", "audit"])).toBe(true);
+  });
+});
+
+describe("admin wallet mutations - side-effect cache invalidations", () => {
+  it("balance adjustment invalidates admin, system and user-facing wallet caches", async () => {
+    apiState.postResponse = { user_id: 42, currency_code: "USDT", amount: "125.00" };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminAdjustBalance(42), { wrapper });
+    await result.current.mutateAsync({
+      currency_code: "USDT",
+      amount: 25,
+      reason: "manual reconciliation",
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of [
+      ["admin", "wallets"],
+      ["admin", "user-wallet", 42],
+      ["admin", "user", 42],
+      ["admin", "system-status"],
+      ["admin", "audit"],
+      ["wallet"],
+    ] as const) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+
+  it("currency rate upsert invalidates wallet lists, user-wallet projections, system status and audit", async () => {
+    apiState.postResponse = { currency_id: 1, currency_code: "USDT", usd_rate: "1", source: "manual" };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminUpsertCurrencyRate(), { wrapper });
+    await result.current.mutateAsync({ currency_code: "USDT", usd_rate: 1, source: "manual" });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of [
+      ["admin", "wallets"],
+      ["admin", "user-wallet"],
+      ["admin", "system-status"],
+      ["admin", "audit"],
+    ] as const) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
   });
 });
 
