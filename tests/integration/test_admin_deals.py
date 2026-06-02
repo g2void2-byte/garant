@@ -185,7 +185,7 @@ async def test_admin_deals_filter_by_status(client):
     resp = await client.get(
         "/api/admin/deals?status=pending_payment", headers=auth_headers(admin_init)
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 422
 
 
 async def test_admin_deal_detail_balance_snapshot(client):

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
@@ -36,7 +37,7 @@ from ...models import (
 )
 from ...money import quantize_money
 from ...rate_limit import rate_limit
-from ...schemas import AdminDepositListOut, AdminDepositOut, AdminReasonIn
+from ...schemas import AdminDepositListOut, AdminDepositOut, AdminReasonIn, CurrencyCodeStr
 from ...services_wallet import lock_user_balance
 from ...sql_filters import escape_like_wildcards
 from ...time_utils import utcnow
@@ -76,8 +77,11 @@ def _to_out(d: WalletDeposit, c: Currency | None, u: User | None) -> AdminDeposi
 async def list_deposits(
     _admin: AdminUser,
     session: SessionDep,
-    status: str | None = Query(None),
-    currency: str | None = Query(None),
+    status: Annotated[WalletDepositStatus | None, Query()] = None,
+    currency: Annotated[
+        CurrencyCodeStr | None,
+        Query(description="Optional currency code filter for admin deposit history."),
+    ] = None,
     q: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
@@ -93,7 +97,7 @@ async def list_deposits(
         except ValueError as e:
             raise HTTPException(422, f"Неизвестный статус: {status}") from e
     if currency:
-        stmt = stmt.where(Currency.code == currency.upper())
+        stmt = stmt.where(Currency.code == currency)
     if q:
         like = f"%{escape_like_wildcards(q)}%"
         stmt = stmt.where(

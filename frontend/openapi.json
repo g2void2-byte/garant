@@ -6693,6 +6693,16 @@
         "title": "WalletDepositOut",
         "type": "object"
       },
+      "WalletDepositStatus": {
+        "enum": [
+          "pending",
+          "paid",
+          "expired",
+          "refunded"
+        ],
+        "title": "WalletDepositStatus",
+        "type": "string"
+      },
       "WalletWithdrawCreateReq": {
         "properties": {
           "address": {
@@ -6729,6 +6739,16 @@
         ],
         "title": "WalletWithdrawCreateReq",
         "type": "object"
+      },
+      "WalletWithdrawStatus": {
+        "enum": [
+          "pending",
+          "approved",
+          "sent",
+          "rejected"
+        ],
+        "title": "WalletWithdrawStatus",
+        "type": "string"
       },
       "WalletWithdrawalOut": {
         "properties": {
@@ -9313,23 +9333,41 @@
             "required": false,
             "schema": {
               "default": "any",
+              "enum": [
+                "any",
+                "cancelled",
+                "pending_confirmation",
+                "pending_topup",
+                "in_progress",
+                "completed",
+                "arbitration",
+                "resolved_for_buyer",
+                "resolved_for_seller",
+                "pending_cancellation",
+                "cancelled_for_inactivity"
+              ],
               "title": "Status",
               "type": "string"
             }
           },
           {
+            "description": "Optional currency code filter for admin deal history.",
             "in": "query",
             "name": "currency",
             "required": false,
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 16,
+                  "minLength": 1,
+                  "pattern": "^[A-Z0-9]+$",
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "Optional currency code filter for admin deal history.",
               "title": "Currency"
             }
           },
@@ -9340,7 +9378,12 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 0.0,
                   "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -9356,7 +9399,12 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 0.0,
                   "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -9404,6 +9452,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -9420,6 +9469,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -9573,6 +9623,13 @@
             "required": false,
             "schema": {
               "default": "pending",
+              "enum": [
+                "any",
+                "pending",
+                "approved",
+                "executed",
+                "rejected"
+              ],
               "title": "Status",
               "type": "string"
             }
@@ -9584,6 +9641,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -10581,7 +10639,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/WalletDepositStatus"
                 },
                 {
                   "type": "null"
@@ -10591,18 +10649,23 @@
             }
           },
           {
+            "description": "Optional currency code filter for admin deposit history.",
             "in": "query",
             "name": "currency",
             "required": false,
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 16,
+                  "minLength": 1,
+                  "pattern": "^[A-Z0-9]+$",
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "Optional currency code filter for admin deposit history.",
               "title": "Currency"
             }
           },
@@ -14199,7 +14262,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/WalletWithdrawStatus"
                 },
                 {
                   "type": "null"
@@ -18066,6 +18129,7 @@
                 {
                   "maxLength": 16,
                   "minLength": 1,
+                  "pattern": "^[A-Z0-9]+$",
                   "type": "string"
                 },
                 {
@@ -18279,6 +18343,7 @@
                 {
                   "maxLength": 16,
                   "minLength": 1,
+                  "pattern": "^[A-Z0-9]+$",
                   "type": "string"
                 },
                 {

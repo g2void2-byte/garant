@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
@@ -91,7 +91,7 @@ def _to_out(w: WalletWithdrawal, c: Currency | None, u: User | None) -> AdminWit
 async def list_withdrawals(
     _admin: AdminUser,
     session: SessionDep,
-    status: str | None = Query(None),
+    status: Annotated[WalletWithdrawStatus | None, Query()] = None,
     q: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),

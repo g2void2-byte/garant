@@ -8,7 +8,7 @@ are admin-processed (see ``services_wallet``).
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy import func, select
@@ -21,6 +21,7 @@ from ..models import (
 )
 from ..rate_limit import RLDeposit, RLWalletPoll, RLWithdrawal
 from ..schemas import (
+    CurrencyCodeStr,
     CurrencyOut,
     WalletBalanceOut,
     WalletDepositCreateReq,
@@ -193,18 +194,18 @@ async def list_user_deposits(
     user: CurrentUser,
     session: SessionDep,
     response: Response,
-    currency: str | None = Query(
-        None,
-        min_length=1,
-        max_length=16,
-        description="Optional currency code filter for wallet history.",
-    ),
+    currency: Annotated[
+        CurrencyCodeStr | None,
+        Query(
+            description="Optional currency code filter for wallet history.",
+        ),
+    ] = None,
     limit: int = Query(100, ge=1, le=100),
     offset: int = Query(0, ge=0, description="Row offset for cursorless pagination."),
 ):
     filters = [WalletDeposit.user_id == user.id]
     if currency:
-        filters.append(Currency.code == currency.upper())
+        filters.append(Currency.code == currency)
     total = (
         await session.execute(
             select(func.count(WalletDeposit.id))
@@ -268,18 +269,18 @@ async def list_user_withdrawals(
     user: CurrentUser,
     session: SessionDep,
     response: Response,
-    currency: str | None = Query(
-        None,
-        min_length=1,
-        max_length=16,
-        description="Optional currency code filter for wallet history.",
-    ),
+    currency: Annotated[
+        CurrencyCodeStr | None,
+        Query(
+            description="Optional currency code filter for wallet history.",
+        ),
+    ] = None,
     limit: int = Query(100, ge=1, le=100),
     offset: int = Query(0, ge=0, description="Row offset for cursorless pagination."),
 ):
     filters = [WalletWithdrawal.user_id == user.id]
     if currency:
-        filters.append(Currency.code == currency.upper())
+        filters.append(Currency.code == currency)
     total = (
         await session.execute(
             select(func.count(WalletWithdrawal.id))

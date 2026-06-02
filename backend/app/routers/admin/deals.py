@@ -30,7 +30,7 @@ import logging
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import and_, func, select
@@ -68,6 +68,7 @@ from ...schemas import (
     AdminDealListItem,
     AdminDealListOut,
     AdminDealSplitIn,
+    CurrencyCodeStr,
     DealMessageOut,
 )
 from ...services_ledger import record_balance_ledger
@@ -587,7 +588,21 @@ async def _dispatch_pending(
 # --------------------------------------------------------------------- listing
 
 
-_STATUS_CHOICES = (
+AdminDealStatusFilter = Literal[
+    "any",
+    "cancelled",
+    "pending_confirmation",
+    "pending_topup",
+    "in_progress",
+    "completed",
+    "arbitration",
+    "resolved_for_buyer",
+    "resolved_for_seller",
+    "pending_cancellation",
+    "cancelled_for_inactivity",
+]
+
+_STATUS_CHOICES: tuple[AdminDealStatusFilter, ...] = (
     "any",
     "cancelled",
     "pending_confirmation",
@@ -609,14 +624,17 @@ _STATUS_CHOICES = (
 async def list_deals(
     _admin: AdminUser,
     session: SessionDep,
-    status: Annotated[str, Query()] = "any",
-    currency: Annotated[str | None, Query()] = None,
-    min_amount: Annotated[float | None, Query()] = None,
-    max_amount: Annotated[float | None, Query()] = None,
+    status: Annotated[AdminDealStatusFilter, Query()] = "any",
+    currency: Annotated[
+        CurrencyCodeStr | None,
+        Query(description="Optional currency code filter for admin deal history."),
+    ] = None,
+    min_amount: Annotated[Decimal | None, Query(ge=0)] = None,
+    max_amount: Annotated[Decimal | None, Query(ge=0)] = None,
     has_arbitration: Annotated[bool | None, Query()] = None,
     has_cancel_request: Annotated[bool | None, Query()] = None,
-    buyer_id: Annotated[int | None, Query()] = None,
-    seller_id: Annotated[int | None, Query()] = None,
+    buyer_id: Annotated[int | None, Query(ge=1)] = None,
+    seller_id: Annotated[int | None, Query(ge=1)] = None,
     created_from: Annotated[datetime | None, Query()] = None,
     created_to: Annotated[datetime | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
@@ -635,11 +653,13 @@ async def list_deals(
             raise HTTPException(400, "Неверный статус")  # noqa: B904
     if currency:
         cur = (
-            await session.execute(select(Currency).where(Currency.code == currency.upper()))
+            await session.execute(select(Currency).where(Currency.code == currency))
         ).scalar_one_or_none()
         if cur is None:
             raise HTTPException(404, f"Валюта {currency} не поддерживается")
         filters.append(Deal.currency_id == cur.id)
+    if min_amount is not None and max_amount is not None and min_amount > max_amount:
+        raise HTTPException(422, "min_amount cannot exceed max_amount")
     if min_amount is not None:
         filters.append(Deal.amount >= min_amount)
     if max_amount is not None:
@@ -679,7 +699,15 @@ async def list_deals(
     )
 
 
-_APPROVAL_STATUS_CHOICES = ("any", "pending", "approved", "executed", "rejected")
+AdminDealApprovalStatusFilter = Literal["any", "pending", "approved", "executed", "rejected"]
+
+_APPROVAL_STATUS_CHOICES: tuple[AdminDealApprovalStatusFilter, ...] = (
+    "any",
+    "pending",
+    "approved",
+    "executed",
+    "rejected",
+)
 
 
 async def _get_approval_or_404(
@@ -709,8 +737,8 @@ async def list_deal_approvals(
     _admin: AdminUser,
     session: SessionDep,
     response: Response,
-    status: Annotated[str, Query()] = "pending",
-    target_id: Annotated[int | None, Query()] = None,
+    status: Annotated[AdminDealApprovalStatusFilter, Query()] = "pending",
+    target_id: Annotated[int | None, Query(ge=1)] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 200,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[AdminApprovalOut]:

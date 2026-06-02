@@ -10,7 +10,15 @@ from decimal import Decimal
 from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, PlainSerializer, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    Field,
+    PlainSerializer,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from .money import MONEY_SCALE
 
@@ -455,6 +463,7 @@ MAX_SERVICE_TITLE_LEN = 256
 MAX_CATEGORY_SLUG_LEN = 64
 MAX_USERNAME_REF_LEN = 64
 MAX_CURRENCY_CODE_LEN = 16
+CURRENCY_CODE_PATTERN = r"^[A-Z0-9]+$"
 MAX_TOTP_SECRET_LEN = 64
 MIN_TOTP_SECRET_LEN = 16
 TOTP_CODE_PATTERN = r"^\d{6}$"
@@ -536,13 +545,28 @@ def _validate_username_ref(v: str, *, what: str = "username") -> str:
     return v
 
 
-def _validate_currency_code(v: str, *, max_len: int = MAX_CURRENCY_CODE_LEN) -> str:
+def validate_currency_code(v: str, *, max_len: int = MAX_CURRENCY_CODE_LEN) -> str:
     v = (v or "").strip().upper()
     if not v:
         raise ValueError("Currency code cannot be empty")
     if len(v) > max_len or not v.isascii() or not v.isalnum():
         raise ValueError(f"Currency code must be <= {max_len} ASCII alphanumeric characters")
     return v
+
+
+CurrencyCodeStr = Annotated[
+    str,
+    StringConstraints(
+        min_length=1,
+        max_length=MAX_CURRENCY_CODE_LEN,
+        pattern=CURRENCY_CODE_PATTERN,
+    ),
+    BeforeValidator(validate_currency_code),
+]
+
+
+def _validate_currency_code(v: str, *, max_len: int = MAX_CURRENCY_CODE_LEN) -> str:
+    return validate_currency_code(v, max_len=max_len)
 
 
 def _validate_totp_secret(v: object) -> str:

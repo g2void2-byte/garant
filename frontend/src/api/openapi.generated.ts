@@ -4859,6 +4859,11 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * WalletDepositStatus
+         * @enum {string}
+         */
+        WalletDepositStatus: "pending" | "paid" | "expired" | "refunded";
         /** WalletWithdrawCreateReq */
         WalletWithdrawCreateReq: {
             /** Address */
@@ -4868,6 +4873,11 @@ export interface components {
             /** Currency Code */
             currency_code: string;
         };
+        /**
+         * WalletWithdrawStatus
+         * @enum {string}
+         */
+        WalletWithdrawStatus: "pending" | "approved" | "sent" | "rejected";
         /** WalletWithdrawalOut */
         WalletWithdrawalOut: {
             /** Address */
@@ -5887,10 +5897,11 @@ export interface operations {
     list_deals_api_admin_deals_get: {
         parameters: {
             query?: {
-                status?: string;
+                status?: "any" | "cancelled" | "pending_confirmation" | "pending_topup" | "in_progress" | "completed" | "arbitration" | "resolved_for_buyer" | "resolved_for_seller" | "pending_cancellation" | "cancelled_for_inactivity";
+                /** @description Optional currency code filter for admin deal history. */
                 currency?: string | null;
-                min_amount?: number | null;
-                max_amount?: number | null;
+                min_amount?: number | string | null;
+                max_amount?: number | string | null;
                 has_arbitration?: boolean | null;
                 has_cancel_request?: boolean | null;
                 buyer_id?: number | null;
@@ -5933,7 +5944,7 @@ export interface operations {
     list_deal_approvals_api_admin_deals_approvals_get: {
         parameters: {
             query?: {
-                status?: string;
+                status?: "any" | "pending" | "approved" | "executed" | "rejected";
                 target_id?: number | null;
                 limit?: number;
                 offset?: number;
@@ -6312,7 +6323,8 @@ export interface operations {
     list_deposits_api_admin_deposits_get: {
         parameters: {
             query?: {
-                status?: string | null;
+                status?: components["schemas"]["WalletDepositStatus"] | null;
+                /** @description Optional currency code filter for admin deposit history. */
                 currency?: string | null;
                 q?: string | null;
                 page?: number;
@@ -7631,7 +7643,7 @@ export interface operations {
     list_withdrawals_api_admin_withdrawals_get: {
         parameters: {
             query?: {
-                status?: string | null;
+                status?: components["schemas"]["WalletWithdrawStatus"] | null;
                 q?: string | null;
                 page?: number;
                 page_size?: number;

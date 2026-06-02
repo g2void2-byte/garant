@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-82: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization и 2FA secret/code contract исправлены.
+- M-50-M-84: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract и query-filter contracts исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -965,6 +965,26 @@ Admin moderation body объявлял `action: str`, хотя router подде
 Риск: OpenAPI/frontend contract обещал пользователю/API caller 8-значные коды, которые фактически всегда падали как invalid TOTP. Это маскировало клиентские ошибки и ухудшало UX при ручном вводе кода с пробелом из placeholder.
 
 Исправление: TOTP code schema теперь `^\d{6}$` с before-validator trim и strict string check; 8-значные, пробельные внутри, alpha и numeric JSON payloads получают schema rejection. Frontend gate и admin 2FA page ограничены 6 цифрами, а setup/disable inputs чистят нецифровой ввод и режут значение до 6 цифр.
+
+### M-83. Admin deal filters принимали malformed query params до SQL слоя
+
+Ссылки: `backend/app/routers/admin/deals.py:588-668`, `backend/app/schemas.py:463-568`, generated OpenAPI/types, regression `tests/unit/test_query_filter_contracts.py`.
+
+`GET /api/admin/deals` объявлял `status` как свободную строку, `currency` как обычный `str`, суммы как `float`, а `buyer_id`/`seller_id` без `ge=1`. В результате OpenAPI обещал слишком широкий contract: `status=bogus` документировался как валидная строка, `currency=" USDT "` доходила до lookup как другой код, malformed currency codes проходили query parsing, а `min_amount=NaN|Infinity` и `buyer_id=0` могли попасть в фильтры и возвращать пустые/непредсказуемые результаты вместо раннего 422.
+
+Риск: admin UI/deep-link/API caller мог получать late 400/404 или silent-empty pages на технически malformed фильтрах. Для money/admin history это плохо: оператор видит пустой список и может принять его за реальное отсутствие сделок, а generated clients не видят закрытые enums/bounds.
+
+Исправление: deal status filter переведён на закрытый `Literal` без deprecated `pending_payment`, currency query использует общий `CurrencyCodeStr` (trim + uppercase + ASCII alnum + `<=16`, pattern в OpenAPI), суммы стали `Decimal` query params с `ge=0` и finite-number rejection, `buyer_id`/`seller_id`/approval `target_id` получили `ge=1`, а `min_amount > max_amount` возвращает 422. OpenAPI и frontend generated types перегенерированы.
+
+### M-84. Wallet/admin deposit/withdrawal history filters расходились с enum/currency contract
+
+Ссылки: `backend/app/routers/admin/deposits.py:77-100`, `backend/app/routers/admin/withdrawals.py:91-107`, `backend/app/routers/wallet.py:194-287`, `backend/app/schemas.py:463-568`, generated OpenAPI/types, regression `tests/unit/test_query_filter_contracts.py`.
+
+Admin deposit/withdrawal list endpoints принимали `status` как `str | None` и валидировали enum вручную внутри handler. User wallet history и admin deposits принимали `currency` как обычную строку и делали только `.upper()`. Поэтому OpenAPI не показывал допустимые статусные значения для админских очередей, а currency query params не имели того же trim/ASCII/length contract, который уже был добавлен для money-moving body schemas.
+
+Риск: stale frontend/deep-link мог отправить `status=paid `, неизвестный статус или пробельную валюту и получить late error/silent-empty result вместо одинакового query-level 422. Generated API types оставались с `string`, то есть не помогали frontend поймать неверный статус очереди до запроса.
+
+Исправление: admin deposit status теперь `WalletDepositStatus | None`, withdrawal status - `WalletWithdrawStatus | None`, а wallet/admin currency history filters используют `CurrencyCodeStr`. OpenAPI теперь содержит enum schemas для очередей и currency pattern/bounds для history filters.
 
 ## Наблюдения без отдельного finding
 
