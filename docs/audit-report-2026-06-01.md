@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 61 файл, 545 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 62 файла, 546 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -68,6 +68,7 @@
 - M-35: admin arbitration queue больше не запирает админа/арбитра на первой странице.
 - M-36: admin user content sections больше не грузят неограниченные services/reviews/comments и не запирают админа на первой странице.
 - M-37: admin deal detail больше не встраивает полный чат сделки; история грузится курсорными страницами.
+- M-38: user-facing arbitration page больше не запирает пользователя/арбитра на первых 50 спорах.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -502,6 +503,16 @@ Backend endpoints для админского редактирования ко�
 Риск: одна тяжелая сделка превращала обычный admin detail view в большой DB/JSON/render spike. Это особенно плохо для споров, где администратор открывает карточку именно в момент нагрузки, а история может содержать месяцы переписки и вложений.
 
 Исправление: admin detail теперь встраивает только newest page размера `_DEFAULT_MESSAGE_PAGE` с тем же batched media load. `AdminDealDetailPage` перешел на общие chat hooks `useDealMessages`, `useLoadOlderDealMessages` и `useSendDealMessage`, показывает control "Показать более ранние" и отправляет сообщения через typed mutation. Добавлены backend regression на лимит/порядок latest 50 и frontend regression на cursor load + send hook.
+
+### M-38. User-facing arbitration page не подгружал следующие страницы
+
+Ссылки: `backend/app/routers/arbitration.py:29-57`, `frontend/src/pages/arbitration/ArbitrationPage.tsx`, regression `frontend/src/pages/arbitration/ArbitrationPage.test.tsx`.
+
+`GET /api/arbitration/deals` уже принимает `limit/offset` и по умолчанию возвращает только первые 50 строк. Но `ArbitrationPage` вызывал endpoint без параметров и отрисовывал только этот первый ответ без кнопки next/load-more. Для обычного пользователя это обрезало длинную историю споров; для арбитра или админа в основной вкладке arbitration список системных споров тоже заканчивался на первой странице.
+
+Риск: старые или более поздние споры были фактически недоступны из user-facing arbitration tab, хотя backend их отдавал через offset. Пользователь видел неполную историю, а арбитр мог пропустить часть очереди при работе из основной вкладки.
+
+Исправление: `ArbitrationPage` теперь явно запрашивает `limit=50&offset=0`, хранит локально загруженные страницы и показывает кнопку "Показать еще", пока backend возвращает полные страницы. Следующая загрузка идет с `offset=items.length`, короткая страница скрывает кнопку. Добавлен frontend regression на offset 50 и append второй страницы.
 
 ## Наблюдения без отдельного finding
 
