@@ -1,8 +1,8 @@
 # Аудит кода Garant от 2026-06-01
 
 Репозиторий: `g2void2-byte/garant`
-Ветка: `devin/1778660441-fresh-rewrite-sqlalchemy`
-Коммит: `8b52761247b31697face725aba183d3b3ee6a1be`
+Ветка аудита/PR: `audit-fixes-2026-06-01`, PR #254
+База исходного аудита: `devin/1778660441-fresh-rewrite-sqlalchemy` @ `8b52761247b31697face725aba183d3b3ee6a1be`
 
 ## Область проверки
 
@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 60 файлов, 506 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 60 файлов, 522 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -41,6 +41,15 @@
 - M-07: bot runner/notify/admin system используют общий validator configured bot token.
 - M-08: nullable withdrawal address отражен во frontend types/admin UI.
 - M-09: `TRUSTED_PROXIES` comment/startup guard приведены к фактической семантике.
+- M-11: media upload удаляет уже записанный файл, если commit `Media`-строки в БД падает.
+- M-12: GitHub Actions больше не используют Node.js 20-based `setup-python@v5` / `setup-uv@v3`.
+- M-13: admin deposit mark-paid/refund инвалидируют все кэши, которые меняют backend side effects.
+- M-14: admin financial mutations обновляют analytics/wallet кэши после deposit/withdrawal side effects.
+- M-15: admin review create/edit/delete обновляют rating/review/public-user кэши после recompute side effects.
+- M-16: admin service/comment edit/delete обновляют public catalog/service/comment/category/audit кэши после content side effects.
+- M-17: admin taxonomy/currency mutations обновляют public category/service/wallet/admin projection кэши.
+- M-18: backend `DELETE /api/admin/currencies/{id}` больше не является недоступной из UI операцией.
+- M-19: admin broadcast delete обновляет audit cache после backend audit-log side effect.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -205,6 +214,96 @@ Backend schemas допускают `address: str | None`, что соответ�
 Риск: у пользователя есть два разных withdrawal UX с разными security/contract ожиданиями. Старый tab может ломаться на новом backend contract или обходить нужный PIN flow.
 
 Исправление: удалить withdraw tab из per-currency page или переиспользовать канонический `WalletWithdrawPage`/hook.
+
+### M-11. Media upload оставлял orphan-файл при падении commit БД
+
+Ссылки: `backend/app/routers/media.py:347-375`, regression `tests/unit/test_media_upload_cleanup.py`.
+
+После re-encode upload handler записывал файл на диск, создавал `Media` ORM-row и делал `session.commit()`. Если commit падал из-за БД/constraint/connection failure, HTTP-запрос завершался ошибкой, строки `media` не появлялось, но файл уже оставался в `MEDIA_ROOT` без владельца и без DB-ссылки.
+
+Риск: накопление orphan-файлов после transient DB failures, расход диска и рассинхрон между storage и базой. Для приватных deal attachments это также усложняет последующую чистку, потому что файл не достижим из `Media`/deal graph.
+
+Исправление: commit обернут в `try/except`; при ошибке handler best-effort удаляет только что записанный файл через `Path.unlink(missing_ok=True)`, логирует вторичную ошибку cleanup и пробрасывает исходную ошибку. Добавлен unit-regression на прямой вызов upload path с искусственным падением commit.
+
+### M-12. CI использовал actions на deprecated Node.js 20 runtime
+
+Ссылки: `.github/workflows/ci.yml`, `.github/workflows/security.yml`, GitHub Actions annotation в свежем run PR #253.
+
+Свежие CI/Security runs после PR-fix проходили, но GitHub выдавал annotation: `actions/setup-python@v5` и `astral-sh/setup-uv@v3` работают на Node.js 20, который GitHub Actions начнет принудительно заменять на Node.js 24 с 2026-06-16 и удалит 2026-09-16. Это не красный тест сегодня, но это будущий CI breakage surface с конкретной датой.
+
+Риск: после смены runner runtime старые actions могут начать падать или работать не так, а security/backend jobs завязаны на них в каждом PR.
+
+Исправление: `actions/setup-python` обновлен до `v6`, `astral-sh/setup-uv` до `v8.1.0` (у action нет major-тега `v8`, поэтому закреплен существующий semver tag); остальные actions в workflow уже на актуальных major-версиях без этой annotation.
+
+### M-13. Admin deposit actions оставляли stale wallet/user/audit/dashboard кэши
+
+Ссылки: `backend/app/routers/admin/deposits.py:46-158`, `frontend/src/api/admin/hooks.ts:540-577`, regression `frontend/src/api/admin/hooks.test.tsx`.
+
+Backend `mark_paid` и `refund_deposit` меняют не только строку депозита: они блокируют баланс пользователя, изменяют `UserBalance.amount`, пишут notification и audit log, а также влияют на dashboard/system состояние. Frontend hooks после success инвалидировали только `qk.admin.deposits.all()`.
+
+Риск: админ мог видеть обновленный статус депозита рядом со старым admin wallet/user detail/audit/dashboard/system status. Текущий пользовательский wallet/me кэш тоже мог оставаться старым до ручного refresh или фонового refetch, что особенно плохо после ручной сверки платежа или refund.
+
+Исправление: `useAdminDepositMarkPaid` и `useAdminDepositRefund` теперь инвалидируют deposit list, admin wallets, конкретный admin user wallet/detail, dashboard, system status, audit, общий wallet и `me`. Добавлен hook regression test на полный набор query keys для обеих mutations.
+
+### M-14. Admin deposit/withdrawal decisions оставляли stale analytics и wallet кэши
+
+Ссылки: `backend/app/routers/admin/analytics.py:101-273`, `backend/app/routers/admin/withdrawals.py:149-581`, `frontend/src/api/admin/hooks.ts:540-614`, regression `frontend/src/api/admin/hooks.test.tsx`.
+
+Admin analytics читает `WalletDeposit.status/paid_at` для `deposits_30d`, `WalletWithdrawal.status/processed_at` для `withdrawals_30d` и `WalletWithdrawal.status == pending` для KPI `pending_withdrawals`. Но admin deposit mark-paid/refund не сбрасывали analytics series, а withdrawal approve/reject/mark_sent не сбрасывали analytics KPI/series и user-facing wallet caches. Отдельно опасен approve с CryptoBot: backend сначала commit-ит `approved`, а при ошибке transfer пишет audit/admin_note и возвращает 502, поэтому success-only invalidation вообще не срабатывала после уже измененной БД.
+
+Риск: после ручной сверки депозита или решения по выводу `/admin/analytics` мог показывать старые финансовые графики/счетчики, а текущий пользовательский wallet cache мог оставаться старым до фонового refetch. Для `mark_sent` это особенно заметно: статус вывода уже `sent`, но график `withdrawals_30d` и wallet history могли не обновиться.
+
+Исправление: deposit mutations теперь инвалидируют `qk.admin.analytics.series()`. Withdrawal decision mutation перешла на `onSettled`: при success использует `user_id` из ответа и инвалидирует конкретный admin user wallet/detail, а при error падает обратно на broad admin user/user-wallet prefixes. В обоих случаях сбрасываются withdrawal list, admin wallets, analytics KPI/series, system status, audit и user-facing wallet prefix. Добавлены regression tests на success и error-after-partial-commit paths.
+
+### M-15. Admin review mutations оставляли stale rating/review/public-user кэши
+
+Ссылки: `backend/app/routers/admin/content.py:391-609`, `frontend/src/api/admin/hooks.ts:388-445`, regression `frontend/src/api/admin/hooks.test.tsx`.
+
+Backend admin review create/edit/delete не просто меняет строку `Review`: для create и rating edit он вызывает `lock_user_for_rating()` + `recompute_user_rating()`, а delete после `flush()` пересчитывает `target.good`/`target.bad`. Эти поля питают `AdminUserDetailOut.rating_*`, public `UserCardDto.rating/reviews_count`, `/api/reviews?user=...` и user search/list projections. Frontend hooks инвалидировали только текущий `qk.admin.userReviews.forUser(userId)`.
+
+Риск: после ручной правки отзыва админ видел новый текст/оценку в секции отзывов, но карточка пользователя, список пользователей, публичный профиль и публичные reviews/search могли оставаться со старым рейтингом и счетчиком отзывов. При delete это особенно легко пропустить, потому что ответ `{deleted: true}` не несет `target_id`, а открытая вкладка может быть `written`, где текущий `userId` является автором, не получателем рейтинга.
+
+Исправление: admin review mutations теперь сбрасывают admin review prefix, admin users/list/detail, audit, public reviews, public users list и public user detail. Create/update используют `author_id`/`target_id` из ответа для точечных admin user detail invalidations; delete падает обратно на broad `qk.admin.user.all()` из-за отсутствия `target_id` в response. Добавлены regression tests на create/update/delete invalidation наборы.
+
+### M-16. Admin service/comment mutations оставляли stale public catalog/detail/comment кэши
+
+Ссылки: `backend/app/routers/admin/content.py:190-359`, `backend/app/routers/admin/content.py:671-764`, `backend/app/routers/categories.py:27-49`, `frontend/src/api/admin/hooks.ts:336-503`, regression `frontend/src/api/admin/hooks.test.tsx`, `tests/integration/test_admin_content.py`.
+
+Backend admin service edit/delete меняет те же строки `Service`, которые читают публичные `/api/services`, `/api/services/{id}` и category counters. При delete также удаляются `ServiceComment` строки. Admin comment edit/delete меняет `ServiceComment`, а публичный `ServiceDetailOut` пересчитывает comment rating average/count, плюс `/api/services/{id}/comments` показывает сам текст/рейтинг. Frontend hooks сбрасывали только admin user-scoped content lists, поэтому публичные catalog/detail/comments/categories и admin audit могли оставаться старыми до фонового refetch.
+
+Риск: после модераторской правки услуги или комментария админ видел изменение в admin tab, но пользовательские страницы поиска, карточка услуги, счетчики категорий и комментарии к услуге могли показывать старые данные. При удалении комментария response не нес `service_id`, поэтому frontend не мог точечно сбросить `qk.service.comments(serviceId)` и `qk.service.detail(serviceId)`.
+
+Исправление: service mutations теперь инвалидируют admin user services/detail, admin audit, public services, public service detail/comments и public categories. Comment mutations инвалидируют admin user comments, admin audit, public service comments и service detail; backend delete-comment response дополнен `service_id` и `author_id`, чтобы delete path тоже делал точечную invalidation. Добавлены hook regression tests и backend integration assertion на новый response contract.
+
+### M-17. Admin taxonomy/currency mutations оставляли stale public/wallet/admin projection кэши
+
+Ссылки: `backend/app/routers/admin/taxonomy.py:58-132`, `backend/app/routers/admin/taxonomy.py:177-340`, `backend/app/routers/categories.py:14-50`, `backend/app/routers/wallet.py:41-104`, `frontend/src/api/admin/hooks.ts:712-777`, regression `frontend/src/api/admin/hooks.test.tsx`.
+
+Backend category upsert/delete меняет данные, которые читают public `/api/categories`, service list/detail category projection и admin audit. Backend currency upsert/delete меняет `CurrencyOut`, вложенный в wallet balances/deposits/withdrawals, admin wallet projections, admin deal/deposit/withdrawal amount formatting, analytics/system status и audit. Frontend hooks сбрасывали только `qk.admin.categories()` или `qk.admin.currencies()`, поэтому длинный `staleTime` у wallet currencies мог держать старые лимиты, active/kind и decimals до часа.
+
+Риск: после изменения категории пользователи могли видеть старое имя/icon в каталоге и карточках услуг; после изменения валюты wallet/deposit/withdraw UI и admin finance pages могли показывать старые лимиты, активность, kind или precision. Для финансовых экранов это особенно рискованно из-за `decimals`, который влияет на форматирование сумм.
+
+Исправление: category mutations теперь сбрасывают admin categories, admin audit, public categories, public services и service detail prefix. Currency mutations сбрасывают admin currencies, wallets/user-wallets, deals/deposits/withdrawals, analytics, system status, audit и весь user-facing wallet prefix. Добавлены hook regression tests на upsert/delete для обеих taxonomy веток.
+
+### M-18. Currency delete route был backend-only и не был доступен в admin UI
+
+Ссылки: `backend/app/routers/admin/taxonomy.py:282-340`, `frontend/src/pages/admin/AdminTaxonomyPage.tsx:209-370`, regression `frontend/src/pages/admin/AdminTaxonomyPage.test.tsx`.
+
+Backend уже имел полноценный `DELETE /api/admin/currencies/{currency_id}` с FK-blocker checks и audit log, но admin taxonomy UI показывал для валют только edit. В результате unreferenced test/import currencies можно было удалить через API, но не через админскую панель, хотя страница позиционируется как редактор taxonomy CRUD.
+
+Риск: операционная функция была фактически скрыта от админов; мусорные/тестовые валюты оставались в списке до ручного API вызова, а UI не соответствовал backend capability.
+
+Исправление: добавлен `useAdminDeleteCurrency()` с тем же side-effect invalidation набором, что и currency upsert, и кнопка delete в currencies pane с confirm/toast flow. Добавлен UI regression test, который проверяет вызов delete mutation из `/admin/taxonomy?tab=currencies`.
+
+### M-19. Broadcast delete оставлял stale admin audit cache
+
+Ссылки: `backend/app/routers/admin/broadcasts.py:424-443`, `frontend/src/api/admin/hooks.ts:798-816`, regression `frontend/src/api/admin/hooks.test.tsx`.
+
+Backend `DELETE /api/admin/broadcasts/{broadcast_id}` делает soft-delete `Broadcast`, затем пишет `broadcast.delete` в `admin_audit_log`. Frontend `useAdminDeleteBroadcast` после успешного DELETE инвалидировал только `qk.admin.broadcasts()`, хотя соседний `useAdminCreateBroadcast` уже сбрасывал и broadcasts, и audit. Поэтому админ мог удалить рассылку, увидеть обновленную history-таблицу, но открытый audit log оставался без строки `broadcast.delete` до фонового refetch/ручной навигации.
+
+Риск: audit UI показывал неполную картину сразу после state-changing admin action; оператор мог решить, что удаление не было зафиксировано в audit trail, или пропустить важный след при проверке действий другого администратора.
+
+Исправление: `useAdminDeleteBroadcast` теперь инвалидирует `qk.admin.audit.all()` вместе с `qk.admin.broadcasts()`. Добавлены hook regression tests, которые закрепляют audit invalidation для broadcast create и delete.
 
 ## Наблюдения без отдельного finding
 

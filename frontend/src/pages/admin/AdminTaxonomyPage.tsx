@@ -14,6 +14,7 @@ import {
   useAdminCategories,
   useAdminCurrencies,
   useAdminDeleteCategory,
+  useAdminDeleteCurrency,
   useAdminUpsertCategory,
   useAdminUpsertCurrency,
 } from "@/api/admin/hooks";
@@ -208,7 +209,9 @@ function CategoryForm({
 
 function CurrenciesPane() {
   const { data, isLoading } = useAdminCurrencies();
+  const del = useAdminDeleteCurrency();
   const [editing, setEditing] = useState<AdminCurrencyDto | "new" | null>(null);
+  const toast = useToast();
   return (
     <div className="px-4 space-y-2 pb-24">
       <Button
@@ -250,6 +253,25 @@ function CurrenciesPane() {
               className="text-text-muted active:scale-90"
             >
               <Pencil size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!(await confirmDialog(`РЈРґР°Р»РёС‚СЊ РІР°Р»СЋС‚Сѓ ${c.code}?`))) return;
+                try {
+                  await del.mutateAsync(c.id);
+                  toast.show({ kind: "info", title: "РЈРґР°Р»РµРЅРѕ" });
+                } catch (e) {
+                  toast.show({
+                    kind: "error",
+                    title: "РћС€РёР±РєР°",
+                    body: (e as Error).message,
+                  });
+                }
+              }}
+              className="text-danger text-xs"
+            >
+              Г—
             </button>
           </div>
         ))

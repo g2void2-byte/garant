@@ -26,6 +26,10 @@ const mockState = vi.hoisted(() => ({
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
   },
+  delCurrency: {
+    mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
+    isPending: false,
+  },
   upsertCategory: {
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
@@ -47,6 +51,7 @@ vi.mock("@/api/admin/hooks", () => ({
     isLoading: mockState.curLoading,
   }),
   useAdminDeleteCategory: () => mockState.delCategory,
+  useAdminDeleteCurrency: () => mockState.delCurrency,
   useAdminUpsertCategory: () => mockState.upsertCategory,
   useAdminUpsertCurrency: () => mockState.upsertCurrency,
 }));
@@ -119,6 +124,7 @@ beforeEach(() => {
   mockState.catLoading = false;
   mockState.curLoading = false;
   mockState.delCategory = { mutateAsync: vi.fn(), isPending: false };
+  mockState.delCurrency = { mutateAsync: vi.fn(), isPending: false };
   mockState.upsertCategory = { mutateAsync: vi.fn(), isPending: false };
   mockState.upsertCurrency = { mutateAsync: vi.fn(), isPending: false };
   mockState.shouldRender = true;
@@ -185,6 +191,24 @@ describe("<AdminTaxonomyPage />", () => {
     );
     expect(toastSpy).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "info", title: "Удалено" }),
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it("currency delete with confirm fires mutation and toasts", async () => {
+    mockState.categories = [makeCategory()];
+    mockState.currencies = [makeCurrency()];
+    mockState.delCurrency.mutateAsync.mockResolvedValue({});
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const user = userEvent.setup();
+    renderPage("/admin/taxonomy?tab=currencies");
+
+    await user.click(screen.getByText("Г—"));
+    await waitFor(() =>
+      expect(mockState.delCurrency.mutateAsync).toHaveBeenCalledWith(2),
+    );
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "info", title: "РЈРґР°Р»РµРЅРѕ" }),
     );
     confirmSpy.mockRestore();
   });
