@@ -49,6 +49,48 @@ from .time_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
+# Marker stored in ``WalletWithdrawal.admin_note`` while an automatic
+# CryptoBot Transfer is in flight outside a DB transaction. Admin-side
+# decision routes use it to avoid racing a ``reject`` against an
+# already-started payout.
+AUTO_WITHDRAW_IN_PROGRESS_NOTE = "[auto-send in progress]"
+AUTO_WITHDRAW_FAILED_PREFIX = "[auto-send failed]"
+AUTO_WITHDRAW_IN_PROGRESS_SWEEP_GRACE = timedelta(minutes=5)
+
+
+def withdrawal_auto_send_in_progress(withdrawal: WalletWithdrawal) -> bool:
+    return any(
+        line.strip() == AUTO_WITHDRAW_IN_PROGRESS_NOTE
+        for line in (withdrawal.admin_note or "").splitlines()
+    )
+
+
+def _withdrawal_auto_send_recently_in_progress(withdrawal: WalletWithdrawal) -> bool:
+    return (
+        withdrawal_auto_send_in_progress(withdrawal)
+        and withdrawal.created_at > utcnow() - AUTO_WITHDRAW_IN_PROGRESS_SWEEP_GRACE
+    )
+
+
+def mark_withdrawal_auto_send_in_progress(note: str | None) -> str:
+    base = clear_withdrawal_auto_send_in_progress(note)
+    return f"{base}\n{AUTO_WITHDRAW_IN_PROGRESS_NOTE}".strip()
+
+
+def clear_withdrawal_auto_send_in_progress(note: str | None) -> str:
+    lines = [
+        line
+        for line in (note or "").splitlines()
+        if line.strip() != AUTO_WITHDRAW_IN_PROGRESS_NOTE
+    ]
+    return "\n".join(lines).strip()
+
+
+def mark_withdrawal_auto_send_failed(note: str | None, error: object) -> str:
+    base = clear_withdrawal_auto_send_in_progress(note)
+    tag = f"{AUTO_WITHDRAW_FAILED_PREFIX} {error}"[:500]
+    return f"{base}\n{tag}".strip() if base else tag
+
 
 # Audit L-8 — width cap + control-byte blacklist for the
 # user-supplied withdrawal address. Anchored to the ``Numeric(255)``-
@@ -1132,6 +1174,11 @@ async def create_withdrawal(
         amount=amount,
         address=address,
         status=WalletWithdrawStatus.pending,
+        admin_note=(
+            mark_withdrawal_auto_send_in_progress("")
+            if auto_withdraw_enabled and cryptopay_configured
+            else ""
+        ),
     )
     session.add(withdrawal)
     await session.flush()
@@ -1276,6 +1323,20 @@ async def create_withdrawal(
                             },
                         )
                     return w_locked
+            else:
+                w_locked = (
+                    await session.execute(
+                        select(WalletWithdrawal)
+                        .where(WalletWithdrawal.id == withdrawal.id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                ).scalar_one_or_none()
+                if w_locked is not None:
+                    w_locked.admin_note = mark_withdrawal_auto_send_failed(
+                        w_locked.admin_note,
+                        e,
+                    )
         else:
             # Phase 3: re-lock the withdrawal + balance and apply the
             # ``locked`` decrement against the fresh row. We must NOT
@@ -1552,6 +1613,9 @@ async def sweep_stale_withdrawals(session: AsyncSession) -> int:
     pending_dispatch: list[tuple[Notification, dict[str, Any] | None]] = []
 
     for candidate in candidates:
+        if _withdrawal_auto_send_recently_in_progress(candidate):
+            continue
+
         # Snapshot the fields we need for the upstream call before
         # the session goes through commits below — accessing
         # candidate.* after commit risks lazy-load round trips that
@@ -1603,6 +1667,11 @@ async def sweep_stale_withdrawals(session: AsyncSession) -> int:
         if w_locked.status != WalletWithdrawStatus.pending:
             # A sibling decide / sweep got here first. The row is
             # terminal — leave it alone, do NOT double-apply.
+            continue
+        if _withdrawal_auto_send_recently_in_progress(w_locked):
+            # The stale cutoff is configurable, so defend against a
+            # too-low value racing the still-running CryptoBot request
+            # and refunding funds that may already be on their way out.
             continue
 
         bal = await lock_user_balance(session, wd_user_id, wd_currency_id)

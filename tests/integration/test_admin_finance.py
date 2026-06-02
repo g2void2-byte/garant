@@ -16,11 +16,13 @@ creation time (see ``services_deals.create_deal_with_topup``).
 
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
 
+from backend.app import services_wallet
 from backend.app.db import async_session
 from backend.app.models import (
     AdminAuditLog,
@@ -30,6 +32,8 @@ from backend.app.models import (
     WalletDeposit,
     WalletWithdrawal,
 )
+from backend.app.services_wallet import mark_withdrawal_auto_send_in_progress
+from backend.app.time_utils import utcnow
 from tests.helpers import auth_headers, signed_init_data, with_totp
 
 
@@ -259,6 +263,123 @@ async def test_withdrawals_decide_reject_returns_funds(client):
         ).scalar_one()
         assert float(bal.amount) == pytest.approx(20.0)
         assert float(bal.locked) == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize(
+    ("status", "action"),
+    [
+        ("pending", "approve"),
+        ("pending", "reject"),
+        ("approved", "reject"),
+    ],
+)
+async def test_withdrawals_auto_send_in_progress_blocks_admin_race(
+    client,
+    status: str,
+    action: str,
+):
+    admin_init, _ = await _make_admin(client, tg=1)
+    bob_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    cur = await _currency("USDT")
+    async with async_session() as session:
+        wd = WalletWithdrawal(
+            user_id=bob_id,
+            currency_id=cur.id,
+            amount=Decimal("20.0"),
+            address=None,
+            status=status,
+            admin_note=mark_withdrawal_auto_send_in_progress("auto"),
+        )
+        session.add(wd)
+        session.add(UserBalance(user_id=bob_id, currency_id=cur.id, amount=0, locked=20))
+        await session.commit()
+        wd_id = wd.id
+
+    resp = await client.post(
+        f"/api/admin/withdrawals/{wd_id}/decide",
+        json={"action": action, "note": "operator race"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"] == "Авто-отправка вывода уже выполняется"
+
+    async with async_session() as session:
+        wd_row = await session.get(WalletWithdrawal, wd_id)
+        assert wd_row is not None
+        assert wd_row.status.value == status
+        bal = (
+            await session.execute(
+                select(UserBalance).where(
+                    UserBalance.user_id == bob_id,
+                    UserBalance.currency_id == cur.id,
+                )
+            )
+        ).scalar_one()
+        assert float(bal.amount) == pytest.approx(0.0)
+        assert float(bal.locked) == pytest.approx(20.0)
+
+
+async def test_withdrawals_stale_sweep_skips_recent_auto_send_marker(
+    client,
+    monkeypatch,
+):
+    bob_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    cur = await _currency("USDT")
+    async with async_session() as session:
+        wd = WalletWithdrawal(
+            user_id=bob_id,
+            currency_id=cur.id,
+            amount=Decimal("20.0"),
+            address=None,
+            status="pending",
+            admin_note=mark_withdrawal_auto_send_in_progress("auto"),
+            created_at=utcnow() - timedelta(seconds=2),
+        )
+        session.add(wd)
+        session.add(UserBalance(user_id=bob_id, currency_id=cur.id, amount=0, locked=20))
+        await session.commit()
+        wd_id = wd.id
+
+    class _NoTransfersCryptoPay:
+        calls = 0
+
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        async def __aenter__(self) -> _NoTransfersCryptoPay:
+            return self
+
+        async def __aexit__(self, *_exc: object) -> None:
+            return None
+
+        async def get_transfers(self, **_kwargs: object) -> list[object]:
+            type(self).calls += 1
+            return []
+
+    monkeypatch.setattr(services_wallet.settings, "cryptobot_token", "12345:test-real-token")
+    monkeypatch.setattr(services_wallet.settings, "wallet_withdrawal_stale_seconds", 1)
+    monkeypatch.setattr(services_wallet, "CryptoPay", _NoTransfersCryptoPay)
+
+    async with async_session() as session:
+        reconciled = await services_wallet.sweep_stale_withdrawals(session)
+
+    assert reconciled == 0
+    assert _NoTransfersCryptoPay.calls == 0
+
+    async with async_session() as session:
+        wd_row = await session.get(WalletWithdrawal, wd_id)
+        assert wd_row is not None
+        assert wd_row.status.value == "pending"
+        bal = (
+            await session.execute(
+                select(UserBalance).where(
+                    UserBalance.user_id == bob_id,
+                    UserBalance.currency_id == cur.id,
+                )
+            )
+        ).scalar_one()
+        assert float(bal.amount) == pytest.approx(0.0)
+        assert float(bal.locked) == pytest.approx(20.0)
 
 
 async def test_withdrawals_counters_per_status(client):

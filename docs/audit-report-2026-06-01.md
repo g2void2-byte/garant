@@ -80,6 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
+- M-50-M-56: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing и auto-withdraw race исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -694,6 +695,16 @@ Admin deal detail назначал арбитра через `GET /api/admin/use
 Риск: onboarding продавца с нулём сделок был сам себе противоречивым. Backend разрешал завести первую услугу, но штатная страница профиля не могла отобразить и управлять этой услугой до появления сделки. Для скрытого профиля это особенно заметно: owner/admin bypass был реализован ниже по коду, но до него запрос не доходил.
 
 Исправление: `target_owner_self` вычисляется до search gate, и gate применяется только к public browse/search запросам, не к `owner=<current username>`. Admin bypass сохранён. Добавлен regression: zero-deal пользователь всё ещё получает 403 на общий `/api/services`, но получает 200, `X-Total-Count: 1` и свою услугу на `/api/services?owner=<me>`.
+
+### M-56. Auto-withdraw Phase 2 мог гоняться с admin reject и возвращать уже отправленные средства
+
+Ссылки: `backend/app/services_wallet.py:49-92`, `backend/app/services_wallet.py:1174-1438`, `backend/app/services_wallet.py:1613-1675`, `backend/app/routers/admin/withdrawals.py:175-404`, regression `tests/integration/test_admin_finance.py`.
+
+`services_wallet.create_withdrawal` и admin `approve` отправляют CryptoBot Transfer во второй фазе без DB lock, чтобы не держать `wallet_withdrawals`/`user_balances` во время HTTP roundtrip. Но до исправления строка оставалась видимой как обычная `pending` или `approved`: параллельный admin `reject` мог вернуть `locked -> amount`, пока CryptoBot Transfer уже выполнялся или уже успел уйти. После успешного ответа Phase 3 видел, что статус изменился, логировал race и выходил, оставляя пользователю и внешний payout, и внутренний refund.
+
+Риск: прямой double-spend на выводах. Один и тот же `WalletWithdrawal` мог закончиться внешней выплатой через CryptoBot при одновременном возврате зарезервированных средств в баланс пользователя, особенно если оператор вручную разгребал очередь во время медленного/повторяющегося upstream-запроса.
+
+Исправление: строки с автоматической отправкой помечаются marker-строкой `[auto-send in progress]` в `admin_note` на время Phase 2. Admin `approve`/`reject` теперь отвечают 409, если marker активен; успешные и failed пути снимают marker или заменяют его `[auto-send failed]`. Stale sweep дополнительно пропускает свежие in-progress marker-строки, чтобы низкий `wallet_withdrawal_stale_seconds` не мог refund-нуть вывод, пока HTTP-запрос ещё выполняется, но старые зависшие строки всё ещё остаются recoverable через прежний CryptoBot reconciliation. Добавлены regressions: approve/reject не меняют статус и баланс при активном marker, а stale sweep не вызывает CryptoBot и не возвращает средства для свежей in-flight строки.
 
 ## Наблюдения без отдельного finding
 
