@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-80: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs и currency-code normalization исправлены.
+- M-50-M-82: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization и 2FA secret/code contract исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -945,6 +945,26 @@ Admin moderation body объявлял `action: str`, хотя router подде
 Риск: money-moving user endpoints имели слабый code contract и зависели от позднего lookup/service behavior. Stale UI или manual API-call мог получить 404 на фактически валидную валюту с пробелами либо протащить явно malformed code до service layer вместо 422.
 
 Исправление: добавлен общий currency-code validator: trim + uppercase + non-empty + ASCII alnum + `<=16`. Deal create, wallet deposit и wallet withdrawal теперь передают в сервисы нормализованный код. Regression покрывает normalization и rejected invalid values.
+
+### M-81. Admin 2FA secret принимал не-base32 значения и мог падать в verifier
+
+Ссылки: `backend/app/schemas.py:533-573`, `backend/app/schemas.py:2797-2848`, `backend/app/auth_2fa.py:138-160`, regression `tests/unit/test_admin_twofa_schema.py`.
+
+`Admin2faConfirmIn.secret` проверял только trim и длину `16..64`. Строки из не-base32 символов проходили body schema; на rotation path такой secret доходил до `verify_totp_and_counter()`, где `base64.b32decode()` выбрасывал исключение вместо нормального invalid-code результата. Такой же late-crash был возможен при поврежденном `users.totp_secret` в БД.
+
+Риск: TOTP-protected 2FA rotation/session path мог превращать malformed secret в 500 вместо раннего 422/401. Это слабый admin API contract и потенциальный operational foot-gun: одна поврежденная persisted secret строка ломала все проверки для аккаунта через exception path.
+
+Исправление: добавлен общий TOTP-secret validator: trim, uppercase, удаление пробелов, alphabet `[A-Z2-7]`, длина `16..64` и пробный padded base32 decode. `verify_totp_and_counter()` теперь fail-closed возвращает `None` для invalid stored secret вместо исключения. Regression покрывает schema rejection, normalization и verifier fallback.
+
+### M-82. Admin 2FA UI/schema принимали 8-значные коды, хотя backend TOTP использует 6 цифр
+
+Ссылки: `backend/app/auth_2fa.py:81-114`, `backend/app/schemas.py:2797-2848`, `frontend/src/components/TotpGate.tsx`, `frontend/src/pages/admin/AdminTwoFactorPage.tsx`, regressions `tests/unit/test_admin_twofa_schema.py`, `frontend/src/components/TotpGate.test.tsx`, `frontend/src/pages/admin/AdminTwoFactorPage.test.tsx`.
+
+`Admin2faConfirmIn.code/current_code` и `Admin2faVerifyIn.code` разрешали длину 6 или 8, а `TotpGate` тоже принимал pattern `[0-9]{6,8}`. Но `auth_2fa` генерирует `otpauth://...&digits=6`, `_DIGITS = 6`, а `verify_totp_and_counter()` отвергает любую длину кроме 6. В `/admin/2fa` инпуты дополнительно не чистили пробелы, хотя placeholder показывал `123 456`.
+
+Риск: OpenAPI/frontend contract обещал пользователю/API caller 8-значные коды, которые фактически всегда падали как invalid TOTP. Это маскировало клиентские ошибки и ухудшало UX при ручном вводе кода с пробелом из placeholder.
+
+Исправление: TOTP code schema теперь `^\d{6}$` с before-validator trim и strict string check; 8-значные, пробельные внутри, alpha и numeric JSON payloads получают schema rejection. Frontend gate и admin 2FA page ограничены 6 цифрами, а setup/disable inputs чистят нецифровой ввод и режут значение до 6 цифр.
 
 ## Наблюдения без отдельного finding
 

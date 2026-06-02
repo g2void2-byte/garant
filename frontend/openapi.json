@@ -4,12 +4,14 @@
       "Admin2faConfirmIn": {
         "properties": {
           "code": {
+            "pattern": "^\\d{6}$",
             "title": "Code",
             "type": "string"
           },
           "current_code": {
             "anyOf": [
               {
+                "pattern": "^\\d{6}$",
                 "type": "string"
               },
               {
@@ -19,6 +21,9 @@
             "title": "Current Code"
           },
           "secret": {
+            "maxLength": 64,
+            "minLength": 16,
+            "pattern": "^[A-Z2-7]{16,64}$",
             "title": "Secret",
             "type": "string"
           }
@@ -85,6 +90,7 @@
       "Admin2faVerifyIn": {
         "properties": {
           "code": {
+            "pattern": "^\\d{6}$",
             "title": "Code",
             "type": "string"
           }

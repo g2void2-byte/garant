@@ -57,6 +57,7 @@ Fix the clock instead.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import logging
@@ -152,7 +153,14 @@ def verify_totp_and_counter(secret: str, code: str, *, at: float | None = None) 
     if at is None:
         at = time.time()
     counter = int(at) // _PERIOD
-    key = _b32decode_padded(secret)
+    try:
+        key = _b32decode_padded(secret)
+    except (binascii.Error, ValueError):
+        logger.warning(
+            "invalid TOTP secret format encountered during verification",
+            extra={"event": "auth_2fa.invalid_secret_format"},
+        )
+        return None
     # Audit M-5 — exhaust the full ``2 * _DRIFT_WINDOWS + 1`` range
     # before returning. ``hmac.compare_digest`` itself is constant-time
     # per comparison, but a ``for ... if compare_digest(...): return``

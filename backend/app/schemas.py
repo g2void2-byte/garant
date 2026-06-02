@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import math
 import re
@@ -453,6 +455,10 @@ MAX_SERVICE_TITLE_LEN = 256
 MAX_CATEGORY_SLUG_LEN = 64
 MAX_USERNAME_REF_LEN = 64
 MAX_CURRENCY_CODE_LEN = 16
+MAX_TOTP_SECRET_LEN = 64
+MIN_TOTP_SECRET_LEN = 16
+TOTP_CODE_PATTERN = r"^\d{6}$"
+TOTP_SECRET_PATTERN = rf"^[A-Z2-7]{{{MIN_TOTP_SECRET_LEN},{MAX_TOTP_SECRET_LEN}}}$"
 
 # Maximum length for user-supplied free-form description fields
 # (services, deals). Matches the existing cap on the admin-side
@@ -537,6 +543,31 @@ def _validate_currency_code(v: str, *, max_len: int = MAX_CURRENCY_CODE_LEN) -> 
     if len(v) > max_len or not v.isascii() or not v.isalnum():
         raise ValueError(f"Currency code must be <= {max_len} ASCII alphanumeric characters")
     return v
+
+
+def _validate_totp_secret(v: object) -> str:
+    if not isinstance(v, str):
+        raise ValueError("Некорректный секрет")
+    secret = v.upper().strip().replace(" ", "")
+    if not secret or len(secret) < MIN_TOTP_SECRET_LEN or len(secret) > MAX_TOTP_SECRET_LEN:
+        raise ValueError("Некорректный секрет")
+    if not re.fullmatch(TOTP_SECRET_PATTERN, secret):
+        raise ValueError("Некорректный секрет")
+    try:
+        pad = (-len(secret)) % 8
+        base64.b32decode(secret + "=" * pad, casefold=True)
+    except (binascii.Error, ValueError):
+        raise ValueError("Некорректный секрет") from None
+    return secret
+
+
+def _validate_totp_code(v: object) -> str:
+    if not isinstance(v, str):
+        raise ValueError("Код должен состоять из 6 цифр")
+    code = v.strip()
+    if not code.isdigit() or len(code) != 6:
+        raise ValueError("Код должен состоять из 6 цифр")
+    return code
 
 
 def _validate_optional_positive_int_id(v: object, *, what: str = "ID") -> object:
@@ -2795,40 +2826,35 @@ class Admin2faSetupOut(BaseModel):
 
 
 class Admin2faConfirmIn(BaseModel):
-    secret: str
-    code: str
+    secret: str = Field(
+        min_length=MIN_TOTP_SECRET_LEN,
+        max_length=MAX_TOTP_SECRET_LEN,
+        pattern=TOTP_SECRET_PATTERN,
+    )
+    code: str = Field(pattern=TOTP_CODE_PATTERN)
     # Review pass 3 — when rotating an already-enabled 2FA, the caller
     # must prove ownership of the *current* secret by also sending its
     # code. Without this, a stolen admin session could silently swap
     # the 2FA secret to one the attacker controls. Optional on first
     # enrolment (no previous secret to verify).
-    current_code: str | None = None
+    current_code: str | None = Field(default=None, pattern=TOTP_CODE_PATTERN)
 
-    @field_validator("secret")
+    @field_validator("secret", mode="before")
     @classmethod
-    def _secret_ok(cls, v: str) -> str:
-        v = (v or "").strip()
-        if not v or len(v) < 16 or len(v) > 64:
-            raise ValueError("Некорректный секрет")
-        return v
+    def _secret_ok(cls, v: object) -> str:
+        return _validate_totp_secret(v)
 
-    @field_validator("code")
+    @field_validator("code", mode="before")
     @classmethod
-    def _code_ok(cls, v: str) -> str:
-        v = (v or "").strip()
-        if not v.isdigit() or len(v) not in (6, 8):
-            raise ValueError("Код должен состоять из 6 или 8 цифр")
-        return v
+    def _code_ok(cls, v: object) -> str:
+        return _validate_totp_code(v)
 
-    @field_validator("current_code")
+    @field_validator("current_code", mode="before")
     @classmethod
-    def _current_code_ok(cls, v: str | None) -> str | None:
+    def _current_code_ok(cls, v: object) -> str | None:
         if v is None:
-            return v
-        v = v.strip()
-        if not v.isdigit() or len(v) not in (6, 8):
-            raise ValueError("Код должен состоять из 6 или 8 цифр")
-        return v
+            return None
+        return _validate_totp_code(v)
 
 
 class Admin2faStatusOut(BaseModel):
@@ -2836,15 +2862,12 @@ class Admin2faStatusOut(BaseModel):
 
 
 class Admin2faVerifyIn(BaseModel):
-    code: str
+    code: str = Field(pattern=TOTP_CODE_PATTERN)
 
-    @field_validator("code")
+    @field_validator("code", mode="before")
     @classmethod
-    def _code_ok(cls, v: str) -> str:
-        v = (v or "").strip()
-        if not v.isdigit() or len(v) not in (6, 8):
-            raise ValueError("Код должен состоять из 6 или 8 цифр")
-        return v
+    def _code_ok(cls, v: object) -> str:
+        return _validate_totp_code(v)
 
 
 class Admin2faSessionOut(BaseModel):
