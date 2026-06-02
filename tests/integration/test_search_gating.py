@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from backend.app.db import async_session
-from backend.app.models import User
+from backend.app.models import Category, Service, ServiceStatus, User
 from tests.helpers import auth_headers, signed_init_data
 
 _GATED_TG = 10001
@@ -77,3 +77,41 @@ async def test_search_gating_behavior(client, monkeypatch):
 
     resp = await client.get("/api/categories", headers=admin_headers)
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_zero_deal_user_can_list_own_services(client):
+    username = "zero_deal_service_owner"
+    headers = await _setup_user(
+        client,
+        10004,
+        username,
+        deals_total=0,
+        is_admin=False,
+    )
+
+    async with async_session() as session:
+        user = (
+            await session.execute(select(User).where(User.username == username))
+        ).scalar_one()
+        category = (await session.execute(select(Category).limit(1))).scalar_one()
+        session.add(
+            Service(
+                owner_id=user.id,
+                category_id=category.id,
+                title="first-service",
+                description="",
+                price=10,
+                status=ServiceStatus.active,
+            )
+        )
+        await session.commit()
+
+    browse = await client.get("/api/services", headers=headers)
+    assert browse.status_code == 403
+    assert browse.json()["detail"] == "Минимум 1 сделка для поиска"
+
+    own = await client.get(f"/api/services?owner={username}", headers=headers)
+    assert own.status_code == 200, own.text
+    assert [row["title"] for row in own.json()] == ["first-service"]
+    assert own.headers["x-total-count"] == "1"

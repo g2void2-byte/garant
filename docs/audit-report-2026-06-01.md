@@ -685,6 +685,16 @@ Admin deal detail назначал арбитра через `GET /api/admin/use
 
 Исправление: `faq_stats_users` и `faq_stats_deals` добавлены в общий non-negative int validator, `faq_stats_total_usd` получил отдельный finite money validator с запретом отрицательных значений. Заодно VIP commission теперь тоже проходит через общий finite-money guard. Добавлены unit regressions на отрицательные FAQ counts/total и на нулевую границу.
 
+### M-55. Zero-deal пользователь не мог открыть собственный список услуг
+
+Ссылки: `backend/app/routers/services.py:173-205`, `frontend/src/pages/profile/ProfilePage.tsx:43-123`, regression `tests/integration/test_search_gating.py`.
+
+`GET /api/services` блокировал любого не-админа с `deals_total == 0` до разбора `owner`. Это правильно для публичного каталога/поиска, но ломало owner-scoped запросы: новый пользователь мог создать услугу через `POST /api/services`, а затем собственный профиль запрашивал `GET /api/services?owner=<me>` и получал 403 "Минимум 1 сделка для поиска" вместо своих услуг.
+
+Риск: onboarding продавца с нулём сделок был сам себе противоречивым. Backend разрешал завести первую услугу, но штатная страница профиля не могла отобразить и управлять этой услугой до появления сделки. Для скрытого профиля это особенно заметно: owner/admin bypass был реализован ниже по коду, но до него запрос не доходил.
+
+Исправление: `target_owner_self` вычисляется до search gate, и gate применяется только к public browse/search запросам, не к `owner=<current username>`. Admin bypass сохранён. Добавлен regression: zero-deal пользователь всё ещё получает 403 на общий `/api/services`, но получает 200, `X-Total-Count: 1` и свою услугу на `/api/services?owner=<me>`.
+
 ## Наблюдения без отдельного finding
 
 - Media upload/serve выглядит сильной зоной: есть streaming cap, magic bytes, Pillow reencode, reject animation, signed deal URLs и path validation.
