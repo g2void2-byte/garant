@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 61 файл, 532 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 61 файл, 534 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -56,6 +56,7 @@
 - M-23: admin in-app broadcast send обновляет notifications/counters cache после fan-out side effect.
 - M-24: user review create обновляет public users list cache после rating recompute side effect.
 - M-25: deal state transitions/WS events обновляют wallet/public-user/me кэши после participant side effects.
+- M-26: user service update/delete обновляют category/detail/comment кэши после catalog side effects.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -370,6 +371,16 @@ Backend deal actions меняют не только строки `Deal`: `accept
 Риск: после принятия, завершения, отмены или арбитража сделки одна сторона могла видеть свежий статус сделки рядом со старым wallet balance, старым `deals_total`/`deals_success` в профиле и старым `/api/me` до ручного refresh или фонового refetch. Особенно заметно для seller после `finish`: деньги уже зачислены backend-ом, но wallet cache второй стороны не сбрасывался WS-событием.
 
 Исправление: добавлен общий frontend helper `invalidateDealParticipantSideEffects()`, который сбрасывает wallet, public users list, public user-detail prefix и `me`. `useDealAction` вызывает его после state-changing HTTP actions, а `useLiveNotifications` вызывает его на `deal.updated` и deal-typed notification events. Добавлены regression tests для HTTP mutation и WS paths.
+
+### M-26. User service update/delete оставляли stale category/detail/comment кэши
+
+Ссылки: `backend/app/routers/services.py:242-545`, `backend/app/routers/categories.py:14-49`, `frontend/src/api/hooks.ts:169-221`, regression `frontend/src/api/hooks.test.tsx`.
+
+Backend owner-side service update меняет `Service.title`, `description`, `price`, `status` и gallery, которые читаются public catalog и `GET /api/services/{id}`. При `status` active/paused дополнительно меняется `services_count` в `GET /api/categories`, потому что counter считает только active services. Owner-side delete удаляет саму service row и все `ServiceComment` rows, значит stale detail/comments/category caches тоже становятся неверными. Frontend `useUpdateService` сбрасывал только `qk.services.all()`, а `useDeleteService` тоже сбрасывал только catalog list.
+
+Риск: после паузы/возврата услуги пользователь мог видеть старое число услуг в категориях и старую карточку detail; после удаления прямой detail/comments cache мог оставаться доступным в текущей сессии до фонового refetch, хотя backend уже вернул бы 404.
+
+Исправление: `useUpdateService` теперь инвалидирует catalog, categories и точечный service detail. `useDeleteService` дополнительно инвалидирует categories, service detail и service comments. Добавлены hook regression tests для update/delete invalidation sets.
 
 ## Наблюдения без отдельного finding
 

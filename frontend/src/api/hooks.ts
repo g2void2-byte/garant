@@ -189,8 +189,10 @@ export function useUpdateService() {
         photo_urls: string[];
       }>;
     }) => api.patch(`api/services/${id}`, { json: body }).json<ServiceDto>(),
-    onSuccess: () => {
+    onSuccess: (_service, vars) => {
       qc.invalidateQueries({ queryKey: qk.services.all() });
+      qc.invalidateQueries({ queryKey: qk.categories() });
+      qc.invalidateQueries({ queryKey: qk.service.detail(vars.id) });
     },
   });
 }
@@ -217,8 +219,11 @@ export function useDeleteService() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => api.delete(`api/services/${id}`).json(),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: qk.services.all() });
+      qc.invalidateQueries({ queryKey: qk.categories() });
+      qc.invalidateQueries({ queryKey: qk.service.detail(id) });
+      qc.invalidateQueries({ queryKey: qk.service.comments(id) });
     },
   });
 }

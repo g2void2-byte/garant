@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 
 const apiState = vi.hoisted(() => ({
   postResponse: undefined as unknown,
+  patchResponse: undefined as unknown,
+  deleteResponse: undefined as unknown,
 }));
 
 vi.mock("./client", () => ({
@@ -12,10 +14,16 @@ vi.mock("./client", () => ({
     post: (..._args: unknown[]) => ({
       json: async () => apiState.postResponse,
     }),
+    patch: (..._args: unknown[]) => ({
+      json: async () => apiState.patchResponse,
+    }),
+    delete: (..._args: unknown[]) => ({
+      json: async () => apiState.deleteResponse,
+    }),
   },
 }));
 
-import { useCreateReview, useDealAction } from "./hooks";
+import { useCreateReview, useDealAction, useDeleteService, useUpdateService } from "./hooks";
 
 function spyInvalidate(qc: QueryClient) {
   return vi.spyOn(qc, "invalidateQueries");
@@ -108,5 +116,36 @@ describe("useDealAction", () => {
     ] as const) {
       expect(hasKey(keys, expected)).toBe(true);
     }
+  });
+});
+
+describe("service mutations", () => {
+  it("service update invalidates catalog, category and detail caches", async () => {
+    apiState.patchResponse = { id: 55, status: "paused" };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useUpdateService(), { wrapper });
+    await result.current.mutateAsync({ id: 55, body: { status: "paused" } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    expect(hasKey(keys, ["services"])).toBe(true);
+    expect(hasKey(keys, ["categories"])).toBe(true);
+    expect(hasKey(keys, ["service", 55])).toBe(true);
+  });
+
+  it("service delete invalidates catalog, category, detail and comments caches", async () => {
+    apiState.deleteResponse = { ok: true };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useDeleteService(), { wrapper });
+    await result.current.mutateAsync(55);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    expect(hasKey(keys, ["services"])).toBe(true);
+    expect(hasKey(keys, ["categories"])).toBe(true);
+    expect(hasKey(keys, ["service", 55])).toBe(true);
+    expect(hasKey(keys, ["service", 55, "comments"])).toBe(true);
   });
 });
