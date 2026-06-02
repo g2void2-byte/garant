@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 61 файл, 539 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 61 файл, 540 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -63,6 +63,7 @@
 - M-30: admin deal list снова умеет фильтровать `pending_topup`, а deprecated `pending_payment` больше не показывается как UI-фильтр.
 - M-31: admin deal/claim mutations сбрасывают audit log и точечный deal detail cache.
 - M-32: admin deposit/withdrawal queues больше не запирают админа на первой странице.
+- M-33: admin wallets inspector больше не запирает админа на первой странице пользователей.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -447,6 +448,16 @@ Backend admin queues уже были paginated: `/api/admin/deposits` прини
 Риск: если в очереди больше 50 депозитов или выводов в одном статусе, админ не мог добраться до более старых строк через штатный интерфейс. Это ломало ручную сверку missed deposits, refunds, approved withdrawals и mark-sent recovery paths: backend данные существовали, но UI фактически скрывал их после первого page slice.
 
 Исправление: `AdminDepositsPage` и `AdminWithdrawalsPage` получили page state, кнопки prev/next и reset page при смене status filter. Deposits считает pages по backend `total`; withdrawals использует status counters для текущей вкладки. Добавлены regression tests, которые проверяют переход на page 2 и сброс страницы при смене фильтра/таба.
+
+### M-33. Admin wallets UI был заперт на первой странице
+
+Ссылки: `backend/app/routers/admin/wallets.py:106-191`, `frontend/src/pages/admin/AdminWalletsPage.tsx`, regression `frontend/src/pages/admin/AdminWalletsPage.test.tsx`.
+
+Backend `/api/admin/wallets` уже принимает `page/page_size` и возвращает `total/page/page_size`. Frontend держал `page` state и сбрасывал его при поиске, но не рендерил никаких prev/next controls. В обычном UI page оставался равен 1, поэтому админ видел максимум первые 50 пользователей из wallet inspector.
+
+Риск: ручные корректировки баланса, проверка locked balances и USD-rate gaps становились недоступны для пользователей за пределами первого page slice. Это особенно опасно для recovery/debug сценариев: данные и endpoint есть, но оператор не может выбрать нужного пользователя без точного search query.
+
+Исправление: `AdminWalletsPage` теперь передает явный `page_size`, показывает pagination по backend `total/page_size` и сохраняет reset page на поиске. Regression test проверяет переход на page 2 и возврат на page 1 после search.
 
 ## Наблюдения без отдельного finding
 

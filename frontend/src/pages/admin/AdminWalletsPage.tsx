@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Wallet, Plus, Minus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Minus, Plus, Search, Wallet } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -19,6 +19,8 @@ import { parseDecimal } from "@/lib/format";
 import type { AdminCurrencyRateDto, AdminWalletListItemDto } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
+const PAGE_SIZE = 50;
+
 /**
  * `/admin/wallets` — user-balance inspector + manual credit/debit.
  *
@@ -32,7 +34,7 @@ export default function AdminWalletsPage() {
   const [q, setQ] = useState("");
   const [draftQ, setDraftQ] = useState("");
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useAdminWallets({ q, page });
+  const { data, isLoading } = useAdminWallets({ q, page, page_size: PAGE_SIZE });
   const [target, setTarget] = useState<AdminWalletListItemDto | null>(null);
   const [ratesOpen, setRatesOpen] = useState(false);
 
@@ -155,6 +157,13 @@ export default function AdminWalletsPage() {
           ))
         )}
       </div>
+      {data && data.total > data.page_size && (
+        <Pagination
+          page={page}
+          totalPages={Math.max(1, Math.ceil(data.total / data.page_size))}
+          onPage={setPage}
+        />
+      )}
 
       <Sheet
         open={!!target}
@@ -167,6 +176,42 @@ export default function AdminWalletsPage() {
         <RatesForm onClose={() => setRatesOpen(false)} />
       </Sheet>
     </Page>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-3 mt-1 mb-4 text-sm">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+        className="p-2 rounded-button bg-panel disabled:opacity-40 active:scale-95"
+        aria-label={"\u041d\u0430\u0437\u0430\u0434"}
+      >
+        <ChevronLeft size={18} />
+      </button>
+      <span className="text-text-muted">
+        {page} / {totalPages}
+      </span>
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => onPage(page + 1)}
+        className="p-2 rounded-button bg-panel disabled:opacity-40 active:scale-95"
+        aria-label={"\u0412\u043f\u0435\u0440\u0451\u0434"}
+      >
+        <ChevronRight size={18} />
+      </button>
+    </div>
   );
 }
 

@@ -31,11 +31,11 @@ const mockState = vi.hoisted(() => ({
   },
   shouldRender: true as boolean,
   lastAdjustUserId: undefined as number | undefined,
-  lastWalletsQuery: undefined as { q?: string; page?: number } | undefined,
+  lastWalletsQuery: undefined as { q?: string; page?: number; page_size?: number } | undefined,
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
-  useAdminWallets: (q: { q?: string; page?: number }) => {
+  useAdminWallets: (q: { q?: string; page?: number; page_size?: number }) => {
     mockState.lastWalletsQuery = q;
     return { data: mockState.list, isLoading: mockState.loading };
   },
@@ -218,6 +218,25 @@ describe("<AdminWalletsPage />", () => {
     fireEvent.change(input, { target: { value: "  alice  " } });
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(mockState.lastWalletsQuery?.q).toBe("alice"));
+  });
+
+  it("pagination advances beyond page one and search resets back to the first page", async () => {
+    mockState.list = { items: [makeUserBalance()], total: 80, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    expect(mockState.lastWalletsQuery?.page_size).toBe(50);
+    await user.click(screen.getByLabelText("\u0412\u043f\u0435\u0440\u0451\u0434"));
+    await waitFor(() => expect(mockState.lastWalletsQuery?.page).toBe(2));
+
+    const input = screen.getByPlaceholderText("@username");
+    fireEvent.change(input, { target: { value: "  alice  " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => {
+      expect(mockState.lastWalletsQuery?.q).toBe("alice");
+      expect(mockState.lastWalletsQuery?.page).toBe(1);
+    });
   });
 
   it("clicking a row opens the adjust sheet and 'Применить' is disabled at first", async () => {
