@@ -75,7 +75,7 @@ async def list_audit(
     total = (await session.execute(count_stmt)).scalar_one()
     rows = (
         await session.execute(
-            stmt.order_by(AdminAuditLog.created_at.desc())
+            stmt.order_by(AdminAuditLog.created_at.desc(), AdminAuditLog.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )

@@ -662,7 +662,11 @@ async def list_deals(
         stmt = stmt.where(where_clause)
         count_stmt = count_stmt.where(where_clause)
 
-    stmt = stmt.order_by(Deal.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    stmt = (
+        stmt.order_by(Deal.created_at.desc(), Deal.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
 
     rows = (await session.execute(stmt)).scalars().all()
     total = int((await session.execute(count_stmt)).scalar_one() or 0)

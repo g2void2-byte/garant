@@ -310,13 +310,14 @@ async def list_users(
         count_stmt = count_stmt.where(status_filter)
 
     order_clause = {
-        "created_desc": User.created_at.desc(),
-        "created_asc": User.created_at.asc(),
+        "created_desc": (User.created_at.desc(), User.id.desc()),
+        "created_asc": (User.created_at.asc(), User.id.asc()),
         "rating": (
             func.coalesce(User.rating_manual, 0).desc(),
             User.good.desc(),
+            User.id.desc(),
         ),
-        "deals": User.deals_total.desc(),
+        "deals": (User.deals_total.desc(), User.id.desc()),
     }[sort]
     if isinstance(order_clause, tuple):
         stmt = stmt.order_by(*order_clause)

@@ -106,7 +106,7 @@ async def list_deposits(
     total = (await session.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     rows = (
         await session.execute(
-            stmt.order_by(WalletDeposit.created_at.desc())
+            stmt.order_by(WalletDeposit.created_at.desc(), WalletDeposit.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )

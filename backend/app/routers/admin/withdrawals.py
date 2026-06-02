@@ -111,7 +111,7 @@ async def list_withdrawals(
 
     rows = (
         await session.execute(
-            stmt.order_by(WalletWithdrawal.created_at.desc())
+            stmt.order_by(WalletWithdrawal.created_at.desc(), WalletWithdrawal.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )

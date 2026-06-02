@@ -91,7 +91,7 @@ async def list_arbitration(
     stmt = (
         select(Deal)
         .where(cond)
-        .order_by(Deal.created_at.desc())
+        .order_by(Deal.created_at.desc(), Deal.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )

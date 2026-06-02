@@ -78,6 +78,7 @@
 - M-45: profile/category service lists больше не запирают пользователя на первой странице услуг.
 - M-46: deal detail review CTA больше не зависит от первой страницы отзывов профиля.
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
+- M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -612,6 +613,16 @@ Backend `GET /api/services` уже принимал `limit/offset` и выста
 Риск: `picker=1` был задуман как точечный поиск известного контрагента для первой сделки, а не как browse-режим. Пустой запрос создавал лишнюю нагрузку на каждом mount picker-компонента и ослаблял search gate для пользователей без сделок.
 
 Исправление: backend для `picker=true` без непустого `q` возвращает `200 []` и `X-Total-Count: 0`, сохраняя поиск по `q` для zero-deal пользователей. Frontend `UserPicker` теперь держит query disabled до ввода, всегда передает `limit=8&offset=0` и больше не режет более крупный ответ на клиенте. Добавлены backend regression на пустой/непустой picker и frontend regressions на disabled empty query + capped live-search params.
+
+### M-48. Offset-пагинация нескольких списков была нестабильной при одинаковом `created_at`
+
+Ссылки: `backend/app/routers/admin/deals.py`, `backend/app/routers/admin/arbitration.py`, `backend/app/routers/arbitration.py`, `backend/app/routers/admin/users.py`, `backend/app/routers/admin/deposits.py`, `backend/app/routers/admin/withdrawals.py`, `backend/app/routers/admin/broadcasts.py`, `backend/app/routers/admin/audit.py`, regression `tests/integration/test_audit_stable_pagination_order.py`.
+
+Несколько paginated list endpoints сортировали страницы только по `created_at desc` или по бизнес-метрике без уникального вторичного ключа. Это оставалось после фиксов на page/load-more: если несколько строк создавались в одной транзакции или получали одинаковый timestamp, база могла отдавать ties в разном порядке между запросами `page=1` и `page=2` / `offset=N`. Затронуты admin deals, admin/public arbitration, audit log, broadcasts, deposits, withdrawals и sort modes в admin users.
+
+Риск: админ мог видеть дубликаты между соседними страницами или не видеть часть строк вообще. Для очередей выплат/депозитов/арбитража это особенно плохо: элемент мог исчезнуть из штатного triage не из-за фильтра, а из-за недетерминированной границы страницы.
+
+Исправление: все найденные `created_at`-based router lists теперь добавляют уникальный tie-breaker `id` (`desc` для newest-first, `asc` для `created_asc`). Sort modes admin users также получили `User.id` tie-breaker для `created_desc`, `created_asc`, `rating` и `deals`. Добавлен regression, который запрещает одинокий `order_by(Model.created_at.desc())` в routers и пинует id tie-breakers в admin users sort map.
 
 ## Наблюдения без отдельного finding
 

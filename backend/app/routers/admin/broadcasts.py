@@ -401,7 +401,7 @@ async def list_broadcasts(
             select(Broadcast, User)
             .join(User, User.id == Broadcast.actor_id)
             .where(base_filter)
-            .order_by(Broadcast.created_at.desc())
+            .order_by(Broadcast.created_at.desc(), Broadcast.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
