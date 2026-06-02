@@ -1,7 +1,7 @@
 # Аудит кода Garant от 2026-06-01
 
 Репозиторий: `g2void2-byte/garant`
-Ветка аудита/PR: `audit-fixes-2026-06-01`, PR #254
+Ветка аудита/PR: `audit-fixes-2026-06-02-settings-system`, PR #255
 База исходного аудита: `devin/1778660441-fresh-rewrite-sqlalchemy` @ `8b52761247b31697face725aba183d3b3ee6a1be`
 
 ## Область проверки
@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 60 файлов, 528 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 60 файлов, 530 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -52,6 +52,7 @@
 - M-19: admin broadcast delete обновляет audit cache после backend audit-log side effect.
 - M-20: admin settings/system mutations обновляют maintenance/system/audit кэши после side effects.
 - M-21: admin wallet adjust/rate mutations обновляют system/user-wallet/user-facing wallet кэши.
+- M-22: admin user actions обновляют public user/profile/me кэши после public-profile side effects.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -326,6 +327,16 @@ Backend `POST /api/admin/wallets/{user_id}/adjust` меняет `UserBalance.amo
 Риск: после ручной корректировки баланса system page мог продолжать скрывать или показывать устаревший missing-rate alert, а wallet page администратора мог держать старые balances. После изменения USD rate карточка конкретного admin user wallet могла показывать старый `usd_estimate`, хотя общий wallet list уже пересчитался.
 
 Исправление: `useAdminAdjustBalance` теперь дополнительно инвалидирует admin system status и user-facing wallet prefix. `useAdminUpsertCurrencyRate` инвалидирует broad admin user-wallet prefix вместе с wallet/rates, system status и audit. Добавлены hook regression tests для balance adjust и rate upsert.
+
+### M-22. Admin user actions оставляли stale public user/profile/me кэши
+
+Ссылки: `backend/app/routers/admin/users.py:611-840`, `backend/app/serializers.py:17-164`, `backend/app/routers/users.py:58-194`, `frontend/src/api/admin/hooks.ts:111-132`, regression `frontend/src/api/admin/hooks.test.tsx`.
+
+Backend admin user actions `role`, `rating`, `stats` и `trust-deposit` меняют поля `User`, которые напрямую читаются публичными `/api/users` и `/api/users/{username}` через общий serializer: `prefix`, role-флаги, `rating_manual`, `good`/`bad`, deal counters, `deals_sum_override` и `trust_deposit_balance` как public `deposit`. Те же поля попадают в `/api/me`, если админ редактирует собственную карточку через разрешенные action-пути. Frontend generic `useAdminUserAction` после success сбрасывал только admin users/detail/dashboard/related admin tabs/audit, поэтому публичный search/list/profile и current-user cache могли остаться со старой карточкой.
+
+Риск: после ручного изменения рейтинга, статистики, роли или trust-deposit админ видел обновление в admin detail, но пользовательский каталог и публичный профиль могли показывать старый рейтинг, badge, сумму сделок или deposit до фонового refetch. При self-edit `/api/me` мог сохранять старую проекцию текущего пользователя.
+
+Исправление: `useAdminUserAction` теперь дополнительно инвалидирует public users list, public user detail по username из ответа (или broad `qk.user.all()` без username) и `qk.me()`. Добавлены hook regression tests для username-specific и fallback invalidation paths.
 
 ## Наблюдения без отдельного finding
 

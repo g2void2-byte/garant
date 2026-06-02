@@ -74,6 +74,8 @@ import {
   useAdminForceRefund,
   useAdminForceRelease,
   useAdminFlushRedis,
+  useAdminSetStats,
+  useAdminSetTrustDeposit,
   useAdminUpsertCurrencyRate,
   useAdminUpdateSettings,
   useAdminUpsertCategory,
@@ -360,6 +362,44 @@ describe("useAdminClaimArbitration — V5-F-5 prefix invalidation", () => {
     // Existing invalidations are preserved.
     expect(hasKey(keys, ["admin", "arbitration"])).toBe(true);
     expect(hasKey(keys, ["admin", "deals"])).toBe(true);
+  });
+});
+
+describe("admin user actions - public profile cache invalidations", () => {
+  it("invalidates public users, target profile and me after stats changes", async () => {
+    apiState.postResponse = { id: 42, username: "alice" };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminSetStats(), { wrapper });
+    await result.current.mutateAsync({ userId: 42, body: { deals_total: 5 } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of [
+      ["admin", "users"],
+      ["admin", "user", 42],
+      ["admin", "dashboard"],
+      ["admin", "audit"],
+      ["users"],
+      ["user", "alice"],
+      ["me"],
+    ] as const) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+
+  it("falls back to the public user-detail prefix when the response has no username", async () => {
+    apiState.postResponse = { id: 42, username: null };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminSetTrustDeposit(), { wrapper });
+    await result.current.mutateAsync({ userId: 42, body: { amount: "100", reason: "manual" } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    expect(hasKey(keys, ["users"])).toBe(true);
+    expect(hasKey(keys, ["user"])).toBe(true);
+    expect(hasKey(keys, ["me"])).toBe(true);
   });
 });
 

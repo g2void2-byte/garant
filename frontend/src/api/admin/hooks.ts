@@ -117,7 +117,7 @@ function useAdminUserAction(action: string) {
           json: body ?? {},
         })
         .json(),
-    onSuccess: (_data, vars) => {
+    onSuccess: (data, vars) => {
       qc.invalidateQueries({ queryKey: qk.admin.users.all() });
       qc.invalidateQueries({ queryKey: qk.admin.user.detail(vars.userId) });
       qc.invalidateQueries({ queryKey: qk.admin.dashboard() });
@@ -127,6 +127,11 @@ function useAdminUserAction(action: string) {
       qc.invalidateQueries({ queryKey: qk.admin.userWallet.forUser(vars.userId) });
       qc.invalidateQueries({ queryKey: qk.admin.userComments.forUser(vars.userId) });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+      qc.invalidateQueries({ queryKey: qk.users.all() });
+      qc.invalidateQueries({
+        queryKey: data.username ? qk.user.detail(data.username) : qk.user.all(),
+      });
+      qc.invalidateQueries({ queryKey: qk.me() });
     },
   });
 }
