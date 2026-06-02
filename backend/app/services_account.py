@@ -425,6 +425,12 @@ async def confirm_transfer(session: AsyncSession, target: User, code: str) -> Us
         )
         .order_by(AccountTransferCode.created_at.desc())
         .limit(1)
+        # The code row is the one-shot claim. Lock it before the
+        # source/target user rows so a parallel confirm cannot keep a
+        # stale ``consumed_at=None`` object and reuse the same code
+        # after the first transaction commits.
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     result = await session.execute(stmt)
     row = result.scalar_one_or_none()

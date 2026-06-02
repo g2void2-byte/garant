@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-57: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw race и paid PIN reset delivery rollback исправлены.
+- M-50-M-58: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw race, paid PIN reset delivery rollback и account-transfer code race исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -715,6 +715,16 @@ Admin deal detail назначал арбитра через `GET /api/admin/use
 Риск: платный recovery flow мог забирать деньги без предоставления recovery-секрета. Повторная попытка могла снова списать USD, а сохранённый недоставленный code hash не помогал пользователю, потому что plaintext code известен только DM-каналу.
 
 Исправление: paid reset теперь делает `rollback` и возвращает 502, если DM не доставлен; это покрывает и нулевую цену, и обычное списание. Баланс не меняется, `pin_reset_code_hash`/`pin_reset_expires` не сохраняются. Добавлен regression: при `send_dm=False` ответ 502, USD-баланс остаётся прежним, reset-code поля остаются пустыми.
+
+### M-58. Account-transfer code можно было употребить дважды в параллельном confirm
+
+Ссылки: `backend/app/services_account.py:392-529`, regression `tests/integration/test_audit_simple_flags.py:144`.
+
+`confirm_transfer` выбирал live `AccountTransferCode` по `code_hash`, `consumed_at IS NULL` и `expires_at > now`, но не брал `FOR UPDATE` на саму строку кода. Дальше функция блокировала только source/target `users` rows. Если два target-аккаунта параллельно отправляли один и тот же код, второй запрос мог прочитать `consumed_at=NULL` до коммита первого, затем ждать lock на source user, а после коммита первого продолжить со stale ORM-строкой кода и повторно перевесить source account уже на второго target.
+
+Риск: одноразовый account-transfer code не был строго одноразовым под гонкой. При утечке кода или double-submit атакующий target мог выиграть второй confirm и перезаписать `tg_user_id` источника после легитимного target, фактически угнав перенос аккаунта.
+
+Исправление: выбор `AccountTransferCode` в `confirm_transfer` теперь выполняется с `SELECT ... FOR UPDATE` и `populate_existing=True`. Второй confirm ждёт освобождения code-row lock и после первого коммита заново применяет `consumed_at IS NULL`, получая обычный отказ "код недействителен или истёк" вместо stale-row продолжения. Добавлен concurrency regression: первый target специально останавливается перед commit, второй target стартует с тем же кодом; в итоге успешен ровно один confirm, source остаётся на первом target, второй target не удаляется, а code row помечен consumed один раз.
 
 ## Наблюдения без отдельного finding
 
