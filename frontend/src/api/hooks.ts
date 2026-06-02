@@ -160,19 +160,35 @@ export function useForums() {
   });
 }
 
+export interface ServicesQueryParams {
+  category?: string;
+  q?: string;
+  owner?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function buildServicesSearchParams(params: ServicesQueryParams = {}) {
+  const searchParams: Record<string, string> = {};
+  if (params.category) searchParams.category = params.category;
+  if (params.q) searchParams.q = params.q;
+  if (params.owner) searchParams.owner = params.owner;
+  if (params.status) searchParams.status = params.status;
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  if (params.offset !== undefined) searchParams.offset = String(params.offset);
+  return searchParams;
+}
+
 export function useServices(
-  params: { category?: string; q?: string; owner?: string; status?: string } = {},
+  params: ServicesQueryParams = {},
   // Audit (continuation) L-2 — opt-in ``enabled`` gate. Callers that
   // pass ``owner: me?.username`` need a way to keep the query
   // dormant until ``me`` resolves; without it the first render
   // issues a list-all request that pollutes the cache.
   options: { enabled?: boolean } = {},
 ) {
-  const searchParams: Record<string, string> = {};
-  if (params.category) searchParams.category = params.category;
-  if (params.q) searchParams.q = params.q;
-  if (params.owner) searchParams.owner = params.owner;
-  if (params.status) searchParams.status = params.status;
+  const searchParams = buildServicesSearchParams(params);
   return useQuery<ServiceDto[]>({
     queryKey: qk.services.list(params),
     queryFn: () => api.get("api/services", { searchParams }).json(),

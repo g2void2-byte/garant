@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 62 файла, 558 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 62 файла, 564 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -75,6 +75,7 @@
 - M-42: per-currency wallet history больше не обрезается первыми 100 unfiltered deposit/withdrawal rows.
 - M-43: service detail comments больше не запирают пользователя на первой странице комментариев.
 - M-44: profile reviews больше не запирают пользователя на первой странице отзывов.
+- M-45: profile/category service lists больше не запирают пользователя на первой странице услуг.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -579,6 +580,16 @@ Backend `GET /api/notifications` уже имел keyset pagination по `(create
 Риск: старые отзывы становились недоступны из собственного и публичного профиля. Это ухудшало проверку репутации пользователя и могло скрывать контекст по давним сделкам, хотя backend эти данные уже хранил.
 
 Исправление: reviews endpoint выставляет `X-Total-Count` и сортирует стабильно по `created_at desc, id desc`. `useReviews` принимает structured params, а оба profile UI запрашивают первую страницу по 50 отзывов, показывают общий `reviews_count` в табе и догружают следующие страницы кнопкой "Показать еще" через offset. Добавлены backend regression на `limit/offset` + total header и frontend regressions на first-page params + load-more offsets для собственного и публичного профиля.
+
+### M-45. Profile/category service lists не подгружали следующие страницы
+
+Ссылки: `frontend/src/api/hooks.ts:160-190`, `frontend/src/pages/profile/ProfilePage.tsx`, `frontend/src/pages/search/UserProfilePage.tsx`, `frontend/src/pages/search/CategoriesPage.tsx`, regressions `frontend/src/pages/profile/ProfilePage.test.tsx`, `frontend/src/pages/search/UserProfilePage.test.tsx`, `frontend/src/pages/search/CategoriesPage.test.tsx`.
+
+Backend `GET /api/services` уже принимал `limit/offset` и выставлял `X-Total-Count`, но frontend `useServices` не прокидывал pagination params. Own profile, public user profile и category detail рендерили только дефолтный первый ответ `/api/services` и не давали открыть следующие услуги.
+
+Риск: профили и категории с большим числом услуг выглядели неполными. Пользователь не мог штатно добраться до старых активных услуг в категории или до старых услуг конкретного продавца, хотя backend список поддерживал постраничную выдачу.
+
+Исправление: `useServices` принимает structured `limit/offset`, а profile/category pages запрашивают первые 50 услуг и догружают следующие страницы кнопкой "Показать еще" через offset. Category page использует `services_count` категории для отображения полного счетчика и скрытия лишней догрузки, profile pages догружают пока backend не вернет неполную страницу. Добавлены frontend regressions на first-page params + load-more offsets для own profile, public profile и category detail.
 
 ## Наблюдения без отдельного finding
 

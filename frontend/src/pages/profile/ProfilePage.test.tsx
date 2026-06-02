@@ -9,7 +9,10 @@ const meState = vi.hoisted(() => ({
   data: undefined as UserCardDto | undefined,
   isLoading: false,
 }));
-const servicesState = vi.hoisted(() => ({ data: undefined as ServiceDto[] | undefined }));
+const servicesState = vi.hoisted(() => ({
+  data: undefined as ServiceDto[] | undefined,
+  lastParams: undefined as unknown,
+}));
 const reviewsState = vi.hoisted(() => ({
   data: undefined as ReviewDto[] | undefined,
   lastParams: undefined as unknown,
@@ -29,8 +32,18 @@ vi.mock("@/api/hooks", () => ({
     if (params.offset !== undefined) searchParams.offset = String(params.offset);
     return searchParams;
   },
+  buildServicesSearchParams: (params: { owner?: string; limit?: number; offset?: number }) => {
+    const searchParams: Record<string, string> = {};
+    if (params.owner) searchParams.owner = params.owner;
+    if (params.limit !== undefined) searchParams.limit = String(params.limit);
+    if (params.offset !== undefined) searchParams.offset = String(params.offset);
+    return searchParams;
+  },
   useMe: () => meState,
-  useServices: () => servicesState,
+  useServices: (params: unknown) => {
+    servicesState.lastParams = params;
+    return { data: servicesState.data };
+  },
   useReviews: (_username: string | undefined, params: unknown) => {
     reviewsState.lastParams = params;
     return { data: reviewsState.data };
@@ -93,6 +106,20 @@ function makeReview(id: number, overrides: Partial<ReviewDto> = {}): ReviewDto {
   };
 }
 
+function makeService(id: number, overrides: Partial<ServiceDto> = {}): ServiceDto {
+  return {
+    id,
+    title: `Service ${id}`,
+    description: "Service description",
+    price: 100,
+    currency: "USD",
+    status: "active",
+    owner_username: "me",
+    category: { id: 10, name: "Development", slug: "dev", icon_key: "code", services_count: 60 },
+    ...overrides,
+  };
+}
+
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -109,6 +136,7 @@ beforeEach(() => {
   meState.data = undefined;
   meState.isLoading = false;
   servicesState.data = undefined;
+  servicesState.lastParams = undefined;
   reviewsState.data = undefined;
   reviewsState.lastParams = undefined;
   updateMutate.mockReset();
@@ -164,6 +192,30 @@ describe("<ProfilePage />", () => {
     reviewsState.data = [];
     renderPage();
     expect(reviewsState.lastParams).toEqual({ limit: 50, offset: 0 });
+  });
+
+  it("requests the first services page", () => {
+    meState.data = makeUser({ username: "me" });
+    servicesState.data = [];
+    reviewsState.data = [];
+    renderPage();
+    expect(servicesState.lastParams).toEqual({ owner: "me", limit: 50, offset: 0 });
+  });
+
+  it("loads more own services with the backend offset", async () => {
+    meState.data = makeUser({ username: "me" });
+    servicesState.data = Array.from({ length: 50 }, (_, idx) => makeService(idx + 1));
+    reviewsState.data = [];
+    apiGetMock.mockReturnValue({ json: async () => [makeService(51)] });
+
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Показать еще" }));
+
+    await waitFor(() => expect(apiGetMock).toHaveBeenCalledTimes(1));
+    expect(apiGetMock).toHaveBeenCalledWith("api/services", {
+      searchParams: { owner: "me", limit: "50", offset: "50" },
+    });
   });
 
   it("loads more own reviews with the backend offset", async () => {

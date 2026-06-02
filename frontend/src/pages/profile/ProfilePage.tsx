@@ -23,6 +23,7 @@ import { ProfileFiatBalanceCard } from "@/components/domain/ProfileFiatBalanceCa
 import { ServiceCard } from "@/components/domain/ServiceCard";
 import {
   buildReviewsSearchParams,
+  buildServicesSearchParams,
   useDeleteService,
   useMe,
   useReviews,
@@ -30,12 +31,13 @@ import {
   useUpdateService,
 } from "@/api/hooks";
 import { api } from "@/api/client";
-import type { ReviewDto } from "@/api/types";
+import type { ReviewDto, ServiceDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 import { confirmDialog } from "@/lib/dialog";
 import { parseDecimal, relativeTime } from "@/lib/format";
 
 const PROFILE_REVIEWS_PAGE_SIZE = 50;
+const PROFILE_SERVICES_PAGE_SIZE = 50;
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -46,10 +48,18 @@ export default function ProfilePage() {
   // loading) doesn't issue a list-all request and pollute the
   // TanStack Query cache with someone else's data. ``useReviews``
   // already does this via its own ``enabled`` guard.
+  const firstServicesParams = useMemo(
+    () => ({ owner: me?.username, limit: PROFILE_SERVICES_PAGE_SIZE, offset: 0 }),
+    [me?.username],
+  );
   const { data: services } = useServices(
-    { owner: me?.username },
+    firstServicesParams,
     { enabled: !!me?.username },
   );
+  const [serviceItems, setServiceItems] = useState<ServiceDto[]>([]);
+  const [servicesReachedEnd, setServicesReachedEnd] = useState(false);
+  const [loadingMoreServices, setLoadingMoreServices] = useState(false);
+  const [servicesError, setServicesError] = useState<string | null>(null);
   const firstReviewsParams = useMemo(
     () => ({ limit: PROFILE_REVIEWS_PAGE_SIZE, offset: 0 }),
     [],
@@ -93,6 +103,39 @@ export default function ProfilePage() {
     !reviewsReachedEnd &&
     reviewItems.length >= PROFILE_REVIEWS_PAGE_SIZE &&
     reviewItems.length < (me?.reviews_count ?? 0);
+
+  useEffect(() => {
+    const page = services ?? [];
+    setServiceItems(page);
+    setServicesReachedEnd(page.length < PROFILE_SERVICES_PAGE_SIZE);
+    setServicesError(null);
+  }, [services, me?.username]);
+
+  const loadMoreServices = async () => {
+    if (!me?.username || loadingMoreServices || servicesReachedEnd) return;
+    setLoadingMoreServices(true);
+    setServicesError(null);
+    try {
+      const page = await api
+        .get("api/services", {
+          searchParams: buildServicesSearchParams({
+            owner: me.username,
+            limit: PROFILE_SERVICES_PAGE_SIZE,
+            offset: serviceItems.length,
+          }),
+        })
+        .json<ServiceDto[]>();
+      setServiceItems((prev) => [...prev, ...page]);
+      if (page.length < PROFILE_SERVICES_PAGE_SIZE) setServicesReachedEnd(true);
+    } catch (e: unknown) {
+      setServicesError((e as Error)?.message || "Не удалось загрузить еще услуги");
+    } finally {
+      setLoadingMoreServices(false);
+    }
+  };
+
+  const hasMoreServices =
+    !servicesReachedEnd && serviceItems.length >= PROFILE_SERVICES_PAGE_SIZE;
 
   const updateService = useUpdateService();
   const deleteService = useDeleteService();
@@ -166,17 +209,18 @@ export default function ProfilePage() {
         <ToggleTabs
           value={tab}
           options={[
-            { value: "services", label: "Услуги", count: services?.length ?? 0 },
+            { value: "services", label: "Услуги", count: serviceItems.length },
             { value: "reviews", label: "Отзывы", count: me.reviews_count },
           ]}
           onChange={setTab}
         />
 
         {tab === "services" &&
-          (!services || services.length === 0 ? (
+          (serviceItems.length === 0 ? (
             <EmptyState title="Услуги отсутствуют" description="Нажмите «Добавить услугу», чтобы добавить первую" />
           ) : (
-            services.map((s, i) => (
+            <>
+              {serviceItems.map((s, i) => (
               <ServiceCard
                 key={s.id}
                 service={s}
@@ -222,7 +266,14 @@ export default function ProfilePage() {
                   </div>
                 }
               />
-            ))
+              ))}
+              {hasMoreServices && (
+                <Button onClick={loadMoreServices} disabled={loadingMoreServices} className="w-full">
+                  {loadingMoreServices ? "Загружаю..." : "Показать еще"}
+                </Button>
+              )}
+              {servicesError && <div className="text-xs text-danger text-center">{servicesError}</div>}
+            </>
           ))}
 
         {tab === "reviews" &&

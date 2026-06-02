@@ -83,6 +83,8 @@ export interface ServicesQueryKey {
   q?: string;
   owner?: string;
   status?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export interface UsersQueryKey {

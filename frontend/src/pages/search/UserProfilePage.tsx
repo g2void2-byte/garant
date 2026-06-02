@@ -10,13 +10,21 @@ import { ProfileHeader } from "@/components/domain/ProfileHeader";
 import { ProfileStatsGrid } from "@/components/domain/ProfileStatsGrid";
 import { ProfileForumsCard } from "@/components/domain/ProfileForumsCard";
 import { ServiceCard } from "@/components/domain/ServiceCard";
-import { buildReviewsSearchParams, useMe, useReviews, useServices, useUser } from "@/api/hooks";
+import {
+  buildReviewsSearchParams,
+  buildServicesSearchParams,
+  useMe,
+  useReviews,
+  useServices,
+  useUser,
+} from "@/api/hooks";
 import { api } from "@/api/client";
-import type { ReviewDto } from "@/api/types";
+import type { ReviewDto, ServiceDto } from "@/api/types";
 import { openTelegramLink } from "@/lib/tg";
 import { parseDecimal, relativeTime } from "@/lib/format";
 
 const PROFILE_REVIEWS_PAGE_SIZE = 50;
+const PROFILE_SERVICES_PAGE_SIZE = 50;
 
 export default function UserProfilePage() {
   const navigate = useNavigate();
@@ -26,7 +34,15 @@ export default function UserProfilePage() {
   const isSelf = me?.username === username;
 
   const [tab, setTab] = useState<"services" | "reviews">("services");
-  const { data: services } = useServices({ owner: username });
+  const firstServicesParams = useMemo(
+    () => ({ owner: username, limit: PROFILE_SERVICES_PAGE_SIZE, offset: 0 }),
+    [username],
+  );
+  const { data: services } = useServices(firstServicesParams);
+  const [serviceItems, setServiceItems] = useState<ServiceDto[]>([]);
+  const [servicesReachedEnd, setServicesReachedEnd] = useState(false);
+  const [loadingMoreServices, setLoadingMoreServices] = useState(false);
+  const [servicesError, setServicesError] = useState<string | null>(null);
   const firstReviewsParams = useMemo(
     () => ({ limit: PROFILE_REVIEWS_PAGE_SIZE, offset: 0 }),
     [],
@@ -71,6 +87,39 @@ export default function UserProfilePage() {
     reviewItems.length >= PROFILE_REVIEWS_PAGE_SIZE &&
     reviewItems.length < (user?.reviews_count ?? 0);
 
+  useEffect(() => {
+    const page = services ?? [];
+    setServiceItems(page);
+    setServicesReachedEnd(page.length < PROFILE_SERVICES_PAGE_SIZE);
+    setServicesError(null);
+  }, [services, username]);
+
+  const loadMoreServices = async () => {
+    if (!username || loadingMoreServices || servicesReachedEnd) return;
+    setLoadingMoreServices(true);
+    setServicesError(null);
+    try {
+      const page = await api
+        .get("api/services", {
+          searchParams: buildServicesSearchParams({
+            owner: username,
+            limit: PROFILE_SERVICES_PAGE_SIZE,
+            offset: serviceItems.length,
+          }),
+        })
+        .json<ServiceDto[]>();
+      setServiceItems((prev) => [...prev, ...page]);
+      if (page.length < PROFILE_SERVICES_PAGE_SIZE) setServicesReachedEnd(true);
+    } catch (e: unknown) {
+      setServicesError((e as Error)?.message || "Не удалось загрузить еще услуги");
+    } finally {
+      setLoadingMoreServices(false);
+    }
+  };
+
+  const hasMoreServices =
+    !servicesReachedEnd && serviceItems.length >= PROFILE_SERVICES_PAGE_SIZE;
+
   if (isLoading || !user) {
     return (
       <Page showBack>
@@ -109,7 +158,7 @@ export default function UserProfilePage() {
         <ToggleTabs
           value={tab}
           options={[
-            { value: "services", label: "Услуги", count: services?.length ?? 0 },
+            { value: "services", label: "Услуги", count: serviceItems.length },
             { value: "reviews", label: "Отзывы", count: user.reviews_count },
           ]}
           onChange={setTab}
@@ -117,10 +166,18 @@ export default function UserProfilePage() {
 
         {tab === "services" && (
           <div className="space-y-2">
-            {!services || services.length === 0 ? (
+            {serviceItems.length === 0 ? (
               <EmptyState title="Услуги отсутствуют" description="Пользователь пока не добавил услуг" />
             ) : (
-              services.map((s, i) => <ServiceCard key={s.id} service={s} index={i} />)
+              <>
+                {serviceItems.map((s, i) => <ServiceCard key={s.id} service={s} index={i} />)}
+                {hasMoreServices && (
+                  <Button onClick={loadMoreServices} disabled={loadingMoreServices} className="w-full">
+                    {loadingMoreServices ? "Загружаю..." : "Показать еще"}
+                  </Button>
+                )}
+                {servicesError && <div className="text-xs text-danger text-center">{servicesError}</div>}
+              </>
             )}
           </div>
         )}
