@@ -35,7 +35,7 @@ from decimal import Decimal
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -277,6 +277,7 @@ async def list_users(
 ) -> AdminUserListOut:
     stmt = select(User)
     count_stmt = select(func.count()).select_from(User)
+    exact_match_priority = None
 
     if q:
         q_clean = q.strip().lstrip("@")
@@ -289,6 +290,18 @@ async def list_users(
             conditions.append(User.tg_user_id == int(q_clean))
         stmt = stmt.where(or_(*conditions))
         count_stmt = count_stmt.where(or_(*conditions))
+        if q_clean:
+            q_lower = q_clean.lower()
+            exact_conditions: list[Any] = [
+                func.lower(User.username) == q_lower,
+                func.lower(User.display_name) == q_lower,
+            ]
+            if q_clean.isdigit():
+                exact_conditions.append(User.tg_user_id == int(q_clean))
+            # Admin user search feeds exact username lookups in deal arbitration.
+            # Keep exact hits on the first page even when many newer partial
+            # matches share the same substring.
+            exact_match_priority = case((or_(*exact_conditions), 0), else_=1)
 
     role_filter = {
         "admin": User.is_admin.is_(True),
@@ -319,6 +332,8 @@ async def list_users(
         ),
         "deals": (User.deals_total.desc(), User.id.desc()),
     }[sort]
+    if exact_match_priority is not None:
+        stmt = stmt.order_by(exact_match_priority)
     if isinstance(order_clause, tuple):
         stmt = stmt.order_by(*order_clause)
     else:

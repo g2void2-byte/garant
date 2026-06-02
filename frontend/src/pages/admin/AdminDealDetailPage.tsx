@@ -324,7 +324,9 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
         // on the backend trips ``tsc`` instead of surfacing at
         // runtime as ``Cannot read properties of undefined``.
         const u: AdminUserListDto = await api
-          .get(`api/admin/users`, { searchParams: { q: arbiterUsername.trim() } })
+          .get(`api/admin/users`, {
+            searchParams: { q: arbiterUsername.trim(), page: "1", page_size: "1" },
+          })
           .json();
         const needle = arbiterUsername.trim().toLowerCase().replace(/^@/, "");
         const candidate = u.items.find(

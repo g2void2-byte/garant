@@ -77,6 +77,7 @@ vi.mock("@/hooks/useAdminRedirect", () => ({
 }));
 
 const toastSpy = vi.hoisted(() => vi.fn());
+const apiGetSpy = vi.hoisted(() => vi.fn());
 vi.mock("@/components/ui/Toast", () => ({
   useToast: () => ({ show: toastSpy }),
 }));
@@ -89,9 +90,7 @@ vi.mock("@/lib/tg", () => ({
 
 vi.mock("@/api/client", () => ({
   api: {
-    get: () => ({
-      json: async () => ({ items: [] }),
-    }),
+    get: apiGetSpy,
     post: () => ({
       json: async () => ({}),
     }),
@@ -213,6 +212,10 @@ beforeEach(() => {
   mockState.loadOlder = { mutateAsync: vi.fn(), isPending: false };
   mockState.sendMessage = { mutateAsync: vi.fn(), isPending: false };
   toastSpy.mockClear();
+  apiGetSpy.mockReset();
+  apiGetSpy.mockReturnValue({
+    json: async () => ({ items: [] }),
+  });
 });
 
 describe("<AdminDealDetailPage />", () => {
@@ -282,6 +285,39 @@ describe("<AdminDealDetailPage />", () => {
     expect(
       screen.getByRole("button", { name: /Сплит-выплата/i }),
     ).toBeInTheDocument();
+  });
+
+  it("looks up an assigned arbiter through a first-page exact search", async () => {
+    mockState.deal = makeDeal({ status: "arbitration" });
+    mockState.assign.mutateAsync.mockResolvedValue({});
+    apiGetSpy.mockReturnValueOnce({
+      json: async () => ({
+        items: [{ id: 777, username: "arbiter1", is_arbiter: true }],
+      }),
+    });
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(
+      screen.getByRole("button", { name: /\u041d\u0430\u0437\u043d\u0430\u0447\u0438\u0442\u044c/i }),
+    );
+    await user.type(screen.getByPlaceholderText("@arbiter1"), "@arbiter1");
+    const confirmBtns = await screen.findAllByRole("button", {
+      name: /\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044c/i,
+    });
+    await user.click(confirmBtns[confirmBtns.length - 1]);
+
+    await waitFor(() =>
+      expect(apiGetSpy).toHaveBeenCalledWith("api/admin/users", {
+        searchParams: { q: "@arbiter1", page: "1", page_size: "1" },
+      }),
+    );
+    await waitFor(() =>
+      expect(mockState.assign.mutateAsync).toHaveBeenCalledWith({
+        dealId: 10,
+        body: { arbiter_id: 777 },
+      }),
+    );
   });
 
   it("opens release sheet, fires force-release with reason", async () => {

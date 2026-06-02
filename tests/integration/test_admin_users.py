@@ -135,6 +135,44 @@ async def test_users_list_search_by_username(client):
     assert any(i["username"] == "carol" for i in items)
 
 
+async def test_users_list_search_ranks_exact_username_before_newer_partial_matches(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    exact_id = await _bootstrap(client, tg_user_id=100, username="arbiter_target")
+    for i in range(25):
+        await _bootstrap(client, tg_user_id=200 + i, username=f"new_arbiter_target_{i:02d}")
+
+    resp = await client.get(
+        "/api/admin/users?q=arbiter_target&page_size=1",
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] >= 26
+    assert [item["id"] for item in body["items"]] == [exact_id]
+
+
+async def test_users_list_search_ranks_exact_tg_id_before_partial_text_matches(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    exact_id = await _bootstrap(client, tg_user_id=777777, username="numeric_target")
+    for i in range(25):
+        await _bootstrap(client, tg_user_id=300 + i, username=f"new_777777_{i:02d}")
+
+    resp = await client.get(
+        "/api/admin/users?q=777777&page_size=1",
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] >= 26
+    assert [item["id"] for item in body["items"]] == [exact_id]
+
+
 async def test_users_list_filter_by_role_vip(client):
     admin_init = signed_init_data(1, "admin")
     admin_id = await _bootstrap(client, tg_user_id=1, username="admin")

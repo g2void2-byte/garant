@@ -635,6 +635,16 @@ Backend `GET /api/services` уже принимал `limit/offset` и выста
 
 Исправление: endpoint принимает `limit` (1..200, default 200) и `offset`, считает полный total по тем же `status/target_id` фильтрам и выставляет `X-Total-Count`. Сортировка осталась стабильной по `created_at desc, id desc`. Добавлен backend regression на 205 заявок, `offset=200` и total header; OpenAPI snapshot/generated types обновлены под новые query params.
 
+### M-50. Назначение арбитра могло не найти точный username из-за первой страницы поиска
+
+Ссылки: `backend/app/routers/admin/users.py:265-336`, `frontend/src/pages/admin/AdminDealDetailPage.tsx:317-345`, regressions `tests/integration/test_admin_users.py`, `frontend/src/pages/admin/AdminDealDetailPage.test.tsx`.
+
+Admin deal detail назначал арбитра через `GET /api/admin/users?q=<username>`, а затем искал точное совпадение username только внутри первой страницы ответа. Backend search при этом использовал substring matching по username/display_name/tg_id и сортировал результат по дефолтному `created_at desc, id desc`. Если у старого арбитра был username `arbiter_target`, а после него появились десятки более новых пользователей с username/display_name, содержащими тот же фрагмент, точный арбитр уходил за первую страницу и UI показывал "Юзер не найден".
+
+Риск: админ не мог штатно назначить существующего арбитра в спорную сделку через UI, хотя backend `assign-arbiter` принимал его id. Это блокировало triage арбитража и создавало ложное впечатление, что роль/аккаунт арбитра отсутствует.
+
+Исправление: `/api/admin/users` теперь при непустом `q` добавляет exact-match priority для `username`, `display_name` и numeric `tg_user_id`, поэтому точные совпадения всегда попадают в начало первой страницы перед более новыми substring matches. Frontend lookup для назначения арбитра запрашивает только `page=1&page_size=1`, опираясь на этот exact-first contract. Добавлены backend regressions на старый exact username/tg_id за 25 новыми partial matches и frontend regression на параметры lookup + отправку найденного `arbiter_id`.
+
 ## Наблюдения без отдельного finding
 
 - Media upload/serve выглядит сильной зоной: есть streaming cap, magic bytes, Pillow reencode, reject animation, signed deal URLs и path validation.
