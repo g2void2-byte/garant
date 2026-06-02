@@ -5539,6 +5539,10 @@
       "ServiceModerationDecision": {
         "properties": {
           "action": {
+            "enum": [
+              "ban",
+              "unban"
+            ],
             "title": "Action",
             "type": "string"
           },
@@ -5758,6 +5762,11 @@
           "status": {
             "anyOf": [
               {
+                "enum": [
+                  "draft",
+                  "active",
+                  "paused"
+                ],
                 "type": "string"
               },
               {

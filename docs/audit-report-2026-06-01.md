@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-73: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers и admin currency schema hardening исправлены.
+- M-50-M-76: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening и service write schema hardening исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -875,6 +875,36 @@ Admin stats (`deals_total`, `good`, `bad` и соседние счетчики),
 Риск: admin upsert мог падать поздно на DB constraint/rollback вместо нормального 422, либо сохранять пустое название валюты и некорректную ссылку на иконку в публичный wallet/admin DTO. Это тот же класс schema-vs-model drift, который уже закрыт для category fields.
 
 Исправление: `name` теперь trim + non-empty + `≤64`, `network` trim + `≤32` с возможностью очистки пустой строкой, `icon_url` принимает только пустое значение, `/media/...` или валидный `https://` URL через общий URL validator. Regression покрывает trim happy path и rejected empty/too-long/bad-url cases.
+
+### M-74. `ServiceCreate` принимал пустые/слишком длинные title и пустой category slug
+
+Ссылки: `backend/app/schemas.py:616-654`, `backend/app/routers/services.py:244-262`, `backend/app/models.py:358-382`, regression `tests/unit/test_service_schema.py`.
+
+`ServiceCreate.category_slug` и `title` были обычными `str`: пустой title, whitespace-only title, title длиннее `Service.title String(256)` и пустой category slug проходили schema layer. Router потом вручную отклонял часть title cases через 400, а пустой/пробельный slug доходил до lookup категории и превращался в 404.
+
+Риск: публичный create-service contract расходился с OpenAPI/schema boundary и модельным contract. Клиент видел, что payload валиден на уровне body schema, но фактически получал поздний 400/404, а слишком длинный title оставался защищен только ручной router-проверкой вместо единого 422 на входе.
+
+Исправление: добавлены общие service validators. `category_slug` теперь trim + lower + non-empty + `<=64`, `title` trim + non-empty + `<=256`; `ServiceCreate` возвращает уже нормализованные значения, а regression покрывает happy path и rejected empty/too-long inputs.
+
+### M-75. `ServiceUpdate.status` принимал admin-only/unknown statuses, а title валидировался только в router
+
+Ссылки: `backend/app/schemas.py:657-683`, `backend/app/routers/services.py:460-526`, regression `tests/unit/test_service_schema.py`.
+
+`ServiceUpdate.title` имел тот же schema gap, что create: пустая/слишком длинная строка проходила Pydantic и отклонялась только внутри route handler. `ServiceUpdate.status` был `str | None`, поэтому schema принимала `banned` и произвольные строки, хотя user-facing PATCH может менять только `draft`, `active`, `paused`; бан должен проходить через admin content endpoint с `ban_reason` и audit log.
+
+Риск: user/admin PATCH endpoint имел OpenAPI contract шире фактического state machine. Особенно плохо для `banned`: payload проходил body parsing и только потом получал 400, хотя route сам документирует, что бан через этот endpoint запрещен из-за отсутствия `ban_reason`.
+
+Исправление: `ServiceUpdate.title` использует общий title validator, а `status` теперь `Literal["draft", "active", "paused"] | None`. Admin-only `banned`, unknown statuses и padded variants получают ранний schema rejection; разрешенные public statuses и `None` сохранены.
+
+### M-76. `ServiceModerationDecision.action` принимал любые строки
+
+Ссылки: `backend/app/schemas.py:686-693`, `backend/app/routers/services.py:638-667`, regression `tests/unit/test_service_schema.py`.
+
+Admin moderation body объявлял `action: str`, хотя router поддерживает только `ban` и `unban`. Любая другая строка проходила schema/OpenAPI и падала поздно в route handler через ручной `else`.
+
+Риск: TOTP-protected moderation endpoint принимал malformed action payload на уровне API body contract. Это не давало выполнить неизвестное действие, но оставляло слабый contract для админского клиента и маскировало frontend/API ошибки до route branch вместо раннего 422.
+
+Исправление: `action` переведен на `Literal["ban", "unban"]`, а `reason` получил тот же `MAX_DESCRIPTION_LEN` guard, что service/deal descriptions. Regression покрывает accepted `ban`/`unban`, rejected unknown actions и лимит причины.
 
 ## Наблюдения без отдельного finding
 

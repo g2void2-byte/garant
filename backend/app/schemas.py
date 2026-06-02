@@ -449,6 +449,8 @@ class CategoryOut(BaseModel):
 
 
 MAX_SERVICE_PHOTOS = 6
+MAX_SERVICE_TITLE_LEN = 256
+MAX_CATEGORY_SLUG_LEN = 64
 
 # Maximum length for user-supplied free-form description fields
 # (services, deals). Matches the existing cap on the admin-side
@@ -492,6 +494,26 @@ def _reject_non_finite_money(v: Decimal | float | int | None) -> Decimal | None:
         v = Decimal(v)
     if not v.is_finite():
         raise ValueError("Сумма должна быть конечным числом")
+    return v
+
+
+def _validate_service_title(v: str | None) -> str | None:
+    if v is None:
+        return v
+    v = v.strip()
+    if not v:
+        raise ValueError("Service title cannot be empty")
+    if len(v) > MAX_SERVICE_TITLE_LEN:
+        raise ValueError(f"Service title is too long (<={MAX_SERVICE_TITLE_LEN})")
+    return v
+
+
+def _validate_category_slug(v: str) -> str:
+    v = v.strip().lower()
+    if not v:
+        raise ValueError("Category slug cannot be empty")
+    if len(v) > MAX_CATEGORY_SLUG_LEN:
+        raise ValueError(f"Category slug is too long (<={MAX_CATEGORY_SLUG_LEN})")
     return v
 
 
@@ -602,6 +624,19 @@ class ServiceCreate(BaseModel):
     price: Decimal = Field(default=Decimal(0), ge=0)
     photo_urls: list[str] = Field(default_factory=list)
 
+    @field_validator("category_slug")
+    @classmethod
+    def _category_slug_ok(cls, v: str) -> str:
+        return _validate_category_slug(v)
+
+    @field_validator("title")
+    @classmethod
+    def _title_ok(cls, v: str) -> str:
+        title = _validate_service_title(v)
+        if title is None:
+            raise ValueError("Service title cannot be empty")
+        return title
+
     @field_validator("price")
     @classmethod
     def _price_finite(cls, v: Decimal | float) -> Decimal:
@@ -624,8 +659,13 @@ class ServiceUpdate(BaseModel):
     description: str | None = None
     # L-2: same finiteness/non-negative guard as ``ServiceCreate.price``.
     price: Decimal | None = Field(default=None, ge=0)
-    status: str | None = None  # draft / active / paused (banned only via admin)
+    status: Literal["draft", "active", "paused"] | None = None
     photo_urls: list[str] | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _title_ok(cls, v: str | None) -> str | None:
+        return _validate_service_title(v)
 
     @field_validator("price")
     @classmethod
@@ -644,8 +684,13 @@ class ServiceUpdate(BaseModel):
 
 
 class ServiceModerationDecision(BaseModel):
-    action: str  # "ban" | "unban"
+    action: Literal["ban", "unban"]
     reason: str = ""
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_ok(cls, v: str) -> str:
+        return _validate_description(v) or ""
 
 
 class ServiceOwnerOut(BaseModel):

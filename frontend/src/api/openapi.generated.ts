@@ -4439,8 +4439,11 @@ export interface components {
         };
         /** ServiceModerationDecision */
         ServiceModerationDecision: {
-            /** Action */
-            action: string;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "ban" | "unban";
             /**
              * Reason
              * @default
@@ -4515,7 +4518,7 @@ export interface components {
             /** Price */
             price?: number | string | null;
             /** Status */
-            status?: string | null;
+            status?: ("draft" | "active" | "paused") | null;
             /** Title */
             title?: string | null;
         };
