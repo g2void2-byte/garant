@@ -12,6 +12,8 @@
  */
 import { useEffect, useState } from "react";
 import {
+  ChevronLeft,
+  ChevronRight,
   Edit2,
   MessageSquare,
   Plus,
@@ -51,18 +53,35 @@ interface SectionProps {
   userId: number;
 }
 
+const PAGE_SIZE = 20;
+
 // ── Services ──────────────────────────────────────────────────────────────
 
 export function ServicesSection({ userId }: SectionProps) {
-  const { data, isLoading } = useAdminUserServices(userId);
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useAdminUserServices(userId, {
+    page,
+    page_size: PAGE_SIZE,
+  });
   const [editing, setEditing] = useState<AdminServiceItemDto | null>(null);
+  const services = data?.items ?? [];
+
+  useEffect(() => {
+    setPage(1);
+  }, [userId]);
+
+  useEffect(() => {
+    if (data && data.total > 0 && services.length === 0 && page > 1) {
+      setPage(page - 1);
+    }
+  }, [data, services.length, page]);
 
   return (
     <section className="bg-panel rounded-card p-4">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-text-muted flex items-center gap-1.5">
           <Briefcase size={14} /> Услуги
-          {data && <span className="text-text">({data.length})</span>}
+          {data && <span className="text-text">({data.total})</span>}
         </h3>
       </div>
       {isLoading ? (
@@ -70,11 +89,11 @@ export function ServicesSection({ userId }: SectionProps) {
           <Skeleton className="h-12" />
           <Skeleton className="h-12" />
         </div>
-      ) : !data || data.length === 0 ? (
+      ) : !data || services.length === 0 ? (
         <p className="text-sm text-text-muted py-2">Нет услуг.</p>
       ) : (
         <ul className="space-y-2">
-            {data.map((s, _idx) => (
+            {services.map((s, _idx) => (
               <li
                 key={s.id}
                 className="bg-panel-2 rounded-card p-3"
@@ -111,6 +130,13 @@ export function ServicesSection({ userId }: SectionProps) {
               </li>
             ))}
         </ul>
+      )}
+      {data && data.total > data.page_size && (
+        <ContentPagination
+          page={page}
+          totalPages={Math.max(1, Math.ceil(data.total / data.page_size))}
+          onPage={setPage}
+        />
       )}
       <ServiceEditSheet userId={userId} service={editing} onClose={() => setEditing(null)} />
     </section>
@@ -285,26 +311,47 @@ function ServiceEditSheet({
 
 export function ReviewsSection({ userId }: SectionProps) {
   const [direction, setDirection] = useState<"received" | "written">("received");
-  const { data, isLoading } = useAdminUserReviews(userId, direction);
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useAdminUserReviews(userId, direction, {
+    page,
+    page_size: PAGE_SIZE,
+  });
   const [editing, setEditing] = useState<AdminReviewItemDto | null>(null);
   const [creating, setCreating] = useState(false);
+  const reviews = data?.items ?? [];
+
+  useEffect(() => {
+    setPage(1);
+  }, [userId, direction]);
+
+  useEffect(() => {
+    if (data && data.total > 0 && reviews.length === 0 && page > 1) {
+      setPage(page - 1);
+    }
+  }, [data, reviews.length, page]);
 
   return (
     <section className="bg-panel rounded-card p-4">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-text-muted flex items-center gap-1.5">
           <Star size={14} /> Отзывы
-          {data && <span className="text-text">({data.length})</span>}
+          {data && <span className="text-text">({data.total})</span>}
         </h3>
         <div className="flex gap-1">
           <ToggleButton
             active={direction === "received"}
-            onClick={() => setDirection("received")}
+            onClick={() => {
+              setDirection("received");
+              setPage(1);
+            }}
             label="Получено"
           />
           <ToggleButton
             active={direction === "written"}
-            onClick={() => setDirection("written")}
+            onClick={() => {
+              setDirection("written");
+              setPage(1);
+            }}
             label="Написано"
           />
         </div>
@@ -314,14 +361,14 @@ export function ReviewsSection({ userId }: SectionProps) {
           <Skeleton className="h-12" />
           <Skeleton className="h-12" />
         </div>
-      ) : !data || data.length === 0 ? (
+      ) : !data || reviews.length === 0 ? (
         <EmptyState
           icon={<Star size={20} />}
           title={direction === "received" ? "Отзывов нет" : "Юзер не оставлял отзывов"}
         />
       ) : (
         <ul className="space-y-2">
-            {data.map((r, _idx) => (
+            {reviews.map((r, _idx) => (
               <li
                 key={r.id}
                 className="bg-panel-2 rounded-card p-3"
@@ -345,6 +392,13 @@ export function ReviewsSection({ userId }: SectionProps) {
               </li>
             ))}
         </ul>
+      )}
+      {data && data.total > data.page_size && (
+        <ContentPagination
+          page={page}
+          totalPages={Math.max(1, Math.ceil(data.total / data.page_size))}
+          onPage={setPage}
+        />
       )}
       <Button
         variant="secondary"
@@ -528,26 +582,41 @@ function ReviewEditSheet({
 // ── Comments ──────────────────────────────────────────────────────────────
 
 export function CommentsSection({ userId }: SectionProps) {
-  const { data, isLoading } = useAdminUserComments(userId);
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useAdminUserComments(userId, {
+    page,
+    page_size: PAGE_SIZE,
+  });
   const [editing, setEditing] = useState<AdminCommentItemDto | null>(null);
+  const comments = data?.items ?? [];
+
+  useEffect(() => {
+    setPage(1);
+  }, [userId]);
+
+  useEffect(() => {
+    if (data && data.total > 0 && comments.length === 0 && page > 1) {
+      setPage(page - 1);
+    }
+  }, [data, comments.length, page]);
 
   return (
     <section className="bg-panel rounded-card p-4">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-text-muted flex items-center gap-1.5">
           <MessageSquare size={14} /> Комментарии
-          {data && <span className="text-text">({data.length})</span>}
+          {data && <span className="text-text">({data.total})</span>}
         </h3>
       </div>
       {isLoading ? (
         <div className="space-y-2">
           <Skeleton className="h-12" />
         </div>
-      ) : !data || data.length === 0 ? (
+      ) : !data || comments.length === 0 ? (
         <p className="text-sm text-text-muted py-2">Юзер не оставлял комментариев.</p>
       ) : (
         <ul className="space-y-2">
-            {data.map((c, _idx) => (
+            {comments.map((c, _idx) => (
               <li
                 key={c.id}
                 className="bg-panel-2 rounded-card p-3"
@@ -572,6 +641,13 @@ export function CommentsSection({ userId }: SectionProps) {
               </li>
             ))}
         </ul>
+      )}
+      {data && data.total > data.page_size && (
+        <ContentPagination
+          page={page}
+          totalPages={Math.max(1, Math.ceil(data.total / data.page_size))}
+          onPage={setPage}
+        />
       )}
       <CommentEditSheet userId={userId} comment={editing} onClose={() => setEditing(null)} />
     </section>
@@ -669,6 +745,42 @@ function CommentEditSheet({
         </div>
       </div>
     </Sheet>
+  );
+}
+
+function ContentPagination({
+  page,
+  totalPages,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-3 mt-3 text-sm">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+        className="p-2 rounded-button bg-panel-2 disabled:opacity-40 active:scale-95"
+        aria-label={"\u041d\u0430\u0437\u0430\u0434"}
+      >
+        <ChevronLeft size={18} />
+      </button>
+      <span className="text-text-muted">
+        {page} / {totalPages}
+      </span>
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => onPage(page + 1)}
+        className="p-2 rounded-button bg-panel-2 disabled:opacity-40 active:scale-95"
+        aria-label={"\u0412\u043f\u0435\u0440\u0451\u0434"}
+      >
+        <ChevronRight size={18} />
+      </button>
+    </div>
   );
 }
 

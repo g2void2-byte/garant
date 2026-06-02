@@ -2831,6 +2831,17 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** AdminCommentListOut */
+        AdminCommentListOut: {
+            /** Items */
+            items: components["schemas"]["AdminCommentItemOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
         /** AdminCommentUpdateIn */
         AdminCommentUpdateIn: {
             /**
@@ -3230,6 +3241,17 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** AdminReviewListOut */
+        AdminReviewListOut: {
+            /** Items */
+            items: components["schemas"]["AdminReviewItemOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
         /**
          * AdminReviewUpsertIn
          * @description Body for ``POST /api/admin/reviews`` (create) /
@@ -3286,6 +3308,17 @@ export interface components {
             title: string;
             /** Views */
             views: number;
+        };
+        /** AdminServiceListOut */
+        AdminServiceListOut: {
+            /** Items */
+            items: components["schemas"]["AdminServiceItemOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
         };
         /**
          * AdminServiceUpdateIn
@@ -6577,7 +6610,10 @@ export interface operations {
     };
     list_service_comments_api_admin_services__service_id__comments_get: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
             header?: {
                 authorization?: string | null;
                 "X-Totp-Code"?: string | null;
@@ -6596,7 +6632,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminCommentItemOut"][];
+                    "application/json": components["schemas"]["AdminCommentListOut"];
                 };
             };
             /** @description Validation Error */
@@ -6939,7 +6975,10 @@ export interface operations {
     };
     list_user_comments_api_admin_users__user_id__comments_get: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
             header?: {
                 authorization?: string | null;
                 "X-Totp-Code"?: string | null;
@@ -6958,7 +6997,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminCommentItemOut"][];
+                    "application/json": components["schemas"]["AdminCommentListOut"];
                 };
             };
             /** @description Validation Error */
@@ -7132,6 +7171,8 @@ export interface operations {
         parameters: {
             query?: {
                 direction?: string;
+                page?: number;
+                page_size?: number;
             };
             header?: {
                 authorization?: string | null;
@@ -7151,7 +7192,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminReviewItemOut"][];
+                    "application/json": components["schemas"]["AdminReviewListOut"];
                 };
             };
             /** @description Validation Error */
@@ -7206,7 +7247,10 @@ export interface operations {
     };
     list_user_services_api_admin_users__user_id__services_get: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
             header?: {
                 authorization?: string | null;
                 "X-Totp-Code"?: string | null;
@@ -7225,7 +7269,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminServiceItemOut"][];
+                    "application/json": components["schemas"]["AdminServiceListOut"];
                 };
             };
             /** @description Validation Error */

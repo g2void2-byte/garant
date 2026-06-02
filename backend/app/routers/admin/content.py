@@ -21,7 +21,7 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,10 +39,13 @@ from ...models import (
 from ...rate_limit import rate_limit
 from ...schemas import (
     AdminCommentItemOut,
+    AdminCommentListOut,
     AdminCommentUpdateIn,
     AdminReviewItemOut,
+    AdminReviewListOut,
     AdminReviewUpsertIn,
     AdminServiceItemOut,
+    AdminServiceListOut,
     AdminServiceUpdateIn,
 )
 from ...services import lock_user_for_rating, recompute_user_rating
@@ -161,21 +164,27 @@ async def _comment_to_out(
 # --------------------------------------------------------------------- services
 
 
-@router.get("/users/{user_id}/services", response_model=list[AdminServiceItemOut])
+@router.get("/users/{user_id}/services", response_model=AdminServiceListOut)
 async def list_user_services(
     user_id: int,
     _admin: AdminUser,
     session: SessionDep,
-) -> list[AdminServiceItemOut]:
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> AdminServiceListOut:
     user = await session.get(User, user_id)
     if user is None:
         raise HTTPException(404, "Пользователь не найден")
+    stmt = select(Service).where(Service.owner_id == user_id)
+    total = (
+        await session.execute(select(func.count(Service.id)).where(Service.owner_id == user_id))
+    ).scalar_one()
     rows = (
         (
             await session.execute(
-                select(Service)
-                .where(Service.owner_id == user_id)
-                .order_by(Service.created_at.desc())
+                stmt.order_by(Service.created_at.desc(), Service.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
             )
         )
         .scalars()
@@ -184,7 +193,13 @@ async def list_user_services(
     # Audit 3.6 — batch-load the referenced categories so we don't
     # ``await session.get(Category, ...)`` once per service row.
     categories_by_id = await _categories_by_id(session, {s.category_id for s in rows})
-    return [await _service_to_out(session, s, categories_by_id=categories_by_id) for s in rows]
+    items = [await _service_to_out(session, s, categories_by_id=categories_by_id) for s in rows]
+    return AdminServiceListOut(
+        items=items,
+        total=int(total),
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/services/{service_id}", response_model=AdminServiceItemOut)
@@ -362,21 +377,32 @@ async def delete_service(
 # --------------------------------------------------------------------- reviews
 
 
-@router.get("/users/{user_id}/reviews", response_model=list[AdminReviewItemOut])
+@router.get("/users/{user_id}/reviews", response_model=AdminReviewListOut)
 async def list_user_reviews(
     user_id: int,
     _admin: AdminUser,
     session: SessionDep,
     direction: Annotated[str, Query(pattern="^(received|written)$")] = "received",
-) -> list[AdminReviewItemOut]:
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> AdminReviewListOut:
     user = await session.get(User, user_id)
     if user is None:
         raise HTTPException(404, "Пользователь не найден")
     if direction == "written":
         stmt = select(Review).where(Review.author_id == user_id)
+        count_stmt = select(func.count(Review.id)).where(Review.author_id == user_id)
     else:
         stmt = select(Review).where(Review.target_id == user_id)
-    rows = (await session.execute(stmt.order_by(Review.created_at.desc()))).scalars().all()
+        count_stmt = select(func.count(Review.id)).where(Review.target_id == user_id)
+    total = (await session.execute(count_stmt)).scalar_one()
+    rows = (
+        await session.execute(
+            stmt.order_by(Review.created_at.desc(), Review.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).scalars().all()
     # Audit 3.6 — batch-load referenced users (author + target) so
     # the per-row ``session.get`` in ``_review_to_out`` collapses to
     # a single ``WHERE id IN (...)`` SELECT.
@@ -385,7 +411,13 @@ async def list_user_reviews(
         user_ids.add(r.author_id)
         user_ids.add(r.target_id)
     users_by_id = await _users_by_id(session, user_ids)
-    return [await _review_to_out(session, r, users_by_id=users_by_id) for r in rows]
+    items = [await _review_to_out(session, r, users_by_id=users_by_id) for r in rows]
+    return AdminReviewListOut(
+        items=items,
+        total=int(total),
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/reviews", response_model=AdminReviewItemOut, status_code=201)
@@ -616,21 +648,29 @@ async def delete_review(
 # --------------------------------------------------------------------- comments
 
 
-@router.get("/users/{user_id}/comments", response_model=list[AdminCommentItemOut])
+@router.get("/users/{user_id}/comments", response_model=AdminCommentListOut)
 async def list_user_comments(
     user_id: int,
     _admin: AdminUser,
     session: SessionDep,
-) -> list[AdminCommentItemOut]:
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> AdminCommentListOut:
     user = await session.get(User, user_id)
     if user is None:
         raise HTTPException(404, "Пользователь не найден")
+    stmt = select(ServiceComment).where(ServiceComment.author_id == user_id)
+    total = (
+        await session.execute(
+            select(func.count(ServiceComment.id)).where(ServiceComment.author_id == user_id)
+        )
+    ).scalar_one()
     rows = (
         (
             await session.execute(
-                select(ServiceComment)
-                .where(ServiceComment.author_id == user_id)
-                .order_by(ServiceComment.created_at.desc())
+                stmt.order_by(ServiceComment.created_at.desc(), ServiceComment.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
             )
         )
         .scalars()
@@ -639,24 +679,38 @@ async def list_user_comments(
     # Audit 3.6 — batch-load referenced authors; same one-SELECT-per
     # response shape as ``list_user_reviews`` above.
     users_by_id = await _users_by_id(session, {c.author_id for c in rows})
-    return [await _comment_to_out(session, c, users_by_id=users_by_id) for c in rows]
+    items = [await _comment_to_out(session, c, users_by_id=users_by_id) for c in rows]
+    return AdminCommentListOut(
+        items=items,
+        total=int(total),
+        page=page,
+        page_size=page_size,
+    )
 
 
-@router.get("/services/{service_id}/comments", response_model=list[AdminCommentItemOut])
+@router.get("/services/{service_id}/comments", response_model=AdminCommentListOut)
 async def list_service_comments(
     service_id: int,
     _admin: AdminUser,
     session: SessionDep,
-) -> list[AdminCommentItemOut]:
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> AdminCommentListOut:
     service = await session.get(Service, service_id)
     if service is None:
         raise HTTPException(404, "Услуга не найдена")
+    stmt = select(ServiceComment).where(ServiceComment.service_id == service_id)
+    total = (
+        await session.execute(
+            select(func.count(ServiceComment.id)).where(ServiceComment.service_id == service_id)
+        )
+    ).scalar_one()
     rows = (
         (
             await session.execute(
-                select(ServiceComment)
-                .where(ServiceComment.service_id == service_id)
-                .order_by(ServiceComment.created_at.desc())
+                stmt.order_by(ServiceComment.created_at.desc(), ServiceComment.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
             )
         )
         .scalars()
@@ -665,7 +719,13 @@ async def list_service_comments(
     # Audit 3.6 — batch-load referenced authors so per-row
     # ``session.get(User, ...)`` collapses to a single SELECT.
     users_by_id = await _users_by_id(session, {c.author_id for c in rows})
-    return [await _comment_to_out(session, c, users_by_id=users_by_id) for c in rows]
+    items = [await _comment_to_out(session, c, users_by_id=users_by_id) for c in rows]
+    return AdminCommentListOut(
+        items=items,
+        total=int(total),
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/comments/{comment_id}", response_model=AdminCommentItemOut)

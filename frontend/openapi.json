@@ -1170,6 +1170,37 @@
         "title": "AdminCommentItemOut",
         "type": "object"
       },
+      "AdminCommentListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminCommentItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "AdminCommentListOut",
+        "type": "object"
+      },
       "AdminCommentUpdateIn": {
         "properties": {
           "clear_rating": {
@@ -2352,6 +2383,37 @@
         "title": "AdminReviewItemOut",
         "type": "object"
       },
+      "AdminReviewListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminReviewItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "AdminReviewListOut",
+        "type": "object"
+      },
       "AdminReviewUpsertIn": {
         "description": "Body for ``POST /api/admin/reviews`` (create) /\n``POST /api/admin/reviews/:id`` (edit).\n\nFor create, ``target_id`` and ``author_id`` are required. For edit,\nthey are ignored \u2014 only ``rating`` and ``text`` can be changed.",
         "properties": {
@@ -2502,6 +2564,37 @@
           "created_at"
         ],
         "title": "AdminServiceItemOut",
+        "type": "object"
+      },
+      "AdminServiceListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminServiceItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "AdminServiceListOut",
         "type": "object"
       },
       "AdminServiceUpdateIn": {
@@ -11326,6 +11419,29 @@
             }
           },
           {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -11379,11 +11495,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminCommentItemOut"
-                  },
-                  "title": "Response List Service Comments Api Admin Services  Service Id  Comments Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/AdminCommentListOut"
                 }
               }
             },
@@ -12304,6 +12416,29 @@
             }
           },
           {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -12357,11 +12492,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminCommentItemOut"
-                  },
-                  "title": "Response List User Comments Api Admin Users  User Id  Comments Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/AdminCommentListOut"
                 }
               }
             },
@@ -12812,6 +12943,29 @@
             }
           },
           {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -12865,11 +13019,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminReviewItemOut"
-                  },
-                  "title": "Response List User Reviews Api Admin Users  User Id  Reviews Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/AdminReviewListOut"
                 }
               }
             },
@@ -13007,6 +13157,29 @@
             }
           },
           {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -13060,11 +13233,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminServiceItemOut"
-                  },
-                  "title": "Response List User Services Api Admin Users  User Id  Services Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/AdminServiceListOut"
                 }
               }
             },

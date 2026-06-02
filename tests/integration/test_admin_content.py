@@ -72,8 +72,20 @@ async def test_list_user_services_returns_owned(client):
         f"/api/admin/users/{owner_id}/services", headers=auth_headers(admin_init)
     )
     assert resp.status_code == 200
-    ids = {s["id"] for s in resp.json()}
+    body = resp.json()
+    assert body["total"] == 2
+    assert body["page"] == 1
+    assert body["page_size"] == 20
+    ids = {s["id"] for s in body["items"]}
     assert s1 in ids and s2 in ids
+
+    page2 = await client.get(
+        f"/api/admin/users/{owner_id}/services?page=2&page_size=1",
+        headers=auth_headers(admin_init),
+    )
+    assert page2.status_code == 200
+    assert page2.json()["total"] == 2
+    assert [s["id"] for s in page2.json()["items"]] == [s1]
 
 
 async def test_update_service_changes_fields_and_writes_audit(client):
@@ -329,7 +341,11 @@ async def test_list_user_comments(client):
         f"/api/admin/users/{author_id}/comments", headers=auth_headers(admin_init)
     )
     assert resp.status_code == 200
-    assert any(c["id"] == cid for c in resp.json())
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["page"] == 1
+    assert body["page_size"] == 20
+    assert any(c["id"] == cid for c in body["items"])
 
 
 async def test_update_comment_text_and_rating(client):

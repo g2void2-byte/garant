@@ -589,6 +589,13 @@ export interface AdminServiceItemDto {
   created_at: string;
 }
 
+export interface AdminServiceListDto {
+  items: AdminServiceItemDto[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface AdminServiceUpdateBody {
   title?: string;
   description?: string;
@@ -614,6 +621,13 @@ export interface AdminReviewItemDto {
   created_at: string;
 }
 
+export interface AdminReviewListDto {
+  items: AdminReviewItemDto[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface AdminReviewUpsertBody {
   target_id?: number;
   author_id?: number;
@@ -630,6 +644,13 @@ export interface AdminCommentItemDto {
   text: string;
   rating: number | null;
   created_at: string;
+}
+
+export interface AdminCommentListDto {
+  items: AdminCommentItemDto[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 export interface AdminCommentUpdateBody {

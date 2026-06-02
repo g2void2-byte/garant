@@ -27,6 +27,7 @@ import type {
   AdminCategoryDto,
   AdminCategoryUpsertBody,
   AdminCommentItemDto,
+  AdminCommentListDto,
   AdminCommentUpdateBody,
   AdminCurrencyDto,
   AdminCurrencyRateDto,
@@ -41,8 +42,10 @@ import type {
   AdminListDealsQuery,
   AdminListUsersQuery,
   AdminReviewItemDto,
+  AdminReviewListDto,
   AdminReviewUpsertBody,
   AdminServiceItemDto,
+  AdminServiceListDto,
   AdminServiceUpdateBody,
   AdminSettingsDto,
   AdminSettingsUpdateBody,
@@ -341,11 +344,25 @@ export function useAdminClaimArbitration() {
 
 // ── Services / Reviews / Comments (PR-B) ─────────────────────────────────
 
-export function useAdminUserServices(userId: number | undefined) {
-  return useQuery<AdminServiceItemDto[]>({
-    queryKey: qk.admin.userServices.forUser(userId),
-    queryFn: () => api.get(`api/admin/users/${userId}/services`).json(),
+interface AdminUserContentParams {
+  page?: number;
+  page_size?: number;
+}
+
+export function useAdminUserServices(
+  userId: number | undefined,
+  params: AdminUserContentParams = {},
+) {
+  return useQuery<AdminServiceListDto>({
+    queryKey: qk.admin.userServices.list(userId, params),
+    queryFn: () => {
+      const sp = new URLSearchParams();
+      sp.set("page", String(params.page ?? 1));
+      sp.set("page_size", String(params.page_size ?? 20));
+      return api.get(`api/admin/users/${userId}/services`, { searchParams: sp }).json();
+    },
     enabled: typeof userId === "number" && Number.isFinite(userId),
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -401,16 +418,21 @@ export function useAdminDeleteService(userId?: number) {
   });
 }
 
-export function useAdminUserReviews(userId: number | undefined, direction: "received" | "written" = "received") {
-  return useQuery<AdminReviewItemDto[]>({
-    queryKey: qk.admin.userReviews.forUserDirection(userId, direction),
-    queryFn: () =>
-      api
-        .get(`api/admin/users/${userId}/reviews`, {
-          searchParams: { direction },
-        })
-        .json(),
+export function useAdminUserReviews(
+  userId: number | undefined,
+  direction: "received" | "written" = "received",
+  params: AdminUserContentParams = {},
+) {
+  return useQuery<AdminReviewListDto>({
+    queryKey: qk.admin.userReviews.list(userId, direction, params),
+    queryFn: () => {
+      const sp = new URLSearchParams({ direction });
+      sp.set("page", String(params.page ?? 1));
+      sp.set("page_size", String(params.page_size ?? 20));
+      return api.get(`api/admin/users/${userId}/reviews`, { searchParams: sp }).json();
+    },
     enabled: typeof userId === "number" && Number.isFinite(userId),
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -474,11 +496,20 @@ export function useAdminDeleteReview(userId?: number) {
   });
 }
 
-export function useAdminUserComments(userId: number | undefined) {
-  return useQuery<AdminCommentItemDto[]>({
-    queryKey: qk.admin.userComments.forUser(userId),
-    queryFn: () => api.get(`api/admin/users/${userId}/comments`).json(),
+export function useAdminUserComments(
+  userId: number | undefined,
+  params: AdminUserContentParams = {},
+) {
+  return useQuery<AdminCommentListDto>({
+    queryKey: qk.admin.userComments.list(userId, params),
+    queryFn: () => {
+      const sp = new URLSearchParams();
+      sp.set("page", String(params.page ?? 1));
+      sp.set("page_size", String(params.page_size ?? 20));
+      return api.get(`api/admin/users/${userId}/comments`, { searchParams: sp }).json();
+    },
     enabled: typeof userId === "number" && Number.isFinite(userId),
+    placeholderData: (prev) => prev,
   });
 }
 

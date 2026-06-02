@@ -73,6 +73,11 @@ export interface AdminAuditQueryKey {
   page_size?: number;
 }
 
+export interface AdminUserContentQueryKey {
+  page?: number;
+  page_size?: number;
+}
+
 export interface ServicesQueryKey {
   category?: string;
   q?: string;
@@ -208,6 +213,8 @@ export const qk = {
       all: () => ["admin", "user-services"] as const,
       forUser: (id: number | undefined) =>
         ["admin", "user-services", id] as const,
+      list: (id: number | undefined, params: AdminUserContentQueryKey) =>
+        ["admin", "user-services", id, params] as const,
     },
     userReviews: {
       all: () => ["admin", "user-reviews"] as const,
@@ -215,11 +222,18 @@ export const qk = {
         ["admin", "user-reviews", id] as const,
       forUserDirection: (id: number | undefined, direction: string) =>
         ["admin", "user-reviews", id, direction] as const,
+      list: (
+        id: number | undefined,
+        direction: string,
+        params: AdminUserContentQueryKey,
+      ) => ["admin", "user-reviews", id, direction, params] as const,
     },
     userComments: {
       all: () => ["admin", "user-comments"] as const,
       forUser: (id: number | undefined) =>
         ["admin", "user-comments", id] as const,
+      list: (id: number | undefined, params: AdminUserContentQueryKey) =>
+        ["admin", "user-comments", id, params] as const,
     },
     userWallet: {
       all: () => ["admin", "user-wallet"] as const,

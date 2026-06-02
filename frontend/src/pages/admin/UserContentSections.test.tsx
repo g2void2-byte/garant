@@ -18,6 +18,7 @@ import type { UserCardDto } from "@/api/types";
 
 const mockState = vi.hoisted(() => ({
   reviews: [] as unknown[],
+  reviewsTotal: 0,
   reviewsLoading: false,
   services: [] as unknown[],
   servicesLoading: false,
@@ -25,6 +26,14 @@ const mockState = vi.hoisted(() => ({
   commentsLoading: false,
   users: [] as UserCardDto[],
   usersLoading: false,
+  lastReviewsQuery: undefined as
+    | {
+        userId: number | undefined;
+        direction: "received" | "written";
+        page?: number;
+        page_size?: number;
+      }
+    | undefined,
   createReview: {
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
@@ -56,16 +65,38 @@ const mockState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
-  useAdminUserReviews: () => ({
-    data: mockState.reviews,
-    isLoading: mockState.reviewsLoading,
-  }),
+  useAdminUserReviews: (
+    userId: number | undefined,
+    direction: "received" | "written" = "received",
+    params: { page?: number; page_size?: number } = {},
+  ) => {
+    mockState.lastReviewsQuery = { userId, direction, ...params };
+    return {
+      data: {
+        items: mockState.reviews,
+        total: mockState.reviewsTotal || mockState.reviews.length,
+        page: params.page ?? 1,
+        page_size: params.page_size ?? 20,
+      },
+      isLoading: mockState.reviewsLoading,
+    };
+  },
   useAdminUserServices: () => ({
-    data: mockState.services,
+    data: {
+      items: mockState.services,
+      total: mockState.services.length,
+      page: 1,
+      page_size: 20,
+    },
     isLoading: mockState.servicesLoading,
   }),
   useAdminUserComments: () => ({
-    data: mockState.comments,
+    data: {
+      items: mockState.comments,
+      total: mockState.comments.length,
+      page: 1,
+      page_size: 20,
+    },
     isLoading: mockState.commentsLoading,
   }),
   useAdminCreateReview: () => mockState.createReview,
@@ -115,6 +146,21 @@ function makeUser(overrides: Partial<UserCardDto> = {}): UserCardDto {
   };
 }
 
+function makeReview(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    deal_id: null,
+    author_id: 7,
+    author_username: "buyer1",
+    target_id: 42,
+    target_username: "seller1",
+    rating: 5,
+    text: "ok",
+    created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 function renderSection(userId = 42) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -128,9 +174,11 @@ function renderSection(userId = 42) {
 
 beforeEach(() => {
   mockState.reviews = [];
+  mockState.reviewsTotal = 0;
   mockState.reviewsLoading = false;
   mockState.users = [];
   mockState.usersLoading = false;
+  mockState.lastReviewsQuery = undefined;
   mockState.createReview.mutateAsync.mockReset().mockResolvedValue({});
   toastSpy.mockReset();
 });
@@ -219,4 +267,39 @@ describe("<ReviewsSection /> · Новый отзыв sheet", () => {
       });
     },
   );
+
+  it("requests paged review data and resets the page when direction changes", async () => {
+    const user = userEvent.setup();
+    mockState.reviews = [makeReview()];
+    mockState.reviewsTotal = 45;
+    renderSection(42);
+
+    expect(mockState.lastReviewsQuery).toEqual({
+      userId: 42,
+      direction: "received",
+      page: 1,
+      page_size: 20,
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: "\u0412\u043f\u0435\u0440\u0451\u0434" }),
+    );
+
+    await waitFor(() => {
+      expect(mockState.lastReviewsQuery?.page).toBe(2);
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: "\u041d\u0430\u043f\u0438\u0441\u0430\u043d\u043e" }),
+    );
+
+    await waitFor(() => {
+      expect(mockState.lastReviewsQuery).toEqual({
+        userId: 42,
+        direction: "written",
+        page: 1,
+        page_size: 20,
+      });
+    });
+  });
 });

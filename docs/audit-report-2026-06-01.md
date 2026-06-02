@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 61 файл, 542 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 61 файл, 543 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -66,6 +66,7 @@
 - M-33: admin wallets inspector больше не запирает админа на первой странице пользователей.
 - M-34: admin broadcasts history больше не запирает админа на первой странице рассылок.
 - M-35: admin arbitration queue больше не запирает админа/арбитра на первой странице.
+- M-36: admin user content sections больше не грузят неограниченные services/reviews/comments и не запирают админа на первой странице.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -480,6 +481,16 @@ Backend `/api/admin/arbitration` принимает `page/page_size`, а fronten
 Риск: админ или арбитр не мог взять в работу/просмотреть споры за пределами первого page slice в любой из трех очередей (`new`, `in_progress`, `closed`). Это ломало triage при большом всплеске арбитражей: старые, но все еще активные disputes становились недоступны из штатного интерфейса.
 
 Исправление: `AdminArbitrationPage` получил page state, явный `PAGE_SIZE`, pagination controls по counters текущей очереди и reset page при смене queue/claim. Regression test проверяет переход на page 2 и сброс page на 1 при смене вкладки.
+
+### M-36. Admin user content sections грузили неограниченные списки и не имели пагинации
+
+Ссылки: `backend/app/routers/admin/content.py:164-715`, `backend/app/schemas.py:1555-1705`, `frontend/src/api/admin/hooks.ts:344-540`, `frontend/src/pages/admin/UserContentSections.tsx`, regressions `tests/integration/test_admin_content.py`, `frontend/src/pages/admin/UserContentSections.test.tsx`, OpenAPI snapshot `frontend/openapi.json`.
+
+Backend endpoints для админского редактирования контента пользователя (`/api/admin/users/{id}/services`, `/api/admin/users/{id}/reviews`, `/api/admin/users/{id}/comments`, `/api/admin/services/{id}/comments`) возвращали bare arrays без `limit/page_size/total`. Frontend `UserContentSections` вызывал эти endpoints без параметров и рендерил весь массив сразу. После исправлений пагинации в основных admin queues это оставалось отдельной дырой в контракте: user detail page мог сериализовать и отрисовать тысячи услуг/отзывов/комментариев одного пользователя.
+
+Риск: админская карточка пользователя деградировала по памяти/latency на high-volume аккаунтах. Если backend просто ограничить лимитом без UI, старые services/reviews/comments стали бы недоступны из штатной админки, что ломает модерацию, миграционные правки и forensic review контента.
+
+Исправление: list endpoints теперь принимают `page/page_size`, возвращают `items/total/page/page_size` и сортируют стабильно по `created_at desc, id desc`. Admin hooks включают pagination params в query key/search params, а `ServicesSection`, `ReviewsSection` и `CommentsSection` показывают total и prev/next controls; page сбрасывается при смене пользователя/направления отзывов и корректируется после удаления последнего элемента страницы. OpenAPI snapshot/generated types обновлены, добавлены regression-проверки backend envelope и frontend page reset.
 
 ## Наблюдения без отдельного finding
 

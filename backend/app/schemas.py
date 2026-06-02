@@ -1569,6 +1569,13 @@ class AdminServiceItemOut(BaseModel):
     created_at: datetime
 
 
+class AdminServiceListOut(BaseModel):
+    items: list[AdminServiceItemOut]
+    total: int
+    page: int
+    page_size: int
+
+
 class AdminServiceUpdateIn(BaseModel):
     """Body for ``POST /api/admin/services/:id``.
 
@@ -1650,6 +1657,13 @@ class AdminReviewItemOut(BaseModel):
     created_at: datetime
 
 
+class AdminReviewListOut(BaseModel):
+    items: list[AdminReviewItemOut]
+    total: int
+    page: int
+    page_size: int
+
+
 class AdminReviewUpsertIn(BaseModel):
     """Body for ``POST /api/admin/reviews`` (create) /
     ``POST /api/admin/reviews/:id`` (edit).
@@ -1687,6 +1701,13 @@ class AdminCommentItemOut(BaseModel):
     text: str
     rating: int | None
     created_at: datetime
+
+
+class AdminCommentListOut(BaseModel):
+    items: list[AdminCommentItemOut]
+    total: int
+    page: int
+    page_size: int
 
 
 class AdminCommentUpdateIn(BaseModel):
