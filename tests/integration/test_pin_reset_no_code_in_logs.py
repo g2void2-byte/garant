@@ -27,9 +27,18 @@ explicitly here so even debug-level leaks would be caught.
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from unittest.mock import AsyncMock
 
-from tests.helpers import auth_headers, setup_pin, signed_init_data
+from sqlalchemy import select
+
+from tests.helpers import (
+    auth_headers,
+    credit_balance,
+    get_user_id_by_tg,
+    setup_pin,
+    signed_init_data,
+)
 
 # Sentinel must look like a real 6-digit reset code (matches
 # ``RESET_CODE_LEN`` in backend.app.pin) so the substring search is
@@ -161,6 +170,7 @@ async def test_send_dm_is_called_with_plaintext_code_but_not_logged(client, capl
     # the user must still receive the code via the legitimate DM
     # channel.
     assert send_dm_spy.await_count == 1, send_dm_spy.await_args_list
+    assert send_dm_spy.await_args is not None
     args, kwargs = send_dm_spy.await_args
     # ``send_dm(tg_user_id, text)`` — text is the second positional.
     text_arg = args[1] if len(args) >= 2 else kwargs.get("text", "")
@@ -168,3 +178,44 @@ async def test_send_dm_is_called_with_plaintext_code_but_not_logged(client, capl
 
     # …yet no logger on the request path captured it.
     _assert_no_sentinel_in_logs(caplog.records, SENTINEL_CODE)
+
+
+async def test_paid_pin_reset_delivery_failure_does_not_charge_or_store_code(
+    client,
+    monkeypatch,
+):
+    """A paid reset must not debit USD unless the reset code was delivered."""
+    import backend.app.routers.pin as pin_router
+    from backend.app.db import async_session
+    from backend.app.models import Currency, User, UserBalance
+
+    monkeypatch.setattr(pin_router, "send_dm", AsyncMock(return_value=False))
+
+    init = signed_init_data(9703, "paid-reset-undelivered")
+    await setup_pin(client, init)
+    async with async_session() as session:
+        user_id = await get_user_id_by_tg(session, 9703)
+        await credit_balance(session, user_id, "USD", 10.0)
+
+    resp = await client.post(
+        "/api/pin/reset/paid",
+        headers=auth_headers(init),
+    )
+    assert resp.status_code == 502, resp.text
+    assert "Баланс не списан" in resp.json()["detail"]
+
+    async with async_session() as session:
+        user_id = await get_user_id_by_tg(session, 9703)
+        user = await session.get(User, user_id)
+        assert user is not None
+        assert user.pin_reset_code_hash is None
+        assert user.pin_reset_expires is None
+
+        balance = (
+            await session.execute(
+                select(UserBalance)
+                .join(Currency, Currency.id == UserBalance.currency_id)
+                .where(UserBalance.user_id == user_id, Currency.code == "USD")
+            )
+        ).scalar_one()
+        assert Decimal(str(balance.amount)) == Decimal("10.00000000")

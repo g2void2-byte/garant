@@ -556,6 +556,12 @@ async def pin_reset_paid(
         # Admin set the price to 0 — mint the code for free so the
         # paywall modal still works.
         delivered, expires_at = await _mint_and_send_reset_code(user)
+        if not delivered:
+            await session.rollback()
+            raise HTTPException(
+                502,
+                "Не удалось доставить код сброса PIN. Баланс не списан.",
+            )
         await session.commit()
         return PinResetPaidOut(
             delivered=delivered,
@@ -579,6 +585,12 @@ async def pin_reset_paid(
         )
     bal.amount = current - price
     delivered, expires_at = await _mint_and_send_reset_code(user)
+    if not delivered:
+        await session.rollback()
+        raise HTTPException(
+            502,
+            "Не удалось доставить код сброса PIN. Баланс не списан.",
+        )
     await session.commit()
     logger.info(
         "PIN reset paid for user %s: charged %s USD",

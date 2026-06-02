@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-56: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing и auto-withdraw race исправлены.
+- M-50-M-57: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw race и paid PIN reset delivery rollback исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -705,6 +705,16 @@ Admin deal detail назначал арбитра через `GET /api/admin/use
 Риск: прямой double-spend на выводах. Один и тот же `WalletWithdrawal` мог закончиться внешней выплатой через CryptoBot при одновременном возврате зарезервированных средств в баланс пользователя, особенно если оператор вручную разгребал очередь во время медленного/повторяющегося upstream-запроса.
 
 Исправление: строки с автоматической отправкой помечаются marker-строкой `[auto-send in progress]` в `admin_note` на время Phase 2. Admin `approve`/`reject` теперь отвечают 409, если marker активен; успешные и failed пути снимают marker или заменяют его `[auto-send failed]`. Stale sweep дополнительно пропускает свежие in-progress marker-строки, чтобы низкий `wallet_withdrawal_stale_seconds` не мог refund-нуть вывод, пока HTTP-запрос ещё выполняется, но старые зависшие строки всё ещё остаются recoverable через прежний CryptoBot reconciliation. Добавлены regressions: approve/reject не меняют статус и баланс при активном marker, а stale sweep не вызывает CryptoBot и не возвращает средства для свежей in-flight строки.
+
+### M-57. Paid PIN reset списывал USD, даже если Telegram DM с кодом не доставлен
+
+Ссылки: `backend/app/routers/pin.py:539-604`, regression `tests/integration/test_pin_reset_no_code_in_logs.py:183`.
+
+`POST /api/pin/reset/paid` списывал `pin_reset_price_usd` с USD-баланса, вызывал `_mint_and_send_reset_code`, а затем коммитил транзакцию независимо от `delivered`. Если `send_dm` возвращал `False` из-за отсутствующего bot token, ошибки Telegram API или пользователя, который не запускал бота, backend всё равно сохранял `pin_reset_code_hash` и уменьшал баланс. Пользователь видел paid reset как успешную операцию с `delivered=false`, но фактически не получал одноразовый код.
+
+Риск: платный recovery flow мог забирать деньги без предоставления recovery-секрета. Повторная попытка могла снова списать USD, а сохранённый недоставленный code hash не помогал пользователю, потому что plaintext code известен только DM-каналу.
+
+Исправление: paid reset теперь делает `rollback` и возвращает 502, если DM не доставлен; это покрывает и нулевую цену, и обычное списание. Баланс не меняется, `pin_reset_code_hash`/`pin_reset_expires` не сохраняются. Добавлен regression: при `send_dm=False` ответ 502, USD-баланс остаётся прежним, reset-code поля остаются пустыми.
 
 ## Наблюдения без отдельного finding
 
