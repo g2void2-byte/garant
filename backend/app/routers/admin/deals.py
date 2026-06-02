@@ -606,6 +606,7 @@ _STATUS_CHOICES = (
     # Audit M3 — ``pending_payment`` is reserved in ``DealStatus`` but no
     # transition writes it; dropped from the filter so the admin UI
     # doesn't surface a permanently-empty status bucket.
+    "pending_topup",
     "in_progress",
     "completed",
     "arbitration",

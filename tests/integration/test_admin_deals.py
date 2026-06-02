@@ -141,6 +141,28 @@ async def test_admin_deals_list(client):
 
 async def test_admin_deals_filter_by_status(client):
     deal_id, *_ = await _make_deal(client)
+    buyer_init = signed_init_data(2011, "admin_topup_buyer")
+    seller_init = signed_init_data(2012, "admin_topup_seller")
+    await client.get("/api/me", headers=auth_headers(buyer_init))
+    await client.get("/api/me", headers=auth_headers(seller_init))
+
+    async with async_session() as session:
+        buyer_id = await get_user_id_by_tg(session, 2011)
+        seller_id = await get_user_id_by_tg(session, 2012)
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
+        pending_topup = Deal(
+            buyer_id=buyer_id,
+            seller_id=seller_id,
+            description="pending topup admin filter",
+            status=DealStatus.pending_topup,
+            currency_id=usdt.id,
+            amount=Decimal("42"),
+            commission_amount=Decimal("2.10"),
+        )
+        session.add(pending_topup)
+        await session.flush()
+        pending_topup_id = pending_topup.id
+        await session.commit()
     admin_init = await _make_admin(client)
 
     resp = await client.get("/api/admin/deals?status=cancelled", headers=auth_headers(admin_init))
@@ -150,6 +172,18 @@ async def test_admin_deals_filter_by_status(client):
     resp = await client.get("/api/admin/deals?status=in_progress", headers=auth_headers(admin_init))
     assert resp.status_code == 200
     assert any(item["id"] == deal_id for item in resp.json()["items"])
+
+    resp = await client.get(
+        "/api/admin/deals?status=pending_topup", headers=auth_headers(admin_init)
+    )
+    assert resp.status_code == 200
+    assert any(item["id"] == pending_topup_id for item in resp.json()["items"])
+    assert all(item["status"] == "pending_topup" for item in resp.json()["items"])
+
+    resp = await client.get(
+        "/api/admin/deals?status=pending_payment", headers=auth_headers(admin_init)
+    )
+    assert resp.status_code == 400
 
 
 async def test_admin_deal_detail_balance_snapshot(client):

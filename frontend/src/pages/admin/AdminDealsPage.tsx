@@ -28,9 +28,22 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled_for_inactivity: "Отменена по неактивности",
 };
 
+const FILTERABLE_STATUS_VALUES = [
+  "cancelled",
+  "pending_confirmation",
+  "pending_topup",
+  "in_progress",
+  "completed",
+  "arbitration",
+  "resolved_for_buyer",
+  "resolved_for_seller",
+  "pending_cancellation",
+  "cancelled_for_inactivity",
+] as const;
+
 const STATUSES: Array<{ value: string | null; label: string }> = [
   { value: null, label: "Все" },
-  ...Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label })),
+  ...FILTERABLE_STATUS_VALUES.map((value) => ({ value, label: STATUS_LABEL[value] })),
 ];
 
 /**

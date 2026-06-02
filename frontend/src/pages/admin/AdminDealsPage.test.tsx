@@ -150,6 +150,15 @@ describe("<AdminDealsPage />", () => {
     );
   });
 
+  it("exposes pending_topup but not deprecated pending_payment as list filters", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+    const user = userEvent.setup();
+    renderPage();
+    expect(screen.queryByRole("button", { name: "Ожидание оплаты" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ожидание инвойса" }));
+    await waitFor(() => expect(mockState.lastQuery?.status).toBe("pending_topup"));
+  });
+
   it("clicking 'Все' resets status to undefined (no filter)", async () => {
     // Audit L-10 — the legacy ``"any"`` sentinel is gone; the
     // "all statuses" chip now drops the URL param entirely so the

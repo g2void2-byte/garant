@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 61 файл, 536 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 61 файл, 537 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -60,6 +60,7 @@
 - M-27: profile hidden/public update обновляет service/category/review кэши, а category counters больше не считают hidden-owner services.
 - M-28: create-deal frontend корректно обрабатывает `invoice: null`, когда сделка полностью оплачена с баланса.
 - M-29: user deal list больше не игнорирует неизвестные `role`/`status` фильтры.
+- M-30: admin deal list снова умеет фильтровать `pending_topup`, а deprecated `pending_payment` больше не показывается как UI-фильтр.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -414,6 +415,16 @@ Backend `GET /api/deals` принимал `role` и `status` как plain string
 Риск: опечатка или рассинхрон frontend фильтра выглядели как корректный широкий запрос. Пользователь мог получить смешанный buyer/seller список или все статусы, хотя UI/интеграция ожидали отфильтрованные данные; OpenAPI тоже не описывал допустимый enum, так что клиентская типизация не ловила drift.
 
 Исправление: `role` переведен на `Literal["buyer", "seller"]`, `status` — на `DealStatus | None`, чтобы FastAPI/Pydantic возвращали `422` для неизвестных значений. OpenAPI snapshot и generated types обновлены; добавлен regression test на оба invalid filter paths.
+
+### M-30. Admin deal status filters не покрывали `pending_topup` и показывали deprecated `pending_payment`
+
+Ссылки: `backend/app/routers/admin/deals.py:604-655`, `frontend/src/pages/admin/AdminDealsPage.tsx:13-40`, regressions `tests/integration/test_admin_deals.py`, `frontend/src/pages/admin/AdminDealsPage.test.tsx`.
+
+`DealStatus.pending_topup` — живой статус сделок, созданных через `/api/deals/with-topup`: buyer еще не оплатил linked deposit invoice, а sweep/admin system отдельно отслеживают stale `pending_topup`. Admin UI уже показывал chip "Ожидание инвойса" и отправлял `?status=pending_topup`, но backend `_STATUS_CHOICES` этот статус не включал и возвращал `400`. Одновременно UI строил chips из общего `STATUS_LABEL` и поэтому показывал `pending_payment`, хотя этот enum value прямо помечен как deprecated и backend intentionally dropped его из фильтров.
+
+Риск: админ не мог отфильтровать зависшие top-up сделки из `/admin/deals` именно в сценарии, где нужна ручная проверка invoice/deal lifecycle. Deprecated `pending_payment` выглядел как рабочий фильтр, но приводил к ошибке запроса и путал диагностику.
+
+Исправление: backend admin deals allow-list теперь принимает `pending_topup` и по-прежнему отвергает deprecated `pending_payment`. Frontend разделяет display labels и filterable statuses: строка `pending_payment` остается человекочитаемой для исторических rows, но chip фильтра больше не выводится. Добавлены backend regression на `?status=pending_topup`/`pending_payment` и frontend test на набор status chips.
 
 ## Наблюдения без отдельного finding
 
