@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 61 файл, 537 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 61 файл, 539 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -62,6 +62,7 @@
 - M-29: user deal list больше не игнорирует неизвестные `role`/`status` фильтры.
 - M-30: admin deal list снова умеет фильтровать `pending_topup`, а deprecated `pending_payment` больше не показывается как UI-фильтр.
 - M-31: admin deal/claim mutations сбрасывают audit log и точечный deal detail cache.
+- M-32: admin deposit/withdrawal queues больше не запирают админа на первой странице.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -436,6 +437,16 @@ Backend admin deal actions (`force-release`, `force-refund`, `split`, `force-arb
 Риск: админ мог выполнить force-action или claim и сразу открыть audit/detail, но увидеть старую audit history или старого назначенного арбитра до фонового refetch/manual refresh. Это особенно плохо для claim: очередь уже переносит дело в "В работе", а detail cache мог продолжать показывать `arbitration_resolved_by_id=null`.
 
 Исправление: `useAdminDealAction` теперь инвалидирует `qk.admin.audit.all()` вместе с остальными projection caches. `useAdminClaimArbitration` использует `deal_id` из ответа и дополнительно инвалидирует `qk.admin.deal.detail(deal_id)` и `qk.admin.audit.all()`. Hook regression tests закрепляют audit/detail invalidation set.
+
+### M-32. Admin deposits/withdrawals UI был заперт на первой странице
+
+Ссылки: `backend/app/routers/admin/deposits.py:74-118`, `backend/app/routers/admin/withdrawals.py:79-145`, `frontend/src/pages/admin/AdminDepositsPage.tsx`, `frontend/src/pages/admin/AdminWithdrawalsPage.tsx`, regressions `frontend/src/pages/admin/AdminDepositsPage.test.tsx`, `frontend/src/pages/admin/AdminWithdrawalsPage.test.tsx`.
+
+Backend admin queues уже были paginated: `/api/admin/deposits` принимает `page/page_size` и возвращает `total/page/page_size`, `/api/admin/withdrawals` принимает `page/page_size` и возвращает status counters. Frontend при этом всегда вызывал deposits с `page: 1, page_size: 50`, а withdrawals — без `page`, то есть тоже page 1. Навигации по страницам в UI не было.
+
+Риск: если в очереди больше 50 депозитов или выводов в одном статусе, админ не мог добраться до более старых строк через штатный интерфейс. Это ломало ручную сверку missed deposits, refunds, approved withdrawals и mark-sent recovery paths: backend данные существовали, но UI фактически скрывал их после первого page slice.
+
+Исправление: `AdminDepositsPage` и `AdminWithdrawalsPage` получили page state, кнопки prev/next и reset page при смене status filter. Deposits считает pages по backend `total`; withdrawals использует status counters для текущей вкладки. Добавлены regression tests, которые проверяют переход на page 2 и сброс страницы при смене фильтра/таба.
 
 ## Наблюдения без отдельного finding
 

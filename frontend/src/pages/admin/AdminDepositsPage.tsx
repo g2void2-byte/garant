@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowDownToLine, RefreshCcw, Check } from "lucide-react";
+import {
+  ArrowDownToLine,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCcw,
+} from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -22,14 +28,16 @@ const STATUSES: Array<{ value: DepositStatus | null; label: string }> = [
   { value: null, label: "Все" },
   ...DEPOSIT_STATUSES.map((value) => ({ value, label: value })),
 ];
+const PAGE_SIZE = 50;
 
 export default function AdminDepositsPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<DepositStatus | null>(null);
+  const [page, setPage] = useState(1);
   const { data, isLoading } = useAdminDeposits({
     status: status ?? undefined,
-    page: 1,
-    page_size: 50,
+    page,
+    page_size: PAGE_SIZE,
   });
   const markPaid = useAdminDepositMarkPaid();
   const refund = useAdminDepositRefund();
@@ -49,7 +57,10 @@ export default function AdminDepositsPage() {
           <button
             key={s.value ?? "__none__"}
             type="button"
-            onClick={() => setStatus(s.value)}
+            onClick={() => {
+              setStatus(s.value);
+              setPage(1);
+            }}
             className={`rounded-button px-3 py-1.5 text-sm transition ${
               s.value === status
                 ? "bg-accent text-accent-fg font-medium"
@@ -147,7 +158,50 @@ export default function AdminDepositsPage() {
           ))
         )}
       </div>
+      {data && Math.ceil(data.total / PAGE_SIZE) > 1 && (
+        <Pagination
+          page={page}
+          totalPages={Math.max(1, Math.ceil(data.total / PAGE_SIZE))}
+          onPage={setPage}
+        />
+      )}
     </Page>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-3 mt-1 mb-4 text-sm">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+        className="p-2 rounded-button bg-panel disabled:opacity-40 active:scale-95"
+        aria-label="Назад"
+      >
+        <ChevronLeft size={18} />
+      </button>
+      <span className="text-text-muted">
+        {page} / {totalPages}
+      </span>
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => onPage(page + 1)}
+        className="p-2 rounded-button bg-panel disabled:opacity-40 active:scale-95"
+        aria-label="Вперёд"
+      >
+        <ChevronRight size={18} />
+      </button>
+    </div>
   );
 }
 

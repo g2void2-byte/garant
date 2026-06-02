@@ -208,6 +208,22 @@ describe("<AdminDepositsPage />", () => {
     );
   });
 
+  it("pagination advances beyond the first page and resets when status changes", async () => {
+    mockState.list = { items: [makeDeposit()], total: 80, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    await user.click(screen.getByLabelText("Вперёд"));
+    await waitFor(() => expect(mockState.lastDepositsQuery?.page).toBe(2));
+
+    await user.click(screen.getByRole("button", { name: "paid" }));
+    await waitFor(() => {
+      expect(mockState.lastDepositsQuery?.status).toBe("paid");
+      expect(mockState.lastDepositsQuery?.page).toBe(1);
+    });
+  });
+
   it("refund failure surfaces an error toast with message body", async () => {
     mockState.list = {
       items: [makeDeposit({ status: "paid" })],

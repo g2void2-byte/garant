@@ -22,11 +22,13 @@ const mockState = vi.hoisted(() => ({
   },
   shouldRender: true as boolean,
   lastStatus: "pending" as string,
+  lastPage: 1 as number | undefined,
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
-  useAdminWithdrawals: ({ status }: { status: string }) => {
+  useAdminWithdrawals: ({ status, page }: { status: string; page?: number }) => {
     mockState.lastStatus = status;
+    mockState.lastPage = page;
     return { data: mockState.list, isLoading: mockState.loading };
   },
   useAdminDecideWithdrawal: () => mockState.decideMutation,
@@ -83,6 +85,7 @@ beforeEach(() => {
   };
   mockState.shouldRender = true;
   mockState.lastStatus = "pending";
+  mockState.lastPage = 1;
 });
 
 describe("<AdminWithdrawalsPage />", () => {
@@ -123,6 +126,25 @@ describe("<AdminWithdrawalsPage />", () => {
     expect(mockState.lastStatus).toBe("pending");
     await user.click(screen.getByRole("button", { name: /Отправленные/ }));
     await waitFor(() => expect(mockState.lastStatus).toBe("sent"));
+  });
+
+  it("pagination advances beyond page one and resets when status changes", async () => {
+    mockState.list = {
+      items: [makeItem()],
+      counters: { pending: 80, sent: 70 },
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    await user.click(screen.getByLabelText("Вперёд"));
+    await waitFor(() => expect(mockState.lastPage).toBe(2));
+
+    await user.click(screen.getByRole("button", { name: /Отправленные/ }));
+    await waitFor(() => {
+      expect(mockState.lastStatus).toBe("sent");
+      expect(mockState.lastPage).toBe(1);
+    });
   });
 
   it("renders a pending item with Approve and Reject buttons", () => {
