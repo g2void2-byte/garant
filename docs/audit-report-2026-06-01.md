@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-62: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards и event-loop-safe maintenance cache исправлены.
+- M-50-M-63: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache и strict deal attachment ids исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -765,6 +765,16 @@ Maintenance middleware держал module-level `_cache_lock = asyncio.Lock()`.
 Риск: backend test suite становился nondeterministic/flaky, а в любых runtime-сценариях с несколькими event loops в одном процессе maintenance middleware мог выбросить 500 до route handler. Проблема особенно заметна на write endpoints, потому что read-only requests bypass-ят cache lookup.
 
 Исправление: cache-refresh lock теперь создается через `_get_cache_lock()` как event-loop-local primitive. В обычном worker loop сериализация refresh сохраняется, а при смене loop создается новый `asyncio.Lock` вместо переиспользования несовместимого. Regression дважды запускает contended `_get_maintenance()` через два свежих `asyncio.run()` loop-а; старый module-level lock падал на втором запуске, новый проходит.
+
+### M-63. Deal chat attachments принимали coerced ids вроде `true` и `"1"`
+
+Ссылки: `backend/app/schemas.py:832-856`, regression `tests/unit/test_deal_message_schema.py`.
+
+`DealMessageCreate.attachments` был объявлен как `list[int]` и проверял только длину списка. Pydantic до валидатора приводил JSON `true` к `1`, `false` к `0`, строку `"1"` к `1`, а также пропускал `0`/отрицательные числа до router-level lookup. В результате `POST /api/deals/{id}/messages` принимал неявные media ids: `attachments: [true]` мог превратиться в ссылку на media id `1`, если такая строка принадлежала отправителю.
+
+Риск: attachment contract становился stringly/boolean tolerant там, где API должен принимать только явные положительные integer primary keys. Это не обходило owner/kind checks, но создавало неожиданные привязки файлов, лишние DB lookups для заведомо невалидных id и расхождение между create-path и `_parse_attachment_ids`, который уже отвергал bool при сериализации старых rows.
+
+Исправление: `attachments` теперь проходит `mode="before"` validator: значение должно быть списком, каждый элемент должен быть именно `int` (не `bool`, не строка/float), а после этого ids должны быть положительными. Добавлен unit regression на accepted `[1, 42]` и rejected `[true]`, `[false]`, `["1"]`, `[1.0]`, `[0]`, `[-1]`.
 
 ## Наблюдения без отдельного finding
 

@@ -845,6 +845,23 @@ class DealMessageCreate(BaseModel):
     def _attachments_len(cls, v: list[int]) -> list[int]:
         if len(v) > 10:
             raise ValueError("Не больше 10 вложений за сообщение")
+        if any(mid <= 0 for mid in v):
+            raise ValueError("ID вложений должны быть положительными числами")
+        return v
+
+    @field_validator("attachments", mode="before")
+    @classmethod
+    def _attachments_strict_ints(cls, v: object) -> object:
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            raise ValueError("attachments должен быть списком ID")
+        for item in v:
+            # JSON bools and strings used to be coerced by Pydantic
+            # (``true`` -> media id 1, ``"1"`` -> media id 1). Keep
+            # attachment references as explicit integer primary keys.
+            if isinstance(item, bool) or not isinstance(item, int):
+                raise ValueError("ID вложений должны быть целыми числами")
         return v
 
 
