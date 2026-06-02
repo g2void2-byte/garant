@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-61: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe и refunded-deposit re-credit guards исправлены.
+- M-50-M-62: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards и event-loop-safe maintenance cache исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -755,6 +755,16 @@ Crystalpay не присылает отдельный `update_id`, и router с�
 Риск: admin refund переставал быть терминальным состоянием. Пользователь мог получить баланс обратно после возврата депозита, а audit trail показывал бы отдельное повторное зачисление вместо отказа на терминальной строке. Это особенно опасно для спорных/мошеннических пополнений, где refund уже был явным операторским решением.
 
 Исправление: CryptoBot paid handler теперь отдельно отсекает `WalletDepositStatus.refunded`, логирует `cryptobot.webhook.paid_on_refunded` и возвращает `deposit not pending` без изменения баланса. Admin `mark-paid` на `refunded` отвечает 409 `Депозит уже возвращен`. Добавлены regressions: свежий signed `invoice_paid` для refunded deposit не меняет статус/баланс, а ручной `mark-paid` не может заново открыть возвращенный депозит.
+
+### M-62. Maintenance cache lock падал в full-suite CI при смене event loop
+
+Ссылки: `backend/app/maintenance.py:119-222`, regression `tests/integration/test_v5_c_bucket.py`.
+
+Maintenance middleware держал module-level `_cache_lock = asyncio.Lock()`. В Python 3.12 lock лениво привязывается к event loop, когда на нём появляется waiter. Full-suite pytest/ASGI прогон переиспользует импортированный FastAPI app между тестами с разными event loops; после contention в одном loop следующий contended write-request в другом loop падал с `RuntimeError: <asyncio.locks.Lock ...> is bound to a different event loop`. Именно это сломало CI backend job на `test_concurrent_service_create_respects_active_limit`, хотя бизнес-логика теста была не связана с maintenance.
+
+Риск: backend test suite становился nondeterministic/flaky, а в любых runtime-сценариях с несколькими event loops в одном процессе maintenance middleware мог выбросить 500 до route handler. Проблема особенно заметна на write endpoints, потому что read-only requests bypass-ят cache lookup.
+
+Исправление: cache-refresh lock теперь создается через `_get_cache_lock()` как event-loop-local primitive. В обычном worker loop сериализация refresh сохраняется, а при смене loop создается новый `asyncio.Lock` вместо переиспользования несовместимого. Regression дважды запускает contended `_get_maintenance()` через два свежих `asyncio.run()` loop-а; старый module-level lock падал на втором запуске, новый проходит.
 
 ## Наблюдения без отдельного finding
 
