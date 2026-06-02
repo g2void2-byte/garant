@@ -35,6 +35,7 @@ const apiState = vi.hoisted(() => ({
   // this before each render. Default is a minimal AdminDealDetailDto so
   // useAdminDealAction's existing return-shape contract is honoured.
   postResponse: undefined as unknown,
+  patchResponse: undefined as unknown,
   putResponse: undefined as unknown,
   deleteResponse: undefined as unknown,
 }));
@@ -43,6 +44,9 @@ vi.mock("../client", () => ({
   api: {
     post: (..._args: unknown[]) => ({
       json: async () => apiState.postResponse,
+    }),
+    patch: (..._args: unknown[]) => ({
+      json: async () => apiState.patchResponse,
     }),
     put: (..._args: unknown[]) => ({
       json: async () => apiState.putResponse,
@@ -68,6 +72,8 @@ import {
   useAdminDepositRefund,
   useAdminForceRefund,
   useAdminForceRelease,
+  useAdminFlushRedis,
+  useAdminUpdateSettings,
   useAdminUpsertCategory,
   useAdminUpsertCurrency,
   useAdminUpdateComment,
@@ -463,6 +469,45 @@ describe("admin broadcast mutations - audit cache invalidations", () => {
 
     const keys = invalidatedKeys(invalidateSpy);
     expect(hasKey(keys, ["admin", "broadcasts"])).toBe(true);
+    expect(hasKey(keys, ["admin", "audit"])).toBe(true);
+  });
+});
+
+describe("admin settings/system mutations - side-effect cache invalidations", () => {
+  it("settings update invalidates public projections, maintenance, system status and audit", async () => {
+    apiState.patchResponse = { maintenance_enabled: true };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminUpdateSettings(), { wrapper });
+    await result.current.mutateAsync({
+      maintenance_enabled: true,
+      pending_topup_expiry_hours: 12,
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of [
+      ["admin", "settings"],
+      ["public-settings"],
+      ["public-stats"],
+      ["maintenance"],
+      ["admin", "system-status"],
+      ["admin", "audit"],
+    ] as const) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+
+  it("redis flush invalidates system status and audit log caches", async () => {
+    apiState.postResponse = { ok: true, deleted_by_prefix: { "rl:": 2 } };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminFlushRedis(), { wrapper });
+    await result.current.mutateAsync();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    expect(hasKey(keys, ["admin", "system-status"])).toBe(true);
     expect(hasKey(keys, ["admin", "audit"])).toBe(true);
   });
 });
