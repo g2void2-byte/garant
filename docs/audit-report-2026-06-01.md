@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 61 файл, 535 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 61 файл, 536 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -58,6 +58,7 @@
 - M-25: deal state transitions/WS events обновляют wallet/public-user/me кэши после participant side effects.
 - M-26: user service update/delete обновляют category/detail/comment кэши после catalog side effects.
 - M-27: profile hidden/public update обновляет service/category/review кэши, а category counters больше не считают hidden-owner services.
+- M-28: create-deal frontend корректно обрабатывает `invoice: null`, когда сделка полностью оплачена с баланса.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -392,6 +393,16 @@ Backend `PATCH /api/me` меняет `is_hidden_profile` и публичные �
 Риск: пользователь включал скрытый профиль, backend переставал отдавать его услуги и reviews внешним пользователям, но category counters могли продолжать раскрывать наличие active services. В текущей frontend-сессии старые service/review/category кэши также могли показывать публичные проекции до ручного refresh или истечения stale window.
 
 Исправление: `list_categories` теперь считает только active services владельцев с `is_hidden_profile=false`, чтобы counter совпадал с public catalog. `useUpdateMe` дополнительно инвалидирует own reviews, service catalog, broad service detail/comment prefix и categories. Добавлены backend regression test на category count hidden-owner exclusion и frontend hook test на invalidation set.
+
+### M-28. Create-deal UI падал на balance-funded ответе `invoice: null`
+
+Ссылки: `backend/app/schemas.py:712-728`, `backend/app/routers/deals.py:322-365`, `tests/e2e/test_deals_with_topup.py:529-584`, `frontend/src/pages/deals/CreateDealPage.tsx`, `frontend/src/api/types.ts`, regressions `frontend/src/pages/deals/CreateDealPage.test.tsx`, `frontend/src/api/openapi.contract.test.ts`.
+
+Backend `POST /api/deals/with-topup` намеренно возвращает `invoice: null`, когда баланс покупателя покрывает сумму сделки и комиссию: сделка сразу переходит в `pending_confirmation`, без платежного invoice. Backend e2e уже закреплял этот контракт. Frontend DTO при этом объявлял `invoice` как non-null `DealTopupInvoiceDto`, а `CreateDealPage` после success сразу читал `deal.invoice.total` и в render ветке читал `created.invoice.*`.
+
+Риск: пользователь с достаточным балансом создавал сделку, backend успешно списывал баланс/комиссию и возвращал 201, но frontend падал на `Cannot read properties of null`, вместо карточки "сделка создана, оплата с баланса". Это особенно опасно тем, что money mutation уже произошла, а UI выглядел как сломанная операция.
+
+Исправление: `DealCreateWithTopupResponseDto.invoice` приведен к backend/OpenAPI контракту `DealTopupInvoiceDto | null`. `CreateDealPage` теперь отделяет invoices, требующие оплаты, от `invoice: null`/zero-total paths и показывает balance-funded confirmation без попытки открыть payment modal. Добавлены frontend regression test на `invoice=null` ответ и OpenAPI compile-time fixture для nullable invoice branch.
 
 ## Наблюдения без отдельного finding
 

@@ -305,6 +305,31 @@ describe("<CreateDealPage />", () => {
     expect(screen.getAllByRole("button", { name: /Открыть оплату/i })[0]).toBeInTheDocument();
   });
 
+  it("handles balance-funded deals when the API returns invoice=null", async () => {
+    const balanceFunded = {
+      deal: makeDeal({
+        id: 90,
+        status: "pending_confirmation",
+        commission_paid: true,
+        topup_deposit_id: null,
+        topup_invoice: null,
+      }),
+      invoice: null,
+    } satisfies DealCreateWithTopupResponseDto;
+    mockState.createMutation.mutateAsync.mockResolvedValue(balanceFunded);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
+    await user.type(screen.getByLabelText(/Сумма \(USD\)/), "100");
+    await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
+    await enterPin(user);
+
+    expect(await screen.findByTestId("deal-balance-paid")).toBeInTheDocument();
+    expect(screen.queryByTestId("topup-invoice-preview")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Открыть оплату/i })).not.toBeInTheDocument();
+  });
+
   it("fires haptic('error') when the API rejects", async () => {
     mockState.createMutation.mutateAsync.mockRejectedValue(new Error("boom"));
     const user = userEvent.setup();

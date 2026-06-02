@@ -164,7 +164,9 @@ export interface DealTopupInvoiceDto {
 
 export interface DealCreateWithTopupResponseDto {
   deal: DealDto;
-  invoice: DealTopupInvoiceDto;
+  // ``null`` when the buyer's balance fully covers amount + commission
+  // and the backend skips the invoice path.
+  invoice: DealTopupInvoiceDto | null;
 }
 
 export interface ReviewDto {

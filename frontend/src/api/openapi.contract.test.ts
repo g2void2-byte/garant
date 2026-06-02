@@ -138,6 +138,17 @@ const topupResponseFixture = {
   },
 } as const satisfies DealCreateWithTopupOutSchema;
 
+const balanceFundedTopupResponseFixture = {
+  deal: {
+    ...dealFixture,
+    status: "pending_confirmation",
+    commission_paid: true,
+    topup_deposit_id: null,
+    topup_invoice: null,
+  },
+  invoice: null,
+} as const satisfies DealCreateWithTopupOutSchema;
+
 const usdtFixture = {
   id: 1,
   code: "USDT",
@@ -181,6 +192,8 @@ const pinStatusFixture = {
 const _meDto: UserCardDto = meFixture;
 const _dealDto: DealDto = dealFixture;
 const _topupResponseDto: DealCreateWithTopupResponseDto = topupResponseFixture;
+const _balanceFundedTopupResponseDto: DealCreateWithTopupResponseDto =
+  balanceFundedTopupResponseFixture;
 const _currencyDto: CurrencyDto = usdtFixture;
 const _balanceDto: WalletBalanceDto = walletBalanceFixture;
 const _pinDto: PinStatusDto = pinStatusFixture;
@@ -190,6 +203,7 @@ const _pinDto: PinStatusDto = pinStatusFixture;
 void _meDto;
 void _dealDto;
 void _topupResponseDto;
+void _balanceFundedTopupResponseDto;
 void _currencyDto;
 void _balanceDto;
 void _pinDto;

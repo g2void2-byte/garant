@@ -69,6 +69,14 @@ function InvoiceRow({
   );
 }
 
+function invoiceRequiresPayment(
+  invoice: DealCreateWithTopupResponseDto["invoice"],
+): invoice is NonNullable<DealCreateWithTopupResponseDto["invoice"]> {
+  if (!invoice) return false;
+  const total = parseFloat(String(invoice.total));
+  return Number.isFinite(total) && total > 0;
+}
+
 export default function CreateDealPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -190,14 +198,12 @@ export default function CreateDealPage() {
       });
       setCreated(deal);
       haptic("success");
-      // Bug-11b/d — when the balance fully covers the deal the
-      // backend returns ``topup.total == 0`` and routes the deal
-      // straight to ``pending_confirmation``. The toast string
+      // M-28: when the balance fully covers the deal the backend
+      // returns ``invoice: null`` and routes the deal straight to
+      // ``pending_confirmation``. The toast string
       // distinguishes the two outcomes so the user knows whether
       // they still need to pay an invoice.
-      const total = parseFloat(String(deal.invoice.total));
-      const paidFromBalance = Number.isFinite(total) && total <= 0;
-      if (paidFromBalance) {
+      if (!invoiceRequiresPayment(deal.invoice)) {
         toast.show({
           kind: "success",
           title: "Сделка создана — оплата с баланса",
@@ -395,14 +401,11 @@ export default function CreateDealPage() {
           </div>
         )}
         {created && (() => {
-          // Bug-11b/d — when the balance covered everything the
-          // backend returns ``topup_principal == 0`` and
-          // ``total == 0``. Skip the invoice block and show a
+          // M-28 — when the balance covered everything the backend
+          // returns ``invoice: null``. Skip the invoice block and show a
           // "paid from balance" confirmation instead so the user
-          // doesn't get sent to a zero-value pay-url.
-          const totalNum = parseFloat(String(created.invoice.total));
-          const paidFromBalance = Number.isFinite(totalNum) && totalNum <= 0;
-          if (paidFromBalance) {
+          // doesn't get sent into a non-existent pay-url branch.
+          if (!invoiceRequiresPayment(created.invoice)) {
             return (
               <div
                 className="rounded-card border border-success/40 bg-success/10 p-4 space-y-3"
@@ -429,6 +432,7 @@ export default function CreateDealPage() {
           // compact "Оплатите инвойс #N" card that reopens it. The
           // modal itself handles polling, auto-open, and auto-navigate
           // — this card just gives the user a way back in.
+          const invoice = created.invoice;
           return (
             <div
               className="rounded-card border border-accent/40 bg-accent/10 p-4 space-y-3"
@@ -441,9 +445,9 @@ export default function CreateDealPage() {
                 </div>
               </div>
               <div className="space-y-1 text-sm">
-                <InvoiceRow label="Недостающая сумма" value={created.invoice.topup_principal} currency={created.invoice.currency_code} />
-                <InvoiceRow label="Комиссия" value={created.invoice.commission} currency={created.invoice.currency_code} />
-                <InvoiceRow label="Итого" value={created.invoice.total} currency={created.invoice.currency_code} strong />
+                <InvoiceRow label="Недостающая сумма" value={invoice.topup_principal} currency={invoice.currency_code} />
+                <InvoiceRow label="Комиссия" value={invoice.commission} currency={invoice.currency_code} />
+                <InvoiceRow label="Итого" value={invoice.total} currency={invoice.currency_code} strong />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <Button
@@ -481,7 +485,10 @@ export default function CreateDealPage() {
         title="Подтвердите PIN"
         subtitle="Введите PIN, чтобы создать сделку"
       />
-      {created && invoiceModalOpen && created.invoice.pay_url && (
+      {created &&
+        invoiceModalOpen &&
+        invoiceRequiresPayment(created.invoice) &&
+        created.invoice.pay_url && (
         <DealInvoiceModal
           open={invoiceModalOpen}
           onClose={() => setInvoiceModalOpen(false)}
