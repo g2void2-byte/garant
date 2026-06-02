@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 61 файл, 541 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 61 файл, 542 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -65,6 +65,7 @@
 - M-32: admin deposit/withdrawal queues больше не запирают админа на первой странице.
 - M-33: admin wallets inspector больше не запирает админа на первой странице пользователей.
 - M-34: admin broadcasts history больше не запирает админа на первой странице рассылок.
+- M-35: admin arbitration queue больше не запирает админа/арбитра на первой странице.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -469,6 +470,16 @@ Backend `/api/admin/broadcasts` уже возвращает paginated history: `
 Риск: старые broadcast records, delivery counts и soft-delete recovery context исчезали из штатного UI. Для аудита отправленных сообщений это плохой режим: запись существует и доступна API, но оператор не может дойти до нее без внешних инструментов.
 
 Исправление: `useAdminBroadcasts` принимает pagination params и включает их в query key/search params. `AdminBroadcastsPage` получил page state и prev/next controls по backend `total/page_size`. Regression test проверяет переход на вторую страницу.
+
+### M-35. Admin arbitration queue был заперт на первой странице
+
+Ссылки: `backend/app/routers/admin/arbitration.py:76-117`, `frontend/src/api/admin/hooks.ts`, `frontend/src/pages/admin/AdminArbitrationPage.tsx`, regression `frontend/src/pages/admin/AdminArbitrationPage.test.tsx`.
+
+Backend `/api/admin/arbitration` принимает `page/page_size`, а frontend hook уже умел передавать эти параметры. Но `AdminArbitrationPage` вызывал `useAdminArbitration(queue)` без page state и не показывал prev/next controls. При этом counters показывали полный размер очередей, то есть UI мог честно показывать `45` новых споров, но дать открыть только первые 20.
+
+Риск: админ или арбитр не мог взять в работу/просмотреть споры за пределами первого page slice в любой из трех очередей (`new`, `in_progress`, `closed`). Это ломало triage при большом всплеске арбитражей: старые, но все еще активные disputes становились недоступны из штатного интерфейса.
+
+Исправление: `AdminArbitrationPage` получил page state, явный `PAGE_SIZE`, pagination controls по counters текущей очереди и reset page при смене queue/claim. Regression test проверяет переход на page 2 и сброс page на 1 при смене вкладки.
 
 ## Наблюдения без отдельного finding
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, Gavel, Inbox, CheckCheck, type LucideIcon } from "lucide-react";
+import { CheckCheck, ChevronLeft, ChevronRight, Gavel, Inbox, type LucideIcon } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -14,6 +14,7 @@ import { haptic } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 type Queue = "new" | "in_progress" | "closed";
+const PAGE_SIZE = 20;
 
 const QUEUE_TABS: Array<{ key: Queue; label: string; icon: LucideIcon }> = [
   { key: "new", label: "Новые", icon: Inbox },
@@ -35,7 +36,8 @@ const QUEUE_TABS: Array<{ key: Queue; label: string; icon: LucideIcon }> = [
 export default function AdminArbitrationPage() {
   const navigate = useNavigate();
   const [queue, setQueue] = useState<Queue>("new");
-  const { data, isLoading } = useAdminArbitration(queue);
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useAdminArbitration(queue, page, PAGE_SIZE);
   const toast = useToast();
   const claim = useAdminClaimArbitration();
 
@@ -51,6 +53,7 @@ export default function AdminArbitrationPage() {
       await claim.mutateAsync(dealId);
       toast.show({ kind: "success", title: "Дело взято в работу" });
       setQueue("in_progress");
+      setPage(1);
     } catch (e: unknown) {
       const status = (e as { response?: { status?: number } })?.response?.status;
       if (status === 409) {
@@ -76,6 +79,7 @@ export default function AdminArbitrationPage() {
               onClick={() => {
                 haptic("light");
                 setQueue(t.key);
+                setPage(1);
               }}
               className={`relative flex flex-col items-center justify-center rounded-card py-2.5 transition-colors ${
                 active ? "bg-accent text-black" : "bg-panel text-text-muted"
@@ -134,7 +138,50 @@ export default function AdminArbitrationPage() {
           ))}
         </ul>
       )}
+      {Math.ceil((counters[queue] ?? 0) / PAGE_SIZE) > 1 && (
+        <Pagination
+          page={page}
+          totalPages={Math.max(1, Math.ceil((counters[queue] ?? 0) / PAGE_SIZE))}
+          onPage={setPage}
+        />
+      )}
     </Page>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-3 mt-3 mb-4 text-sm">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+        className="p-2 rounded-button bg-panel disabled:opacity-40 active:scale-95"
+        aria-label={"\u041d\u0430\u0437\u0430\u0434"}
+      >
+        <ChevronLeft size={18} />
+      </button>
+      <span className="text-text-muted">
+        {page} / {totalPages}
+      </span>
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => onPage(page + 1)}
+        className="p-2 rounded-button bg-panel disabled:opacity-40 active:scale-95"
+        aria-label={"\u0412\u043f\u0435\u0440\u0451\u0434"}
+      >
+        <ChevronRight size={18} />
+      </button>
+    </div>
   );
 }
 

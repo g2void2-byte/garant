@@ -23,14 +23,18 @@ const mockState = vi.hoisted(() => ({
   },
   shouldRender: true as boolean,
   lastQueue: "new" as string,
+  lastPage: 1 as number | undefined,
+  lastPageSize: 20 as number | undefined,
   lastRedirectOpts: undefined as
     | { allowArbiter?: boolean; redirectTo?: string }
     | undefined,
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
-  useAdminArbitration: (queue: string) => {
+  useAdminArbitration: (queue: string, page?: number, pageSize?: number) => {
     mockState.lastQueue = queue;
+    mockState.lastPage = page;
+    mockState.lastPageSize = pageSize;
     return { data: mockState.list, isLoading: mockState.loading };
   },
   useAdminClaimArbitration: () => mockState.claimMutation,
@@ -105,6 +109,8 @@ beforeEach(() => {
   };
   mockState.shouldRender = true;
   mockState.lastQueue = "new";
+  mockState.lastPage = 1;
+  mockState.lastPageSize = 20;
   toastSpy.mockClear();
   hapticSpy.mockClear();
 });
@@ -152,6 +158,27 @@ describe("<AdminArbitrationPage />", () => {
     await user.click(screen.getByRole("button", { name: /В работе/ }));
     await waitFor(() => expect(mockState.lastQueue).toBe("in_progress"));
     expect(hapticSpy).toHaveBeenCalledWith("light");
+  });
+
+  it("pagination advances beyond the first queue page and resets when tab changes", async () => {
+    mockState.list = {
+      items: [makeItem()],
+      counters: { new: 45, in_progress: 22, closed: 0 },
+      queue: "new",
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.getByText("1 / 3")).toBeInTheDocument();
+    expect(mockState.lastPageSize).toBe(20);
+    await user.click(screen.getByLabelText("\u0412\u043f\u0435\u0440\u0451\u0434"));
+    await waitFor(() => expect(mockState.lastPage).toBe(2));
+
+    await user.click(screen.getByRole("button", { name: /\u0412 \u0440\u0430\u0431\u043e\u0442\u0435/ }));
+    await waitFor(() => {
+      expect(mockState.lastQueue).toBe("in_progress");
+      expect(mockState.lastPage).toBe(1);
+    });
   });
 
   it("renders deal rows with parties, amount and currency", () => {
