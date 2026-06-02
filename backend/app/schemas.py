@@ -451,6 +451,8 @@ class CategoryOut(BaseModel):
 MAX_SERVICE_PHOTOS = 6
 MAX_SERVICE_TITLE_LEN = 256
 MAX_CATEGORY_SLUG_LEN = 64
+MAX_USERNAME_REF_LEN = 64
+MAX_CURRENCY_CODE_LEN = 16
 
 # Maximum length for user-supplied free-form description fields
 # (services, deals). Matches the existing cap on the admin-side
@@ -514,6 +516,26 @@ def _validate_category_slug(v: str) -> str:
         raise ValueError("Category slug cannot be empty")
     if len(v) > MAX_CATEGORY_SLUG_LEN:
         raise ValueError(f"Category slug is too long (<={MAX_CATEGORY_SLUG_LEN})")
+    return v
+
+
+def _validate_username_ref(v: str, *, what: str = "username") -> str:
+    v = (v or "").strip().lstrip("@").strip()
+    if not v:
+        raise ValueError(f"{what} cannot be empty")
+    if len(v) > MAX_USERNAME_REF_LEN:
+        raise ValueError(f"{what} is too long (<={MAX_USERNAME_REF_LEN})")
+    if not v.isascii() or any(not (ch.isalnum() or ch in {"_", "-"}) for ch in v):
+        raise ValueError(f"{what} contains invalid characters")
+    return v
+
+
+def _validate_currency_code(v: str, *, max_len: int = MAX_CURRENCY_CODE_LEN) -> str:
+    v = (v or "").strip().upper()
+    if not v:
+        raise ValueError("Currency code cannot be empty")
+    if len(v) > max_len or not v.isascii() or not v.isalnum():
+        raise ValueError(f"Currency code must be <= {max_len} ASCII alphanumeric characters")
     return v
 
 
@@ -786,6 +808,16 @@ class DealCreate(BaseModel):
     # ``payment_provider`` on the wire) backwards-compatible.
     payment_provider: Literal["cryptobot", "crystalpay"] = "cryptobot"
 
+    @field_validator("counterparty")
+    @classmethod
+    def _counterparty_ok(cls, v: str) -> str:
+        return _validate_username_ref(v, what="counterparty")
+
+    @field_validator("currency_code")
+    @classmethod
+    def _currency_code_ok(cls, v: str) -> str:
+        return _validate_currency_code(v)
+
     @field_validator("amount")
     @classmethod
     def _amount_finite(cls, v: Decimal | float) -> Decimal:
@@ -870,15 +902,8 @@ class DealArbitrationRequest(BaseModel):
 
 
 class DealResolveRequest(BaseModel):
-    winner: str  # "buyer" or "seller"
+    winner: Literal["buyer", "seller"]
     note: str = ""
-
-    @field_validator("winner")
-    @classmethod
-    def winner_valid(cls, v: str) -> str:
-        if v not in ("buyer", "seller"):
-            raise ValueError("winner должен быть 'buyer' или 'seller'")
-        return v
 
     @field_validator("note")
     @classmethod
@@ -999,6 +1024,11 @@ class ReviewCreate(BaseModel):
     rating: int
     text: str = ""
     deal_id: int
+
+    @field_validator("target_username")
+    @classmethod
+    def _target_username_ok(cls, v: str) -> str:
+        return _validate_username_ref(v, what="target_username")
 
     @field_validator("deal_id", mode="before")
     @classmethod
@@ -1146,6 +1176,11 @@ class WalletDepositCreateReq(BaseModel):
     # user pays through.
     provider: Literal["cryptobot", "crystalpay"] = "cryptobot"
 
+    @field_validator("currency_code")
+    @classmethod
+    def _currency_code_ok(cls, v: str) -> str:
+        return _validate_currency_code(v)
+
     @field_validator("amount")
     @classmethod
     def positive(cls, v: Decimal | float) -> Decimal:
@@ -1183,6 +1218,11 @@ class WalletWithdrawCreateReq(BaseModel):
     # Legacy clients may still send an address; the service sanitises it
     # and applies the currency regex when one is configured.
     address: str | None = None
+
+    @field_validator("currency_code")
+    @classmethod
+    def _currency_code_ok(cls, v: str) -> str:
+        return _validate_currency_code(v)
 
     @field_validator("amount")
     @classmethod
@@ -2619,14 +2659,10 @@ class AdminBroadcastCreateIn(BaseModel):
             raise ValueError("Ссылка должна начинаться с https:// или tg://")
         return v
 
-    @field_validator("audience_active_days", "audience_min_deals")
+    @field_validator("audience_active_days", "audience_min_deals", mode="before")
     @classmethod
-    def _int_ok(cls, v: int | None) -> int | None:
-        if v is None:
-            return v
-        if v < 0:
-            raise ValueError("Значение не может быть отрицательным")
-        return v
+    def _int_ok(cls, v: object) -> int | None:
+        return _validate_optional_non_negative_int(v)
 
     @field_validator("audience_language")
     @classmethod

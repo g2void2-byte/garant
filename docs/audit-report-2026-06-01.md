@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-76: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening и service write schema hardening исправлены.
+- M-50-M-80: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs и currency-code normalization исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -905,6 +905,46 @@ Admin moderation body объявлял `action: str`, хотя router подде
 Риск: TOTP-protected moderation endpoint принимал malformed action payload на уровне API body contract. Это не давало выполнить неизвестное действие, но оставляло слабый contract для админского клиента и маскировало frontend/API ошибки до route branch вместо раннего 422.
 
 Исправление: `action` переведен на `Literal["ban", "unban"]`, а `reason` получил тот же `MAX_DESCRIPTION_LEN` guard, что service/deal descriptions. Regression покрывает accepted `ban`/`unban`, rejected unknown actions и лимит причины.
+
+### M-77. Admin broadcast audience-фильтры принимали bool/string/float как integers
+
+Ссылки: `backend/app/schemas.py:2592-2666`, `backend/app/routers/admin/broadcasts.py:65-96`, regression `tests/unit/test_admin_broadcast_schema.py`.
+
+`AdminBroadcastCreateIn.audience_active_days` и `audience_min_deals` были `int | None` с after-validator на неотрицательность. Pydantic до validator приводил `true` к `1`, строку `"5"` к `5` и `5.0` к `5`.
+
+Риск: TOTP-protected broadcast preview/send мог тихо поменять аудиторию рассылки из malformed payload. `true -> 1` для active-days сужал аудиторию до пользователей за 1 день, а строковые/float значения маскировали frontend/API баги вместо раннего 422.
+
+Исправление: audience integer fields теперь валидируются в `mode="before"` через strict optional non-negative int helper. Разрешены только настоящий `int >= 0` или `None`; bool, строки, float и отрицательные значения отвергаются. Regression покрывает оба поля.
+
+### M-78. Arbitration resolve `winner` был свободной строкой в OpenAPI/schema
+
+Ссылки: `backend/app/schemas.py:904-910`, `backend/app/routers/deals.py:474-485`, regression `tests/unit/test_audit_v3_m5_deal_amount.py`.
+
+`DealResolveRequest.winner` был объявлен как `str` и отсеивал неизвестные значения только ручным validator. Роутер и service реально поддерживают только `buyer` и `seller`, но OpenAPI говорил клиентам, что допустима любая строка.
+
+Риск: arbitration UI/API contract был шире фактической state-machine: malformed `winner` проходил body schema и падал поздно, а сгенерированные frontend-типы не фиксировали закрытый набор решений.
+
+Исправление: `winner` переведен на `Literal["buyer", "seller"]`. OpenAPI/types теперь показывают закрытый enum, а regression покрывает accepted `buyer`/`seller` и rejected unknown/padded values.
+
+### M-79. Deal/review username refs принимали пустые, пробельные и невалидные строки
+
+Ссылки: `backend/app/schemas.py:454-538`, `backend/app/schemas.py:786-824`, `backend/app/schemas.py:1022-1061`, `backend/app/routers/deals.py:300-348`, `backend/app/routers/reviews.py:84-100`, regression `tests/unit/test_audit_v3_m5_deal_amount.py`, `tests/unit/test_review_schema.py`.
+
+`DealCreate.counterparty` и `ReviewCreate.target_username` были обычными строками. Пустые/whitespace значения, `@`, пробелы внутри, unicode/invalid символы и строки длиннее `User.username String(64)` доходили до DB lookup и превращались в поздний 404. При этом frontend picker уже нормализует leading `@`, а direct API callers не получали такого же schema contract.
+
+Риск: публичные money/review write endpoints принимали невалидные ссылки на пользователя на уровне body schema. Это не давало найти другого пользователя, но делало API contract слабым и превращало input bugs в 404 вместо раннего 422; слишком длинные значения также расходились с модельной длиной username.
+
+Исправление: добавлен общий username-ref validator: trim, снятие leading `@`, non-empty, ASCII `[A-Za-z0-9_-]`, `<=64`. `DealCreate` и `ReviewCreate` теперь получают нормализованный bare username до router lookup. Regression покрывает happy normalization и rejected invalid refs.
+
+### M-80. Deal/wallet currency codes не нормализовались на schema boundary
+
+Ссылки: `backend/app/schemas.py:454-538`, `backend/app/schemas.py:786-824`, `backend/app/schemas.py:1160-1233`, `backend/app/services_wallet.py:212-218`, regression `tests/unit/test_audit_v3_m5_deal_amount.py`, `tests/unit/test_wallet_schema.py`.
+
+`DealCreate.currency_code`, `WalletDepositCreateReq.currency_code` и `WalletWithdrawCreateReq.currency_code` были обычными строками. `get_currency_by_code()` делал `upper()`, но не `strip()`, поэтому `" usdt "` доходил до 404; пустые, whitespace, unicode, пробелы/дефисы и строки длиннее `Currency.code String(16)` тоже проходили schema layer.
+
+Риск: money-moving user endpoints имели слабый code contract и зависели от позднего lookup/service behavior. Stale UI или manual API-call мог получить 404 на фактически валидную валюту с пробелами либо протащить явно malformed code до service layer вместо 422.
+
+Исправление: добавлен общий currency-code validator: trim + uppercase + non-empty + ASCII alnum + `<=16`. Deal create, wallet deposit и wallet withdrawal теперь передают в сервисы нормализованный код. Regression покрывает normalization и rejected invalid values.
 
 ## Наблюдения без отдельного finding
 

@@ -4053,8 +4053,11 @@ export interface components {
              * @default
              */
             note: string;
-            /** Winner */
-            winner: string;
+            /**
+             * Winner
+             * @enum {string}
+             */
+            winner: "buyer" | "seller";
         };
         /**
          * DealStatus
