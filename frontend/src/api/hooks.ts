@@ -512,6 +512,7 @@ export function useCreateReview() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: qk.reviews.forUser(vars.target_username) });
       qc.invalidateQueries({ queryKey: qk.user.detail(vars.target_username) });
+      qc.invalidateQueries({ queryKey: qk.users.all() });
     },
   });
 }

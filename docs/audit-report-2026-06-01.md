@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 60 файлов, 530 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 61 файл, 531 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -54,6 +54,7 @@
 - M-21: admin wallet adjust/rate mutations обновляют system/user-wallet/user-facing wallet кэши.
 - M-22: admin user actions обновляют public user/profile/me кэши после public-profile side effects.
 - M-23: admin in-app broadcast send обновляет notifications/counters cache после fan-out side effect.
+- M-24: user review create обновляет public users list cache после rating recompute side effect.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -348,6 +349,16 @@ Backend `POST /api/admin/broadcasts` при `dispatch_inapp=true` не толь�
 Риск: админ мог отправить in-app рассылку и сразу увидеть обновленную history/audit, но собственный notification center и счетчик непрочитанных не отражали новую system notification без ожидания polling или ручного refresh.
 
 Исправление: `useAdminCreateBroadcast` теперь дополнительно инвалидирует `qk.notifications.all()`, что покрывает notification list и counters prefix. Broadcast create regression test закрепляет новый side-effect key.
+
+### M-24. User review create оставлял stale public users list cache
+
+Ссылки: `backend/app/routers/reviews.py:75-111`, `backend/app/services.py:47-109`, `backend/app/serializers.py:17-164`, `frontend/src/api/hooks.ts:507-516`, regression `frontend/src/api/hooks.test.tsx`.
+
+Backend `POST /api/reviews` через `post_review()` блокирует target user и пересчитывает `good`/`bad` rating counters. Эти поля читаются не только `/api/reviews?user=...` и `/api/users/{username}`, но и public `/api/users`: карточка и сортировка/фильтры по рейтингу используют те же counters. Frontend `useCreateReview` после success сбрасывал review list и target profile, но не public users list.
+
+Риск: после оставленного пользователем отзыва профиль target мог обновиться, а общий каталог/search продолжал показывать старый рейтинг или старую позицию в выдаче до следующего refetch.
+
+Исправление: `useCreateReview` теперь дополнительно инвалидирует `qk.users.all()`. Добавлен hook regression test на review/profile/users invalidation set.
 
 ## Наблюдения без отдельного finding
 
