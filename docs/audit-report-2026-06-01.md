@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 62 файла, 566 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 63 файла, 568 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -77,6 +77,7 @@
 - M-44: profile reviews больше не запирают пользователя на первой странице отзывов.
 - M-45: profile/category service lists больше не запирают пользователя на первой странице услуг.
 - M-46: deal detail review CTA больше не зависит от первой страницы отзывов профиля.
+- M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -601,6 +602,16 @@ Backend `GET /api/services` уже принимал `limit/offset` и выста
 Риск: пользователь в terminal deal видел доступное действие, которое гарантированно падало на сервере. Это ухудшало закрытие сделки, плодило лишние POST-запросы и шум в `reviews.create.rejected` логах, особенно у активных продавцов с длинной историей отзывов.
 
 Исправление: `GET /api/reviews` принимает optional `deal_id`, применяет его и к выборке, и к `X-Total-Count`. `useReviews`/query key прокидывают этот параметр, а `DealDetailPage` проверяет состояние отзыва точечным запросом `deal_id + limit=1`, не завися от страницы профиля. Добавлены backend regression на filtered total/body и frontend regressions на параметры запроса и скрытие CTA, когда точечный запрос вернул уже существующий отзыв.
+
+### M-47. Пустой users picker обходил search gate и грузил global top users
+
+Ссылки: `backend/app/routers/users.py:58-194`, `frontend/src/components/domain/UserPicker.tsx`, regressions `tests/integration/test_users_filters.py`, `frontend/src/components/domain/UserPicker.test.tsx`.
+
+`UserPicker` на `/deals/new` и в admin content sheet вызывал `useUsers({ picker: true })` сразу при пустом поле. Backend трактовал `picker=1` как bypass для правила "минимум 1 сделка для поиска" и при отсутствии `q` отдавал обычную top-by-deals выдачу. Dropdown при пустом поле не показывался, но сетевой запрос всё равно уходил и raw `/api/users?picker=1` позволял zero-deal пользователю получить первую страницу каталога.
+
+Риск: `picker=1` был задуман как точечный поиск известного контрагента для первой сделки, а не как browse-режим. Пустой запрос создавал лишнюю нагрузку на каждом mount picker-компонента и ослаблял search gate для пользователей без сделок.
+
+Исправление: backend для `picker=true` без непустого `q` возвращает `200 []` и `X-Total-Count: 0`, сохраняя поиск по `q` для zero-deal пользователей. Frontend `UserPicker` теперь держит query disabled до ввода, всегда передает `limit=8&offset=0` и больше не режет более крупный ответ на клиенте. Добавлены backend regression на пустой/непустой picker и frontend regressions на disabled empty query + capped live-search params.
 
 ## Наблюдения без отдельного finding
 

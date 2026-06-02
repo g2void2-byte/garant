@@ -105,6 +105,13 @@ async def list_users(
 
     stmt = select(User).where(User.is_hidden_profile.is_(False))
     q_trimmed = (q or "").strip()
+    if picker and not q_trimmed:
+        # The picker bypasses the "min 1 deal" directory gate so a
+        # brand-new user can find a known counterparty by username/id.
+        # It is not a browse endpoint: an empty picker query used to
+        # expose the global top-users page to zero-deal callers.
+        response.headers["X-Total-Count"] = "0"
+        return []
     if q_trimmed:
         # Item 19 — pre-fix, a non-empty query that sanitised to zero
         # tokens (e.g. pure punctuation like ``"``) would fall through

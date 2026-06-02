@@ -120,6 +120,31 @@ async def test_users_listing_supports_limit_offset(client):
 
 
 @pytest.mark.asyncio
+async def test_picker_without_query_does_not_bypass_search_gate(client):
+    await _make_user(140, "picker_target", deals_total=0)
+    caller_init = signed_init_data(141, "picker_zero_deals")
+    bootstrap = await client.get("/api/me", headers=auth_headers(caller_init))
+    assert bootstrap.status_code == 200, bootstrap.text
+
+    empty_resp = await client.get(
+        "/api/users",
+        params={"picker": "1"},
+        headers=auth_headers(caller_init),
+    )
+    assert empty_resp.status_code == 200, empty_resp.text
+    assert empty_resp.headers["X-Total-Count"] == "0"
+    assert empty_resp.json() == []
+
+    search_resp = await client.get(
+        "/api/users",
+        params={"picker": "1", "q": "picker_target"},
+        headers=auth_headers(caller_init),
+    )
+    assert search_resp.status_code == 200, search_resp.text
+    assert [row["username"] for row in search_resp.json()] == ["picker_target"]
+
+
+@pytest.mark.asyncio
 async def test_rating_bucket_5_0(client):
     """Bucket ``5.0`` only matches users with a perfect rating."""
     await _make_user(200, "perfect", good=20, bad=0)

@@ -11,6 +11,8 @@ import { dealsLabel } from "@/lib/format";
 import { staggerDelay } from "@/lib/animate";
 import { cn } from "@/lib/cn";
 
+const USER_PICKER_LIMIT = 8;
+
 interface UserPickerProps {
   /** Selected username (without ``@``). ``""`` means "nothing picked". */
   value: string;
@@ -93,9 +95,18 @@ export function UserPicker({
 
   // Normalise leading ``@`` so the server receives the bare username.
   const normalized = useMemo(() => debounced.replace(/^@+/, "").trim(), [debounced]);
-  const { data: users, isLoading } = useUsers(
-    normalized ? { q: normalized, picker: true } : { picker: true },
+  const usersQuery = useMemo(
+    () => ({
+      ...(normalized ? { q: normalized } : {}),
+      picker: true,
+      limit: USER_PICKER_LIMIT,
+      offset: 0,
+    }),
+    [normalized],
   );
+  const { data: users, isLoading } = useUsers(usersQuery, {
+    enabled: normalized.length > 0,
+  });
 
   // Close on outside click so the dropdown doesn't linger when the
   // user taps somewhere else on the form.
@@ -209,7 +220,7 @@ export function UserPicker({
               </div>
             ) : (
               <ul className="py-1.5">
-                {filtered.slice(0, 8).map((u, i) => (
+                {filtered.map((u, i) => (
                   <li
                     key={u.id}
                     style={staggerDelay(i, 25, 200)}
