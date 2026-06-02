@@ -7785,6 +7785,10 @@ export interface operations {
             query?: {
                 role?: ("buyer" | "seller") | null;
                 status?: components["schemas"]["DealStatus"] | null;
+                /** @description Max rows to return. */
+                limit?: number;
+                /** @description Row offset for cursorless pagination. */
+                offset?: number;
             };
             header?: {
                 authorization?: string | null;

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 62 файла, 547 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 62 файла, 549 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -70,6 +70,7 @@
 - M-37: admin deal detail больше не встраивает полный чат сделки; история грузится курсорными страницами.
 - M-38: user-facing arbitration page больше не запирает пользователя/арбитра на первых 50 спорах.
 - M-39: user search больше не обрезает выдачу первыми 100 пользователями без возможности догрузки.
+- M-40: user deal list больше не отправляет invalid `role=all` и не грузит весь список сделок одним ответом.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -524,6 +525,16 @@ Backend endpoints для админского редактирования ко�
 Риск: пользователи за пределами top-100 по текущему sort order были практически скрыты из search UI. Для маркетплейса это не только UX-проблема, но и skew ранжирования: новые или менее активные профили могли быть недоступны даже при валидном фильтре.
 
 Исправление: public users endpoint теперь принимает `limit/offset`, выставляет `X-Total-Count` и сортирует стабильно с `User.id.desc()` tie-breaker. `useUsers` прокидывает pagination params, а `SearchPage` запрашивает первую страницу по 50 пользователей и догружает следующую кнопкой "Показать еще" через offset `users.length`. Добавлены backend regression на `limit/offset` и frontend regression на append следующей страницы.
+
+### M-40. User deal list отправлял invalid `role=all` и грузил список без page cap
+
+Ссылки: `backend/app/routers/deals.py:193-253`, `frontend/src/api/hooks.ts:335-357`, `frontend/src/pages/deals/DealsPage.tsx`, regressions `tests/integration/test_deals_list_filters.py`, `frontend/src/pages/deals/DealsPage.test.tsx`.
+
+После M-29 backend `GET /api/deals` стал строго валидировать `role` как `buyer|seller`, но `DealsPage` продолжал передавать default tab `role=all`. В результате первый запрос страницы сделок мог получать `422` вместо общего списка. Отдельно endpoint не имел `limit/offset` и возвращал все сделки пользователя одним массивом, а frontend рендерил его без возможности догрузки страниц.
+
+Риск: основной экран сделок мог ломаться на дефолтной вкладке после ужесточения backend validation. У активных пользователей с длинной историей сделок API/UI также сохраняли unbounded payload/render path, в отличие от уже исправленных admin и arbitration списков.
+
+Исправление: frontend теперь нормализует вкладку "Все" в отсутствие `role`, а shared `buildDealsSearchParams` дополнительно защищает raw callers от `role=all`. Public deals endpoint принимает `limit/offset`, выставляет `X-Total-Count`, сортирует стабильно по `created_at desc, id desc` и гидратит top-up invoice data только для текущей страницы. `DealsPage` запрашивает первые 50 сделок и догружает следующие через offset `deals.length`. Добавлены backend regression на `limit/offset` и frontend regressions на omission `role=all` и load-more offset.
 
 ## Наблюдения без отдельного finding
 

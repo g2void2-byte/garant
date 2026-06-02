@@ -100,6 +100,8 @@ export interface UsersQueryKey {
 export interface DealsQueryKey {
   role?: string;
   status?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export const qk = {

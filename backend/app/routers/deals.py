@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy import func, or_, select
 
 from ..admin_guard import TotpOrArbiterUser
@@ -191,10 +191,13 @@ async def _get_locked(session, deal_id: int) -> Deal:
 
 @router.get("", response_model=list[DealOut])
 async def list_deals(
+    response: Response,
     user: CurrentUser,
     session: SessionDep,
     role: Literal["buyer", "seller"] | None = Query(None),
     status: DealStatus | None = Query(None),
+    limit: int = Query(100, ge=1, le=200, description="Max rows to return."),
+    offset: int = Query(0, ge=0, description="Row offset for cursorless pagination."),
 ):
     stmt = select(Deal).where(or_(Deal.buyer_id == user.id, Deal.seller_id == user.id))
     if role == "buyer":
@@ -203,7 +206,12 @@ async def list_deals(
         stmt = select(Deal).where(Deal.seller_id == user.id)
     if status is not None:
         stmt = stmt.where(Deal.status == status)
-    stmt = stmt.order_by(Deal.created_at.desc())
+    total = (
+        await session.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))
+    ).scalar_one()
+    response.headers["X-Total-Count"] = str(total)
+
+    stmt = stmt.order_by(Deal.created_at.desc(), Deal.id.desc()).offset(offset).limit(limit)
     result = await session.execute(stmt)
     deals = result.scalars().all()
     # Batch-load the top-up deposits in a single ``WHERE id IN (...)``

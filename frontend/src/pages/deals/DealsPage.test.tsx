@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { DealDto } from "@/api/types";
@@ -8,9 +9,31 @@ const mockState = vi.hoisted(() => ({
   data: undefined as DealDto[] | undefined,
   isLoading: false,
 }));
+const useDealsCalls = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+const apiMock = vi.hoisted(() => ({ get: vi.fn() }));
+const buildDealsSearchParamsMock = vi.hoisted(() =>
+  vi.fn((params: Record<string, unknown>) => {
+    const searchParams: Record<string, string> = {};
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === "" || (key === "role" && value === "all")) {
+        continue;
+      }
+      searchParams[key] = String(value);
+    }
+    return searchParams;
+  }),
+);
 
 vi.mock("@/api/hooks", () => ({
-  useDeals: () => mockState,
+  buildDealsSearchParams: buildDealsSearchParamsMock,
+  useDeals: (params: Record<string, unknown>) => {
+    useDealsCalls.push(params);
+    return mockState;
+  },
+}));
+
+vi.mock("@/api/client", () => ({
+  api: apiMock,
 }));
 
 import DealsPage from "./DealsPage";
@@ -29,6 +52,9 @@ function renderPage() {
 beforeEach(() => {
   mockState.data = undefined;
   mockState.isLoading = false;
+  useDealsCalls.length = 0;
+  apiMock.get.mockReset();
+  buildDealsSearchParamsMock.mockClear();
 });
 
 function makeDeal(overrides: Partial<DealDto> = {}): DealDto {
@@ -45,9 +71,9 @@ function makeDeal(overrides: Partial<DealDto> = {}): DealDto {
     currency_code: "USDT",
     amount: 100,
     commission_amount: 5,
-  commission_paid: true,
-  topup_deposit_id: null,
-  topup_invoice: null,
+    commission_paid: true,
+    topup_deposit_id: null,
+    topup_invoice: null,
     in_progress_at: "2026-01-01T00:00:00Z",
     completed_at: null,
     cancellation_initiator: null,
@@ -97,5 +123,35 @@ describe("<DealsPage />", () => {
     expect(screen.getByRole("button", { name: "Продажи" })).toBeInTheDocument();
     // Select dropdown is present.
     expect(screen.getByText("Все статусы")).toBeInTheDocument();
+  });
+
+  it("omits role=all and requests the first page", () => {
+    mockState.data = [];
+    renderPage();
+
+    expect(useDealsCalls.at(-1)).toEqual({
+      role: undefined,
+      status: undefined,
+      limit: 50,
+      offset: 0,
+    });
+  });
+
+  it("loads the next deal-list page by offset", async () => {
+    const user = userEvent.setup();
+    mockState.data = Array.from({ length: 50 }, (_, idx) =>
+      makeDeal({ id: idx + 1, description: `Deal ${idx + 1}` }),
+    );
+    apiMock.get.mockReturnValue({
+      json: async () => [makeDeal({ id: 51, description: "Deal 51" })],
+    });
+
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Показать еще" }));
+
+    expect(apiMock.get).toHaveBeenCalledWith("api/deals", {
+      searchParams: { limit: "50", offset: "50" },
+    });
+    expect(await screen.findByText("Deal 51")).toBeInTheDocument();
   });
 });

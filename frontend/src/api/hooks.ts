@@ -332,10 +332,24 @@ export function useUser(username: string | undefined) {
   });
 }
 
-export function useDeals(params: { role?: string; status?: string } = {}) {
+export interface DealQueryParams {
+  role?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function buildDealsSearchParams(params: DealQueryParams) {
   const searchParams: Record<string, string> = {};
-  if (params.role) searchParams.role = params.role;
+  if (params.role && params.role !== "all") searchParams.role = params.role;
   if (params.status) searchParams.status = params.status;
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  if (params.offset !== undefined) searchParams.offset = String(params.offset);
+  return searchParams;
+}
+
+export function useDeals(params: DealQueryParams = {}) {
+  const searchParams = buildDealsSearchParams(params);
   return useQuery<DealDto[]>({
     queryKey: qk.deals.list(params),
     queryFn: () => api.get("api/deals", { searchParams }).json(),
