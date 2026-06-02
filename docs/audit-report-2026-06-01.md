@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-69: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers и strict boolean payload flags исправлены.
+- M-50-M-70: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags и strict admin manual rating numbers исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -835,6 +835,16 @@ Admin stats (`deals_total`, `good`, `bad` и соседние счетчики),
 Риск: malformed JSON или stale frontend payload мог тихо включить/выключить роль, режим обслуживания, auto-withdraw, FAQ badge, активность валюты, очистку рейтинга, способ доставки рассылки или приватность/DM-настройки пользователя вместо раннего 422. Для admin endpoints это особенно плохо: операторское действие выглядит успешным, хотя тело запроса не соответствует API contract.
 
 Исправление: добавлены общие strict bool validators и `mode="before"` проверки на всех найденных boolean write-boundaries. Optional-флаги принимают только настоящий `bool` или `None`; non-optional флаги принимают только настоящий `bool`, а строки, числа и явный `null` отвергают до coercion. Unit regression покрывает accepted `true`/`false` как реальные bool и rejected `"true"`, `"false"`, `1`, `0`, плюс `None` для non-optional flags.
+
+### M-70. Admin manual user rating принимал `true`, строки и `NaN` как рейтинг
+
+Ссылки: `backend/app/schemas.py:528-536`, `backend/app/schemas.py:1335-1357`, regression `tests/unit/test_admin_rating_schema.py`.
+
+`AdminSetRatingIn.rating` был объявлен как обычный `float | None` и проверял только диапазон `0..5` после Pydantic coercion. Поэтому `rating: true` превращался в `1.0`, строка `"4.2"` превращалась в число, а `NaN` проходил range-check, потому что сравнения `NaN < 0` и `NaN > 5` возвращают `False`.
+
+Риск: TOTP-защищенный admin endpoint ручного рейтинга мог сохранить malformed payload как валидный override или попытаться записать non-finite значение в `User.rating_manual`. Это маскировало frontend/API ошибки и могло довести запрос до DB/serialization path с `NaN` вместо нормального 422 на границе схемы.
+
+Исправление: добавлен strict finite-number helper. `AdminSetRatingIn.rating` теперь в `mode="before"` принимает только настоящий `int`/`float`/`Decimal` или `None`, отвергает `bool`, строки и non-finite значения, а затем применяет прежний диапазон `0..5` и округление до одного знака. Unit regression покрывает accepted `0`, `4.8`, `None` и rejected `true`, `false`, `"4.2"`, `"NaN"`, `NaN`, `Infinity`, `-1`, `6`.
 
 ## Наблюдения без отдельного finding
 

@@ -525,6 +525,17 @@ def _validate_optional_bool(v: object, *, what: str = "Флаг") -> bool | None
     return _validate_bool(v, what=what)
 
 
+def _validate_optional_finite_number(v: object, *, what: str = "Значение") -> float | None:
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, int | float | Decimal):
+        raise ValueError(f"{what} должен быть числом")
+    result = float(v)
+    if not math.isfinite(result):
+        raise ValueError(f"{what} должен быть конечным числом")
+    return result
+
+
 def _validate_service_photos(v: list[str] | None) -> list[str] | None:
     # V12-UI — gatekeep the photo list (length + each entry's scheme)
     # in one place so both ``ServiceCreate`` and ``ServiceUpdate``
@@ -1329,6 +1340,11 @@ class AdminSetRatingIn(BaseModel):
     """
 
     rating: float | None = None
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def _rating_number(cls, v: object) -> float | None:
+        return _validate_optional_finite_number(v, what="Рейтинг")
 
     @field_validator("rating")
     @classmethod
