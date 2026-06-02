@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-70: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags и strict admin manual rating numbers исправлены.
+- M-50-M-73: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers и admin currency schema hardening исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -845,6 +845,36 @@ Admin stats (`deals_total`, `good`, `bad` и соседние счетчики),
 Риск: TOTP-защищенный admin endpoint ручного рейтинга мог сохранить malformed payload как валидный override или попытаться записать non-finite значение в `User.rating_manual`. Это маскировало frontend/API ошибки и могло довести запрос до DB/serialization path с `NaN` вместо нормального 422 на границе схемы.
 
 Исправление: добавлен strict finite-number helper. `AdminSetRatingIn.rating` теперь в `mode="before"` принимает только настоящий `int`/`float`/`Decimal` или `None`, отвергает `bool`, строки и non-finite значения, а затем применяет прежний диапазон `0..5` и округление до одного знака. Unit regression покрывает accepted `0`, `4.8`, `None` и rejected `true`, `false`, `"4.2"`, `"NaN"`, `NaN`, `Infinity`, `-1`, `6`.
+
+### M-71. Admin currency `decimals` / `sort_order` принимали coerced integers
+
+Ссылки: `backend/app/schemas.py:508-514`, `backend/app/schemas.py:2315-2403`, regression `tests/unit/test_admin_currency_schema.py`.
+
+`AdminCurrencyUpsertIn.decimals` и `sort_order` были обычными `int | None`. Pydantic до validators приводил `true` к `1`, `false` к `0`, строки вроде `"8"` к `8`, а float `8.0` к `8`.
+
+Риск: admin currency editor мог принять malformed payload как реальную настройку precision/sorting. Особенно опасны `false -> 0` для `decimals` и `true -> 1` для `sort_order`: ошибка формы или ручной API-call меняли денежное отображение/порядок валют вместо раннего 422.
+
+Исправление: добавлен strict optional int helper. `decimals` и `sort_order` теперь валидируются в `mode="before"`: разрешены только настоящий `int` или `None`; bool, строки и float отвергаются до coercion. Regression покрывает accepted explicit ints/None и rejected coerced values.
+
+### M-72. Admin currency `decimals` разрешал precision выше фактического `Numeric(28, 8)` scale
+
+Ссылки: `backend/app/money.py:54-61`, `backend/app/schemas.py:13`, `backend/app/schemas.py:2398-2404`, regression `tests/unit/test_admin_currency_schema.py`.
+
+Схема разрешала `decimals` до `18`, хотя все money columns проекта закреплены как `Numeric(28, 8)` и `MONEY_SCALE == 8`. При currency `decimals=9..18` UI/quantize layer обещал больше дробных знаков, чем БД может хранить без округления до 8 знаков.
+
+Риск: админ мог создать валюту с заявленной precision выше storage contract, после чего deposits/deals/balances выглядели как поддерживающие 9-18 знаков, но persistence layer всё равно ограничивался 8. Это ломало денежный invariant и создавало silent precision loss для новых валют.
+
+Исправление: `AdminCurrencyUpsertIn.decimals` теперь ограничен `0..MONEY_SCALE`, где `MONEY_SCALE` импортируется из `backend.app.money` как единый источник правды для `Numeric(28, 8)`. Regression отвергает `9`, прежнюю верхнюю границу `18` и `19`, сохраняя `8` валидным.
+
+### M-73. Admin currency text fields не совпадали с DB/string contract
+
+Ссылки: `backend/app/models.py:844-866`, `backend/app/schemas.py:2359-2387`, regression `tests/unit/test_admin_currency_schema.py`.
+
+`AdminCurrencyUpsertIn.name`, `network` и `icon_url` почти не валидировались: пустой/whitespace `name` проходил, `name` длиннее `Currency.name String(64)` и `network` длиннее `String(32)` проходили до DB commit, а `icon_url` принимал non-https/empty-host формы.
+
+Риск: admin upsert мог падать поздно на DB constraint/rollback вместо нормального 422, либо сохранять пустое название валюты и некорректную ссылку на иконку в публичный wallet/admin DTO. Это тот же класс schema-vs-model drift, который уже закрыт для category fields.
+
+Исправление: `name` теперь trim + non-empty + `≤64`, `network` trim + `≤32` с возможностью очистки пустой строкой, `icon_url` принимает только пустое значение, `/media/...` или валидный `https://` URL через общий URL validator. Regression покрывает trim happy path и rejected empty/too-long/bad-url cases.
 
 ## Наблюдения без отдельного finding
 

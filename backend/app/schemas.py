@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, PlainSerializer, field_validator, model_validator
 
+from .money import MONEY_SCALE
+
 
 def _validate_https_or_media_url(v: str, *, what: str, max_len: int = 1024) -> str:
     """Audit L-3 — strict URL validator for user-supplied avatar/banner/forum links.
@@ -500,6 +502,14 @@ def _validate_optional_positive_int_id(v: object, *, what: str = "ID") -> object
         raise ValueError(f"{what} должен быть целым числом")
     if v <= 0:
         raise ValueError(f"{what} должен быть положительным числом")
+    return v
+
+
+def _validate_optional_int(v: object, *, what: str = "Значение") -> int | None:
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, int):
+        raise ValueError(f"{what} должно быть целым числом")
     return v
 
 
@@ -2346,13 +2356,52 @@ class AdminCurrencyUpsertIn(BaseModel):
             raise ValueError("Некорректный код валюты")
         return v
 
+    @field_validator("name")
+    @classmethod
+    def _name_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("Название валюты не может быть пустым")
+        if len(v) > 64:
+            raise ValueError("Название валюты слишком длинное (≤64)")
+        return v
+
+    @field_validator("network")
+    @classmethod
+    def _network_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if len(v) > 32:
+            raise ValueError("Сеть валюты слишком длинная (≤32)")
+        return v
+
+    @field_validator("icon_url")
+    @classmethod
+    def _icon_url_ok(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return v
+        return _validate_https_or_media_url(v, what="Иконка валюты", max_len=1024)
+
+    @field_validator("decimals", mode="before")
+    @classmethod
+    def _decimals_strict_int(cls, v: object) -> int | None:
+        return _validate_optional_int(v, what="decimals")
+
+    @field_validator("sort_order", mode="before")
+    @classmethod
+    def _sort_order_strict_int(cls, v: object) -> int | None:
+        return _validate_optional_int(v, what="sort_order")
+
     @field_validator("decimals")
     @classmethod
     def _decimals_ok(cls, v: int | None) -> int | None:
         if v is None:
             return v
-        if v < 0 or v > 18:
-            raise ValueError("decimals должно быть 0..18")
+        if v < 0 or v > MONEY_SCALE:
+            raise ValueError(f"decimals должно быть 0..{MONEY_SCALE}")
         return v
 
     @field_validator("min_deposit", "min_withdraw")
