@@ -5929,6 +5929,8 @@ export interface operations {
             query?: {
                 status?: string;
                 target_id?: number | null;
+                limit?: number;
+                offset?: number;
             };
             header?: {
                 authorization?: string | null;

@@ -32,7 +32,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -708,22 +708,38 @@ async def _get_approval_or_404(
 async def list_deal_approvals(
     _admin: AdminUser,
     session: SessionDep,
+    response: Response,
     status: Annotated[str, Query()] = "pending",
     target_id: Annotated[int | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[AdminApprovalOut]:
     if status not in _APPROVAL_STATUS_CHOICES:
         raise HTTPException(400, "Invalid approval status")
+    filters = [AdminApprovalRequest.target_type == "deal"]
+    if status != "any":
+        filters.append(AdminApprovalRequest.status == status)
+    if target_id is not None:
+        filters.append(AdminApprovalRequest.target_id == target_id)
+
+    total = int(
+        (
+            await session.execute(
+                select(func.count()).select_from(AdminApprovalRequest).where(*filters)
+            )
+        ).scalar_one()
+        or 0
+    )
+    response.headers["X-Total-Count"] = str(total)
+
     stmt = (
         select(AdminApprovalRequest)
-        .where(AdminApprovalRequest.target_type == "deal")
+        .where(*filters)
         .options(selectinload(AdminApprovalRequest.currency))
         .order_by(AdminApprovalRequest.created_at.desc(), AdminApprovalRequest.id.desc())
-        .limit(200)
+        .offset(offset)
+        .limit(limit)
     )
-    if status != "any":
-        stmt = stmt.where(AdminApprovalRequest.status == status)
-    if target_id is not None:
-        stmt = stmt.where(AdminApprovalRequest.target_id == target_id)
     rows = (await session.execute(stmt)).scalars().all()
     return [_approval_out(row) for row in rows]
 

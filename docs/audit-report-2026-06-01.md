@@ -79,6 +79,7 @@
 - M-46: deal detail review CTA больше не зависит от первой страницы отзывов профиля.
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
+- M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -623,6 +624,16 @@ Backend `GET /api/services` уже принимал `limit/offset` и выста
 Риск: админ мог видеть дубликаты между соседними страницами или не видеть часть строк вообще. Для очередей выплат/депозитов/арбитража это особенно плохо: элемент мог исчезнуть из штатного triage не из-за фильтра, а из-за недетерминированной границы страницы.
 
 Исправление: все найденные `created_at`-based router lists теперь добавляют уникальный tie-breaker `id` (`desc` для newest-first, `asc` для `created_asc`). Sort modes admin users также получили `User.id` tie-breaker для `created_desc`, `created_asc`, `rating` и `deals`. Добавлен regression, который запрещает одинокий `order_by(Model.created_at.desc())` в routers и пинует id tie-breakers в admin users sort map.
+
+### M-49. Admin deal approvals API был hard-capped первыми 200 заявками
+
+Ссылки: `backend/app/routers/admin/deals.py:703-735`, regression `tests/integration/test_admin_deals.py`, OpenAPI snapshot `frontend/openapi.json`, generated types `frontend/src/api/openapi.generated.ts`.
+
+`GET /api/admin/deals/approvals` возвращал bare array с `.limit(200)` и не принимал ни `offset`, ни `page`, ни `X-Total-Count`. Даже после исправления основных admin queues этот endpoint оставался скрытым hard cap: при большом числе pending/approved maker-checker заявок оператор или будущая UI-страница могли увидеть только первые 200 строк по `created_at desc, id desc`.
+
+Риск: high-risk money movement approvals после первых 200 становились недоступны через штатный API списка. Для maker-checker flow это опасно: часть заявок могла не попасть в triage/forensic review, а total backlog был неизвестен клиенту.
+
+Исправление: endpoint принимает `limit` (1..200, default 200) и `offset`, считает полный total по тем же `status/target_id` фильтрам и выставляет `X-Total-Count`. Сортировка осталась стабильной по `created_at desc, id desc`. Добавлен backend regression на 205 заявок, `offset=200` и total header; OpenAPI snapshot/generated types обновлены под новые query params.
 
 ## Наблюдения без отдельного finding
 

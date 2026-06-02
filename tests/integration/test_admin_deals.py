@@ -23,6 +23,7 @@ from sqlalchemy import select
 
 from backend.app.db import async_session
 from backend.app.models import (
+    AdminApprovalRequest,
     AdminAuditLog,
     Currency,
     Deal,
@@ -31,6 +32,7 @@ from backend.app.models import (
     User,
     UserBalance,
 )
+from backend.app.time_utils import utcnow
 from tests.helpers import (
     auth_headers,
     credit_balance,
@@ -228,6 +230,38 @@ async def test_admin_deal_detail_embeds_latest_message_page(client):
     assert [msg["id"] for msg in messages] == inserted_ids[-50:]
     assert messages[0]["text"] == "admin detail seed 10"
     assert messages[-1]["text"] == "admin detail seed 59"
+
+
+async def test_admin_deal_approvals_list_paginates_and_exposes_total(client):
+    admin_init = await _make_admin(client, tg_id=9042, username="approval_admin")
+    target_id = 9042001
+
+    async with async_session() as session:
+        created_at = utcnow()
+        approvals = [
+            AdminApprovalRequest(
+                action="deal.force_release",
+                target_type="deal",
+                target_id=target_id,
+                status="pending",
+                created_at=created_at,
+                payload={"idx": idx},
+            )
+            for idx in range(205)
+        ]
+        session.add_all(approvals)
+        await session.flush()
+        expected_ids = [approvals[4].id, approvals[3].id, approvals[2].id]
+        await session.commit()
+
+    resp = await client.get(
+        "/api/admin/deals/approvals",
+        params={"target_id": target_id, "limit": 3, "offset": 200},
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 200, resp.text
+    assert int(resp.headers["X-Total-Count"]) == 205
+    assert [row["id"] for row in resp.json()] == expected_ids
 
 
 # ── force-release / refund / split ─────────────────────────────────────────
