@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-64: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids и strict admin review ids исправлены.
+- M-50-M-65: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids и strict review rating/deal_id исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -785,6 +785,16 @@ Maintenance middleware держал module-level `_cache_lock = asyncio.Lock()`.
 Риск: TOTP-защищенный admin endpoint оставался tolerant к boolean/stringly ids там, где операция пишет чужой пользовательский контент и должна принимать только явные положительные integer primary keys. Ошибка оператора или stale frontend payload могла превратиться в валидную запись не для того пользователя/сделки, а не в 422.
 
 Исправление: `AdminReviewUpsertIn` теперь валидирует `author_id`, `target_id` и `deal_id` в `mode="before"`: допускается `None` для edit-пути, иначе значение должно быть именно `int` (без `bool`, строк и float) и `> 0`. Добавлены unit regressions на accepted positive ids, omitted ids for edit и rejected `[true]`, `[false]`, `"1"`, `1.0`, `0`, `-1` для каждого поля.
+
+### M-65. Review create/admin rating принимали coerced числа вместо явных integer payloads
+
+Ссылки: `backend/app/schemas.py:881-906`, `backend/app/schemas.py:1717-1733`, regressions `tests/unit/test_review_schema.py`, `tests/unit/test_admin_review_schema.py`.
+
+После M-64 оставалась соседняя contract-hole: `ReviewCreate.rating`, `ReviewCreate.deal_id` и `AdminReviewUpsertIn.rating` были обычными `int`. Pydantic приводил `rating: true` к `1`, `rating: "5"` к `5`, `rating: 1.0` к `1`, а `deal_id: true` / `deal_id: "42"` к integer primary key. `ReviewCreate.deal_id=0` тоже проходил schema-слой и отсеивался только поздним `session.get(Deal, 0)`.
+
+Риск: user-facing `POST /api/reviews` мог принять malformed JSON как реальный отзыв: boolean `true` становился 1-star rating, string/float значения проходили как числа, а coerced `deal_id` мог привязать отзыв к сделке id `1`/`42`. Admin review edit/create имел такой же rating coercion. Это ломало API contract и маскировало frontend/input bugs вместо раннего 422.
+
+Исправление: `ReviewCreate` теперь до coercion требует `rating` как настоящий `int` в диапазоне 1..5, а `deal_id` как настоящий положительный `int`. `AdminReviewUpsertIn.rating` получил такой же strict integer gate перед range-check. Добавлены unit regressions на rejected `true`, `false`, строки, float и out-of-range значения; прямой schema smoke подтверждает, что malformed review payloads больше не принимаются.
 
 ## Наблюдения без отдельного finding
 

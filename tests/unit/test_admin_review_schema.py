@@ -30,3 +30,9 @@ def test_admin_review_upsert_rejects_coerced_or_non_positive_ids(
 ) -> None:
     with pytest.raises(ValidationError):
         AdminReviewUpsertIn(rating=5, **{field: bad})
+
+
+@pytest.mark.parametrize("bad", [True, False, "5", 1.0, 0, 6])
+def test_admin_review_upsert_rejects_coerced_or_out_of_range_rating(bad: object) -> None:
+    with pytest.raises(ValidationError):
+        AdminReviewUpsertIn(rating=bad)

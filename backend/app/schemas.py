@@ -881,6 +881,22 @@ class ReviewCreate(BaseModel):
     text: str = ""
     deal_id: int
 
+    @field_validator("deal_id", mode="before")
+    @classmethod
+    def _deal_id_strict_positive(cls, v: object) -> object:
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError("ID сделки должен быть целым числом")
+        if v <= 0:
+            raise ValueError("ID сделки должен быть положительным числом")
+        return v
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def _rating_strict_int(cls, v: object) -> object:
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError("Рейтинг должен быть целым числом")
+        return v
+
     @field_validator("rating")
     @classmethod
     def _rating_range(cls, v: int) -> int:
@@ -1704,6 +1720,13 @@ class AdminReviewUpsertIn(BaseModel):
             raise ValueError("ID должен быть целым числом")
         if v <= 0:
             raise ValueError("ID должен быть положительным числом")
+        return v
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def _rating_strict_int(cls, v: object) -> object:
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError("Рейтинг должен быть целым числом")
         return v
 
     @field_validator("rating")
