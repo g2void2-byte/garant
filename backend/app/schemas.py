@@ -617,6 +617,15 @@ class ServiceCommentCreate(BaseModel):
             raise ValueError("Комментарий слишком длинный (≤1024)")
         return v
 
+    @field_validator("rating", mode="before")
+    @classmethod
+    def _rating_strict_int(cls, v: object) -> object:
+        if v is None:
+            return v
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError("Оценка должна быть целым числом")
+        return v
+
     @field_validator("rating")
     @classmethod
     def _rating_range(cls, v: int | None) -> int | None:
@@ -1776,6 +1785,15 @@ class AdminCommentUpdateIn(BaseModel):
             raise ValueError("Комментарий не может быть пустым")
         if len(v) > 1024:
             raise ValueError("Комментарий слишком длинный (≤1024)")
+        return v
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def _rating_strict_int(cls, v: object) -> object:
+        if v is None:
+            return v
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError("Оценка должна быть целым числом")
         return v
 
     @field_validator("rating")

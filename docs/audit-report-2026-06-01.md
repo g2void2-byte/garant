@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-65: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids и strict review rating/deal_id исправлены.
+- M-50-M-66: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id и strict service-comment ratings исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -795,6 +795,16 @@ Maintenance middleware держал module-level `_cache_lock = asyncio.Lock()`.
 Риск: user-facing `POST /api/reviews` мог принять malformed JSON как реальный отзыв: boolean `true` становился 1-star rating, string/float значения проходили как числа, а coerced `deal_id` мог привязать отзыв к сделке id `1`/`42`. Admin review edit/create имел такой же rating coercion. Это ломало API contract и маскировало frontend/input bugs вместо раннего 422.
 
 Исправление: `ReviewCreate` теперь до coercion требует `rating` как настоящий `int` в диапазоне 1..5, а `deal_id` как настоящий положительный `int`. `AdminReviewUpsertIn.rating` получил такой же strict integer gate перед range-check. Добавлены unit regressions на rejected `true`, `false`, строки, float и out-of-range значения; прямой schema smoke подтверждает, что malformed review payloads больше не принимаются.
+
+### M-66. Service comment ratings принимали `true`, `"5"` и `1.0` как валидные оценки
+
+Ссылки: `backend/app/schemas.py:608-631`, `backend/app/schemas.py:1764-1796`, regression `tests/unit/test_service_comment_schema.py`.
+
+`ServiceCommentCreate.rating` и `AdminCommentUpdateIn.rating` оставались `int | None` с обычным range-check. Pydantic сначала приводил JSON `true` к `1`, строку `"5"` к `5` и float `1.0` к `1`, а уже затем валидатор проверял диапазон. Поэтому `POST /api/services/{id}/comments` и admin edit-comment могли записать malformed rating payload как настоящую оценку.
+
+Риск: комментарии к услугам имели более слабый contract, чем свежезакрытые review endpoints: boolean `true` становился 1-star оценкой, string/float payloads проходили как числа, а frontend/input bugs маскировались вместо 422. Это влияло на `rating_avg` / `rating_count` услуги и admin audit payload для comment edit.
+
+Исправление: оба schema-класса теперь валидируют `rating` в `mode="before"`: `None` разрешен как отсутствие/очистка оценки, иначе принимается только настоящий `int` (не `bool`, строка или float) с прежним диапазоном 1..5. Добавлен unit regression на user create и admin update paths.
 
 ## Наблюдения без отдельного finding
 
