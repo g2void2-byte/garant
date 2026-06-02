@@ -9395,6 +9395,10 @@ export interface operations {
                 reg_to?: string | null;
                 /** @description When true, the endpoint is being used as a counterparty picker (e.g. on /deals/new) — bypass the 'min 1 deal' search gate so brand-new users can still find a counterparty to do their first deal with. */
                 picker?: boolean;
+                /** @description Max rows to return. Capped at 200 to protect the DB. */
+                limit?: number;
+                /** @description Row offset for cursorless pagination. */
+                offset?: number;
             };
             header?: {
                 authorization?: string | null;
