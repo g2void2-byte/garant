@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 60 файлов, 522 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 60 файлов, 526 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -50,6 +50,7 @@
 - M-17: admin taxonomy/currency mutations обновляют public category/service/wallet/admin projection кэши.
 - M-18: backend `DELETE /api/admin/currencies/{id}` больше не является недоступной из UI операцией.
 - M-19: admin broadcast delete обновляет audit cache после backend audit-log side effect.
+- M-20: admin settings/system mutations обновляют maintenance/system/audit кэши после side effects.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -304,6 +305,16 @@ Backend `DELETE /api/admin/broadcasts/{broadcast_id}` делает soft-delete `
 Риск: audit UI показывал неполную картину сразу после state-changing admin action; оператор мог решить, что удаление не было зафиксировано в audit trail, или пропустить важный след при проверке действий другого администратора.
 
 Исправление: `useAdminDeleteBroadcast` теперь инвалидирует `qk.admin.audit.all()` вместе с `qk.admin.broadcasts()`. Добавлены hook regression tests, которые закрепляют audit invalidation для broadcast create и delete.
+
+### M-20. Admin settings/system mutations оставляли stale maintenance/system/audit кэши
+
+Ссылки: `backend/app/routers/admin/settings.py:123-210`, `backend/app/routers/admin/system.py:57-137`, `backend/app/routers/admin/system.py:310-350`, `frontend/src/components/MaintenanceBanner.tsx:8-16`, `frontend/src/api/admin/hooks.ts:698-861`, regression `frontend/src/api/admin/hooks.test.tsx`.
+
+Backend `PATCH /api/admin/settings` меняет `AppSettings`, пишет `settings.update` в audit log, сбрасывает backend maintenance cache при изменении maintenance полей и влияет на `admin/system/status`: `_operational_alerts()` читает `pending_topup_expiry_hours` из той же singleton settings row. Frontend после settings update сбрасывал только admin settings, public settings и public stats. Отдельный `MaintenanceBanner` кэш `qk.maintenance()`, admin system status и audit log оставались старыми. `POST /api/admin/system/redis/flush` также пишет `system.redis_flush` в audit log, но frontend mutation вообще не инвалидировала кэши после успешного flush.
+
+Риск: после включения/выключения maintenance админская сессия могла не увидеть публичный maintenance banner до следующего 30-секундного poll; system page мог показывать старый stale-topup alert threshold после изменения `pending_topup_expiry_hours`; audit UI не показывал `settings.update` или `system.redis_flush` сразу после действия.
+
+Исправление: `useAdminUpdateSettings` теперь инвалидирует `qk.maintenance()`, `qk.admin.systemStatus()` и `qk.admin.audit.all()` дополнительно к прежним settings/public кэшам. `useAdminFlushRedis` инвалидирует system status и audit log. Добавлены hook regression tests для settings update и redis flush.
 
 ## Наблюдения без отдельного finding
 

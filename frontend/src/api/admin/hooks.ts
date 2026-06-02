@@ -703,6 +703,9 @@ export function useAdminUpdateSettings() {
       qc.invalidateQueries({ queryKey: qk.admin.settings() });
       qc.invalidateQueries({ queryKey: qk.publicSettings() });
       qc.invalidateQueries({ queryKey: qk.publicStats() });
+      qc.invalidateQueries({ queryKey: qk.maintenance() });
+      qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
     },
   });
 }
@@ -853,8 +856,13 @@ export function useAdminSystemStatus() {
 }
 
 export function useAdminFlushRedis() {
+  const qc = useQueryClient();
   return useMutation<{ ok: boolean; message?: string }, Error, void>({
     mutationFn: () => api.post("api/admin/system/redis/flush").json(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+    },
   });
 }
 
