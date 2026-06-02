@@ -811,7 +811,10 @@ export function useAdminDeleteBroadcast() {
   const qc = useQueryClient();
   return useMutation<{ ok: boolean }, Error, number>({
     mutationFn: (id) => api.delete(`api/admin/broadcasts/${id}`).json(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.admin.broadcasts() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.admin.broadcasts() });
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+    },
   });
 }
 

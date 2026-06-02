@@ -55,7 +55,9 @@ vi.mock("../client", () => ({
 
 import {
   useAdminClaimArbitration,
+  useAdminCreateBroadcast,
   useAdminCreateReview,
+  useAdminDeleteBroadcast,
   useAdminDeleteComment,
   useAdminDeleteCategory,
   useAdminDeleteCurrency,
@@ -434,6 +436,34 @@ describe("admin service/comment mutations - public cache invalidations", () => {
     ] as const) {
       expect(hasKey(keys, expected)).toBe(true);
     }
+  });
+});
+
+describe("admin broadcast mutations - audit cache invalidations", () => {
+  it("create invalidates broadcast history and audit log caches", async () => {
+    apiState.postResponse = { id: 21 };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminCreateBroadcast(), { wrapper });
+    await result.current.mutateAsync({ body: "Maintenance window", dispatch_inapp: true });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    expect(hasKey(keys, ["admin", "broadcasts"])).toBe(true);
+    expect(hasKey(keys, ["admin", "audit"])).toBe(true);
+  });
+
+  it("delete invalidates broadcast history and audit log caches", async () => {
+    apiState.deleteResponse = { ok: true };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminDeleteBroadcast(), { wrapper });
+    await result.current.mutateAsync(21);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    expect(hasKey(keys, ["admin", "broadcasts"])).toBe(true);
+    expect(hasKey(keys, ["admin", "audit"])).toBe(true);
   });
 });
 
