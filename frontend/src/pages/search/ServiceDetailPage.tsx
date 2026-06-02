@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { HandCoins, MessageSquare, Star, Trash2 } from "lucide-react";
 import { Page } from "@/components/layout/Page";
@@ -10,23 +10,64 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
+  buildServiceCommentsSearchParams,
   useCreateServiceComment,
   useDeleteServiceComment,
   useMe,
   useServiceComments,
   useServiceDetail,
 } from "@/api/hooks";
+import { api } from "@/api/client";
 import type { ServiceCommentDto, ServiceDetailDto } from "@/api/types";
 import { dealsLabel, formatMoney, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { openTelegramLink } from "@/lib/tg";
 
+const SERVICE_COMMENTS_PAGE_SIZE = 50;
+
 export default function ServiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const serviceId = id ? Number(id) : undefined;
   const { data: service, isLoading } = useServiceDetail(serviceId);
-  const { data: comments } = useServiceComments(serviceId);
+  const firstCommentsParams = useMemo(
+    () => ({ limit: SERVICE_COMMENTS_PAGE_SIZE, offset: 0 }),
+    [],
+  );
+  const { data: comments } = useServiceComments(serviceId, firstCommentsParams);
   const { data: me } = useMe();
+  const [commentItems, setCommentItems] = useState<ServiceCommentDto[]>([]);
+  const [commentsReachedEnd, setCommentsReachedEnd] = useState(false);
+  const [loadingMoreComments, setLoadingMoreComments] = useState(false);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const page = comments ?? [];
+    setCommentItems(page);
+    setCommentsReachedEnd(page.length < SERVICE_COMMENTS_PAGE_SIZE);
+    setCommentsError(null);
+  }, [comments, serviceId]);
+
+  const loadMoreComments = async () => {
+    if (!serviceId || loadingMoreComments || commentsReachedEnd) return;
+    setLoadingMoreComments(true);
+    setCommentsError(null);
+    try {
+      const page = await api
+        .get(`api/services/${serviceId}/comments`, {
+          searchParams: buildServiceCommentsSearchParams({
+            limit: SERVICE_COMMENTS_PAGE_SIZE,
+            offset: commentItems.length,
+          }),
+        })
+        .json<ServiceCommentDto[]>();
+      setCommentItems((prev) => [...prev, ...page]);
+      if (page.length < SERVICE_COMMENTS_PAGE_SIZE) setCommentsReachedEnd(true);
+    } catch (e: unknown) {
+      setCommentsError((e as Error)?.message || "Не удалось загрузить еще комментарии");
+    } finally {
+      setLoadingMoreComments(false);
+    }
+  };
 
   if (isLoading || !service || !serviceId) {
     return (
@@ -52,7 +93,15 @@ export default function ServiceDetailPage() {
         {service.description && <ServiceDescription text={service.description} />}
         <CommentsSection
           serviceId={serviceId}
-          comments={comments ?? []}
+          comments={commentItems}
+          hasMore={
+            !commentsReachedEnd &&
+            commentItems.length >= SERVICE_COMMENTS_PAGE_SIZE &&
+            commentItems.length < service.comments_count
+          }
+          loadingMore={loadingMoreComments}
+          loadMoreError={commentsError}
+          onLoadMore={loadMoreComments}
           isOwner={service.owner?.username === me?.username}
           myId={me?.id}
           isAdmin={Boolean(me?.admin && me.admin > 0)}
@@ -211,12 +260,20 @@ function ServiceDescription({ text }: { text: string }) {
 function CommentsSection({
   serviceId,
   comments,
+  hasMore,
+  loadingMore,
+  loadMoreError,
+  onLoadMore,
   isOwner,
   myId,
   isAdmin,
 }: {
   serviceId: number;
   comments: ServiceCommentDto[];
+  hasMore: boolean;
+  loadingMore: boolean;
+  loadMoreError: string | null;
+  onLoadMore: () => void;
   isOwner: boolean;
   myId?: number;
   isAdmin: boolean;
@@ -245,6 +302,12 @@ function CommentsSection({
           />
         ))
       )}
+      {hasMore && (
+        <Button onClick={onLoadMore} disabled={loadingMore} className="w-full">
+          {loadingMore ? "Загружаю..." : "Показать еще"}
+        </Button>
+      )}
+      {loadMoreError && <div className="text-xs text-danger text-center">{loadMoreError}</div>}
     </div>
   );
 }

@@ -245,10 +245,28 @@ export function useServiceDetail(id: number | undefined) {
   });
 }
 
-export function useServiceComments(id: number | undefined) {
+export interface ServiceCommentsQueryParams {
+  limit?: number;
+  offset?: number;
+}
+
+export function buildServiceCommentsSearchParams(
+  params: ServiceCommentsQueryParams = {},
+) {
+  const searchParams: Record<string, string> = {};
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  if (params.offset !== undefined) searchParams.offset = String(params.offset);
+  return searchParams;
+}
+
+export function useServiceComments(
+  id: number | undefined,
+  params: ServiceCommentsQueryParams = {},
+) {
+  const searchParams = buildServiceCommentsSearchParams(params);
   return useQuery<ServiceCommentDto[]>({
-    queryKey: qk.service.comments(id),
-    queryFn: () => api.get(`api/services/${id}/comments`).json(),
+    queryKey: qk.service.comments(id, params),
+    queryFn: () => api.get(`api/services/${id}/comments`, { searchParams }).json(),
     enabled: !!id,
     staleTime: 15_000,
   });

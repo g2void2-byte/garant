@@ -7,11 +7,14 @@ admin permissions).
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from sqlalchemy import select
 
 from backend.app.db import async_session
 from backend.app.models import Category, Service, ServiceComment, ServiceStatus, User
+from backend.app.time_utils import utcnow
 from tests.helpers import auth_headers, signed_init_data
 
 
@@ -133,6 +136,40 @@ async def test_create_comment_appears_in_list_and_updates_aggregates(client):
     assert detail.json()["comments_count"] == 1
     assert detail.json()["rating_avg"] == 5.0
     assert detail.json()["rating_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_list_comments_supports_limit_offset(client):
+    cat_id = await _seed_category()
+    owner_id = await _seed_user(1020, "owner_page")
+    author_id = await _seed_user(1021, "comment_page")
+    viewer_init = signed_init_data(1022, "comment_viewer")
+    svc_id = await _seed_service(owner_id, cat_id)
+
+    async with async_session() as session:
+        now = utcnow()
+        comments = [
+            ServiceComment(
+                service_id=svc_id,
+                author_id=author_id,
+                text=f"paged comment {idx}",
+                rating=5,
+                created_at=now - timedelta(minutes=idx),
+            )
+            for idx in range(4)
+        ]
+        session.add_all(comments)
+        await session.commit()
+        expected_ids = [comments[1].id, comments[2].id]
+
+    resp = await client.get(
+        f"/api/services/{svc_id}/comments",
+        params={"limit": 2, "offset": 1},
+        headers=auth_headers(viewer_init),
+    )
+    assert resp.status_code == 200, resp.text
+    assert int(resp.headers["X-Total-Count"]) == 4
+    assert [row["id"] for row in resp.json()] == expected_ids
 
 
 @pytest.mark.asyncio

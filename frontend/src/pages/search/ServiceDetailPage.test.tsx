@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
@@ -12,12 +13,29 @@ const serviceState = vi.hoisted(() => ({
   data: undefined as ServiceDetailDto | undefined,
   isLoading: false,
 }));
-const commentsState = vi.hoisted(() => ({ data: undefined as ServiceCommentDto[] | undefined }));
+const commentsState = vi.hoisted(() => ({
+  data: undefined as ServiceCommentDto[] | undefined,
+  lastParams: undefined as unknown,
+}));
 const meState = vi.hoisted(() => ({ data: undefined as UserCardDto | undefined }));
+const apiGetMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/api/client", () => ({
+  api: { get: apiGetMock },
+}));
 
 vi.mock("@/api/hooks", () => ({
+  buildServiceCommentsSearchParams: (params: { limit?: number; offset?: number }) => {
+    const searchParams: Record<string, string> = {};
+    if (params.limit !== undefined) searchParams.limit = String(params.limit);
+    if (params.offset !== undefined) searchParams.offset = String(params.offset);
+    return searchParams;
+  },
   useServiceDetail: () => serviceState,
-  useServiceComments: () => commentsState,
+  useServiceComments: (_id: number | undefined, params: unknown) => {
+    commentsState.lastParams = params;
+    return { data: commentsState.data };
+  },
   useMe: () => meState,
   useCreateServiceComment: () => ({
     mutate: vi.fn(),
@@ -102,6 +120,21 @@ function makeUser(overrides: Partial<UserCardDto> = {}): UserCardDto {
   };
 }
 
+function makeComment(id: number, overrides: Partial<ServiceCommentDto> = {}): ServiceCommentDto {
+  return {
+    id,
+    service_id: 7,
+    author_id: 100 + id,
+    author_username: `commenter${id}`,
+    author_display_name: `Commenter ${id}`,
+    author_photo_url: null,
+    text: `Comment ${id}`,
+    rating: 5,
+    created_at: `2026-01-${String(Math.min(id, 28)).padStart(2, "0")}T00:00:00Z`,
+    ...overrides,
+  };
+}
+
 function renderAt(id: number) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -116,9 +149,11 @@ function renderAt(id: number) {
 }
 
 beforeEach(() => {
+  apiGetMock.mockReset();
   serviceState.data = undefined;
   serviceState.isLoading = false;
   commentsState.data = undefined;
+  commentsState.lastParams = undefined;
   meState.data = makeUser();
 });
 
@@ -148,6 +183,28 @@ describe("<ServiceDetailPage />", () => {
     renderAt(7);
     expect(screen.queryByRole("button", { name: /Сделка/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Написать/i })).not.toBeInTheDocument();
+  });
+
+  it("requests the first comments page", () => {
+    serviceState.data = makeService();
+    commentsState.data = [];
+    renderAt(7);
+    expect(commentsState.lastParams).toEqual({ limit: 50, offset: 0 });
+  });
+
+  it("loads more comments with the backend offset", async () => {
+    serviceState.data = makeService({ comments_count: 51 });
+    commentsState.data = Array.from({ length: 50 }, (_, idx) => makeComment(idx + 1));
+    apiGetMock.mockReturnValue({ json: async () => [makeComment(51)] });
+
+    const user = userEvent.setup();
+    renderAt(7);
+    await user.click(screen.getByRole("button", { name: "Показать еще" }));
+
+    await waitFor(() => expect(apiGetMock).toHaveBeenCalledTimes(1));
+    expect(apiGetMock).toHaveBeenCalledWith("api/services/7/comments", {
+      searchParams: { limit: "50", offset: "50" },
+    });
   });
 
   it("renders the rating + comments stat tiles", () => {

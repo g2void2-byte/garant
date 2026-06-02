@@ -9156,6 +9156,8 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                /** @description Row offset for cursorless pagination. */
+                offset?: number;
             };
             header?: {
                 authorization?: string | null;

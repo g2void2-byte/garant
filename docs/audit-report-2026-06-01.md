@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 62 файла, 552 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 62 файла, 554 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -73,6 +73,7 @@
 - M-40: user deal list больше не отправляет invalid `role=all` и не грузит весь список сделок одним ответом.
 - M-41: notifications page больше не запирает пользователя на первой странице уведомлений.
 - M-42: per-currency wallet history больше не обрезается первыми 100 unfiltered deposit/withdrawal rows.
+- M-43: service detail comments больше не запирают пользователя на первой странице комментариев.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -557,6 +558,16 @@ Backend `GET /api/notifications` уже имел keyset pagination по `(create
 Риск: пользователь видел неполную историю пополнений/выводов по валюте, не мог штатно добраться до старых операций и pending invoice link мог исчезнуть из истории при большом количестве более свежих строк другой валюты.
 
 Исправление: wallet deposit/withdrawal list endpoints принимают `currency`, `limit`, `offset`, выставляют `X-Total-Count` и сортируют стабильно по `created_at desc, id desc`. Frontend hooks прокидывают structured history params, а `WalletCurrencyPage` запрашивает первые 50 операций текущей валюты и догружает следующие страницы кнопкой "Показать еще" через offset. Добавлены backend regression на currency-scoped `limit/offset` и frontend regression на first-page params + load-more offsets.
+
+### M-43. Service detail comments не подгружали следующие страницы
+
+Ссылки: `backend/app/routers/services.py:343-377`, `frontend/src/api/hooks.ts:248-272`, `frontend/src/pages/search/ServiceDetailPage.tsx`, regressions `tests/integration/test_service_comments.py`, `frontend/src/pages/search/ServiceDetailPage.test.tsx`, OpenAPI snapshot `frontend/openapi.json`.
+
+`GET /api/services/{id}/comments` принимал только `limit` и по умолчанию возвращал первые 50 комментариев. `ServiceDetailPage` вызывал hook без pagination params и рендерил только этот первый ответ, хотя detail DTO рядом показывал полный `comments_count`. Пользователь видел счетчик, например `120`, но открыть комментарии после первой страницы не мог.
+
+Риск: старые комментарии и оценки услуги становились недоступны из публичного service detail UI. Для услуг с большим числом отзывов это ломало пользовательскую проверку репутации и модераторскую/владельческую работу с более старыми комментариями.
+
+Исправление: comments endpoint принимает `limit/offset`, выставляет `X-Total-Count` и сортирует стабильно по `created_at desc, id desc`. `useServiceComments` принимает structured params, а `ServiceDetailPage` запрашивает первую страницу по 50 комментариев и показывает "Показать еще", пока локально загружено меньше `comments_count`. Добавлены backend regression на `limit/offset` и frontend regressions на first-page params + load-more offset.
 
 ## Наблюдения без отдельного finding
 

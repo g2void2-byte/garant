@@ -117,6 +117,11 @@ export interface WalletHistoryQueryKey {
   offset?: number;
 }
 
+export interface ServiceCommentsQueryKey {
+  limit?: number;
+  offset?: number;
+}
+
 export const qk = {
   // ── Public / user-facing ─────────────────────────────────────
   me: () => ["me"] as const,
@@ -140,8 +145,10 @@ export const qk = {
   service: {
     all: () => ["service"] as const,
     detail: (id: number | undefined) => ["service", id] as const,
-    comments: (id: number | undefined) =>
-      ["service", id, "comments"] as const,
+    comments: (id: number | undefined, params?: ServiceCommentsQueryKey) =>
+      params
+        ? (["service", id, "comments", params] as const)
+        : (["service", id, "comments"] as const),
   },
   users: {
     all: () => ["users"] as const,
