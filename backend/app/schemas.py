@@ -2013,10 +2013,10 @@ class AdminSettingsUpdateIn(BaseModel):
 
     @field_validator("vip_commission_percent")
     @classmethod
-    def _commission_ok(cls, v: Decimal | float | None) -> Decimal | None:
-        if v is None:
-            return v
-        d = Decimal(str(v)) if isinstance(v, float) else v
+    def _commission_ok(cls, v: Decimal | float | int | None) -> Decimal | None:
+        d = _reject_non_finite_money(v)
+        if d is None:
+            return None
         if d < -1 or d > 100:
             raise ValueError("Комиссия должна быть в диапазоне -1..100")
         return d.quantize(Decimal("0.01"))
@@ -2026,6 +2026,8 @@ class AdminSettingsUpdateIn(BaseModel):
         "inactivity_pending_cancellation_days",
         "max_active_services_per_user",
         "pending_topup_expiry_hours",
+        "faq_stats_users",
+        "faq_stats_deals",
     )
     @classmethod
     def _int_ok(cls, v: int | None) -> int | None:
@@ -2034,6 +2036,16 @@ class AdminSettingsUpdateIn(BaseModel):
         if v < 0:
             raise ValueError("Значение не может быть отрицательным")
         return v
+
+    @field_validator("faq_stats_total_usd")
+    @classmethod
+    def _faq_stats_total_usd_ok(cls, v: Decimal | float | int | None) -> Decimal | None:
+        d = _reject_non_finite_money(v)
+        if d is None:
+            return None
+        if d < 0:
+            raise ValueError("Значение не может быть отрицательным")
+        return d
 
     @field_validator("maintenance_message")
     @classmethod

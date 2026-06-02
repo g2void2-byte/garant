@@ -675,6 +675,16 @@ Admin deal detail назначал арбитра через `GET /api/admin/use
 
 Исправление: валидаторы разделены. `deal_commission_percent` теперь принимает только конечные числа `0..100`, а `vip_commission_percent` сохраняет прежний диапазон `-1..100`. Добавлен unit regression: обычная комиссия отвергает `-1` до DB constraint, `0` остаётся валидной границей, VIP-комиссия сохраняет sentinel `-1`, а `-1.01` отклоняется.
 
+### M-54. Admin FAQ stats принимали отрицательные публичные счётчики
+
+Ссылки: `backend/app/schemas.py:1982-2059`, `backend/app/routers/public_stats.py:24-33`, `frontend/src/components/domain/StatsBadge.tsx`, regression `tests/unit/test_admin_settings_schema.py`.
+
+`AdminSettingsUpdateIn` документировал, что numeric settings не могут быть отрицательными, но валидатор `_int_ok` покрывал только inactivity/max-active/pending-topup поля. `faq_stats_users`, `faq_stats_deals` и `faq_stats_total_usd` не проверялись вообще. Поэтому PATCH `/api/admin/settings` мог сохранить `-5` пользователей, `-7` сделок или отрицательный USD volume, а `/api/stats/public` затем отдавал эти значения на публичный `/faq` badge.
+
+Риск: публичная витрина статистики могла показывать отрицательные счётчики и объём, хотя эти поля являются showcase/marketing numbers. Это не ломало деньги напрямую, но создавало user-visible неконсистентность и нарушало собственный контракт схемы "numeric values must be non-negative".
+
+Исправление: `faq_stats_users` и `faq_stats_deals` добавлены в общий non-negative int validator, `faq_stats_total_usd` получил отдельный finite money validator с запретом отрицательных значений. Заодно VIP commission теперь тоже проходит через общий finite-money guard. Добавлены unit regressions на отрицательные FAQ counts/total и на нулевую границу.
+
 ## Наблюдения без отдельного finding
 
 - Media upload/serve выглядит сильной зоной: есть streaming cap, magic bytes, Pillow reencode, reject animation, signed deal URLs и path validation.
