@@ -335,6 +335,18 @@ class UserUpdate(BaseModel):
     # ``Currency`` row with ``kind == 'fiat'``.
     display_currency_code: str | None = None
 
+    @field_validator(
+        "dm_deals",
+        "dm_deposits",
+        "dm_system",
+        "is_anonymous_deals",
+        "is_hidden_profile",
+        mode="before",
+    )
+    @classmethod
+    def _optional_bool_ok(cls, v: object) -> bool | None:
+        return _validate_optional_bool(v, what="Флаг профиля")
+
     @field_validator("photo_url")
     @classmethod
     def _photo_url_ok(cls, v: str | None) -> str | None:
@@ -499,6 +511,18 @@ def _validate_optional_non_negative_int(v: object, *, what: str = "Значен�
     if v < 0:
         raise ValueError(f"{what} не может быть отрицательным")
     return v
+
+
+def _validate_bool(v: object, *, what: str = "Флаг") -> bool:
+    if not isinstance(v, bool):
+        raise ValueError(f"{what} должен быть boolean")
+    return v
+
+
+def _validate_optional_bool(v: object, *, what: str = "Флаг") -> bool | None:
+    if v is None:
+        return None
+    return _validate_bool(v, what=what)
 
 
 def _validate_service_photos(v: list[str] | None) -> list[str] | None:
@@ -1291,6 +1315,11 @@ class AdminSetRoleIn(BaseModel):
     is_arbiter: bool = False
     is_vip: bool = False
 
+    @field_validator("is_admin", "is_arbiter", "is_vip", mode="before")
+    @classmethod
+    def _role_flag_ok(cls, v: object) -> bool:
+        return _validate_bool(v, what="Флаг роли")
+
 
 class AdminSetRatingIn(BaseModel):
     """Body for ``POST /admin/users/:id/rating``.
@@ -1672,6 +1701,11 @@ class AdminServiceUpdateIn(BaseModel):
     status: Literal["draft", "active", "paused", "banned"] | None = None
     ban_reason: str | None = None
 
+    @field_validator("clear_rating", mode="before")
+    @classmethod
+    def _clear_rating_ok(cls, v: object) -> bool:
+        return _validate_bool(v, what="Флаг очистки рейтинга")
+
     @field_validator("title")
     @classmethod
     def _title_ok(cls, v: str | None) -> str | None:
@@ -1800,6 +1834,11 @@ class AdminCommentUpdateIn(BaseModel):
     text: str | None = None
     rating: int | None = None
     clear_rating: bool = False
+
+    @field_validator("clear_rating", mode="before")
+    @classmethod
+    def _clear_rating_ok(cls, v: object) -> bool:
+        return _validate_bool(v, what="Флаг очистки рейтинга")
 
     @field_validator("text")
     @classmethod
@@ -2096,6 +2135,16 @@ class AdminSettingsUpdateIn(BaseModel):
     faq_stats_deals: int | None = None
     faq_stats_total_usd: Decimal | None = None
 
+    @field_validator(
+        "maintenance_enabled",
+        "auto_withdraw_enabled",
+        "faq_stats_badge_enabled",
+        mode="before",
+    )
+    @classmethod
+    def _optional_bool_ok(cls, v: object) -> bool | None:
+        return _validate_optional_bool(v, what="Флаг настройки")
+
     @field_validator("deal_commission_percent")
     @classmethod
     def _deal_commission_ok(cls, v: Decimal | float | int | None) -> Decimal | None:
@@ -2268,6 +2317,11 @@ class AdminCurrencyUpsertIn(BaseModel):
     # SQL update.
     kind: Literal["crypto", "fiat"] | None = None
 
+    @field_validator("is_active", mode="before")
+    @classmethod
+    def _is_active_ok(cls, v: object) -> bool | None:
+        return _validate_optional_bool(v, what="Флаг активности валюты")
+
     @field_validator("code")
     @classmethod
     def _code_ok(cls, v: str) -> str:
@@ -2408,6 +2462,11 @@ class AdminBroadcastCreateIn(BaseModel):
     dispatch_inapp: bool = True
     dispatch_dm: bool = False
     scheduled_at: datetime | None = None
+
+    @field_validator("dispatch_inapp", "dispatch_dm", mode="before")
+    @classmethod
+    def _dispatch_flag_ok(cls, v: object) -> bool:
+        return _validate_bool(v, what="Флаг отправки")
 
     @field_validator("title")
     @classmethod

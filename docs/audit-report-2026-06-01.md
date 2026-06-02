@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-68: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids и strict admin counter integers исправлены.
+- M-50-M-69: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers и strict boolean payload flags исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -825,6 +825,16 @@ Admin stats (`deals_total`, `good`, `bad` и соседние счетчики),
 Риск: операторская корректировка статистики/счетчиков и production settings принимали malformed JSON как реальные числовые значения. Особенно опасны `false -> 0` для лимитов/окон и `true -> 1` для публичных stats/FAQ counters: фронтендовая ошибка или ручной API-call мог тихо поменять бизнес-лимит вместо явного 422.
 
 Исправление: добавлен общий helper strict optional non-negative int. `AdminSetStatsIn`, `AdminServiceUpdateIn` и integer-поля `AdminSettingsUpdateIn` теперь валидируются в `mode="before"`: разрешены только настоящий `int >= 0` или `None`; bool, строки и float отвергаются до coercion. Unit regression покрывает accepted explicit ints и rejected `true`, `false`, `"5"`, `1.0`, `-1` для всех затронутых полей.
+
+### M-69. Boolean write-boundary fields принимали строки/числа как флаги
+
+Ссылки: `backend/app/schemas.py:308-377`, `backend/app/schemas.py:516-526`, `backend/app/schemas.py:1307-1322`, `backend/app/schemas.py:1684-1755`, `backend/app/schemas.py:1833-1875`, `backend/app/schemas.py:2116-2215`, `backend/app/schemas.py:2289-2406`, `backend/app/schemas.py:2442-2557`, regression `tests/unit/test_strict_bool_schema.py`.
+
+Несколько write-схем объявляли флаги как обычный `bool` / `bool | None`. Pydantic до валидаторов приводил JSON-строки и числа к boolean: `"true"` становился `True`, `"false"` становился `False`, `1` становился `True`, а `0` становился `False`. Затронуты user privacy/DM flags, admin role flags, `clear_rating`, production settings, active currency flag и broadcast dispatch flags.
+
+Риск: malformed JSON или stale frontend payload мог тихо включить/выключить роль, режим обслуживания, auto-withdraw, FAQ badge, активность валюты, очистку рейтинга, способ доставки рассылки или приватность/DM-настройки пользователя вместо раннего 422. Для admin endpoints это особенно плохо: операторское действие выглядит успешным, хотя тело запроса не соответствует API contract.
+
+Исправление: добавлены общие strict bool validators и `mode="before"` проверки на всех найденных boolean write-boundaries. Optional-флаги принимают только настоящий `bool` или `None`; non-optional флаги принимают только настоящий `bool`, а строки, числа и явный `null` отвергают до coercion. Unit regression покрывает accepted `true`/`false` как реальные bool и rejected `"true"`, `"false"`, `1`, `0`, плюс `None` для non-optional flags.
 
 ## Наблюдения без отдельного finding
 
