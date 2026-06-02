@@ -240,6 +240,7 @@ function useAdminDealAction(action: string) {
       qc.invalidateQueries({ queryKey: qk.admin.arbitration.all() });
       qc.invalidateQueries({ queryKey: qk.admin.dashboard() });
       qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
       // V5-F-5: when the response carries the full AdminDealDetailDto,
       // also invalidate the buyer + seller user-detail queries so an
       // admin viewing one of the parties sees the post-action balance.
@@ -324,9 +325,11 @@ export function useAdminClaimArbitration() {
   return useMutation<{ claimed: boolean; deal_id: number; arbiter_id: number }, Error, number>({
     mutationFn: (dealId) =>
       api.post(`api/admin/arbitration/${dealId}/claim`).json(),
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: qk.admin.arbitration.all() });
       qc.invalidateQueries({ queryKey: qk.admin.deals.all() });
+      qc.invalidateQueries({ queryKey: qk.admin.deal.detail(data.deal_id) });
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
       // V5-F-5: claim response only carries `{ claimed, deal_id, arbiter_id }`
       // and does NOT expose buyer/seller ids. Fall back to a prefix-only
       // invalidation — TanStack Query treats `["admin", "user"]` as a

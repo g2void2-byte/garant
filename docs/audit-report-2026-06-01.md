@@ -61,6 +61,7 @@
 - M-28: create-deal frontend корректно обрабатывает `invoice: null`, когда сделка полностью оплачена с баланса.
 - M-29: user deal list больше не игнорирует неизвестные `role`/`status` фильтры.
 - M-30: admin deal list снова умеет фильтровать `pending_topup`, а deprecated `pending_payment` больше не показывается как UI-фильтр.
+- M-31: admin deal/claim mutations сбрасывают audit log и точечный deal detail cache.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -425,6 +426,16 @@ Backend `GET /api/deals` принимал `role` и `status` как plain string
 Риск: админ не мог отфильтровать зависшие top-up сделки из `/admin/deals` именно в сценарии, где нужна ручная проверка invoice/deal lifecycle. Deprecated `pending_payment` выглядел как рабочий фильтр, но приводил к ошибке запроса и путал диагностику.
 
 Исправление: backend admin deals allow-list теперь принимает `pending_topup` и по-прежнему отвергает deprecated `pending_payment`. Frontend разделяет display labels и filterable statuses: строка `pending_payment` остается человекочитаемой для исторических rows, но chip фильтра больше не выводится. Добавлены backend regression на `?status=pending_topup`/`pending_payment` и frontend test на набор status chips.
+
+### M-31. Admin deal actions и arbitration claim оставляли stale audit/detail кэши
+
+Ссылки: `backend/app/routers/admin/deals.py:959-1351`, `backend/app/routers/admin/arbitration.py:116-194`, `frontend/src/api/admin/hooks.ts:229-336`, regression `frontend/src/api/admin/hooks.test.tsx`.
+
+Backend admin deal actions (`force-release`, `force-refund`, `split`, `force-arbitration`, `assign-arbiter`, `delete`) пишут `AdminAuditLog` через `log_admin_action()`. `POST /api/admin/arbitration/{deal_id}/claim` тоже пишет audit row и меняет `Deal.arbitration_resolved_by`, который читается `GET /api/admin/deals/{id}` как `arbitration_resolved_by_id/username`. Frontend mutations сбрасывали deal lists/queues/dashboard, но не `qk.admin.audit.*`; claim также не сбрасывал точечный `qk.admin.deal.detail(deal_id)`.
+
+Риск: админ мог выполнить force-action или claim и сразу открыть audit/detail, но увидеть старую audit history или старого назначенного арбитра до фонового refetch/manual refresh. Это особенно плохо для claim: очередь уже переносит дело в "В работе", а detail cache мог продолжать показывать `arbitration_resolved_by_id=null`.
+
+Исправление: `useAdminDealAction` теперь инвалидирует `qk.admin.audit.all()` вместе с остальными projection caches. `useAdminClaimArbitration` использует `deal_id` из ответа и дополнительно инвалидирует `qk.admin.deal.detail(deal_id)` и `qk.admin.audit.all()`. Hook regression tests закрепляют audit/detail invalidation set.
 
 ## Наблюдения без отдельного finding
 

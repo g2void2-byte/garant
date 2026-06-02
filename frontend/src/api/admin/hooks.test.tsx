@@ -293,11 +293,12 @@ describe("useAdminDealAction (force-release / force-refund) — V5-F-5 invalidat
     // V5-F-5 additions: buyer + seller user-detail invalidations.
     expect(hasKey(keys, ["admin", "user", 42])).toBe(true);
     expect(hasKey(keys, ["admin", "user", 99])).toBe(true);
-    // Existing four invalidations must still fire (regression guard).
+    // Existing list/detail invalidations must still fire (regression guard).
     expect(hasKey(keys, ["admin", "deals"])).toBe(true);
     expect(hasKey(keys, ["admin", "deal", 7])).toBe(true);
     expect(hasKey(keys, ["admin", "arbitration"])).toBe(true);
     expect(hasKey(keys, ["admin", "dashboard"])).toBe(true);
+    expect(hasKey(keys, ["admin", "audit"])).toBe(true);
   });
 
   it("force-refund invalidates buyer + seller user-detail query keys", async () => {
@@ -320,6 +321,7 @@ describe("useAdminDealAction (force-release / force-refund) — V5-F-5 invalidat
     expect(hasKey(keys, ["admin", "deal", 7])).toBe(true);
     expect(hasKey(keys, ["admin", "arbitration"])).toBe(true);
     expect(hasKey(keys, ["admin", "dashboard"])).toBe(true);
+    expect(hasKey(keys, ["admin", "audit"])).toBe(true);
   });
 
   it("does NOT invalidate user keys when the response is `{ deleted: true }` (no buyer/seller)", async () => {
@@ -338,11 +340,12 @@ describe("useAdminDealAction (force-release / force-refund) — V5-F-5 invalidat
     // Type-guard rejected the deleted-only payload — no per-id user
     // invalidations fire.
     expect(keys.some((k) => k[0] === "admin" && k[1] === "user" && k.length === 3)).toBe(false);
-    // The existing four invalidations still fire.
+    // The existing shared invalidations still fire.
     expect(hasKey(keys, ["admin", "deals"])).toBe(true);
     expect(hasKey(keys, ["admin", "deal", 7])).toBe(true);
     expect(hasKey(keys, ["admin", "arbitration"])).toBe(true);
     expect(hasKey(keys, ["admin", "dashboard"])).toBe(true);
+    expect(hasKey(keys, ["admin", "audit"])).toBe(true);
   });
 });
 
@@ -359,9 +362,12 @@ describe("useAdminClaimArbitration — V5-F-5 prefix invalidation", () => {
     // V5-F-5: prefix-only invalidation matches every cached
     // ["admin", "user", N] query without needing party ids.
     expect(hasKey(keys, ["admin", "user"])).toBe(true);
-    // Existing invalidations are preserved.
+    // Existing invalidations are preserved, and the mutated detail/audit
+    // projections refresh too.
     expect(hasKey(keys, ["admin", "arbitration"])).toBe(true);
     expect(hasKey(keys, ["admin", "deals"])).toBe(true);
+    expect(hasKey(keys, ["admin", "deal", 7])).toBe(true);
+    expect(hasKey(keys, ["admin", "audit"])).toBe(true);
   });
 });
 
