@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-63: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache и strict deal attachment ids исправлены.
+- M-50-M-64: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids и strict admin review ids исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -775,6 +775,16 @@ Maintenance middleware держал module-level `_cache_lock = asyncio.Lock()`.
 Риск: attachment contract становился stringly/boolean tolerant там, где API должен принимать только явные положительные integer primary keys. Это не обходило owner/kind checks, но создавало неожиданные привязки файлов, лишние DB lookups для заведомо невалидных id и расхождение между create-path и `_parse_attachment_ids`, который уже отвергал bool при сериализации старых rows.
 
 Исправление: `attachments` теперь проходит `mode="before"` validator: значение должно быть списком, каждый элемент должен быть именно `int` (не `bool`, не строка/float), а после этого ids должны быть положительными. Добавлен unit regression на accepted `[1, 42]` и rejected `[true]`, `[false]`, `["1"]`, `[1.0]`, `[0]`, `[-1]`.
+
+### M-64. Admin review create/edit принимал coerced primary keys
+
+Ссылки: `backend/app/schemas.py:1684-1715`, regression `tests/unit/test_admin_review_schema.py`.
+
+`AdminReviewUpsertIn` объявлял `author_id`, `target_id` и `deal_id` как обычные `int | None`. До endpoint-логики Pydantic приводил JSON `true` к `1`, строку `"1"` к `1`, float `1.0` к `1`, а также пропускал `0` и отрицательные ids. На create это могло создать отзыв от имени/в адрес неявного пользователя id `1` или привязать отзыв к неявной сделке id `1`; `0`/отрицательные значения уходили дальше в DB lookup/FK-path вместо раннего contract rejection.
+
+Риск: TOTP-защищенный admin endpoint оставался tolerant к boolean/stringly ids там, где операция пишет чужой пользовательский контент и должна принимать только явные положительные integer primary keys. Ошибка оператора или stale frontend payload могла превратиться в валидную запись не для того пользователя/сделки, а не в 422.
+
+Исправление: `AdminReviewUpsertIn` теперь валидирует `author_id`, `target_id` и `deal_id` в `mode="before"`: допускается `None` для edit-пути, иначе значение должно быть именно `int` (без `bool`, строк и float) и `> 0`. Добавлены unit regressions на accepted positive ids, omitted ids for edit и rejected `[true]`, `[false]`, `"1"`, `1.0`, `0`, `-1` для каждого поля.
 
 ## Наблюдения без отдельного finding
 

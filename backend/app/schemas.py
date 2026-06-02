@@ -1695,6 +1695,17 @@ class AdminReviewUpsertIn(BaseModel):
     rating: int
     text: str = ""
 
+    @field_validator("target_id", "author_id", "deal_id", mode="before")
+    @classmethod
+    def _strict_positive_ids(cls, v: object) -> object:
+        if v is None:
+            return v
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError("ID должен быть целым числом")
+        if v <= 0:
+            raise ValueError("ID должен быть положительным числом")
+        return v
+
     @field_validator("rating")
     @classmethod
     def _rating_range(cls, v: int) -> int:
