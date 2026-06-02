@@ -16,7 +16,11 @@ import {
   useAdminWallets,
 } from "@/api/admin/hooks";
 import { parseDecimal } from "@/lib/format";
-import type { AdminCurrencyRateDto, AdminWalletListItemDto } from "@/api/types";
+import type {
+  AdminCurrencyRateDto,
+  AdminUserBalanceDto,
+  AdminWalletListItemDto,
+} from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
 const PAGE_SIZE = 50;
@@ -170,7 +174,12 @@ export default function AdminWalletsPage() {
         onClose={() => setTarget(null)}
         title={target ? `Корректировка: ${target.display_name}` : undefined}
       >
-        {target && <AdjustForm target={target} onClose={() => setTarget(null)} />}
+        {target && (
+          <>
+            <BalanceOverview target={target} />
+            <AdjustForm target={target} onClose={() => setTarget(null)} />
+          </>
+        )}
       </Sheet>
       <Sheet open={ratesOpen} onClose={() => setRatesOpen(false)} title="USD rates">
         <RatesForm onClose={() => setRatesOpen(false)} />
@@ -211,6 +220,42 @@ function Pagination({
       >
         <ChevronRight size={18} />
       </button>
+    </div>
+  );
+}
+
+function BalanceOverview({ target }: { target: AdminWalletListItemDto }) {
+  const nonZero = target.balances.filter((b) => parseDecimal(b.total) > 0);
+  return (
+    <div className="mb-4 rounded-card border border-border bg-panel p-3">
+      <div className="text-xs uppercase tracking-wide text-text-muted">Balances</div>
+      {nonZero.length === 0 ? (
+        <div className="mt-2 text-xs text-text-muted italic">No balances</div>
+      ) : (
+        <div className="mt-3 grid grid-cols-2 gap-1.5">
+          {nonZero.map((balance) => (
+            <BalancePill key={balance.currency_id} balance={balance} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BalancePill({ balance }: { balance: AdminUserBalanceDto }) {
+  const amt = parseDecimal(balance.amount);
+  const locked = parseDecimal(balance.locked);
+  return (
+    <div className="text-xs bg-panel-2 rounded-button px-2 py-1.5">
+      <div className="text-text-muted">{balance.currency_code}</div>
+      <div className="font-mono">
+        {amt.toFixed(balance.decimals)}
+        {locked > 0 && (
+          <span className="text-warning ml-1">
+            (+{locked.toFixed(balance.decimals)} lock)
+          </span>
+        )}
+      </div>
     </div>
   );
 }

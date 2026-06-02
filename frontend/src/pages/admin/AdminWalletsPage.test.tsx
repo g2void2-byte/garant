@@ -211,6 +211,39 @@ describe("<AdminWalletsPage />", () => {
     expect(screen.getByText("Alice")).toBeInTheDocument();
   });
 
+  it("shows every non-zero balance in the adjust sheet when the row preview is capped", async () => {
+    const base = makeUserBalance();
+    const balances = [
+      base.balances[0],
+      { ...base.balances[0], currency_id: 2, currency_code: "TON", amount: "2", locked: "0", total: "2" },
+      { ...base.balances[0], currency_id: 3, currency_code: "ETH", amount: "3", locked: "0", total: "3" },
+      { ...base.balances[0], currency_id: 4, currency_code: "LTC", amount: "4", locked: "0", total: "4" },
+      {
+        ...base.balances[0],
+        currency_id: 5,
+        currency_code: "BTC",
+        decimals: 8,
+        amount: "0.25",
+        locked: "0",
+        total: "0.25",
+      },
+    ];
+    mockState.list = {
+      items: [{ ...base, balances }],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    const user = userEvent.setup();
+
+    renderPage();
+    expect(screen.queryByText("BTC")).not.toBeInTheDocument();
+    await user.click(screen.getByText("Alice"));
+
+    expect(await screen.findByText("BTC")).toBeInTheDocument();
+    expect(screen.getByText("0.25000000")).toBeInTheDocument();
+  });
+
   it("typing search + Enter triggers a refetch with trimmed q", async () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
     renderPage();

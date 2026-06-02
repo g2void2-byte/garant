@@ -645,6 +645,16 @@ Admin deal detail назначал арбитра через `GET /api/admin/use
 
 Исправление: `/api/admin/users` теперь при непустом `q` добавляет exact-match priority для `username`, `display_name` и numeric `tg_user_id`, поэтому точные совпадения всегда попадают в начало первой страницы перед более новыми substring matches. Frontend lookup для назначения арбитра запрашивает только `page=1&page_size=1`, опираясь на этот exact-first contract. Добавлены backend regressions на старый exact username/tg_id за 25 новыми partial matches и frontend regression на параметры lookup + отправку найденного `arbiter_id`.
 
+### M-51. Admin wallets скрывал часть ненулевых балансов в карточке пользователя
+
+Ссылки: `frontend/src/pages/admin/AdminWalletsPage.tsx`, regression `frontend/src/pages/admin/AdminWalletsPage.test.tsx`.
+
+`/admin/wallets` получал от backend полный `balances` массив по активным валютам, но в строке пользователя показывал только `nonZero.slice(0, 4)`. При пяти и более ненулевых валютах остальные суммы не отображались нигде в UI: клик по строке открывал только форму корректировки, без полного breakdown текущих балансов.
+
+Риск: админ мог принять решение о ручной корректировке или расследовании кошелька по неполной картине, особенно у пользователей с балансами в нескольких валютах. Backend данные уже были в ответе, проблема была именно в представлении.
+
+Исправление: sheet корректировки теперь перед формой показывает полный список всех ненулевых балансов выбранного пользователя, включая locked-часть. Список в строке остается компактным preview, но полный breakdown доступен штатным кликом по пользователю. Добавлен frontend regression: пятая валюта не видна в row preview, но появляется в adjust sheet с точной decimal-точностью.
+
 ## Наблюдения без отдельного finding
 
 - Media upload/serve выглядит сильной зоной: есть streaming cap, magic bytes, Pillow reencode, reject animation, signed deal URLs и path validation.
