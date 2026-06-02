@@ -665,6 +665,16 @@ Admin deal detail назначал арбитра через `GET /api/admin/use
 
 Исправление: review create/edit и comment edit теперь валидируют `1..5`, показывают локальную ошибку `Рейтинг 1..5` и подписывают поля тем же диапазоном. Service `rating_manual` оставлен `0..5`, потому что это отдельный manual override contract. Добавлены frontend regressions на create review, update review и update comment с rating `0`: mutation не вызывается, ошибка показывается локально.
 
+### M-53. Admin settings принимал `-1` для обычной комиссии, хотя БД разрешает только `0..100`
+
+Ссылки: `backend/app/schemas.py:1982-2020`, `backend/app/models.py:698-722`, regression `tests/unit/test_admin_settings_schema.py`.
+
+`AdminSettingsUpdateIn` валидировал `deal_commission_percent` и `vip_commission_percent` одним общим правилом `-1..100`. Но `-1` является sentinel только для `vip_commission_percent` (`-1 = наследовать обычную комиссию`). Обычная `deal_commission_percent` защищена DB constraint `ck_app_settings_deal_commission_pct_range` и должна быть в диапазоне `0..100`. Поэтому PATCH `/api/admin/settings` с `{"deal_commission_percent": -1}` проходил Pydantic-валидацию и падал уже на commit по constraint вместо нормального 422 на границе API.
+
+Риск: админский endpoint мог возвращать внутреннюю ошибку/rollback на некорректном, но легко вводимом значении. Это также размывало контракт настроек: один и тот же `-1` выглядел допустимым для обеих комиссий, хотя бизнес-смысл у него есть только в VIP override.
+
+Исправление: валидаторы разделены. `deal_commission_percent` теперь принимает только конечные числа `0..100`, а `vip_commission_percent` сохраняет прежний диапазон `-1..100`. Добавлен unit regression: обычная комиссия отвергает `-1` до DB constraint, `0` остаётся валидной границей, VIP-комиссия сохраняет sentinel `-1`, а `-1.01` отклоняется.
+
 ## Наблюдения без отдельного finding
 
 - Media upload/serve выглядит сильной зоной: есть streaming cap, magic bytes, Pillow reencode, reject animation, signed deal URLs и path validation.

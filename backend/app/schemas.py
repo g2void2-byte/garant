@@ -2001,10 +2001,17 @@ class AdminSettingsUpdateIn(BaseModel):
     faq_stats_deals: int | None = None
     faq_stats_total_usd: Decimal | None = None
 
-    @field_validator(
-        "deal_commission_percent",
-        "vip_commission_percent",
-    )
+    @field_validator("deal_commission_percent")
+    @classmethod
+    def _deal_commission_ok(cls, v: Decimal | float | int | None) -> Decimal | None:
+        d = _reject_non_finite_money(v)
+        if d is None:
+            return None
+        if d < 0 or d > 100:
+            raise ValueError("Обычная комиссия должна быть в диапазоне 0..100")
+        return d.quantize(Decimal("0.01"))
+
+    @field_validator("vip_commission_percent")
     @classmethod
     def _commission_ok(cls, v: Decimal | float | None) -> Decimal | None:
         if v is None:
