@@ -118,7 +118,7 @@ vi.mock("@/components/ui/Toast", () => ({
   ToastProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-import { ReviewsSection } from "./UserContentSections";
+import { CommentsSection, ReviewsSection } from "./UserContentSections";
 
 function makeUser(overrides: Partial<UserCardDto> = {}): UserCardDto {
   return {
@@ -161,6 +161,19 @@ function makeReview(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeComment(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 11,
+    service_id: 55,
+    author_id: 42,
+    author_username: "seller1",
+    rating: 5,
+    text: "nice",
+    created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 function renderSection(userId = 42) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -172,15 +185,58 @@ function renderSection(userId = 42) {
   );
 }
 
+function renderCommentsSection(userId = 42) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <CommentsSection userId={userId} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 beforeEach(() => {
   mockState.reviews = [];
   mockState.reviewsTotal = 0;
   mockState.reviewsLoading = false;
+  mockState.services = [];
+  mockState.servicesLoading = false;
+  mockState.comments = [];
+  mockState.commentsLoading = false;
   mockState.users = [];
   mockState.usersLoading = false;
   mockState.lastReviewsQuery = undefined;
   mockState.createReview.mutateAsync.mockReset().mockResolvedValue({});
+  mockState.updateReview.mutateAsync.mockReset().mockResolvedValue({});
+  mockState.deleteReview.mutateAsync.mockReset().mockResolvedValue({});
+  mockState.updateService.mutateAsync.mockReset().mockResolvedValue({});
+  mockState.deleteService.mutateAsync.mockReset().mockResolvedValue({});
+  mockState.updateComment.mutateAsync.mockReset().mockResolvedValue({});
+  mockState.deleteComment.mutateAsync.mockReset().mockResolvedValue({});
   toastSpy.mockReset();
+});
+
+describe("<CommentsSection />", () => {
+  it("blocks rating 0 before updating a comment because the backend accepts 1..5", async () => {
+    const user = userEvent.setup();
+    mockState.comments = [makeComment()];
+    const { container } = renderCommentsSection(42);
+
+    const edit = container.querySelector("button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+    const ratingInput = await screen.findByRole("spinbutton", { name: /Рейтинг 1\.\.5/i });
+    await user.clear(ratingInput);
+    await user.type(ratingInput, "0");
+    const buttons = screen.getAllByRole("button");
+    await user.click(buttons[buttons.length - 1]);
+
+    expect(mockState.updateComment.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
+    );
+  });
 });
 
 describe("<ReviewsSection /> · Новый отзыв sheet", () => {
@@ -246,7 +302,7 @@ describe("<ReviewsSection /> · Новый отзыв sheet", () => {
 
       // Fill the remaining fields and submit.
       const ratingInput = screen.getByRole("spinbutton", {
-        name: /Рейтинг 0\.\.5/i,
+        name: /Рейтинг 1\.\.5/i,
       });
       await user.clear(ratingInput);
       await user.type(ratingInput, "4");
@@ -267,6 +323,46 @@ describe("<ReviewsSection /> · Новый отзыв sheet", () => {
       });
     },
   );
+
+  it("blocks rating 0 before creating a review because the backend accepts 1..5", async () => {
+    const user = userEvent.setup();
+    mockState.users = [makeUser({ id: 7, username: "buyer1" })];
+    renderSection(42);
+
+    await user.click(screen.getByRole("button", { name: /Добавить отзыв/i }));
+    await user.type(screen.getByRole("textbox", { name: /^Автор$/ }), "buyer1");
+    await user.click(await screen.findByRole("option", { name: /buyer1/i }));
+    const ratingInput = screen.getByRole("spinbutton", { name: /Рейтинг 1\.\.5/i });
+    await user.clear(ratingInput);
+    await user.type(ratingInput, "0");
+    const buttons = screen.getAllByRole("button");
+    await user.click(buttons[buttons.length - 1]);
+
+    expect(mockState.createReview.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
+    );
+  });
+
+  it("blocks rating 0 before updating a review because the backend accepts 1..5", async () => {
+    const user = userEvent.setup();
+    mockState.reviews = [makeReview()];
+    const { container } = renderSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+    const ratingInput = await screen.findByRole("spinbutton", { name: /Рейтинг 1\.\.5/i });
+    await user.clear(ratingInput);
+    await user.type(ratingInput, "0");
+    const buttons = screen.getAllByRole("button");
+    await user.click(buttons[buttons.length - 1]);
+
+    expect(mockState.updateReview.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
+    );
+  });
 
   it("requests paged review data and resets the page when direction changes", async () => {
     const user = userEvent.setup();

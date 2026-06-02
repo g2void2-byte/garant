@@ -438,8 +438,8 @@ function ReviewCreateSheet({
 
   const submit = async () => {
     const r = Number(rating);
-    if (!Number.isFinite(r) || r < 0 || r > 5) {
-      toast.show({ kind: "error", title: "Рейтинг 0..5" });
+    if (!Number.isFinite(r) || r < 1 || r > 5) {
+      toast.show({ kind: "error", title: "Рейтинг 1..5" });
       return;
     }
     if (!author) {
@@ -476,7 +476,7 @@ function ReviewCreateSheet({
           onPick={setAuthor}
         />
         <Input
-          label="Рейтинг 0..5"
+          label="Рейтинг 1..5"
           type="number"
           inputMode="decimal"
           value={rating}
@@ -526,8 +526,8 @@ function ReviewEditSheet({
   const save = async () => {
     if (!review) return;
     const r = Number(rating);
-    if (!Number.isFinite(r) || r < 0 || r > 5) {
-      toast.show({ kind: "error", title: "Рейтинг 0..5" });
+    if (!Number.isFinite(r) || r < 1 || r > 5) {
+      toast.show({ kind: "error", title: "Рейтинг 1..5" });
       return;
     }
     try {
@@ -556,7 +556,7 @@ function ReviewEditSheet({
     <Sheet open={!!review} onClose={close} title="Отзыв">
       <div className="space-y-3">
         <Input
-          label="Рейтинг 0..5"
+          label="Рейтинг 1..5"
           type="number"
           inputMode="decimal"
           value={rating}
@@ -690,8 +690,8 @@ function CommentEditSheet({
         if (comment.rating !== null) body.clear_rating = true;
       } else {
         const r = Number(rating);
-        if (!Number.isFinite(r) || r < 0 || r > 5) {
-          toast.show({ kind: "error", title: "Рейтинг 0..5" });
+        if (!Number.isFinite(r) || r < 1 || r > 5) {
+          toast.show({ kind: "error", title: "Рейтинг 1..5" });
           return;
         }
         if (r !== comment.rating) body.rating = r;
@@ -726,7 +726,7 @@ function CommentEditSheet({
       <div className="space-y-3">
         <Textarea label="Текст" value={text} onChange={(e) => setText(e.target.value)} />
         <Input
-          label="Рейтинг 0..5 (пусто = сброс)"
+          label="Рейтинг 1..5 (пусто = сброс)"
           type="number"
           inputMode="decimal"
           value={rating}

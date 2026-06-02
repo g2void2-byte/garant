@@ -655,6 +655,16 @@ Admin deal detail назначал арбитра через `GET /api/admin/use
 
 Исправление: sheet корректировки теперь перед формой показывает полный список всех ненулевых балансов выбранного пользователя, включая locked-часть. Список в строке остается компактным preview, но полный breakdown доступен штатным кликом по пользователю. Добавлен frontend regression: пятая валюта не видна в row preview, но появляется в adjust sheet с точной decimal-точностью.
 
+### M-52. Admin content UI принимал rating `0` для отзывов и комментариев, хотя backend требует `1..5`
+
+Ссылки: `frontend/src/pages/admin/UserContentSections.tsx`, `backend/app/schemas.py:1667-1690`, `backend/app/schemas.py:1713-1734`, regression `frontend/src/pages/admin/UserContentSections.test.tsx`.
+
+В `ReviewCreateSheet`, `ReviewEditSheet` и `CommentEditSheet` frontend проверял `rating < 0 || rating > 5` и подписывал поля как `Рейтинг 0..5`. Backend-схемы `AdminReviewUpsertIn` и `AdminCommentUpdateIn` при этом валидировали `1..5`, а основная review service logic также отвергает `0`. В результате админ мог ввести `0`, UI отправлял mutation, а сервер отвечал 422 вместо локального понятного отказа.
+
+Риск: админские формы редактирования контента выглядели валидными, но гарантированно падали на сервере для `0`. Это создавало лишние failed requests, шум в error flow и путало различие между service manual rating override (`0..5`, intended) и реальными review/comment ratings (`1..5`).
+
+Исправление: review create/edit и comment edit теперь валидируют `1..5`, показывают локальную ошибку `Рейтинг 1..5` и подписывают поля тем же диапазоном. Service `rating_manual` оставлен `0..5`, потому что это отдельный manual override contract. Добавлены frontend regressions на create review, update review и update comment с rating `0`: mutation не вызывается, ошибка показывается локально.
+
 ## Наблюдения без отдельного finding
 
 - Media upload/serve выглядит сильной зоной: есть streaming cap, magic bytes, Pillow reencode, reject animation, signed deal URLs и path validation.
