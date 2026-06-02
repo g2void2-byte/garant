@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-58: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw race, paid PIN reset delivery rollback и account-transfer code race исправлены.
+- M-50-M-59: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback и account-transfer code race исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -725,6 +725,16 @@ Admin deal detail назначал арбитра через `GET /api/admin/use
 Риск: одноразовый account-transfer code не был строго одноразовым под гонкой. При утечке кода или double-submit атакующий target мог выиграть второй confirm и перезаписать `tg_user_id` источника после легитимного target, фактически угнав перенос аккаунта.
 
 Исправление: выбор `AccountTransferCode` в `confirm_transfer` теперь выполняется с `SELECT ... FOR UPDATE` и `populate_existing=True`. Второй confirm ждёт освобождения code-row lock и после первого коммита заново применяет `consumed_at IS NULL`, получая обычный отказ "код недействителен или истёк" вместо stale-row продолжения. Добавлен concurrency regression: первый target специально останавливается перед commit, второй target стартует с тем же кодом; в итоге успешен ровно один confirm, source остаётся на первом target, второй target не удаляется, а code row помечен consumed один раз.
+
+### M-59. Admin `mark_sent` мог закрыть вывод во время in-flight CryptoBot Transfer
+
+Ссылки: `backend/app/routers/admin/withdrawals.py:175-588`, regression `tests/integration/test_admin_finance.py:273`.
+
+После M-56 admin `approve`/`reject` блокировались, если в `admin_note` стоял marker `[auto-send in progress]`, но `mark_sent` не входил в этот guard. Поэтому во время второй фазы auto-send, когда строка уже `approved`, а CryptoBot HTTP-запрос ещё выполняется без DB lock, другой админ мог нажать `mark_sent`. Эта ветка снимала locked-средства и переводила строку в `sent`, пока автоматический Transfer ещё мог как успешно завершиться, так и упасть.
+
+Риск: при ошибке CryptoBot после такого `mark_sent` заявка оставалась `sent`, хотя автоматическая выплата могла не состояться; при успехе Phase 3 auto-send работал поверх уже изменённой строки и мог писать повторные ledger/audit/notification события. Это ломало операционный контракт вывода: строка выглядела закрытой вручную, пока внешний payout ещё не получил достоверный outcome.
+
+Исправление: in-progress marker теперь блокирует все admin-решения, которые меняют состояние вывода: `approve`, `reject` и `mark_sent`. Phase 3 auto-send дополнительно перечитывает locked withdrawal/balance rows с `populate_existing=True`, чтобы locking SELECT не вернул stale ORM-объект из identity map. Regression расширен на `approved + mark_sent`: ответ 409, статус и locked-баланс не меняются.
 
 ## Наблюдения без отдельного finding
 

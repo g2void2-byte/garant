@@ -175,7 +175,7 @@ async def decide_withdrawal(
     if not user:
         raise HTTPException(404, "Пользователь не найден")
 
-    if body.action in ("approve", "reject") and withdrawal_auto_send_in_progress(w):
+    if body.action in ("approve", "reject", "mark_sent") and withdrawal_auto_send_in_progress(w):
         raise HTTPException(409, "Авто-отправка вывода уже выполняется")
 
     # A9-M-2 — every branch below stages its user-facing notification
@@ -335,6 +335,7 @@ async def decide_withdrawal(
                     select(WalletWithdrawal)
                     .where(WalletWithdrawal.id == withdrawal_id)
                     .with_for_update()
+                    .execution_options(populate_existing=True)
                 )
             ).scalar_one_or_none()
             if w_locked is None:
@@ -372,6 +373,7 @@ async def decide_withdrawal(
                             UserBalance.currency_id == w_locked.currency_id,
                         )
                         .with_for_update()
+                        .execution_options(populate_existing=True)
                     )
                 ).scalar_one_or_none()
                 if bal is not None:

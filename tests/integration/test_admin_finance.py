@@ -271,6 +271,7 @@ async def test_withdrawals_decide_reject_returns_funds(client):
         ("pending", "approve"),
         ("pending", "reject"),
         ("approved", "reject"),
+        ("approved", "mark_sent"),
     ],
 )
 async def test_withdrawals_auto_send_in_progress_blocks_admin_race(
