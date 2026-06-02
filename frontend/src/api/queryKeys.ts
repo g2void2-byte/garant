@@ -127,6 +127,7 @@ export interface ServiceCommentsQueryKey {
 export interface ReviewsQueryKey {
   limit?: number;
   offset?: number;
+  deal_id?: number;
 }
 
 export const qk = {

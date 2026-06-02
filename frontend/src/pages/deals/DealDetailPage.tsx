@@ -97,7 +97,12 @@ export default function DealDetailPage() {
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
 
   const otherUser = deal && (deal.role === "buyer" ? deal.seller : deal.buyer);
-  const { data: existingReviews } = useReviews(otherUser ?? undefined);
+  const existingReviewParams: { deal_id?: number; limit: number } = { limit: 1 };
+  if (deal) existingReviewParams.deal_id = deal.id;
+  const { data: existingReviews } = useReviews(
+    otherUser ?? undefined,
+    existingReviewParams,
+  );
   const createReview = useCreateReview();
 
   if (isLoading || !deal) {

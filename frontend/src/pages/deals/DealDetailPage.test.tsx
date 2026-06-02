@@ -10,6 +10,10 @@ const dealState = vi.hoisted(() => ({
 }));
 const meState = vi.hoisted(() => ({ data: undefined as UserCardDto | undefined }));
 const reviewsState = vi.hoisted(() => ({ data: undefined as ReviewDto[] | undefined }));
+const reviewsCall = vi.hoisted(() => ({
+  username: undefined as string | undefined,
+  params: undefined as unknown,
+}));
 const actionStub = vi.hoisted(() => () => ({
   mutate: vi.fn(),
   mutateAsync: vi.fn(),
@@ -23,7 +27,11 @@ const cancelTopupState = vi.hoisted(() => ({
 vi.mock("@/api/hooks", () => ({
   useDeal: () => dealState,
   useMe: () => meState,
-  useReviews: () => reviewsState,
+  useReviews: (username: string | undefined, params: unknown) => {
+    reviewsCall.username = username;
+    reviewsCall.params = params;
+    return reviewsState;
+  },
   useDealAction: () => actionStub(),
   useCancelPendingTopup: () => cancelTopupState,
   useCreateReview: () => actionStub(),
@@ -103,6 +111,19 @@ function makeUser(overrides: Partial<UserCardDto> = {}): UserCardDto {
   };
 }
 
+function makeReview(overrides: Partial<ReviewDto> = {}): ReviewDto {
+  return {
+    id: 501,
+    deal_id: 42,
+    author_username: "alice",
+    target_username: "bob",
+    rating: 5,
+    text: "ok",
+    created_at: "2026-01-02T00:00:00Z",
+    ...overrides,
+  };
+}
+
 function renderAt(id: number) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -123,6 +144,8 @@ beforeEach(() => {
   dealState.isLoading = false;
   meState.data = makeUser({ username: "alice" });
   reviewsState.data = [];
+  reviewsCall.username = undefined;
+  reviewsCall.params = undefined;
   cancelTopupState.mutateAsync = vi.fn().mockResolvedValue(makeDeal({ status: "cancelled" }));
   cancelTopupState.isPending = false;
 });
@@ -179,6 +202,38 @@ describe("<DealDetailPage />", () => {
     renderAt(42);
     expect(screen.getByRole("button", { name: /Принять/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Отклонить/i })).toBeInTheDocument();
+  });
+
+  it("checks review status with a deal-scoped reviews query", () => {
+    dealState.data = makeDeal({
+      id: 77,
+      buyer: "alice",
+      seller: "bob",
+      role: "buyer",
+      status: "completed",
+    });
+
+    renderAt(77);
+
+    expect(reviewsCall.username).toBe("bob");
+    expect(reviewsCall.params).toEqual({ deal_id: 77, limit: 1 });
+    expect(screen.getByRole("button", { name: /Оставить отзыв/i })).toBeInTheDocument();
+  });
+
+  it("hides the review CTA when the deal-scoped query returns my review", () => {
+    dealState.data = makeDeal({
+      id: 77,
+      buyer: "alice",
+      seller: "bob",
+      role: "buyer",
+      status: "completed",
+    });
+    reviewsState.data = [makeReview({ deal_id: 77, author_username: "alice" })];
+
+    renderAt(77);
+
+    expect(screen.queryByRole("button", { name: /Оставить отзыв/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/уже оставили отзыв/i)).toBeInTheDocument();
   });
 
   it("renders the arbitration reason when status is arbitration", () => {

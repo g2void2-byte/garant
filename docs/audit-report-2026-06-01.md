@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 62 файла, 564 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 62 файла, 566 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -76,6 +76,7 @@
 - M-43: service detail comments больше не запирают пользователя на первой странице комментариев.
 - M-44: profile reviews больше не запирают пользователя на первой странице отзывов.
 - M-45: profile/category service lists больше не запирают пользователя на первой странице услуг.
+- M-46: deal detail review CTA больше не зависит от первой страницы отзывов профиля.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -590,6 +591,16 @@ Backend `GET /api/services` уже принимал `limit/offset` и выста
 Риск: профили и категории с большим числом услуг выглядели неполными. Пользователь не мог штатно добраться до старых активных услуг в категории или до старых услуг конкретного продавца, хотя backend список поддерживал постраничную выдачу.
 
 Исправление: `useServices` принимает structured `limit/offset`, а profile/category pages запрашивают первые 50 услуг и догружают следующие страницы кнопкой "Показать еще" через offset. Category page использует `services_count` категории для отображения полного счетчика и скрытия лишней догрузки, profile pages догружают пока backend не вернет неполную страницу. Добавлены frontend regressions на first-page params + load-more offsets для own profile, public profile и category detail.
+
+### M-46. Deal detail мог показывать повторный CTA отзыва после пагинации profile reviews
+
+Ссылки: `backend/app/routers/reviews.py:31-80`, `frontend/src/api/hooks.ts:578-604`, `frontend/src/pages/deals/DealDetailPage.tsx`, regressions `tests/integration/test_reviews_hidden_target.py`, `frontend/src/pages/deals/DealDetailPage.test.tsx`, OpenAPI snapshot `frontend/openapi.json`.
+
+После M-44 `useReviews` стал корректно работать с первой страницей профиля, но `DealDetailPage` продолжал вызывать `useReviews(otherUser)` без фильтра по сделке и проверял `existingReviews.some(r => r.deal_id === deal.id)`. Если у контрагента было больше 50 более свежих отзывов, уже оставленный отзыв по текущей закрытой сделке мог не попасть в первую страницу. UI снова показывал кнопку "Оставить отзыв", хотя backend затем отклонял POST как duplicate review.
+
+Риск: пользователь в terminal deal видел доступное действие, которое гарантированно падало на сервере. Это ухудшало закрытие сделки, плодило лишние POST-запросы и шум в `reviews.create.rejected` логах, особенно у активных продавцов с длинной историей отзывов.
+
+Исправление: `GET /api/reviews` принимает optional `deal_id`, применяет его и к выборке, и к `X-Total-Count`. `useReviews`/query key прокидывают этот параметр, а `DealDetailPage` проверяет состояние отзыва точечным запросом `deal_id + limit=1`, не завися от страницы профиля. Добавлены backend regression на filtered total/body и frontend regressions на параметры запроса и скрытие CTA, когда точечный запрос вернул уже существующий отзыв.
 
 ## Наблюдения без отдельного finding
 

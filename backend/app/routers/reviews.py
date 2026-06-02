@@ -36,6 +36,7 @@ async def list_reviews(
     response: Response,
     user: str = Query(...),
     limit: int = Query(50, ge=1, le=100),
+    deal_id: int | None = Query(default=None, ge=1),
     # cap ``offset`` at 10 000. Without an upper bound a
     # scraper could request ``offset=10_000_000`` and force Postgres
     # to walk the full review index just to skip rows we already
@@ -59,16 +60,18 @@ async def list_reviews(
         raise HTTPException(404, "Пользователь не найден")
     if target.is_hidden_profile and not (viewer.is_admin or viewer.id == target.id):
         raise HTTPException(404, "Пользователь не найден")
+    filters = [Review.target_id == target.id]
+    if deal_id is not None:
+        filters.append(Review.deal_id == deal_id)
+
     total = (
-        await session.execute(
-            select(func.count(Review.id)).where(Review.target_id == target.id)
-        )
+        await session.execute(select(func.count(Review.id)).where(*filters))
     ).scalar_one()
     response.headers["X-Total-Count"] = str(int(total))
 
     stmt = (
         select(Review)
-        .where(Review.target_id == target.id)
+        .where(*filters)
         .order_by(Review.created_at.desc(), Review.id.desc())
         .limit(limit)
         .offset(offset)

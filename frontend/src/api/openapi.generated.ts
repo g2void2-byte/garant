@@ -8908,6 +8908,7 @@ export interface operations {
             query: {
                 user: string;
                 limit?: number;
+                deal_id?: number | null;
                 offset?: number;
             };
             header?: {

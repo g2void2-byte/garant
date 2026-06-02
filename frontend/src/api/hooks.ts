@@ -578,6 +578,7 @@ export function useCancelPendingTopup() {
 export interface ReviewsQueryParams {
   limit?: number;
   offset?: number;
+  deal_id?: number;
 }
 
 export function buildReviewsSearchParams(
@@ -587,6 +588,7 @@ export function buildReviewsSearchParams(
   const searchParams: Record<string, string> = { user: username };
   if (params.limit !== undefined) searchParams.limit = String(params.limit);
   if (params.offset !== undefined) searchParams.offset = String(params.offset);
+  if (params.deal_id !== undefined) searchParams.deal_id = String(params.deal_id);
   return searchParams;
 }
 
