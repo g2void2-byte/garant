@@ -97,8 +97,16 @@ export function useUpdateMe() {
       // doesn't show a stale banner.
       if (data.username) {
         qc.invalidateQueries({ queryKey: qk.user.detail(data.username) });
+        qc.invalidateQueries({ queryKey: qk.reviews.forUser(data.username) });
       }
       qc.invalidateQueries({ queryKey: qk.users.all() });
+      // M-27: ``is_hidden_profile`` and public profile fields are also
+      // projected into service catalog/detail/comment and category badge
+      // surfaces. Refresh those prefixes after profile edits so hiding
+      // or revealing the current profile does not leave stale public rows.
+      qc.invalidateQueries({ queryKey: qk.services.all() });
+      qc.invalidateQueries({ queryKey: qk.service.all() });
+      qc.invalidateQueries({ queryKey: qk.categories() });
     },
   });
 }

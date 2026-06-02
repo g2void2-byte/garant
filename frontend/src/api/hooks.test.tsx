@@ -23,7 +23,13 @@ vi.mock("./client", () => ({
   },
 }));
 
-import { useCreateReview, useDealAction, useDeleteService, useUpdateService } from "./hooks";
+import {
+  useCreateReview,
+  useDealAction,
+  useDeleteService,
+  useUpdateMe,
+  useUpdateService,
+} from "./hooks";
 
 function spyInvalidate(qc: QueryClient) {
   return vi.spyOn(qc, "invalidateQueries");
@@ -60,6 +66,36 @@ function hasKey(keys: readonly (readonly unknown[])[], expected: readonly unknow
       k.length === expected.length && k.every((part, i) => part === expected[i]),
   );
 }
+
+describe("useUpdateMe", () => {
+  beforeEach(() => {
+    apiState.patchResponse = {
+      id: 1,
+      username: "alice",
+      is_hidden_profile: true,
+    };
+  });
+
+  it("invalidates public profile, service and review projections", async () => {
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useUpdateMe(), { wrapper });
+    await result.current.mutateAsync({ is_hidden_profile: true });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of [
+      ["user", "alice"],
+      ["reviews", "alice"],
+      ["users"],
+      ["services"],
+      ["service"],
+      ["categories"],
+    ] as const) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
+  });
+});
 
 describe("useCreateReview", () => {
   beforeEach(() => {

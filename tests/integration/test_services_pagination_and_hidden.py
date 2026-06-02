@@ -164,6 +164,24 @@ async def test_hidden_owner_services_excluded_from_public_catalog(client):
     assert resp.headers["x-total-count"] == "3"
 
 
+async def test_category_counts_exclude_hidden_owner_services(client):
+    '''Category badges must not count hidden-owner active services.'''
+    hidden_id = await _make_hidden_owner(client, 14141, 'hidden_category_owner')
+    visible_id = await _bootstrap(client, tg_user_id=14142, username='visible_category_owner')
+    await _seed_active_services(hidden_id, count=2, prefix='HIDDEN-CAT')
+    await _seed_active_services(visible_id, count=3, prefix='VISIBLE-CAT')
+
+    async with async_session() as session:
+        cat = (await session.execute(select(Category).limit(1))).scalar_one()
+
+    await _bootstrap(client, tg_user_id=14143, username='caller_hide_categories')
+    caller_init = signed_init_data(14143, 'caller_hide_categories')
+    resp = await client.get('/api/categories', headers=auth_headers(caller_init))
+    assert resp.status_code == 200, resp.text
+    row = next(c for c in resp.json() if c['id'] == cat.id)
+    assert row['services_count'] == 3
+
+
 async def test_hidden_owner_services_excluded_when_filtering_by_username(client):
     """``?owner=hidden_user`` requested by an outside caller also
     returns empty + total 0 (we don't want to leak ``is_hidden_profile``

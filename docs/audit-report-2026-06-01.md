@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 61 файл, 534 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 61 файл, 535 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -57,6 +57,7 @@
 - M-24: user review create обновляет public users list cache после rating recompute side effect.
 - M-25: deal state transitions/WS events обновляют wallet/public-user/me кэши после participant side effects.
 - M-26: user service update/delete обновляют category/detail/comment кэши после catalog side effects.
+- M-27: profile hidden/public update обновляет service/category/review кэши, а category counters больше не считают hidden-owner services.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -381,6 +382,16 @@ Backend owner-side service update меняет `Service.title`, `description`, `
 Риск: после паузы/возврата услуги пользователь мог видеть старое число услуг в категориях и старую карточку detail; после удаления прямой detail/comments cache мог оставаться доступным в текущей сессии до фонового refetch, хотя backend уже вернул бы 404.
 
 Исправление: `useUpdateService` теперь инвалидирует catalog, categories и точечный service detail. `useDeleteService` дополнительно инвалидирует categories, service detail и service comments. Добавлены hook regression tests для update/delete invalidation sets.
+
+### M-27. Profile hide/update оставлял stale service/category/review projections
+
+Ссылки: `backend/app/routers/me.py:14-132`, `backend/app/routers/categories.py:14-53`, `backend/app/routers/services.py:176-218`, `backend/app/routers/reviews.py:24-73`, `frontend/src/api/hooks.ts:65-116`, regressions `tests/integration/test_services_pagination_and_hidden.py`, `frontend/src/api/hooks.test.tsx`.
+
+Backend `PATCH /api/me` меняет `is_hidden_profile` и публичные поля профиля. `GET /api/services`, service detail/comments и `GET /api/reviews?user=...` уже используют `is_hidden_profile` как public visibility gate, но `/api/categories` считал active services без join к owner и без `User.is_hidden_profile=false`. Поэтому category badge мог показывать hidden-owner active services, хотя сам каталог их не отдавал. Frontend `useUpdateMe` сбрасывал только `/api/me`, public user detail и users list, но не service catalog/detail/comment, categories и reviews cache.
+
+Риск: пользователь включал скрытый профиль, backend переставал отдавать его услуги и reviews внешним пользователям, но category counters могли продолжать раскрывать наличие active services. В текущей frontend-сессии старые service/review/category кэши также могли показывать публичные проекции до ручного refresh или истечения stale window.
+
+Исправление: `list_categories` теперь считает только active services владельцев с `is_hidden_profile=false`, чтобы counter совпадал с public catalog. `useUpdateMe` дополнительно инвалидирует own reviews, service catalog, broad service detail/comment prefix и categories. Добавлены backend regression test на category count hidden-owner exclusion и frontend hook test на invalidation set.
 
 ## Наблюдения без отдельного finding
 
