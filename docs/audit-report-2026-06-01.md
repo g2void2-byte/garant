@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 61 файл, 531 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 61 файл, 532 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -55,6 +55,7 @@
 - M-22: admin user actions обновляют public user/profile/me кэши после public-profile side effects.
 - M-23: admin in-app broadcast send обновляет notifications/counters cache после fan-out side effect.
 - M-24: user review create обновляет public users list cache после rating recompute side effect.
+- M-25: deal state transitions/WS events обновляют wallet/public-user/me кэши после participant side effects.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -359,6 +360,16 @@ Backend `POST /api/reviews` через `post_review()` блокирует target
 Риск: после оставленного пользователем отзыва профиль target мог обновиться, а общий каталог/search продолжал показывать старый рейтинг или старую позицию в выдаче до следующего refetch.
 
 Исправление: `useCreateReview` теперь дополнительно инвалидирует `qk.users.all()`. Добавлен hook regression test на review/profile/users invalidation set.
+
+### M-25. Deal state transitions оставляли stale wallet/public-user/me кэши у участников
+
+Ссылки: `backend/app/services_deals.py:1093-1484`, `backend/app/serializers.py:17-164`, `frontend/src/api/hooks.ts:432-448`, `frontend/src/lib/useLiveNotifications.ts:35-113`, regressions `frontend/src/api/hooks.test.tsx`, `frontend/src/lib/useLiveNotifications.test.tsx`.
+
+Backend deal actions меняют не только строки `Deal`: `accept_deal` увеличивает `deals_total` у buyer/seller, `finish_deal` двигает locked/available balances и увеличивает `deals_success`, `start_arbitration` увеличивает `deals_arbitrage`, `resolve_arbitration` двигает баланс и увеличивает `deals_success`/`deals_failed`, а cancel/refund paths меняют wallet balances. Эти поля читаются public user list/detail, `/api/me` и wallet endpoints. Frontend `useDealAction` сбрасывал deals/deal/wallet только у инициатора, а `deal.updated`/deal notification WS handlers у второй стороны сбрасывали только deals/deal.
+
+Риск: после принятия, завершения, отмены или арбитража сделки одна сторона могла видеть свежий статус сделки рядом со старым wallet balance, старым `deals_total`/`deals_success` в профиле и старым `/api/me` до ручного refresh или фонового refetch. Особенно заметно для seller после `finish`: деньги уже зачислены backend-ом, но wallet cache второй стороны не сбрасывался WS-событием.
+
+Исправление: добавлен общий frontend helper `invalidateDealParticipantSideEffects()`, который сбрасывает wallet, public users list, public user-detail prefix и `me`. `useDealAction` вызывает его после state-changing HTTP actions, а `useLiveNotifications` вызывает его на `deal.updated` и deal-typed notification events. Добавлены regression tests для HTTP mutation и WS paths.
 
 ## Наблюдения без отдельного finding
 

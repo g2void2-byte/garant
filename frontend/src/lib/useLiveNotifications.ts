@@ -6,7 +6,11 @@ import { clearPinToken } from "@/lib/pin";
 import { useToast } from "@/components/ui/Toast";
 import { qk } from "@/api/queryKeys";
 import type { NotificationDto } from "@/api/types";
-import { applyServerNotificationRead, type DealMessageDto } from "@/api/hooks";
+import {
+  applyServerNotificationRead,
+  invalidateDealParticipantSideEffects,
+  type DealMessageDto,
+} from "@/api/hooks";
 
 export function useLiveNotifications() {
   const qc = useQueryClient();
@@ -48,6 +52,7 @@ export function useLiveNotifications() {
           }
           qc.invalidateQueries({ queryKey: qk.deals.all() });
           qc.invalidateQueries({ queryKey: qk.deal.all() });
+          invalidateDealParticipantSideEffects(qc);
           return;
         }
         if (event.event === "notification.read") {
@@ -89,6 +94,7 @@ export function useLiveNotifications() {
         if (notif.type === "deals") {
           qc.invalidateQueries({ queryKey: qk.deals.all() });
           qc.invalidateQueries({ queryKey: qk.deal.all() });
+          invalidateDealParticipantSideEffects(qc);
         }
         if (notif.type === "deposits") {
           qc.invalidateQueries({ queryKey: qk.me() });

@@ -15,7 +15,7 @@ vi.mock("./client", () => ({
   },
 }));
 
-import { useCreateReview } from "./hooks";
+import { useCreateReview, useDealAction } from "./hooks";
 
 function spyInvalidate(qc: QueryClient) {
   return vi.spyOn(qc, "invalidateQueries");
@@ -82,5 +82,31 @@ describe("useCreateReview", () => {
     expect(hasKey(keys, ["reviews", "alice"])).toBe(true);
     expect(hasKey(keys, ["user", "alice"])).toBe(true);
     expect(hasKey(keys, ["users"])).toBe(true);
+  });
+});
+
+describe("useDealAction", () => {
+  beforeEach(() => {
+    apiState.postResponse = { id: 7, status: "completed" };
+  });
+
+  it("invalidates deal, wallet and user projection caches after state changes", async () => {
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useDealAction("finish"), { wrapper });
+    await result.current.mutateAsync({ id: 7 });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    for (const expected of [
+      ["deals"],
+      ["deal"],
+      ["wallet"],
+      ["users"],
+      ["user"],
+      ["me"],
+    ] as const) {
+      expect(hasKey(keys, expected)).toBe(true);
+    }
   });
 });

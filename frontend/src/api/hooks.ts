@@ -44,6 +44,15 @@ export interface MediaDto {
   created_at?: string | null;
 }
 
+export function invalidateDealParticipantSideEffects(
+  qc: ReturnType<typeof useQueryClient>,
+) {
+  qc.invalidateQueries({ queryKey: qk.wallet.all() });
+  qc.invalidateQueries({ queryKey: qk.users.all() });
+  qc.invalidateQueries({ queryKey: qk.user.all() });
+  qc.invalidateQueries({ queryKey: qk.me() });
+}
+
 export function useUploadMedia() {
   return useMutation({
     mutationFn: async ({ kind, file }: { kind: string; file: File }) => {
@@ -443,7 +452,7 @@ export function useDealAction(action: DealActionPath) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.deals.all() });
       qc.invalidateQueries({ queryKey: qk.deal.all() });
-      qc.invalidateQueries({ queryKey: qk.wallet.all() });
+      invalidateDealParticipantSideEffects(qc);
     },
   });
 }

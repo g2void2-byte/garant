@@ -143,6 +143,10 @@ describe("useLiveNotifications", () => {
     // deals-typed notification also invalidates deals + deal caches.
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deals"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deal"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["wallet"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["users"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["user"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["me"] });
   });
 
   it("uses 'success' kind for deposit notifications and invalidates me/wallet", () => {
@@ -191,6 +195,10 @@ describe("useLiveNotifications", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deal", 77] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deals"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deal"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["wallet"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["users"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["user"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["me"] });
     // No toast / haptic — this is a silent cache-bust, not a user
     // event. The companion ``notification`` event (when the user is
     // also a recipient of a stored notification row) is what fires
@@ -210,6 +218,10 @@ describe("useLiveNotifications", () => {
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deals"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deal"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["wallet"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["users"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["user"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["me"] });
     expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["deal", undefined] });
   });
 
