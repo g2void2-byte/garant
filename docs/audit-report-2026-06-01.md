@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-59: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback и account-transfer code race исправлены.
+- M-50-M-60: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race и Crystalpay webhook dedupe исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -735,6 +735,16 @@ Admin deal detail назначал арбитра через `GET /api/admin/use
 Риск: при ошибке CryptoBot после такого `mark_sent` заявка оставалась `sent`, хотя автоматическая выплата могла не состояться; при успехе Phase 3 auto-send работал поверх уже изменённой строки и мог писать повторные ledger/audit/notification события. Это ломало операционный контракт вывода: строка выглядела закрытой вручную, пока внешний payout ещё не получил достоверный outcome.
 
 Исправление: in-progress marker теперь блокирует все admin-решения, которые меняют состояние вывода: `approve`, `reject` и `mark_sent`. Phase 3 auto-send дополнительно перечитывает locked withdrawal/balance rows с `populate_existing=True`, чтобы locking SELECT не вернул stale ORM-объект из identity map. Regression расширен на `approved + mark_sent`: ответ 409, статус и locked-баланс не меняются.
+
+### M-60. Crystalpay webhook dedupe подавлял исправленную `payed` доставку
+
+Ссылки: `backend/app/routers/payments.py:273-309`, regression `tests/integration/test_crystalpay_webhook.py:243`.
+
+Crystalpay не присылает отдельный `update_id`, и router строил `event_id` как `invoice_id:state`. Это слишком грубый ключ: первая валидно подписанная доставка `state=payed` с отсутствующей или заниженной `amount` проходила signature-check, попадала в inbox и возвращала `amount mismatch`. Событие помечалось `processed`, а следующая доставка с тем же invoice/state, но уже корректной `amount`, считалась duplicate и получала закэшированный mismatch, не доходя до `handle_crystalpay_invoice`.
+
+Риск: оплаченный Crystalpay invoice мог навсегда остаться `pending`, если первый webhook был неполным, stale или отличался по amount. Пользователь платил, но баланс не пополнялся, потому что исправленная доставка подавлялась dedupe-слоем до бизнес-логики; ручная сверка требовалась даже при последующем корректном webhook.
+
+Исправление: для Crystalpay dedupe-key теперь строится по `raw_event_id(raw)`, то есть по sha256 всего тела доставки. Точный повтор того же payload по-прежнему dedupe-ится, но payload с исправленной `amount` получает отдельную inbox-row и проходит в idempotent deposit handler, где `WalletDeposit.status` защищает от double-credit. Regression сначала отправляет `payed` с `amount=1` для invoice на `10`, затем корректный `payed` с `amount=10`; после исправления второй webhook кредитует баланс и переводит deposit в `paid`.
 
 ## Наблюдения без отдельного finding
 
