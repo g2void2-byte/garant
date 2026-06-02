@@ -53,6 +53,7 @@
 - M-20: admin settings/system mutations обновляют maintenance/system/audit кэши после side effects.
 - M-21: admin wallet adjust/rate mutations обновляют system/user-wallet/user-facing wallet кэши.
 - M-22: admin user actions обновляют public user/profile/me кэши после public-profile side effects.
+- M-23: admin in-app broadcast send обновляет notifications/counters cache после fan-out side effect.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -337,6 +338,16 @@ Backend admin user actions `role`, `rating`, `stats` и `trust-deposit` меня
 Риск: после ручного изменения рейтинга, статистики, роли или trust-deposit админ видел обновление в admin detail, но пользовательский каталог и публичный профиль могли показывать старый рейтинг, badge, сумму сделок или deposit до фонового refetch. При self-edit `/api/me` мог сохранять старую проекцию текущего пользователя.
 
 Исправление: `useAdminUserAction` теперь дополнительно инвалидирует public users list, public user detail по username из ответа (или broad `qk.user.all()` без username) и `qk.me()`. Добавлены hook regression tests для username-specific и fallback invalidation paths.
+
+### M-23. Admin in-app broadcast send оставлял stale notifications/counters cache
+
+Ссылки: `backend/app/routers/admin/broadcasts.py:181-385`, `backend/app/routers/notifications.py:24-139`, `frontend/src/lib/useLiveNotifications.ts:73-113`, `frontend/src/api/admin/hooks.ts:809-819`, regression `frontend/src/api/admin/hooks.test.tsx`.
+
+Backend `POST /api/admin/broadcasts` при `dispatch_inapp=true` не только создает строку `Broadcast` и audit entries, но и вставляет `Notification(type=system)` для каждого получателя, после commit публикуя WS event. Frontend admin mutation после success сбрасывала broadcast history и audit, но не `qk.notifications.all()`. Если текущий админ входил в аудиторию рассылки, а WS соединение было закрыто/пропустило frame, notification list и bell counters могли оставаться старыми до 30-секундного poll.
+
+Риск: админ мог отправить in-app рассылку и сразу увидеть обновленную history/audit, но собственный notification center и счетчик непрочитанных не отражали новую system notification без ожидания polling или ручного refresh.
+
+Исправление: `useAdminCreateBroadcast` теперь дополнительно инвалидирует `qk.notifications.all()`, что покрывает notification list и counters prefix. Broadcast create regression test закрепляет новый side-effect key.
 
 ## Наблюдения без отдельного finding
 

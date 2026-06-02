@@ -499,6 +499,7 @@ describe("admin broadcast mutations - audit cache invalidations", () => {
     const keys = invalidatedKeys(invalidateSpy);
     expect(hasKey(keys, ["admin", "broadcasts"])).toBe(true);
     expect(hasKey(keys, ["admin", "audit"])).toBe(true);
+    expect(hasKey(keys, ["notifications"])).toBe(true);
   });
 
   it("delete invalidates broadcast history and audit log caches", async () => {

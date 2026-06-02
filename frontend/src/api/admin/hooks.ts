@@ -814,6 +814,7 @@ export function useAdminCreateBroadcast() {
       qc.invalidateQueries({ queryKey: qk.admin.broadcasts() });
       // V5-F-4: invalidate audit cache.
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+      qc.invalidateQueries({ queryKey: qk.notifications.all() });
     },
   });
 }
