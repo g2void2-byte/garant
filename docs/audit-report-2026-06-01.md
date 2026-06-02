@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-66: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id и strict service-comment ratings исправлены.
+- M-50-M-67: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings и strict admin deal action ids исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -805,6 +805,16 @@ Maintenance middleware держал module-level `_cache_lock = asyncio.Lock()`.
 Риск: комментарии к услугам имели более слабый contract, чем свежезакрытые review endpoints: boolean `true` становился 1-star оценкой, string/float payloads проходили как числа, а frontend/input bugs маскировались вместо 422. Это влияло на `rating_avg` / `rating_count` услуги и admin audit payload для comment edit.
 
 Исправление: оба schema-класса теперь валидируют `rating` в `mode="before"`: `None` разрешен как отсутствие/очистка оценки, иначе принимается только настоящий `int` (не `bool`, строка или float) с прежним диапазоном 1..5. Добавлен unit regression на user create и admin update paths.
+
+### M-67. Admin deal actions принимали coerced `approval_id` / `arbiter_id`
+
+Ссылки: `backend/app/schemas.py:1526-1599`, `backend/app/routers/admin/deals.py:981-1354`, regression `tests/unit/test_admin_deal_schema.py`.
+
+Тела `force-release` / `force-refund` (`AdminDealForceOut`) и `assign-arbiter` (`AdminDealAssignArbiterIn`) объявляли ids как обычные `int | None`. Pydantic приводил `approval_id: true` к `1`, `approval_id: "1"` к `1`, `arbiter_id: true` к `1`, а также пропускал `0`/отрицательные ids до route/service lookup. `split` имел тот же `approval_id` contract gap при валидном `buyer_percent`.
+
+Риск: TOTP-защищенные admin deal actions могли выполнять ручную операцию с неявно выбранной approval-заявкой id `1` или назначать арбитра id `1` из boolean/string payload. Даже когда такие значения дальше падали в 404, API contract оставался tolerant к malformed primary keys в денежных deal actions вместо раннего 422.
+
+Исправление: добавлен общий helper strict optional positive int id. `AdminDealForceOut.approval_id`, `AdminDealSplitIn.approval_id`, `AdminDealAssignArbiterIn.arbiter_id` и ранее исправленный `AdminReviewUpsertIn` теперь требуют настоящий положительный `int` или `None`. Unit regression покрывает accepted positive/None и rejected `true`, `false`, `"1"`, `1.0`, `0`, `-1` для всех трех admin deal action ids.
 
 ## Наблюдения без отдельного finding
 

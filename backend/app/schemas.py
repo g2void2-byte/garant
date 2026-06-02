@@ -481,6 +481,16 @@ def _reject_non_finite_money(v: Decimal | float | int | None) -> Decimal | None:
     return v
 
 
+def _validate_optional_positive_int_id(v: object, *, what: str = "ID") -> object:
+    if v is None:
+        return v
+    if isinstance(v, bool) or not isinstance(v, int):
+        raise ValueError(f"{what} должен быть целым числом")
+    if v <= 0:
+        raise ValueError(f"{what} должен быть положительным числом")
+    return v
+
+
 def _validate_service_photos(v: list[str] | None) -> list[str] | None:
     # V12-UI — gatekeep the photo list (length + each entry's scheme)
     # in one place so both ``ServiceCreate`` and ``ServiceUpdate``
@@ -1530,6 +1540,11 @@ class AdminDealForceOut(BaseModel):
     reason: str | None = None
     approval_id: int | None = None
 
+    @field_validator("approval_id", mode="before")
+    @classmethod
+    def _approval_id_strict_positive(cls, v: object) -> object:
+        return _validate_optional_positive_int_id(v, what="ID заявки")
+
     @field_validator("reason")
     @classmethod
     def _len(cls, v: str | None) -> str | None:
@@ -1557,6 +1572,11 @@ class AdminDealSplitIn(BaseModel):
     reason: str | None = None
     approval_id: int | None = None
 
+    @field_validator("approval_id", mode="before")
+    @classmethod
+    def _approval_id_strict_positive(cls, v: object) -> object:
+        return _validate_optional_positive_int_id(v, what="ID заявки")
+
     @field_validator("buyer_percent")
     @classmethod
     def _percent_ok(cls, v: Decimal | float) -> Decimal:
@@ -1574,6 +1594,11 @@ class AdminDealAssignArbiterIn(BaseModel):
     """
 
     arbiter_id: int | None = None
+
+    @field_validator("arbiter_id", mode="before")
+    @classmethod
+    def _arbiter_id_strict_positive(cls, v: object) -> object:
+        return _validate_optional_positive_int_id(v, what="ID арбитра")
 
 
 # ── Admin: arbitration queue (PR-B) ────────────────────
@@ -1723,13 +1748,7 @@ class AdminReviewUpsertIn(BaseModel):
     @field_validator("target_id", "author_id", "deal_id", mode="before")
     @classmethod
     def _strict_positive_ids(cls, v: object) -> object:
-        if v is None:
-            return v
-        if isinstance(v, bool) or not isinstance(v, int):
-            raise ValueError("ID должен быть целым числом")
-        if v <= 0:
-            raise ValueError("ID должен быть положительным числом")
-        return v
+        return _validate_optional_positive_int_id(v)
 
     @field_validator("rating", mode="before")
     @classmethod
