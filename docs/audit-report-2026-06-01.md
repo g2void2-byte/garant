@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 63 файла, 568 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 68 файлов, 616 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-94: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing и admin finance form number parsing исправлены.
+- M-50-M-96: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing, admin finance form number parsing, user service/deal amount parsing и admin content form number parsing исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1085,6 +1085,26 @@ Currency editor отправлял `decimals`, `min_deposit` и `min_withdraw` �
 Риск: админ мог случайно сохранить decimals/min limits в другое значение или не изменить поле вообще, не понимая почему. Для справочника валют это влияет на округление и минимальные суммы депозитов/выводов.
 
 Исправление: currency editor теперь использует plain decimal/int parsers: `decimals` строго integer `0..8`, min deposit/withdraw - non-negative decimal без exponent/hex. Пустой/invalid input блокирует submit и показывает inline error; valid save отправляет trimmed code/name/network и parsed numeric values.
+
+### M-95. User service/deal amount forms могли принимать exponent или строить inconsistent money UI
+
+Ссылки: `frontend/src/pages/profile/AddServicePage.tsx`, `frontend/src/pages/deals/CreateDealPage.tsx`, `frontend/src/lib/formNumbers.ts`, regression `frontend/src/pages/profile/AddServicePage.test.tsx`, `frontend/src/pages/deals/CreateDealPage.test.tsx`, `frontend/src/lib/formNumbers.test.ts`.
+
+Add service отправлял цену через `parseFloat(price) || 0`. Поэтому `1e2` принимался как 100, а malformed non-empty ввод в некоторых браузерных/программных состояниях мог превращаться в 0 вместо явной ошибки. Create deal уже имел regex на submit, но preview суммы и проверка invoice total использовали `parseFloat`, из-за чего UI мог считать exponent/prefix-like значение положительной суммой не тем же правилом, которым форма разрешала отправку.
+
+Риск: пользователь или оператор видел/отправлял сумму не в той форме, которую буквально ввёл; для сервисной цены это могло создать услугу с unexpected price, а для сделки - рассинхронизировать commission/invoice preview и submit validation. В денежных сценариях разное правило parsing-а между preview, submit и invoice UI быстро становится источником ошибок поддержки.
+
+Исправление: add-service price, create-deal amount preview/validation и invoice-positive check теперь используют общий plain decimal parser без exponent/hex/non-finite/unsafe значений. Invalid price подсвечивается inline и блокирует create-service mutation; invalid deal amount не открывает PIN prompt. Regression покрывает exponent inputs и happy decimal save.
+
+### M-96. Admin content forms принимали exponent/fraction ratings через `Number()`
+
+Ссылки: `frontend/src/pages/admin/UserContentSections.tsx`, `frontend/src/lib/formNumbers.ts`, regression `frontend/src/pages/admin/UserContentSections.test.tsx`, `frontend/src/lib/formNumbers.test.ts`.
+
+Admin user content sheets парсили service price/deposit/views/deals_count/rating_manual, review rating и comment rating через `Number(...)`. Это принимало `1e2`/`0x10`, а для review/comment rating также пропускало дробные значения вроде `1.5`, хотя backend contract для этих рейтингов - integer `1..5`. `NaN` в JSON дополнительно превращался в `null`, что давало поздний 422 или неочевидное изменение payload.
+
+Риск: админ мог сохранить неканоническое или wrong-scale значение в контентной форме, особенно для strict-int рейтингов и счетчиков. Для moderation/admin tooling это опасно тем, что UI выглядел как обычное числовое поле, но отправлял значение с JavaScript-specific parsing semantics.
+
+Исправление: content editor теперь использует shared plain decimal/int parsers. Service numeric fields блокируют invalid submit и показывают inline errors; review/comment ratings требуют strict integer `1..5`; manual service rating остаётся decimal `0..5`, но без exponent/hex. Regression покрывает exponent service fields, fractional/exponent review/comment ratings и прежний zero-rating guard.
 
 ## Наблюдения без отдельного finding
 

@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
 import { useCategories, useCreateService, useUploadMedia } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
+import { parseNonNegativeDecimalInput } from "@/lib/formNumbers";
 
 // V12-UI — inline copy of the helper used elsewhere (SettingsPage,
 // AddForumPage). Kept local to avoid a one-off shared module just for
@@ -47,6 +48,10 @@ export default function AddServicePage() {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+  const parsedPrice = price.trim() ? parseNonNegativeDecimalInput(price) : 0;
+  const priceError = price.trim() && parsedPrice === null
+    ? "Введите число 0 или больше без экспоненты"
+    : undefined;
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -86,12 +91,17 @@ export default function AddServicePage() {
       haptic("error");
       return;
     }
+    if (parsedPrice === null) {
+      toast.show({ kind: "error", title: "Введите корректную цену" });
+      haptic("error");
+      return;
+    }
     try {
       await create.mutateAsync({
         category_slug: slug,
         title,
         description,
-        price: parseFloat(price) || 0,
+        price: parsedPrice,
         photo_urls: photoUrls,
       });
       haptic("success");
@@ -121,6 +131,7 @@ export default function AddServicePage() {
           value={price}
           min={0}
           step={0.01}
+          error={priceError}
           onChange={(e) => setPrice(e.target.value)}
         />
 

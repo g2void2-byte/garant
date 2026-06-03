@@ -20,8 +20,7 @@ import {
 import { formatCurrency } from "@/lib/format";
 import { haptic } from "@/lib/tg";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
-
-const DECIMAL_RE = /^\d+(?:\.\d{1,18})?$|^\.\d{1,18}$/;
+import { parsePositiveDecimalInput } from "@/lib/formNumbers";
 
 // Item 18 — backend can return a structured ``insufficient_funds``
 // payload on the create-deal 400. The ky ``beforeError`` hook
@@ -73,8 +72,7 @@ function invoiceRequiresPayment(
   invoice: DealCreateWithTopupResponseDto["invoice"],
 ): invoice is NonNullable<DealCreateWithTopupResponseDto["invoice"]> {
   if (!invoice) return false;
-  const total = parseFloat(String(invoice.total));
-  return Number.isFinite(total) && total > 0;
+  return parsePositiveDecimalInput(String(invoice.total)) !== null;
 }
 
 export default function CreateDealPage() {
@@ -161,8 +159,7 @@ export default function CreateDealPage() {
     return publicSettings.deal_commission_percent;
   }, [publicSettings, me]);
   const parsedAmount = useMemo(() => {
-    const value = parseFloat(sum);
-    return Number.isFinite(value) && value > 0 ? value : 0;
+    return parsePositiveDecimalInput(sum) ?? 0;
   }, [sum]);
   const decimals = activeBalance?.currency.decimals ?? 2;
   const commissionAmount = parsedAmount * (commissionPercent / 100);
@@ -175,8 +172,7 @@ export default function CreateDealPage() {
     if (
       !counterparty ||
       !description ||
-      !DECIMAL_RE.test(amount) ||
-      /^0+(?:\.0+)?$/.test(amount)
+      parsePositiveDecimalInput(amount) === null
     ) {
       haptic("error");
       return false;

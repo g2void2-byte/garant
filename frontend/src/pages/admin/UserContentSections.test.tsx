@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -118,7 +118,7 @@ vi.mock("@/components/ui/Toast", () => ({
   ToastProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-import { CommentsSection, ReviewsSection } from "./UserContentSections";
+import { CommentsSection, ReviewsSection, ServicesSection } from "./UserContentSections";
 
 function makeUser(overrides: Partial<UserCardDto> = {}): UserCardDto {
   return {
@@ -174,6 +174,26 @@ function makeComment(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeService(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 21,
+    owner_id: 42,
+    category_id: 2,
+    category_slug: "design",
+    title: "Logo design",
+    description: "Service description",
+    price: 10,
+    status: "active",
+    ban_reason: null,
+    views: 12,
+    deals_count: 3,
+    deposit: 0,
+    rating_manual: 4.5,
+    created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 function renderSection(userId = 42) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -191,6 +211,17 @@ function renderCommentsSection(userId = 42) {
     <QueryClientProvider client={qc}>
       <MemoryRouter>
         <CommentsSection userId={userId} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+function renderServicesSection(userId = 42) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <ServicesSection userId={userId} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -217,6 +248,28 @@ beforeEach(() => {
   toastSpy.mockReset();
 });
 
+describe("<ServicesSection />", () => {
+  it.each([
+    [/Цена/i, "1e2"],
+    [/Просмотры/i, "1e2"],
+  ])("blocks non-plain numeric service field %s before updating", async (label, value) => {
+    const user = userEvent.setup();
+    mockState.services = [makeService()];
+    const { container } = renderServicesSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+
+    const input = await screen.findByRole("spinbutton", { name: label });
+    fireEvent.change(input, { target: { value } });
+
+    const save = screen.getByRole("button", { name: "Сохранить" });
+    expect(save).toBeDisabled();
+    expect(mockState.updateService.mutateAsync).not.toHaveBeenCalled();
+  });
+});
+
 describe("<CommentsSection />", () => {
   it("blocks rating 0 before updating a comment because the backend accepts 1..5", async () => {
     const user = userEvent.setup();
@@ -237,6 +290,28 @@ describe("<CommentsSection />", () => {
       expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
     );
   });
+
+  it.each(["1.5", "1e0"])(
+    "blocks non-integer comment rating %s before updating",
+    async (badRating) => {
+      const user = userEvent.setup();
+      mockState.comments = [makeComment()];
+      const { container } = renderCommentsSection(42);
+
+      const edit = container.querySelector("button[aria-label]") as HTMLButtonElement | null;
+      expect(edit).not.toBeNull();
+      await user.click(edit!);
+      const ratingInput = await screen.findByRole("spinbutton", { name: /Рейтинг 1\.\.5/i });
+      fireEvent.change(ratingInput, { target: { value: badRating } });
+      const buttons = screen.getAllByRole("button");
+      await user.click(buttons[buttons.length - 1]);
+
+      expect(mockState.updateComment.mutateAsync).not.toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
+      );
+    },
+  );
 });
 
 describe("<ReviewsSection /> · Новый отзыв sheet", () => {
@@ -344,6 +419,27 @@ describe("<ReviewsSection /> · Новый отзыв sheet", () => {
     );
   });
 
+  it.each(["1.5", "1e0"])(
+    "blocks non-integer rating %s before creating a review",
+    async (badRating) => {
+      const user = userEvent.setup();
+      mockState.users = [makeUser({ id: 7, username: "buyer1" })];
+      renderSection(42);
+
+      await user.click(screen.getByRole("button", { name: /Добавить отзыв/i }));
+      await user.type(screen.getByRole("textbox", { name: /^Автор$/ }), "buyer1");
+      await user.click(await screen.findByRole("option", { name: /buyer1/i }));
+      const ratingInput = screen.getByRole("spinbutton", { name: /Рейтинг 1\.\.5/i });
+      fireEvent.change(ratingInput, { target: { value: badRating } });
+      await user.click(screen.getByRole("button", { name: "Создать" }));
+
+      expect(mockState.createReview.mutateAsync).not.toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
+      );
+    },
+  );
+
   it("blocks rating 0 before updating a review because the backend accepts 1..5", async () => {
     const user = userEvent.setup();
     mockState.reviews = [makeReview()];
@@ -363,6 +459,28 @@ describe("<ReviewsSection /> · Новый отзыв sheet", () => {
       expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
     );
   });
+
+  it.each(["1.5", "1e0"])(
+    "blocks non-integer rating %s before updating a review",
+    async (badRating) => {
+      const user = userEvent.setup();
+      mockState.reviews = [makeReview()];
+      const { container } = renderSection(42);
+
+      const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+      expect(edit).not.toBeNull();
+      await user.click(edit!);
+      const ratingInput = await screen.findByRole("spinbutton", { name: /Рейтинг 1\.\.5/i });
+      fireEvent.change(ratingInput, { target: { value: badRating } });
+      const buttons = screen.getAllByRole("button");
+      await user.click(buttons[buttons.length - 1]);
+
+      expect(mockState.updateReview.mutateAsync).not.toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
+      );
+    },
+  );
 
   it("requests paged review data and resets the page when direction changes", async () => {
     const user = userEvent.setup();

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -274,6 +274,25 @@ describe("<CreateDealPage />", () => {
     expect(mockState.createMutation.mutateAsync).not.toHaveBeenCalled();
     expect(hapticSpy).toHaveBeenCalledWith("error");
   });
+
+  it.each(["1e2", "0x10"])(
+    "blocks non-plain decimal amount %s before opening the PIN prompt",
+    async (badAmount) => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.clear(screen.getByPlaceholderText(/Что покупаете/));
+      await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
+      fireEvent.change(screen.getByLabelText(/Сумма \(USD\)/), {
+        target: { value: badAmount },
+      });
+      await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
+
+      expect(mockState.createMutation.mutateAsync).not.toHaveBeenCalled();
+      expect(hapticSpy).toHaveBeenCalledWith("error");
+      expect(screen.queryByRole("button", { name: "1" })).not.toBeInTheDocument();
+    },
+  );
 
   it("submits and shows the invoice preview on success", async () => {
     mockState.createMutation.mutateAsync.mockResolvedValue(makeTopupResponse({ id: 77 }));

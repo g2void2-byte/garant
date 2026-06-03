@@ -48,12 +48,26 @@ import type {
   AdminServiceItemDto,
   UserCardDto,
 } from "@/api/types";
+import {
+  parseNonNegativeDecimalInput,
+  parseNonNegativeIntInput,
+} from "@/lib/formNumbers";
 
 interface SectionProps {
   userId: number;
 }
 
 const PAGE_SIZE = 20;
+
+function parseRatingIntInput(raw: string): number | null {
+  const parsed = parseNonNegativeIntInput(raw, 5);
+  return parsed !== null && parsed >= 1 ? parsed : null;
+}
+
+function parseRatingDecimalInput(raw: string): number | null {
+  const parsed = parseNonNegativeDecimalInput(raw);
+  return parsed !== null && parsed <= 5 ? parsed : null;
+}
 
 // ── Services ──────────────────────────────────────────────────────────────
 
@@ -194,20 +208,48 @@ function ServiceEditSheet({
     onClose();
   };
 
+  const parsedPrice = parseNonNegativeDecimalInput(price);
+  const parsedDeposit = parseNonNegativeDecimalInput(deposit);
+  const parsedViews = parseNonNegativeIntInput(views);
+  const parsedDealsCount = parseNonNegativeIntInput(dealsCount);
+  const hasRatingManual = ratingManual.trim() !== "";
+  const parsedRatingManual = ratingManual.trim()
+    ? parseRatingDecimalInput(ratingManual)
+    : null;
+  const serviceNumberErrors = {
+    price: parsedPrice === null ? "Введите число 0 или больше без экспоненты" : undefined,
+    deposit: parsedDeposit === null ? "Введите число 0 или больше без экспоненты" : undefined,
+    views: parsedViews === null ? "Введите целое число 0 или больше" : undefined,
+    dealsCount: parsedDealsCount === null ? "Введите целое число 0 или больше" : undefined,
+    ratingManual: hasRatingManual && parsedRatingManual === null
+      ? "Введите число 0..5 без экспоненты"
+      : undefined,
+  };
+
   const save = async () => {
     if (!service) return;
+    if (
+      parsedPrice === null ||
+      parsedDeposit === null ||
+      parsedViews === null ||
+      parsedDealsCount === null ||
+      (hasRatingManual && parsedRatingManual === null)
+    ) {
+      toast.show({ kind: "error", title: "Проверьте числовые поля" });
+      return;
+    }
     try {
       const body: Record<string, unknown> = {};
       if (title !== service.title) body.title = title;
       if (description !== service.description) body.description = description;
-      if (Number(price) !== service.price) body.price = Number(price);
-      if (Number(deposit) !== service.deposit) body.deposit = Number(deposit);
-      if (Number(views) !== service.views) body.views = Number(views);
-      if (Number(dealsCount) !== service.deals_count) body.deals_count = Number(dealsCount);
-      if (ratingManual === "") {
+      if (parsedPrice !== service.price) body.price = parsedPrice;
+      if (parsedDeposit !== service.deposit) body.deposit = parsedDeposit;
+      if (parsedViews !== service.views) body.views = parsedViews;
+      if (parsedDealsCount !== service.deals_count) body.deals_count = parsedDealsCount;
+      if (!hasRatingManual) {
         if (service.rating_manual !== null) body.clear_rating = true;
-      } else if (Number(ratingManual) !== service.rating_manual) {
-        body.rating_manual = Number(ratingManual);
+      } else if (parsedRatingManual !== service.rating_manual) {
+        body.rating_manual = parsedRatingManual;
       }
       if (status !== service.status) body.status = status;
       if (Object.keys(body).length === 0) {
@@ -247,6 +289,7 @@ function ServiceEditSheet({
             type="number"
             inputMode="decimal"
             value={price}
+            error={serviceNumberErrors.price}
             onChange={(e) => setPrice(e.target.value)}
           />
           <Input
@@ -254,6 +297,7 @@ function ServiceEditSheet({
             type="number"
             inputMode="decimal"
             value={deposit}
+            error={serviceNumberErrors.deposit}
             onChange={(e) => setDeposit(e.target.value)}
           />
           <Input
@@ -261,6 +305,7 @@ function ServiceEditSheet({
             type="number"
             inputMode="numeric"
             value={views}
+            error={serviceNumberErrors.views}
             onChange={(e) => setViews(e.target.value)}
           />
           <Input
@@ -268,6 +313,7 @@ function ServiceEditSheet({
             type="number"
             inputMode="numeric"
             value={dealsCount}
+            error={serviceNumberErrors.dealsCount}
             onChange={(e) => setDealsCount(e.target.value)}
           />
           <Input
@@ -275,6 +321,7 @@ function ServiceEditSheet({
             type="number"
             inputMode="decimal"
             value={ratingManual}
+            error={serviceNumberErrors.ratingManual}
             onChange={(e) => setRatingManual(e.target.value)}
           />
           <label className="block">
@@ -298,7 +345,18 @@ function ServiceEditSheet({
           <Button variant="secondary" fullWidth onClick={close}>
             Отмена
           </Button>
-          <Button fullWidth onClick={save} disabled={update.isPending}>
+          <Button
+            fullWidth
+            onClick={save}
+            disabled={
+              update.isPending ||
+              parsedPrice === null ||
+              parsedDeposit === null ||
+              parsedViews === null ||
+              parsedDealsCount === null ||
+              (hasRatingManual && parsedRatingManual === null)
+            }
+          >
             Сохранить
           </Button>
         </div>
@@ -436,9 +494,11 @@ function ReviewCreateSheet({
     onClose();
   };
 
+  const parsedRating = parseRatingIntInput(rating);
+  const ratingError = parsedRating === null ? "Введите целый рейтинг 1..5" : undefined;
+
   const submit = async () => {
-    const r = Number(rating);
-    if (!Number.isFinite(r) || r < 1 || r > 5) {
+    if (parsedRating === null) {
       toast.show({ kind: "error", title: "Рейтинг 1..5" });
       return;
     }
@@ -450,7 +510,7 @@ function ReviewCreateSheet({
       await create.mutateAsync({
         author_id: author.id,
         target_id: userId,
-        rating: r,
+        rating: parsedRating,
         text,
       });
       toast.show({ kind: "success", title: "Отзыв создан" });
@@ -480,6 +540,7 @@ function ReviewCreateSheet({
           type="number"
           inputMode="decimal"
           value={rating}
+          error={ratingError}
           onChange={(e) => setRating(e.target.value)}
         />
         <Textarea label="Текст" value={text} onChange={(e) => setText(e.target.value)} />
@@ -523,15 +584,17 @@ function ReviewEditSheet({
     onClose();
   };
 
+  const parsedRating = parseRatingIntInput(rating);
+  const ratingError = parsedRating === null ? "Введите целый рейтинг 1..5" : undefined;
+
   const save = async () => {
     if (!review) return;
-    const r = Number(rating);
-    if (!Number.isFinite(r) || r < 1 || r > 5) {
+    if (parsedRating === null) {
       toast.show({ kind: "error", title: "Рейтинг 1..5" });
       return;
     }
     try {
-      await update.mutateAsync({ reviewId: review.id, body: { rating: r, text } });
+      await update.mutateAsync({ reviewId: review.id, body: { rating: parsedRating, text } });
       toast.show({ kind: "success", title: "Отзыв обновлён" });
       close();
     } catch (e: unknown) {
@@ -560,6 +623,7 @@ function ReviewEditSheet({
           type="number"
           inputMode="decimal"
           value={rating}
+          error={ratingError}
           onChange={(e) => setRating(e.target.value)}
         />
         <Textarea label="Текст" value={text} onChange={(e) => setText(e.target.value)} />
@@ -681,20 +745,23 @@ function CommentEditSheet({
     onClose();
   };
 
+  const hasRating = rating.trim() !== "";
+  const parsedRating = hasRating ? parseRatingIntInput(rating) : null;
+  const ratingError = hasRating && parsedRating === null ? "Введите целый рейтинг 1..5" : undefined;
+
   const save = async () => {
     if (!comment) return;
     try {
       const body: Record<string, unknown> = {};
       if (text !== comment.text) body.text = text;
-      if (rating === "") {
+      if (!hasRating) {
         if (comment.rating !== null) body.clear_rating = true;
       } else {
-        const r = Number(rating);
-        if (!Number.isFinite(r) || r < 1 || r > 5) {
+        if (parsedRating === null) {
           toast.show({ kind: "error", title: "Рейтинг 1..5" });
           return;
         }
-        if (r !== comment.rating) body.rating = r;
+        if (parsedRating !== comment.rating) body.rating = parsedRating;
       }
       if (Object.keys(body).length === 0) {
         close();
@@ -730,6 +797,7 @@ function CommentEditSheet({
           type="number"
           inputMode="decimal"
           value={rating}
+          error={ratingError}
           onChange={(e) => setRating(e.target.value)}
         />
         <div className="flex gap-2 pt-2">
