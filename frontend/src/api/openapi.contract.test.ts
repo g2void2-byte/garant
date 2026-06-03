@@ -12,7 +12,7 @@
  * What's covered:
  *   - ``components.schemas`` entries we depend on exist
  *   - representative e2e fixture payloads match the backend shape
- *     (UserCard / Deal / WalletBalance / Currency / Service / WalletDeposit / PinStatus)
+ *     (UserCard / Deal / Review / WalletBalance / Currency / Service / WalletDeposit / PinStatus)
  *   - frontend ``UserCardDto`` / ``DealDto`` / ``ServiceDto`` / etc. align with their
  *     OpenAPI counterparts on the fields the UI reads
  */
@@ -25,8 +25,10 @@ import type {
   DealCreateWithTopupResponseDto,
   DealDto,
   PinStatusDto,
+  ReviewDto,
   ServiceDetailDto,
   ServiceDto,
+  SupportPersonDto,
   UserCardDto,
   WalletBalanceDto,
   WalletDepositDto,
@@ -39,8 +41,10 @@ type CurrencyOutSchema = Schemas["CurrencyOut"];
 type WalletBalanceOutSchema = Schemas["WalletBalanceOut"];
 type WalletDepositOutSchema = Schemas["WalletDepositOut"];
 type PinStatusOutSchema = Schemas["PinStatusOut"];
+type ReviewOutSchema = Schemas["ReviewOut"];
 type ServiceOutSchema = Schemas["ServiceOut"];
 type ServiceDetailOutSchema = Schemas["ServiceDetailOut"];
+type SupportPersonOutSchema = Schemas["SupportPersonOut"];
 type UserOutSchema = Schemas["UserOut"];
 
 // ---------------------------------------------------------------------------
@@ -53,7 +57,7 @@ type UserOutSchema = Schemas["UserOut"];
 const meFixture = {
   id: 111,
   user_id: 111,
-  username: "testbuyer",
+  username: null,
   display_name: "TestBuyer",
   photo_url: null,
   admin: 0,
@@ -111,6 +115,13 @@ const dealFixture = {
   arbitration_resolution: null,
   arbitration_resolved_at: null,
   payment_provider: "cryptobot",
+} as const satisfies DealOutSchema;
+
+const nullableDealFixture = {
+  ...dealFixture,
+  buyer: null,
+  seller: null,
+  role: "unknown-role",
 } as const satisfies DealOutSchema;
 
 const topupResponseFixture = {
@@ -231,6 +242,26 @@ const walletDepositFixture = {
   paid_at: null,
 } as const satisfies WalletDepositOutSchema;
 
+const reviewFixture = {
+  id: 601,
+  deal_id: null,
+  author_username: null,
+  target_username: null,
+  rating: 5,
+  text: "ok",
+  created_at: new Date(0).toISOString(),
+} as const satisfies ReviewOutSchema;
+
+const supportPersonFixture = {
+  id: 44,
+  user_id: 44,
+  username: null,
+  display_name: "Support",
+  photo_url: null,
+  admin: 1,
+  prefix: "admin",
+} as const satisfies SupportPersonOutSchema;
+
 const pinStatusFixture = {
   has_pin: true,
   attempts_left: 5,
@@ -248,6 +279,7 @@ const pinStatusFixture = {
 
 const _meDto: UserCardDto = meFixture;
 const _dealDto: DealDto = dealFixture;
+const _nullableDealDto: DealDto = nullableDealFixture;
 const _topupResponseDto: DealCreateWithTopupResponseDto = topupResponseFixture;
 const _balanceFundedTopupResponseDto: DealCreateWithTopupResponseDto =
   balanceFundedTopupResponseFixture;
@@ -256,12 +288,15 @@ const _balanceDto: WalletBalanceDto = walletBalanceFixture;
 const _serviceDto: ServiceDto = serviceFixture;
 const _serviceDetailDto: ServiceDetailDto = serviceDetailFixture;
 const _walletDepositDto: WalletDepositDto = walletDepositFixture;
+const _reviewDto: ReviewDto = reviewFixture;
+const _supportPersonDto: SupportPersonDto = supportPersonFixture;
 const _pinDto: PinStatusDto = pinStatusFixture;
 
 // Side-effecting reads so ``unused`` lint rules can't trim the
 // compile-time bridge above out of the bundle.
 void _meDto;
 void _dealDto;
+void _nullableDealDto;
 void _topupResponseDto;
 void _balanceFundedTopupResponseDto;
 void _currencyDto;
@@ -269,6 +304,8 @@ void _balanceDto;
 void _serviceDto;
 void _serviceDetailDto;
 void _walletDepositDto;
+void _reviewDto;
+void _supportPersonDto;
 void _pinDto;
 
 // ---------------------------------------------------------------------------
@@ -290,6 +327,8 @@ describe("OpenAPI contract", () => {
     "WalletWithdrawalOut",
     "ServiceOut",
     "ServiceDetailOut",
+    "ReviewOut",
+    "SupportPersonOut",
     "PinStatusOut",
     "NotificationOut",
     "NotificationCountersOut",

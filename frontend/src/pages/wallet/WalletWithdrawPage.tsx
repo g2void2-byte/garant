@@ -348,7 +348,7 @@ function MethodTile({ icon, label, active, onClick }: MethodTileProps) {
 interface CardWithdrawModalProps {
   open: boolean;
   onClose: () => void;
-  admins: { username: string }[];
+  admins: { username: string | null }[];
 }
 
 function CardWithdrawModal({ open, onClose, admins }: CardWithdrawModalProps) {

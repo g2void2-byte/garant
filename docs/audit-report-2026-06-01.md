@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 70 файлов, 645 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 73 файла, 659 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -83,6 +83,7 @@
 - M-50-M-111: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing, admin finance form number parsing, user service/deal amount parsing, admin content form number parsing, admin user-detail form number parsing, admin deal action form number parsing, admin users page parsing, admin settings form parsing, admin deals page parsing follow-up, PIN reset price non-finite guard, display decimal parsing, topup invoice metadata, profile rating display, Retry-After/crop zoom parsing, service photo URL validation, broadcast deeplink validation, structured API error detail parsing, create-deal insufficient-funds parsing и live-notification runtime payload validation исправлены.
 - M-112: frontend service DTO теперь отражает nullable `owner_username` и обязательный nullable `created_at`; карточки/детали услуг не строят `@null`, `/users/null` и `/create-deal/null`.
 - M-113: per-currency wallet history больше не показывает refunded deposit raw-статусом, а OpenAPI contract test покрывает service/deposit DTO drift.
+- M-114: frontend user/deal/review/support DTO теперь отражают nullable username-поля из OpenAPI; public search/profile/deal/review/support UI не строит `@null`, `/users/null`, `/deals/new?to=null` и `t.me/null`.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1277,6 +1278,16 @@ Backend wallet enum уже содержит `refunded`, и модалки invoic
 Риск: пользователь видел техническое `refunded` в истории кошелька вместо локализованного состояния возврата, хотя соседние wallet surfaces показывали нормальный label. Для финансовой истории это выглядит как несогласованное состояние платежа.
 
 Исправление: refunded deposit получил локализованный label/tone в wallet history, `WalletDepositDto.status` документирует `refunded`, а contract fixture закрепляет refunded deposit payload alongside service DTO drift checks.
+
+### M-114. Nullable username-поля расходились с OpenAPI на user/deal/review surfaces
+
+Ссылки: `frontend/src/api/types.ts`, `frontend/src/components/domain/UserCard.tsx`, `frontend/src/components/domain/UserPicker.tsx`, `frontend/src/components/domain/DealRow.tsx`, `frontend/src/pages/deals/DealDetailPage.tsx`, `frontend/src/pages/search/SearchPage.tsx`, `frontend/src/pages/search/UserProfilePage.tsx`, regressions `frontend/src/components/domain/UserCard.test.tsx`, `frontend/src/components/domain/UserPicker.test.tsx`, `frontend/src/components/domain/DealRow.test.tsx`, `frontend/src/pages/deals/DealDetailPage.test.tsx`, contract `frontend/src/api/openapi.contract.test.ts`.
+
+OpenAPI уже объявлял nullable username-поля у `UserOut`/`UserPublicOut`, `SupportPersonOut`, `DealOut.buyer/seller` и `ReviewOut.author_username/target_username`. Ручные frontend DTO держали эти поля строками, поэтому несколько UI surfaces напрямую строили `@${username}`, `/users/${username}`, `/deals/new?to=${username}` и `https://t.me/${username}` без null guard.
+
+Риск: пользователь без Telegram username, удаленная сторона сделки или orphaned review/support row могли превращаться в `@null`, `/users/null`, `/deals/new?to=null` или `t.me/null`. Это особенно неприятно в сделках и подборе контрагента: UI выглядел кликабельным, но вел в несуществующий профиль/чат или создавал форму сделки с невалидным контрагентом.
+
+Исправление: DTO nullability приведена к OpenAPI, public cards/search/picker/profile/deal/review/support components показывают явные fallback-состояния и отключают действия, которым нужен username. Contract fixtures закрепляют nullable `UserOut.username`, `DealOut.buyer/seller`, `ReviewOut.author_username/target_username` и `SupportPersonOut.username`.
 
 ## Наблюдения без отдельного finding
 

@@ -33,7 +33,8 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, [onScroll]);
 
-  const displayName = user.display_name?.trim() || user.username || "—";
+  const username = user.username?.trim() || null;
+  const displayName = user.display_name?.trim() || username || "—";
   const roleLabel = user.prefix ? ROLE_LABEL[user.prefix] : "Пользователь";
   const country = countryFromCode(user.country);
   // V12-UI — the avatar circle is sourced from the Telegram user's
@@ -85,7 +86,9 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
             />
             <div className="min-w-0 flex-1">
               <h1 className="text-xl font-bold leading-tight truncate">{displayName}</h1>
-              <div className="mt-1 text-[13px] text-text-muted truncate">@{user.username}</div>
+              <div className="mt-1 text-[13px] text-text-muted truncate">
+                {username ? `@${username}` : "username не задан"}
+              </div>
               {country && (
                 <div className="mt-0.5 text-[13px] text-text-muted truncate">
                   <span aria-hidden>{country.flag}</span> {country.name}

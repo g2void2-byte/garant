@@ -168,6 +168,17 @@ describe("<UserProfilePage />", () => {
     expect(screen.queryByRole("button", { name: /Написать/i })).not.toBeInTheDocument();
   });
 
+  it("disables deal and Telegram actions when the public username is missing", () => {
+    userState.data = makeUser({ username: null, display_name: "Alice" });
+    servicesState.data = [];
+    reviewsState.data = [];
+    renderAt("alice");
+    expect(screen.getByText("username не задан")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Сделка/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Написать/i })).toBeDisabled();
+    expect(screen.queryByText("@null")).not.toBeInTheDocument();
+  });
+
   it("renders the empty reviews state when the reviews tab has no data", () => {
     userState.data = makeUser({ username: "alice" });
     servicesState.data = [];

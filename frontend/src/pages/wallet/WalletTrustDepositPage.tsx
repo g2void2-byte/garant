@@ -193,7 +193,7 @@ export default function WalletTrustDepositPage() {
 interface TrustWithdrawModalProps {
   open: boolean;
   onClose: () => void;
-  admins: { username?: string }[];
+  admins: { username?: string | null }[];
 }
 
 function TrustWithdrawModal({ open, onClose, admins }: TrustWithdrawModalProps) {

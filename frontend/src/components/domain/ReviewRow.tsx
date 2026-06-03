@@ -12,6 +12,9 @@ interface Props {
 
 export function ReviewRow({ review, index = 0 }: Props) {
   const stars = Math.max(0, Math.min(5, Math.round(review.rating)));
+  const authorLabel = review.author_username
+    ? `от @${review.author_username}`
+    : "автор недоступен";
   return (
     <div
       className="bg-panel border border-border rounded-card p-3 animate-fadein"
@@ -28,9 +31,13 @@ export function ReviewRow({ review, index = 0 }: Props) {
             />
           ))}
         </div>
-        <Link to={`/users/${review.author_username}`} className="text-text-muted hover:text-text">
-          от @{review.author_username}
-        </Link>
+        {review.author_username ? (
+          <Link to={`/users/${review.author_username}`} className="text-text-muted hover:text-text">
+            {authorLabel}
+          </Link>
+        ) : (
+          <span className="text-text-muted">{authorLabel}</span>
+        )}
         {review.deal_id != null && (
           <Link
             to={`/deals/${review.deal_id}`}

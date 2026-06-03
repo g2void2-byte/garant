@@ -49,7 +49,7 @@ export default function ProfilePage() {
   // TanStack Query cache with someone else's data. ``useReviews``
   // already does this via its own ``enabled`` guard.
   const firstServicesParams = useMemo(
-    () => ({ owner: me?.username, limit: PROFILE_SERVICES_PAGE_SIZE, offset: 0 }),
+    () => ({ owner: me?.username ?? undefined, limit: PROFILE_SERVICES_PAGE_SIZE, offset: 0 }),
     [me?.username],
   );
   const { data: services } = useServices(
@@ -64,7 +64,7 @@ export default function ProfilePage() {
     () => ({ limit: PROFILE_REVIEWS_PAGE_SIZE, offset: 0 }),
     [],
   );
-  const { data: reviews } = useReviews(me?.username, firstReviewsParams);
+  const { data: reviews } = useReviews(me?.username ?? undefined, firstReviewsParams);
   const [reviewItems, setReviewItems] = useState<ReviewDto[]>([]);
   const [reviewsReachedEnd, setReviewsReachedEnd] = useState(false);
   const [loadingMoreReviews, setLoadingMoreReviews] = useState(false);
@@ -296,7 +296,9 @@ export default function ProfilePage() {
                       JSON string. ``parseDecimal`` accepts both shapes,
                       so the call below stays runtime-safe regardless. */}
                   <span className="text-accent font-bold">★ {parseDecimal(r.rating).toFixed(1)}</span>
-                  <span className="text-text-muted">от @{r.author_username}</span>
+                  <span className="text-text-muted">
+                    {r.author_username ? `от @${r.author_username}` : "автор недоступен"}
+                  </span>
                   <span className="text-text-muted ml-auto">{relativeTime(r.created_at)}</span>
                 </div>
                 {r.text && <div className="mt-2 text-sm">{r.text}</div>}

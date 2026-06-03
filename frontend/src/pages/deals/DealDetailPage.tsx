@@ -98,7 +98,13 @@ export default function DealDetailPage() {
   const [reviewText, setReviewText] = useState("");
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
 
-  const otherUser = deal && (deal.role === "buyer" ? deal.seller : deal.buyer);
+  const otherUser = deal
+    ? deal.role === "buyer"
+      ? deal.seller
+      : deal.role === "seller"
+        ? deal.buyer
+        : null
+    : null;
   const existingReviewParams: { deal_id?: number; limit: number } = { limit: 1 };
   if (deal) existingReviewParams.deal_id = deal.id;
   const { data: existingReviews } = useReviews(
@@ -143,6 +149,8 @@ export default function DealDetailPage() {
     STATUS_LABEL[deal.status] ?? { text: deal.status, cls: "text-text-muted" };
   const amount = deal.amount;
   const currency = deal.currency_code ?? "USD";
+  const counterpartyLabel = deal.role === "buyer" ? "Продавец" : "Покупатель";
+  const counterpartyText = otherUser ? `@${otherUser}` : "Контрагент недоступен";
   const isParticipant = deal.role === "buyer" || deal.role === "seller";
   const isAdmin = !!me && (me.prefix === "admin" || me.prefix === "arbiter");
   const cancelByOther =
@@ -269,6 +277,7 @@ export default function DealDetailPage() {
   };
 
   const canReview =
+    !!otherUser &&
     isParticipant &&
     (deal.status === "completed" ||
       deal.status === "resolved_for_buyer" ||
@@ -280,14 +289,18 @@ export default function DealDetailPage() {
       <div className="px-4 space-y-3">
         <div className="bg-panel border border-border rounded-card p-4 space-y-2">
           <div className="text-sm text-text-muted">
-            {deal.role === "buyer" ? "Продавец" : "Покупатель"}
+            {counterpartyLabel}
           </div>
-          <button
-            onClick={() => otherUser && navigate(`/users/${otherUser}`)}
-            className="text-lg font-semibold text-accent active:opacity-80"
-          >
-            @{otherUser}
-          </button>
+          {otherUser ? (
+            <button
+              onClick={() => navigate(`/users/${otherUser}`)}
+              className="text-lg font-semibold text-accent active:opacity-80"
+            >
+              {counterpartyText}
+            </button>
+          ) : (
+            <div className="text-lg font-semibold text-text-muted">{counterpartyText}</div>
+          )}
           <div className="text-2xl font-bold text-accent">
             {formatAmount(amount, currency)} {currency}
           </div>
@@ -331,7 +344,9 @@ export default function DealDetailPage() {
                   <div className="text-sm text-text-muted">
                     {deal.role === "buyer"
                       ? `Оплатите инвойс, чтобы сделка активировалась`
-                      : `Ожидайте подтверждение сделки от @${otherUser}`}
+                      : otherUser
+                        ? `Ожидайте подтверждение сделки от @${otherUser}`
+                        : `Ожидайте подтверждение сделки контрагентом`}
                   </div>
                   {topupInvoice && (
                     <div className="space-y-2">
@@ -431,7 +446,9 @@ export default function DealDetailPage() {
           )}
           {deal.status === "pending_confirmation" && deal.role === "buyer" && (
             <div className="col-span-2 bg-panel border border-border rounded-card p-3 text-sm text-text-muted text-center">
-              Ожидаем подтверждения от @{otherUser}
+              {otherUser
+                ? `Ожидаем подтверждения от @${otherUser}`
+                : "Ожидаем подтверждения от контрагента"}
             </div>
           )}
 
@@ -447,7 +464,9 @@ export default function DealDetailPage() {
           )}
           {deal.status === "in_progress" && deal.role === "seller" && (
             <div className="col-span-2 bg-panel border border-border rounded-card p-3 text-sm text-text-muted text-center">
-              Ожидаем подтверждения исполнения от @{otherUser}
+              {otherUser
+                ? `Ожидаем подтверждения исполнения от @${otherUser}`
+                : "Ожидаем подтверждения исполнения от контрагента"}
             </div>
           )}
           {deal.status === "in_progress" && isParticipant && (
@@ -653,7 +672,7 @@ export default function DealDetailPage() {
       <Sheet
         open={reviewOpen}
         onClose={() => setReviewOpen(false)}
-        title={`Отзыв на @${otherUser}`}
+        title={otherUser ? `Отзыв на @${otherUser}` : "Отзыв"}
       >
         <div className="space-y-3">
           <div>

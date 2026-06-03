@@ -119,6 +119,15 @@ describe("<SearchPage />", () => {
     expect(screen.getByText("Bob")).toBeInTheDocument();
   });
 
+  it("does not build a profile navigation row for a user without username", () => {
+    mockState.data = [makeUser({ id: 3, username: null, display_name: "No Username" })];
+    renderPage();
+    expect(screen.getByText("No Username")).toBeInTheDocument();
+    expect(screen.getByText(/username не задан/)).toBeInTheDocument();
+    expect(screen.getByTestId("search-user-3")).toBeDisabled();
+    expect(screen.queryByText("@null")).not.toBeInTheDocument();
+  });
+
   it("loads the next user-search page by offset", async () => {
     mockState.data = Array.from({ length: 50 }, (_, index) =>
       makeUser({

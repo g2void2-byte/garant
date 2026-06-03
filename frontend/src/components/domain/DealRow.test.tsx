@@ -94,6 +94,13 @@ describe("<DealRow />", () => {
     expect(profileLink).toHaveTextContent("Профиль");
   });
 
+  it("does not render @null or a profile link when the counterparty username is missing", () => {
+    renderRow({ role: "buyer", seller: null });
+    expect(screen.getByText("Продавец: профиль недоступен")).toBeInTheDocument();
+    expect(screen.queryByText("@null")).not.toBeInTheDocument();
+    expect(screen.queryByText("Профиль")).not.toBeInTheDocument();
+  });
+
   it("renders the counterparty avatar with the seller's photo for a buyer-side row", () => {
     renderRow({
       role: "buyer",

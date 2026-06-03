@@ -132,6 +132,8 @@ export default function UserProfilePage() {
     );
   }
 
+  const profileUsername = user.username?.trim() || null;
+
   return (
     <Page showBack>
       <ProfileHeader user={user} />
@@ -139,10 +141,20 @@ export default function UserProfilePage() {
       <div className="px-4 mt-3 space-y-3">
         {!isSelf && (
           <div className="grid grid-cols-3 gap-2">
-            <Button variant="primary" size="md" onClick={() => navigate(`/deals/new?to=${user.username}`)}>
+            <Button
+              variant="primary"
+              size="md"
+              disabled={!profileUsername}
+              onClick={() => profileUsername && navigate(`/deals/new?to=${profileUsername}`)}
+            >
               <HandCoins className="size-4" /> Сделка
             </Button>
-            <Button variant="secondary" size="md" onClick={() => openTelegramLink(`https://t.me/${user.username}`)}>
+            <Button
+              variant="secondary"
+              size="md"
+              disabled={!profileUsername}
+              onClick={() => profileUsername && openTelegramLink(`https://t.me/${profileUsername}`)}
+            >
               <MessageSquare className="size-4" /> Написать
             </Button>
             <Button variant="ghost" size="md">
@@ -196,7 +208,9 @@ export default function UserProfilePage() {
                 <div key={r.id} className="bg-panel border border-border rounded-card p-3">
                   <div className="flex items-center gap-2 text-sm">
                     <span className="text-accent font-bold">★ {parseDecimal(r.rating).toFixed(1)}</span>
-                    <span className="text-text-muted">от @{r.author_username}</span>
+                    <span className="text-text-muted">
+                      {r.author_username ? `от @${r.author_username}` : "автор недоступен"}
+                    </span>
                     <span className="text-text-muted ml-auto">{relativeTime(r.created_at)}</span>
                   </div>
                   {r.text && <div className="mt-2 text-sm">{r.text}</div>}

@@ -55,4 +55,10 @@ describe("<ProfileHeader />", () => {
     render(<ProfileHeader user={makeUser({ prefix: "vip" })} />);
     expect(screen.getByText("VIP")).toBeInTheDocument();
   });
+
+  it("renders a username fallback instead of @null", () => {
+    render(<ProfileHeader user={makeUser({ username: null })} />);
+    expect(screen.getByText("username не задан")).toBeInTheDocument();
+    expect(screen.queryByText("@null")).not.toBeInTheDocument();
+  });
 });

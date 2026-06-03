@@ -49,6 +49,10 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
   const counterpartyPhotoUrl =
     deal.role === "buyer" ? deal.seller_photo_url : deal.buyer_photo_url;
   const counterpartyLabel = deal.role === "buyer" ? "Продавец" : "Покупатель";
+  const counterpartyName = counterpartyUsername || "Контрагент";
+  const counterpartyText = counterpartyUsername
+    ? `${counterpartyLabel}: @${counterpartyUsername}`
+    : `${counterpartyLabel}: профиль недоступен`;
   return (
     <div
       className="animate-fadein"
@@ -57,7 +61,7 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
       <Link to={`/deals/${deal.id}`} className="block bg-panel border border-border rounded-card p-3 active:scale-[.99] transition-transform">
         <div className="flex items-start gap-3">
           <Avatar
-            name={counterpartyUsername}
+            name={counterpartyName}
             src={counterpartyPhotoUrl}
             size={40}
             className="mt-0.5"
@@ -72,7 +76,7 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
             </div>
             <div className="mt-2 font-semibold line-clamp-1">{deal.description}</div>
             <div className="mt-1 flex items-center gap-2 text-xs text-text-muted">
-              <span className="truncate">{counterpartyLabel}: @{counterpartyUsername}</span>
+              <span className="truncate">{counterpartyText}</span>
               {deal.created_at && (
                 <>
                   <span>·</span>

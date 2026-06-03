@@ -56,7 +56,7 @@ export interface ServiceCommentDto {
 export interface UserCardDto {
   id: number;
   user_id: number;
-  username: string;
+  username: string | null;
   display_name: string;
   photo_url: string | null;
   admin: number;
@@ -117,8 +117,8 @@ export type DealStatus =
 
 export interface DealDto {
   id: number;
-  buyer: string;
-  seller: string;
+  buyer: string | null;
+  seller: string | null;
   // Item 21 — counterparty avatar URLs surfaced for deal list + detail.
   buyer_photo_url?: string | null;
   seller_photo_url?: string | null;
@@ -129,7 +129,7 @@ export interface DealDto {
   status: DealStatus | string;
   confirm_buyer: boolean;
   confirm_seller: boolean;
-  role: "buyer" | "seller";
+  role: "buyer" | "seller" | string;
   created_at: string | null;
   currency_code: string | null;
   amount: number;
@@ -172,8 +172,8 @@ export interface DealCreateWithTopupResponseDto {
 export interface ReviewDto {
   id: number;
   deal_id: number | null;
-  author_username: string;
-  target_username: string;
+  author_username: string | null;
+  target_username: string | null;
   rating: number;
   text: string;
   created_at: string;
@@ -202,7 +202,7 @@ export interface NotificationCountersDto {
 export interface SupportPersonDto {
   id: number;
   user_id: number;
-  username: string;
+  username: string | null;
   display_name: string;
   photo_url: string | null;
   admin: number;

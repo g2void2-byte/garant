@@ -177,6 +177,21 @@ describe("<DealDetailPage />", () => {
     expect(screen.getByText("Комиссия оплачена")).toBeInTheDocument();
   });
 
+  it("does not render @null actions when the counterparty username is missing", () => {
+    dealState.data = makeDeal({
+      id: 42,
+      buyer: "alice",
+      seller: null,
+      role: "buyer",
+      status: "completed",
+    });
+    renderAt(42);
+    expect(screen.getByText("Контрагент недоступен")).toBeInTheDocument();
+    expect(screen.queryByText("@null")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Оставить отзыв/i })).not.toBeInTheDocument();
+    expect(reviewsCall.username).toBeUndefined();
+  });
+
   it("shows the 'confirm execution' CTA for buyer on an in-progress deal", () => {
     dealState.data = makeDeal({ status: "in_progress", role: "buyer" });
     renderAt(42);

@@ -222,7 +222,7 @@ export default function SearchPage() {
                         key={u.id}
                         user={u}
                         index={i}
-                        onPick={() => navigate(`/users/${u.username}`)}
+                        onPick={() => u.username && navigate(`/users/${u.username}`)}
                       />
                     ))}
                   </ul>
@@ -277,6 +277,8 @@ function SearchUserRow({
 }) {
   const country = countryFromCode(user.country);
   const ratingLabel = user.reviews_count ? user.rating.toFixed(1) : "0.0";
+  const username = user.username?.trim() || null;
+  const displayName = user.display_name?.trim() || username || "—";
   return (
     <li
       style={staggerDelay(index, 35, 280)}
@@ -287,14 +289,17 @@ function SearchUserRow({
         role="option"
         aria-selected={false}
         onClick={onPick}
-        data-testid={`search-user-${user.username}`}
+        disabled={!username}
+        data-testid={`search-user-${username ?? user.id}`}
         className={cn(
           "w-full flex items-center gap-3 px-3 py-2 text-left",
-          "hover:bg-secondary/60 active:bg-secondary transition-colors",
+          username
+            ? "hover:bg-secondary/60 active:bg-secondary transition-colors"
+            : "opacity-60 cursor-not-allowed transition-colors",
         )}
       >
         <div className="relative shrink-0">
-          <Avatar name={user.username} src={user.photo_url} size={44} />
+          <Avatar name={displayName} src={user.photo_url} size={44} />
           <span className="absolute -bottom-0.5 -right-0.5 ring-2 ring-panel rounded-full">
             <OnlineDot online={user.online} />
           </span>
@@ -303,7 +308,7 @@ function SearchUserRow({
           <div className="flex items-center gap-2">
             <BadgePrefix prefix={user.prefix} />
             <span className="font-medium text-[15px] truncate">
-              {user.display_name?.trim() || user.username}
+              {displayName}
             </span>
             {country && (
               <span
@@ -316,7 +321,7 @@ function SearchUserRow({
             )}
           </div>
           <div className="text-[12px] text-text-muted truncate">
-            @{user.username} · {dealsLabel(user.deals_count)}
+            {username ? `@${username}` : "username не задан"} · {dealsLabel(user.deals_count)}
           </div>
         </div>
         <div className="flex flex-col items-end shrink-0 gap-0.5">
