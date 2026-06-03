@@ -98,6 +98,8 @@
 - M-126: shared Telegram/external/payment link openers now reject credential-bearing and whitespace/control-character URLs before reaching Telegram or `window.open`.
 - M-127: backend profile/service media URL schemas now reject encoded/dot-segment media paths and malformed HTTPS ports before storage.
 - M-128: service photo upload previews and public service galleries now gate every image URL through the shared `/media/...` runtime predicate before rendering/submitting.
+- M-129: frontend public username route helpers now reject non-contract usernames before `/users/...`, `/create-deal/...`, `/deals/new?to=...`, and `/api/users/...` construction.
+- M-130: profile/deal/service pages now gate route/query username refs before related services/reviews/create-deal queries, review targets, and counterparty submissions.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1442,6 +1444,26 @@ Links: `frontend/src/pages/profile/AddServicePage.tsx`, `frontend/src/pages/sear
 Risk: backend schema validation is the primary guard, but the frontend runtime boundary was weaker than the deal media boundary. A compromised payload, legacy row, or future API drift could render a non-media image URL in the service create preview or public gallery.
 
 Fix: service uploads now validate the returned media URL before preview/storage and skip unsafe values. Public service galleries filter through `safeMediaUrl()` before rendering images. Regression tests cover mixed safe/unsafe upload responses and mixed safe/unsafe gallery data.
+
+### M-129. Public username links interpolated raw API/user strings
+
+Links: `frontend/src/lib/usernames.ts`, `frontend/src/App.tsx`, `frontend/src/api/hooks.ts`, `frontend/src/components/domain/UserCard.tsx`, `frontend/src/components/domain/ProfileHeader.tsx`, `frontend/src/components/domain/ServiceCard.tsx`, `frontend/src/components/domain/SupportPersonRow.tsx`, `frontend/src/components/domain/ReviewRow.tsx`, `frontend/src/components/domain/DealRow.tsx`, `frontend/src/components/domain/UserPicker.tsx`, `frontend/src/pages/search/SearchPage.tsx`.
+
+Several public frontend surfaces built `/users/${username}` or `api/users/${username}` directly from route params, API payloads, or picker input. Null usernames had already been handled, but malformed non-null strings such as `../admin`, `alice/bob`, or encoded slash shapes could still become router paths, query keys, or visible `@...` handles.
+
+Risk: React Router generally treats these as client-side paths rather than backend requests, but the UI boundary was weaker than the backend username contract. A malformed legacy/API payload could create confusing profile links, stale cache keys, or redirect targets that do not represent an actual username reference.
+
+Fix: added shared username helpers mirroring the backend `@? [A-Za-z0-9_-]{1,64}` contract. Public card/review/deal/search/picker surfaces now normalize username refs before labels and links, and omit profile actions for unsafe values. `useUser()` now builds `api/users/{username}` only after the same normalization. Regression tests cover unsafe username rows and legacy `/u/:username` redirects.
+
+### M-130. Username route/query refs could still drive profile/deal side effects
+
+Links: `frontend/src/pages/profile/ProfilePage.tsx`, `frontend/src/pages/search/UserProfilePage.tsx`, `frontend/src/pages/deals/CreateDealPage.tsx`, `frontend/src/pages/deals/DealDetailPage.tsx`, `frontend/src/pages/search/ServiceDetailPage.tsx`, regressions in adjacent page tests.
+
+The profile, deal detail, service detail, and create-deal pages reused route/query usernames in secondary flows: profile services/reviews queries, load-more calls, `?to=` seeds, review target usernames, Telegram/create-deal buttons, and owner/comment links. These paths needed the same username contract as the simple profile links, otherwise an unsafe ref could still reach API search params or mutation bodies even after link rendering was hardened.
+
+Risk: malformed username refs could create wrong list queries, invalid create-deal counterparty submissions, or review mutations against a non-contract target. The backend rejects the worst cases, but frontend state could still open PIN prompts or show actions for a value that was never a valid public username.
+
+Fix: these pages now normalize route/query/API usernames before use. Invalid public profile routes render a not-found state and keep services/reviews hooks disabled; create-deal drops unsafe `?to=` and legacy route seeds before validation/submission; deal detail hides review/profile/contact actions for unsafe counterparties; service owner/comment actions use sanitized profile/deal paths only. Regression tests cover unsafe seeds, owners, comments, counterparties, and profile routes.
 
 ## Наблюдения без отдельного finding
 

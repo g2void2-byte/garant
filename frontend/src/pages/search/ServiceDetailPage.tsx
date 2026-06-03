@@ -25,6 +25,7 @@ import { openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 import { safeMediaUrl } from "@/lib/mediaLinks";
+import { createDealPath, normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
 
 const SERVICE_COMMENTS_PAGE_SIZE = 50;
 
@@ -197,9 +198,11 @@ function OwnerActions({
   const navigate = useNavigate();
   const owner = service.owner;
   if (!owner) return null;
-  const ownerUsername = owner.username || null;
+  const ownerUsername = normalizeUsernameRef(owner.username);
+  const ownerProfilePath = userProfilePath(ownerUsername);
+  const ownerDealPath = createDealPath(ownerUsername);
   const ownerTelegramUrl = buildTelegramUserUrl(ownerUsername);
-  const isSelf = ownerUsername === myUsername;
+  const isSelf = ownerUsername === normalizeUsernameRef(myUsername);
   const ownerName = owner.display_name || ownerUsername || "Владелец";
   const ownerMeta = ownerUsername
     ? `@${ownerUsername} · ${dealsLabel(owner.deals_count)}`
@@ -216,9 +219,9 @@ function OwnerActions({
   return (
     <Card className="p-3">
       <div className="flex items-center gap-3">
-        {ownerUsername ? (
+        {ownerProfilePath ? (
           <Link
-            to={`/users/${ownerUsername}`}
+            to={ownerProfilePath}
             className="flex items-center gap-3 min-w-0 flex-1"
           >
             {ownerInfo}
@@ -227,12 +230,12 @@ function OwnerActions({
           <div className="flex items-center gap-3 min-w-0 flex-1">{ownerInfo}</div>
         )}
       </div>
-      {!isSelf && ownerUsername && (
+      {!isSelf && ownerDealPath && (
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Button
             variant="primary"
             size="md"
-            onClick={() => navigate(`/create-deal/${ownerUsername}`)}
+            onClick={() => navigate(ownerDealPath)}
           >
             <HandCoins className="size-4" /> Сделка
           </Button>
@@ -436,7 +439,7 @@ function CommentComposer({ serviceId }: { serviceId: number }) {
 
 function CommentRow({
   serviceId,
-  comment,
+  comment: rawComment,
   canDelete,
 }: {
   serviceId: number;
@@ -444,6 +447,11 @@ function CommentRow({
   canDelete: boolean;
 }) {
   const del = useDeleteServiceComment(serviceId);
+  const comment = {
+    ...rawComment,
+    author_username: normalizeUsernameRef(rawComment.author_username),
+  };
+  const authorPath = userProfilePath(comment.author_username);
   return (
     <Card className="p-3">
       <div className="flex items-start gap-3">
@@ -455,11 +463,7 @@ function CommentRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <Link
-              to={
-                comment.author_username
-                  ? `/users/${comment.author_username}`
-                  : "#"
-              }
+              to={authorPath ?? "#"}
               className="font-semibold text-sm truncate hover:text-accent"
             >
               {comment.author_display_name || comment.author_username || "—"}

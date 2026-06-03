@@ -7,9 +7,11 @@ import { OnlineDot } from "@/components/ui/OnlineDot";
 import { formatMoney, dealsLabel } from "@/lib/format";
 import { staggerDelay } from "@/lib/animate";
 import { countryFromCode } from "@/lib/countries";
+import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
 
 export function UserCard({ user, index = 0 }: { user: UserCardDto; index?: number }) {
-  const username = user.username?.trim() || null;
+  const username = normalizeUsernameRef(user.username);
+  const profilePath = userProfilePath(username);
   const name = user.display_name?.trim() || username || "—";
   const country = countryFromCode(user.country);
   const ratingLabel = user.reviews_count ? user.rating.toFixed(1) : "0.0";
@@ -60,9 +62,9 @@ export function UserCard({ user, index = 0 }: { user: UserCardDto; index?: numbe
       className="animate-fadein"
       style={staggerDelay(index)}
     >
-      {username ? (
+      {profilePath ? (
         <Link
-          to={`/users/${username}`}
+          to={profilePath}
           className="flex items-center gap-3.5 bg-panel border border-border rounded-card p-4 active:scale-[.99] transition-transform"
         >
           {body}

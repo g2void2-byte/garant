@@ -128,6 +128,14 @@ describe("<SearchPage />", () => {
     expect(screen.queryByText("@null")).not.toBeInTheDocument();
   });
 
+  it("does not build profile navigation for unsafe usernames", () => {
+    mockState.data = [makeUser({ id: 4, username: "../admin", display_name: "Unsafe" })];
+    renderPage();
+    expect(screen.getByText("Unsafe")).toBeInTheDocument();
+    expect(screen.getByTestId("search-user-4")).toBeDisabled();
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+  });
+
   it("loads the next user-search page by offset", async () => {
     mockState.data = Array.from({ length: 50 }, (_, index) =>
       makeUser({

@@ -1,4 +1,4 @@
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import type { DealCreateWithTopupResponseDto } from "@/api/types";
 import { Page } from "@/components/layout/Page";
@@ -21,6 +21,7 @@ import { formatCurrency } from "@/lib/format";
 import { haptic } from "@/lib/tg";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { parsePositiveDecimalInput } from "@/lib/formNumbers";
+import { normalizeUsernameRef } from "@/lib/usernames";
 
 // Item 18 — backend can return a structured ``insufficient_funds``
 // payload on the create-deal 400. The ky ``beforeError`` hook
@@ -91,6 +92,7 @@ function invoiceRequiresPayment(
 export default function CreateDealPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const { username: routeUsername } = useParams<{ username: string }>();
   const create = useCreateDealWithTopup();
   const toast = useToast();
   const { data: currencies } = useCurrencies({ kind: "fiat" });
@@ -104,7 +106,9 @@ export default function CreateDealPage() {
   // we mirror the backend default (5%) so the very first paint still
   // shows a sane "Итого" line instead of a flash of nothing.
   const { data: publicSettings } = usePublicSettings();
-  const [counterparty, setCounterparty] = useState(params.get("to") ?? "");
+  const [counterparty, setCounterparty] = useState(
+    normalizeUsernameRef(params.get("to") ?? routeUsername) ?? "",
+  );
   // Audit C1 — deals can only be initiated by the buyer (the side
   // whose balance gets locked into escrow). The "I'm the seller" tab
   // was removed because it let the caller freeze a victim's balance
@@ -182,8 +186,9 @@ export default function CreateDealPage() {
 
   function validate(): boolean {
     const amount = sum.trim();
+    const safeCounterparty = normalizeUsernameRef(counterparty);
     if (
-      !counterparty ||
+      !safeCounterparty ||
       !description ||
       parsePositiveDecimalInput(amount) === null
     ) {
@@ -195,10 +200,15 @@ export default function CreateDealPage() {
 
   async function submitDeal() {
     const amount = sum.trim();
+    const safeCounterparty = normalizeUsernameRef(counterparty);
+    if (!safeCounterparty) {
+      haptic("error");
+      return;
+    }
     setInsufficient(null);
     try {
       const deal = await create.mutateAsync({
-        counterparty,
+        counterparty: safeCounterparty,
         role: "buyer",
         amount,
         description,
@@ -261,7 +271,7 @@ export default function CreateDealPage() {
           label="Продавец (username)"
           placeholder="@username или ID"
           value={counterparty}
-          onChange={setCounterparty}
+          onChange={(value) => setCounterparty(normalizeUsernameRef(value) ?? "")}
         />
         {currencyOptions.length > 0 && (
           <div className="space-y-1">

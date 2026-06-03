@@ -35,6 +35,7 @@ import type { ReviewDto, ServiceDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 import { confirmDialog } from "@/lib/dialog";
 import { parseDecimal, relativeTime } from "@/lib/format";
+import { normalizeUsernameRef } from "@/lib/usernames";
 
 const PROFILE_REVIEWS_PAGE_SIZE = 50;
 const PROFILE_SERVICES_PAGE_SIZE = 50;
@@ -42,6 +43,7 @@ const PROFILE_SERVICES_PAGE_SIZE = 50;
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { data: me, isLoading } = useMe();
+  const myUsername = normalizeUsernameRef(me?.username);
   const [tab, setTab] = useState<"services" | "reviews">("services");
   // Audit (continuation) L-2 — gate the services query on having a
   // resolved ``owner`` so the first render (while ``useMe`` is still
@@ -49,12 +51,12 @@ export default function ProfilePage() {
   // TanStack Query cache with someone else's data. ``useReviews``
   // already does this via its own ``enabled`` guard.
   const firstServicesParams = useMemo(
-    () => ({ owner: me?.username ?? undefined, limit: PROFILE_SERVICES_PAGE_SIZE, offset: 0 }),
-    [me?.username],
+    () => ({ owner: myUsername ?? undefined, limit: PROFILE_SERVICES_PAGE_SIZE, offset: 0 }),
+    [myUsername],
   );
   const { data: services } = useServices(
     firstServicesParams,
-    { enabled: !!me?.username },
+    { enabled: !!myUsername },
   );
   const [serviceItems, setServiceItems] = useState<ServiceDto[]>([]);
   const [servicesReachedEnd, setServicesReachedEnd] = useState(false);
@@ -64,7 +66,7 @@ export default function ProfilePage() {
     () => ({ limit: PROFILE_REVIEWS_PAGE_SIZE, offset: 0 }),
     [],
   );
-  const { data: reviews } = useReviews(me?.username ?? undefined, firstReviewsParams);
+  const { data: reviews } = useReviews(myUsername ?? undefined, firstReviewsParams);
   const [reviewItems, setReviewItems] = useState<ReviewDto[]>([]);
   const [reviewsReachedEnd, setReviewsReachedEnd] = useState(false);
   const [loadingMoreReviews, setLoadingMoreReviews] = useState(false);
@@ -75,16 +77,16 @@ export default function ProfilePage() {
     setReviewItems(page);
     setReviewsReachedEnd(page.length < PROFILE_REVIEWS_PAGE_SIZE);
     setReviewsError(null);
-  }, [reviews, me?.username]);
+  }, [reviews, myUsername]);
 
   const loadMoreReviews = async () => {
-    if (!me?.username || loadingMoreReviews || reviewsReachedEnd) return;
+    if (!myUsername || loadingMoreReviews || reviewsReachedEnd) return;
     setLoadingMoreReviews(true);
     setReviewsError(null);
     try {
       const page = await api
         .get("api/reviews", {
-          searchParams: buildReviewsSearchParams(me.username, {
+          searchParams: buildReviewsSearchParams(myUsername, {
             limit: PROFILE_REVIEWS_PAGE_SIZE,
             offset: reviewItems.length,
           }),
@@ -109,17 +111,17 @@ export default function ProfilePage() {
     setServiceItems(page);
     setServicesReachedEnd(page.length < PROFILE_SERVICES_PAGE_SIZE);
     setServicesError(null);
-  }, [services, me?.username]);
+  }, [services, myUsername]);
 
   const loadMoreServices = async () => {
-    if (!me?.username || loadingMoreServices || servicesReachedEnd) return;
+    if (!myUsername || loadingMoreServices || servicesReachedEnd) return;
     setLoadingMoreServices(true);
     setServicesError(null);
     try {
       const page = await api
         .get("api/services", {
           searchParams: buildServicesSearchParams({
-            owner: me.username,
+            owner: myUsername,
             limit: PROFILE_SERVICES_PAGE_SIZE,
             offset: serviceItems.length,
           }),
@@ -285,7 +287,12 @@ export default function ProfilePage() {
             />
           ) : (
             <>
-              {reviewItems.map((r) => (
+              {reviewItems.map((rawReview) => {
+                const r = {
+                  ...rawReview,
+                  author_username: normalizeUsernameRef(rawReview.author_username),
+                };
+                return (
               <div key={r.id} className="bg-panel border border-border rounded-card p-3">
                 <div className="flex items-center gap-2 text-sm">
                   {/* Audit (continuation) M-2 — defence-in-depth.
@@ -303,7 +310,8 @@ export default function ProfilePage() {
                 </div>
                 {r.text && <div className="mt-2 text-sm">{r.text}</div>}
               </div>
-              ))}
+                );
+              })}
               {hasMoreReviews && (
                 <Button onClick={loadMoreReviews} disabled={loadingMoreReviews} className="w-full">
                   {loadingMoreReviews ? "Загружаю..." : "Показать еще"}

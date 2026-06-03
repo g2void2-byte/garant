@@ -47,4 +47,11 @@ describe("<UserCard />", () => {
     expect(screen.queryByText("@null")).not.toBeInTheDocument();
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
+
+  it("treats unsafe usernames as missing profile refs", () => {
+    renderCard({ username: "../admin", display_name: "Unsafe" });
+    expect(screen.getByText("Unsafe")).toBeInTheDocument();
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
 });

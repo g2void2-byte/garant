@@ -192,6 +192,21 @@ describe("<DealDetailPage />", () => {
     expect(reviewsCall.username).toBeUndefined();
   });
 
+  it("does not render profile or review actions for unsafe counterparty usernames", () => {
+    dealState.data = makeDeal({
+      id: 42,
+      buyer: "alice",
+      seller: "../admin",
+      role: "buyer",
+      status: "completed",
+    });
+    renderAt(42);
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /admin/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /\u041e\u0441\u0442\u0430\u0432\u0438\u0442\u044c \u043e\u0442\u0437\u044b\u0432/i })).not.toBeInTheDocument();
+    expect(reviewsCall.username).toBeUndefined();
+  });
+
   it("shows the 'confirm execution' CTA for buyer on an in-progress deal", () => {
     dealState.data = makeDeal({ status: "in_progress", role: "buyer" });
     renderAt(42);

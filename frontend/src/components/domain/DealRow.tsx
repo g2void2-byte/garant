@@ -5,6 +5,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { formatAmount, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { staggerDelay } from "@/lib/animate";
+import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string; icon: string }> = {
   pending_confirmation: {
@@ -45,7 +46,9 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
   // Item 21 — show the counterparty (i.e. the other side of the deal)
   // avatar + a "Профиль" deep-link. The seller's row in the buyer's
   // list and vice-versa.
-  const counterpartyUsername = deal.role === "buyer" ? deal.seller : deal.buyer;
+  const rawCounterpartyUsername = deal.role === "buyer" ? deal.seller : deal.buyer;
+  const counterpartyUsername = normalizeUsernameRef(rawCounterpartyUsername);
+  const counterpartyPath = userProfilePath(counterpartyUsername);
   const counterpartyPhotoUrl =
     deal.role === "buyer" ? deal.seller_photo_url : deal.buyer_photo_url;
   const counterpartyLabel = deal.role === "buyer" ? "Продавец" : "Покупатель";
@@ -84,10 +87,10 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
                 </>
               )}
             </div>
-            {counterpartyUsername && (
+            {counterpartyPath && (
               <div className="mt-2">
                 <Link
-                  to={`/users/${counterpartyUsername}`}
+                  to={counterpartyPath}
                   onClick={(e) => e.stopPropagation()}
                   className="inline-flex items-center gap-1 px-2 py-1 rounded-button bg-panel-2 border border-border text-[11px] text-text hover:bg-secondary active:scale-95 transition"
                 >

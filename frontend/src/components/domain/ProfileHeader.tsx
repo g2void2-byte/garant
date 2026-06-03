@@ -4,6 +4,7 @@ import { Logo } from "@/components/layout/Logo";
 import { Avatar } from "@/components/ui/Avatar";
 import { countryFromCode } from "@/lib/countries";
 import { getTelegramUser } from "@/lib/tg";
+import { normalizeUsernameRef } from "@/lib/usernames";
 
 // Keep keys in lockstep with ``UserCardDto.prefix`` on the backend
 // (``backend/app/serializers._common_user_fields``). The ``vip`` entry
@@ -33,7 +34,7 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, [onScroll]);
 
-  const username = user.username?.trim() || null;
+  const username = normalizeUsernameRef(user.username);
   const displayName = user.display_name?.trim() || username || "—";
   const roleLabel = user.prefix ? ROLE_LABEL[user.prefix] : "Пользователь";
   const country = countryFromCode(user.country);

@@ -4,6 +4,7 @@ import type { ServiceDto } from "@/api/types";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { staggerDelay } from "@/lib/animate";
+import { normalizeUsernameRef } from "@/lib/usernames";
 
 const STATUS_BADGE: Record<string, { text: string; cls: string }> = {
   draft: { text: "Черновик", cls: "bg-panel-2 text-text-muted" },
@@ -21,8 +22,9 @@ export function ServiceCard({
   rightSlot?: React.ReactNode;
 }) {
   const badge = STATUS_BADGE[service.status];
-  const ownerLabel = service.owner_username
-    ? `@${service.owner_username}`
+  const ownerUsername = normalizeUsernameRef(service.owner_username);
+  const ownerLabel = ownerUsername
+    ? `@${ownerUsername}`
     : "Владелец недоступен";
   return (
     <div

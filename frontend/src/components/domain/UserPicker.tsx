@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { dealsLabel } from "@/lib/format";
 import { staggerDelay } from "@/lib/animate";
 import { cn } from "@/lib/cn";
+import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
 
 const USER_PICKER_LIMIT = 8;
 
@@ -94,7 +95,10 @@ export function UserPicker({
   }, [input, debounceMs]);
 
   // Normalise leading ``@`` so the server receives the bare username.
-  const normalized = useMemo(() => debounced.replace(/^@+/, "").trim(), [debounced]);
+  const normalized = useMemo(
+    () => normalizeUsernameRef(debounced.replace(/^@+/, "")) ?? "",
+    [debounced],
+  );
   const usersQuery = useMemo(
     () => ({
       ...(normalized ? { q: normalized } : {}),
@@ -123,7 +127,7 @@ export function UserPicker({
   }, [focused]);
 
   function pickUser(u: UserCardDto) {
-    const username = u.username?.trim() || "";
+    const username = normalizeUsernameRef(u.username) ?? "";
     if (!username && !onPick) return;
     setSelected(u);
     setInput(username);
@@ -174,7 +178,7 @@ export function UserPicker({
                 setSelected(null);
                 onPick?.(null);
               }
-              onChange(e.target.value.replace(/^@+/, "").trim());
+              onChange(normalizeUsernameRef(e.target.value.replace(/^@+/, "")) ?? "");
             }}
             onFocus={() => setFocused(true)}
             placeholder={placeholder}
@@ -225,7 +229,7 @@ export function UserPicker({
                 {filtered.map((u, i) => (
                   <li key={u.id} style={staggerDelay(i, 25, 200)} className="animate-fade-in-down">
                     {(() => {
-                      const username = u.username?.trim() || null;
+                      const username = normalizeUsernameRef(u.username);
                       const canPick = Boolean(username || onPick);
                       const label = u.display_name?.trim() || username || "—";
                       return (
@@ -302,7 +306,8 @@ function SelectedUserCard({
   const ratingLabel = user.reviews_count
     ? user.rating.toFixed(1)
     : "0.0";
-  const username = user.username?.trim() || null;
+  const username = normalizeUsernameRef(user.username);
+  const profilePath = userProfilePath(username);
   const label = user.display_name?.trim() || username || "—";
 
   return (
@@ -339,9 +344,9 @@ function SelectedUserCard({
         </button>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
-        {username ? (
+        {profilePath ? (
           <Link
-            to={`/users/${username}`}
+            to={profilePath}
             className="h-10 rounded-button bg-secondary text-text font-medium flex items-center justify-center text-[14px] hover:opacity-90 active:opacity-80 transition"
           >
             Профиль

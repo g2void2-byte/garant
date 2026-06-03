@@ -4,15 +4,22 @@ import type { ReviewDto } from "@/api/types";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { staggerDelay } from "@/lib/animate";
+import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
 
 interface Props {
   review: ReviewDto;
   index?: number;
 }
 
-export function ReviewRow({ review, index = 0 }: Props) {
+export function ReviewRow({ review: rawReview, index = 0 }: Props) {
+  const review = {
+    ...rawReview,
+    author_username: normalizeUsernameRef(rawReview.author_username),
+  };
   const stars = Math.max(0, Math.min(5, Math.round(review.rating)));
-  const authorLabel = review.author_username
+  const authorUsername = normalizeUsernameRef(review.author_username);
+  const authorPath = userProfilePath(authorUsername);
+  const authorLabel = authorUsername
     ? `от @${review.author_username}`
     : "автор недоступен";
   return (
@@ -31,8 +38,8 @@ export function ReviewRow({ review, index = 0 }: Props) {
             />
           ))}
         </div>
-        {review.author_username ? (
-          <Link to={`/users/${review.author_username}`} className="text-text-muted hover:text-text">
+        {authorPath ? (
+          <Link to={authorPath} className="text-text-muted hover:text-text">
             {authorLabel}
           </Link>
         ) : (

@@ -9,14 +9,17 @@ const meState = vi.hoisted(() => ({ data: undefined as UserCardDto | undefined }
 const userState = vi.hoisted(() => ({
   data: undefined as UserCardDto | undefined,
   isLoading: false,
+  lastUsername: undefined as string | undefined,
 }));
 const servicesState = vi.hoisted(() => ({
   data: undefined as ServiceDto[] | undefined,
   lastParams: undefined as unknown,
+  lastOptions: undefined as unknown,
 }));
 const reviewsState = vi.hoisted(() => ({
   data: undefined as ReviewDto[] | undefined,
   lastParams: undefined as unknown,
+  lastUsername: undefined as string | undefined,
 }));
 const apiGetMock = vi.hoisted(() => vi.fn());
 
@@ -39,12 +42,17 @@ vi.mock("@/api/hooks", () => ({
     return searchParams;
   },
   useMe: () => meState,
-  useUser: () => userState,
-  useServices: (params: unknown) => {
+  useUser: (username: string | undefined) => {
+    userState.lastUsername = username;
+    return userState;
+  },
+  useServices: (params: unknown, options: unknown) => {
     servicesState.lastParams = params;
+    servicesState.lastOptions = options;
     return { data: servicesState.data };
   },
-  useReviews: (_username: string | undefined, params: unknown) => {
+  useReviews: (username: string | undefined, params: unknown) => {
+    reviewsState.lastUsername = username;
     reviewsState.lastParams = params;
     return { data: reviewsState.data };
   },
@@ -133,13 +141,24 @@ beforeEach(() => {
   meState.data = makeUser({ id: 99, user_id: 99, username: "me" });
   userState.data = undefined;
   userState.isLoading = false;
+  userState.lastUsername = undefined;
   servicesState.data = undefined;
   servicesState.lastParams = undefined;
+  servicesState.lastOptions = undefined;
   reviewsState.data = undefined;
   reviewsState.lastParams = undefined;
+  reviewsState.lastUsername = undefined;
 });
 
 describe("<UserProfilePage />", () => {
+  it("rejects unsafe route usernames before public profile queries", () => {
+    renderAt("..%2Fadmin");
+    expect(screen.getByText(/\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d/)).toBeInTheDocument();
+    expect(userState.lastUsername).toBeUndefined();
+    expect(servicesState.lastOptions).toEqual({ enabled: false });
+    expect(reviewsState.lastUsername).toBeUndefined();
+  });
+
   it("renders skeletons while the user is loading", () => {
     userState.isLoading = true;
     const { container } = renderAt("alice");

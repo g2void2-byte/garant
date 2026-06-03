@@ -33,6 +33,7 @@ import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
+import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   cancelled: { text: "Отменена", cls: "text-danger" },
@@ -99,13 +100,15 @@ export default function DealDetailPage() {
   const [reviewText, setReviewText] = useState("");
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
 
-  const otherUser = deal
+  const rawOtherUser = deal
     ? deal.role === "buyer"
       ? deal.seller
       : deal.role === "seller"
         ? deal.buyer
         : null
     : null;
+  const otherUser = normalizeUsernameRef(rawOtherUser);
+  const otherProfilePath = userProfilePath(otherUser);
   const otherTelegramUrl = buildTelegramUserUrl(otherUser);
   const existingReviewParams: { deal_id?: number; limit: number } = { limit: 1 };
   if (deal) existingReviewParams.deal_id = deal.id;
@@ -293,9 +296,9 @@ export default function DealDetailPage() {
           <div className="text-sm text-text-muted">
             {counterpartyLabel}
           </div>
-          {otherUser ? (
+          {otherProfilePath ? (
             <button
-              onClick={() => navigate(`/users/${otherUser}`)}
+              onClick={() => navigate(otherProfilePath)}
               className="text-lg font-semibold text-accent active:opacity-80"
             >
               {counterpartyText}

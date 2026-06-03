@@ -6,9 +6,10 @@ import { openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { staggerDelay } from "@/lib/animate";
 import { cn } from "@/lib/cn";
+import { normalizeUsernameRef } from "@/lib/usernames";
 
 export function SupportPersonRow({ person, index = 0 }: { person: SupportPersonDto; index?: number }) {
-  const username = person.username?.trim() || null;
+  const username = normalizeUsernameRef(person.username);
   const telegramUrl = buildTelegramUserUrl(username);
   const name = person.display_name?.trim() || username || "—";
   return (

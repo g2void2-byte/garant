@@ -31,6 +31,12 @@ describe("<ReviewRow />", () => {
     );
   });
 
+  it("does not turn unsafe author usernames into profile links", () => {
+    renderRow({ author_username: "../admin" });
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /admin/i })).not.toBeInTheDocument();
+  });
+
   it("renders a fallback without a profile link when the author username is missing", () => {
     renderRow({ author_username: null });
     expect(screen.getByText("автор недоступен")).toBeInTheDocument();

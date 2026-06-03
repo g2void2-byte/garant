@@ -28,6 +28,7 @@ import type { UserCardDto } from "@/api/types";
 import { Search as SearchIcon, SlidersHorizontal, Star } from "lucide-react";
 import { MOCK_USERS } from "./mockData";
 import { SearchGateOverlay } from "./SearchGateOverlay";
+import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
 
 type UserSearchFilter = NonNullable<UsersQueryParams["filter"]>;
 
@@ -217,14 +218,17 @@ export default function SearchPage() {
                   )}
                 >
                   <ul className="py-1.5">
-                    {users.map((u, i) => (
-                      <SearchUserRow
-                        key={u.id}
-                        user={u}
-                        index={i}
-                        onPick={() => u.username && navigate(`/users/${u.username}`)}
-                      />
-                    ))}
+                    {users.map((u, i) => {
+                      const profilePath = userProfilePath(u.username);
+                      return (
+                        <SearchUserRow
+                          key={u.id}
+                          user={u}
+                          index={i}
+                          onPick={() => profilePath && navigate(profilePath)}
+                        />
+                      );
+                    })}
                   </ul>
                 </div>
                 {!reachedEnd && users.length >= USER_SEARCH_PAGE_SIZE && (
@@ -277,7 +281,7 @@ function SearchUserRow({
 }) {
   const country = countryFromCode(user.country);
   const ratingLabel = user.reviews_count ? user.rating.toFixed(1) : "0.0";
-  const username = user.username?.trim() || null;
+  const username = normalizeUsernameRef(user.username);
   const displayName = user.display_name?.trim() || username || "—";
   return (
     <li

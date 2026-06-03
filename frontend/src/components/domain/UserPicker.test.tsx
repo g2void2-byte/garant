@@ -80,6 +80,24 @@ describe("<UserPicker />", () => {
     });
   });
 
+  it("does not pick unsafe username rows when the caller needs a username", async () => {
+    usersSpy.data = [makeUser({ username: "../admin", display_name: "Unsafe" })];
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <UserPicker value="unsafe" onChange={onChange} debounceMs={0} />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole("textbox"));
+
+    expect(await screen.findByText("Unsafe")).toBeInTheDocument();
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+    expect(screen.getByRole("option")).toBeDisabled();
+    await user.click(screen.getByRole("option"));
+    expect(onChange).not.toHaveBeenCalledWith("../admin");
+  });
+
   it("does not pick a username-less row when the caller needs a username", async () => {
     usersSpy.data = [makeUser({ username: null })];
     const onChange = vi.fn();

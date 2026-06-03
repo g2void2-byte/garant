@@ -237,6 +237,41 @@ describe("<ServiceDetailPage />", () => {
     expect(screen.queryByRole("button", { name: /Написать/i })).not.toBeInTheDocument();
   });
 
+  it("does not build owner links or actions for unsafe owner usernames", () => {
+    serviceState.data = makeService({
+      owner_username: "../admin",
+      owner: {
+        id: 2,
+        username: "../admin",
+        display_name: "Bob",
+        photo_url: null,
+        rating: 4.8,
+        deals_count: 20,
+        good: 18,
+        bad: 2,
+        is_admin: false,
+        is_arbiter: false,
+      },
+    });
+    commentsState.data = [];
+    renderAt(7);
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Bob/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /\u0421\u0434\u0435\u043b\u043a\u0430/i })).not.toBeInTheDocument();
+  });
+
+  it("does not build profile routes for unsafe comment author usernames", () => {
+    serviceState.data = makeService();
+    commentsState.data = [makeComment(1, { author_username: "../admin", author_display_name: "Mallory" })];
+    renderAt(7);
+    expect(screen.getByText("Mallory")).toBeInTheDocument();
+    const unsafeLinks = screen
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("href")?.includes("../admin"));
+    expect(unsafeLinks).toHaveLength(0);
+  });
+
   it("requests the first comments page", () => {
     serviceState.data = makeService();
     commentsState.data = [];

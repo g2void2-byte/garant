@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import { qk } from "./queryKeys";
 import { isPositiveSafeInteger } from "@/lib/routeParams";
+import { normalizeUsernameRef, userDetailApiPath } from "@/lib/usernames";
 import type {
   AccountTransferConfirmDto,
   AccountTransferStartDto,
@@ -353,10 +354,12 @@ export function useUsers(
 }
 
 export function useUser(username: string | undefined) {
+  const normalizedUsername = normalizeUsernameRef(username);
+  const path = userDetailApiPath(normalizedUsername);
   return useQuery<UserCardDto>({
-    queryKey: qk.user.detail(username),
-    queryFn: () => api.get(`api/users/${username}`).json(),
-    enabled: !!username,
+    queryKey: qk.user.detail(normalizedUsername ?? undefined),
+    queryFn: () => api.get(path!).json(),
+    enabled: !!path,
   });
 }
 
@@ -580,15 +583,16 @@ export function useReviews(
   username: string | undefined,
   params: ReviewsQueryParams = {},
 ) {
+  const normalizedUsername = normalizeUsernameRef(username);
   return useQuery<ReviewDto[]>({
-    queryKey: qk.reviews.forUser(username, params),
+    queryKey: qk.reviews.forUser(normalizedUsername ?? undefined, params),
     queryFn: () =>
       api
         .get("api/reviews", {
-          searchParams: buildReviewsSearchParams(username!, params),
+          searchParams: buildReviewsSearchParams(normalizedUsername!, params),
         })
         .json(),
-    enabled: !!username,
+    enabled: !!normalizedUsername,
   });
 }
 

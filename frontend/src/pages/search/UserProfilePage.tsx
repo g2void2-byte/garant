@@ -23,6 +23,7 @@ import type { ReviewDto, ServiceDto } from "@/api/types";
 import { openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { parseDecimal, relativeTime } from "@/lib/format";
+import { newDealToPath, normalizeUsernameRef } from "@/lib/usernames";
 
 const PROFILE_REVIEWS_PAGE_SIZE = 50;
 const PROFILE_SERVICES_PAGE_SIZE = 50;
@@ -30,16 +31,17 @@ const PROFILE_SERVICES_PAGE_SIZE = 50;
 export default function UserProfilePage() {
   const navigate = useNavigate();
   const { username } = useParams<{ username: string }>();
+  const routeUsername = normalizeUsernameRef(username);
   const { data: me } = useMe();
-  const { data: user, isLoading } = useUser(username);
-  const isSelf = me?.username === username;
+  const { data: user, isLoading } = useUser(routeUsername ?? undefined);
+  const isSelf = normalizeUsernameRef(me?.username) === routeUsername;
 
   const [tab, setTab] = useState<"services" | "reviews">("services");
   const firstServicesParams = useMemo(
-    () => ({ owner: username, limit: PROFILE_SERVICES_PAGE_SIZE, offset: 0 }),
-    [username],
+    () => ({ owner: routeUsername ?? undefined, limit: PROFILE_SERVICES_PAGE_SIZE, offset: 0 }),
+    [routeUsername],
   );
-  const { data: services } = useServices(firstServicesParams);
+  const { data: services } = useServices(firstServicesParams, { enabled: !!routeUsername });
   const [serviceItems, setServiceItems] = useState<ServiceDto[]>([]);
   const [servicesReachedEnd, setServicesReachedEnd] = useState(false);
   const [loadingMoreServices, setLoadingMoreServices] = useState(false);
@@ -48,7 +50,7 @@ export default function UserProfilePage() {
     () => ({ limit: PROFILE_REVIEWS_PAGE_SIZE, offset: 0 }),
     [],
   );
-  const { data: reviews } = useReviews(username, firstReviewsParams);
+  const { data: reviews } = useReviews(routeUsername ?? undefined, firstReviewsParams);
   const [reviewItems, setReviewItems] = useState<ReviewDto[]>([]);
   const [reviewsReachedEnd, setReviewsReachedEnd] = useState(false);
   const [loadingMoreReviews, setLoadingMoreReviews] = useState(false);
@@ -59,16 +61,16 @@ export default function UserProfilePage() {
     setReviewItems(page);
     setReviewsReachedEnd(page.length < PROFILE_REVIEWS_PAGE_SIZE);
     setReviewsError(null);
-  }, [reviews, username]);
+  }, [reviews, routeUsername]);
 
   const loadMoreReviews = async () => {
-    if (!username || loadingMoreReviews || reviewsReachedEnd) return;
+    if (!routeUsername || loadingMoreReviews || reviewsReachedEnd) return;
     setLoadingMoreReviews(true);
     setReviewsError(null);
     try {
       const page = await api
         .get("api/reviews", {
-          searchParams: buildReviewsSearchParams(username, {
+          searchParams: buildReviewsSearchParams(routeUsername, {
             limit: PROFILE_REVIEWS_PAGE_SIZE,
             offset: reviewItems.length,
           }),
@@ -93,17 +95,17 @@ export default function UserProfilePage() {
     setServiceItems(page);
     setServicesReachedEnd(page.length < PROFILE_SERVICES_PAGE_SIZE);
     setServicesError(null);
-  }, [services, username]);
+  }, [services, routeUsername]);
 
   const loadMoreServices = async () => {
-    if (!username || loadingMoreServices || servicesReachedEnd) return;
+    if (!routeUsername || loadingMoreServices || servicesReachedEnd) return;
     setLoadingMoreServices(true);
     setServicesError(null);
     try {
       const page = await api
         .get("api/services", {
           searchParams: buildServicesSearchParams({
-            owner: username,
+            owner: routeUsername,
             limit: PROFILE_SERVICES_PAGE_SIZE,
             offset: serviceItems.length,
           }),
@@ -121,6 +123,16 @@ export default function UserProfilePage() {
   const hasMoreServices =
     !servicesReachedEnd && serviceItems.length >= PROFILE_SERVICES_PAGE_SIZE;
 
+  if (!routeUsername) {
+    return (
+      <Page showBack>
+        <div className="px-4">
+          <EmptyState title={"\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d"} />
+        </div>
+      </Page>
+    );
+  }
+
   if (isLoading || !user) {
     return (
       <Page showBack>
@@ -133,7 +145,8 @@ export default function UserProfilePage() {
     );
   }
 
-  const profileUsername = user.username?.trim() || null;
+  const profileUsername = normalizeUsernameRef(user.username);
+  const profileDealPath = newDealToPath(profileUsername);
   const profileTelegramUrl = buildTelegramUserUrl(profileUsername);
 
   return (
@@ -146,8 +159,8 @@ export default function UserProfilePage() {
             <Button
               variant="primary"
               size="md"
-              disabled={!profileUsername}
-              onClick={() => profileUsername && navigate(`/deals/new?to=${profileUsername}`)}
+              disabled={!profileDealPath}
+              onClick={() => profileDealPath && navigate(profileDealPath)}
             >
               <HandCoins className="size-4" /> Сделка
             </Button>
@@ -206,7 +219,12 @@ export default function UserProfilePage() {
               />
             ) : (
               <>
-                {reviewItems.map((r) => (
+                {reviewItems.map((rawReview) => {
+                  const r = {
+                    ...rawReview,
+                    author_username: normalizeUsernameRef(rawReview.author_username),
+                  };
+                  return (
                 <div key={r.id} className="bg-panel border border-border rounded-card p-3">
                   <div className="flex items-center gap-2 text-sm">
                     <span className="text-accent font-bold">★ {parseDecimal(r.rating).toFixed(1)}</span>
@@ -217,7 +235,8 @@ export default function UserProfilePage() {
                   </div>
                   {r.text && <div className="mt-2 text-sm">{r.text}</div>}
                 </div>
-                ))}
+                  );
+                })}
                 {hasMoreReviews && (
                   <Button onClick={loadMoreReviews} disabled={loadingMoreReviews} className="w-full">
                     {loadingMoreReviews ? "Загружаю..." : "Показать еще"}

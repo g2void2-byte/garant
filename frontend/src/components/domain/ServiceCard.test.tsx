@@ -45,6 +45,12 @@ describe("<ServiceCard />", () => {
     expect(screen.queryByText("@null")).not.toBeInTheDocument();
   });
 
+  it("renders a fallback when the service owner username is unsafe", () => {
+    renderCard({ owner_username: "../admin" });
+    expect(screen.getByText(/\u0412\u043b\u0430\u0434\u0435\u043b\u0435\u0446 \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d/)).toBeInTheDocument();
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+  });
+
   it("renders the category label", () => {
     renderCard();
     expect(screen.getByText("Design")).toBeInTheDocument();

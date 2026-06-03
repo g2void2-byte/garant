@@ -251,6 +251,22 @@ describe("<CreateDealPage />", () => {
     expect(screen.getByLabelText(/Продавец \(username\)/)).toHaveValue("alice");
   });
 
+  it("drops unsafe ?to= seeds before submit", async () => {
+    const user = userEvent.setup();
+    renderPage("/deals/new?to=..%2Fadmin");
+    expect(screen.getByRole("textbox", { name: /username/i })).toHaveValue("");
+
+    await user.type(
+      screen.getByPlaceholderText(/\u0427\u0442\u043e \u043f\u043e\u043a\u0443\u043f\u0430\u0435\u0442\u0435/),
+      "deal description",
+    );
+    await user.type(screen.getByLabelText(/USD/), "10");
+    await user.click(screen.getByRole("button", { name: /\u0421\u043e\u0437\u0434\u0430\u0442\u044c \u0441\u0434\u0435\u043b\u043a\u0443/i }));
+
+    expect(mockState.createMutation.mutateAsync).not.toHaveBeenCalled();
+    expect(hapticSpy).toHaveBeenCalledWith("error");
+  });
+
   it("shows currency dropdown when currencies are loaded", () => {
     renderPage();
     expect(screen.getByText(/Валюта/)).toBeInTheDocument();

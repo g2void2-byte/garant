@@ -65,6 +65,12 @@ describe("<ProfileHeader />", () => {
     expect(container.querySelector("[style*='background-image']")).toBeNull();
   });
 
+  it("renders a username fallback for unsafe username refs", () => {
+    render(<ProfileHeader user={makeUser({ username: "../admin" })} />);
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+    expect(screen.getByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/)).toBeInTheDocument();
+  });
+
   it("renders a username fallback instead of @null", () => {
     render(<ProfileHeader user={makeUser({ username: null })} />);
     expect(screen.getByText("username не задан")).toBeInTheDocument();

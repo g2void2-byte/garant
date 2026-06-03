@@ -101,6 +101,15 @@ describe("<DealRow />", () => {
     expect(screen.queryByText("Профиль")).not.toBeInTheDocument();
   });
 
+  it("does not render profile links for unsafe counterparty usernames", () => {
+    renderRow({ role: "buyer", seller: "../admin" });
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+    const profileLink = screen
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href")?.startsWith("/users/"));
+    expect(profileLink).toBeUndefined();
+  });
+
   it("renders the counterparty avatar with the seller's photo for a buyer-side row", () => {
     renderRow({
       role: "buyer",
