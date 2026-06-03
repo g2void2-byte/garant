@@ -38,6 +38,7 @@
 import type {
   AdminListDealsQuery,
   AdminListUsersQuery,
+  NotificationType,
 } from "./types";
 
 // Local param shapes for namespaces whose query types aren't exported
@@ -69,6 +70,8 @@ export interface AdminAuditQueryKey {
   actor_id?: number;
   target_type?: string;
   target_id?: number;
+  since?: string;
+  until?: string;
   page?: number;
   page_size?: number;
 }
@@ -107,7 +110,7 @@ export interface DealsQueryKey {
 }
 
 export interface NotificationsQueryKey {
-  type?: string;
+  type?: NotificationType;
   before_created_at?: string;
   before_id?: number;
   limit?: number;

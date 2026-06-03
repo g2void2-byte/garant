@@ -11,6 +11,7 @@ import type {
   DealDto,
   NotificationCountersDto,
   NotificationDto,
+  NotificationType,
   PinResetRequestDto,
   PinStatusDto,
   PinTokenDto,
@@ -622,7 +623,7 @@ export function useCreateReview() {
 }
 
 export interface NotificationsQueryParams {
-  type?: string;
+  type?: NotificationType;
   before_created_at?: string;
   before_id?: number;
   limit?: number;

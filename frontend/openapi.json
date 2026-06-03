@@ -4941,6 +4941,11 @@
             "type": "string"
           },
           "type": {
+            "enum": [
+              "deals",
+              "deposits",
+              "system"
+            ],
             "title": "Type",
             "type": "string"
           }
@@ -4956,6 +4961,15 @@
         ],
         "title": "NotificationOut",
         "type": "object"
+      },
+      "NotificationType": {
+        "enum": [
+          "deals",
+          "deposits",
+          "system"
+        ],
+        "title": "NotificationType",
+        "type": "string"
       },
       "OperationalAlertOut": {
         "properties": {
@@ -7961,6 +7975,9 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9_.:-]+$",
                   "type": "string"
                 },
                 {
@@ -7977,6 +7994,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -7993,6 +8011,9 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9_:-]+$",
                   "type": "string"
                 },
                 {
@@ -8009,6 +8030,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -15987,7 +16009,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/NotificationType"
                 },
                 {
                   "type": "null"
@@ -16004,6 +16026,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "format": "date-time",
                   "type": "string"
                 },
                 {

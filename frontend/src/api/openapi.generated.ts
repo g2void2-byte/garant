@@ -4212,9 +4212,17 @@ export interface components {
             } | null;
             /** Title */
             title: string;
-            /** Type */
-            type: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "deals" | "deposits" | "system";
         };
+        /**
+         * NotificationType
+         * @enum {string}
+         */
+        NotificationType: "deals" | "deposits" | "system";
         /** OperationalAlertOut */
         OperationalAlertOut: {
             /** Count */
@@ -8456,7 +8464,7 @@ export interface operations {
     list_notifications_api_notifications_get: {
         parameters: {
             query?: {
-                type?: string | null;
+                type?: components["schemas"]["NotificationType"] | null;
                 /** @description ISO-8601 timestamp from the last seen notification. */
                 before_created_at?: string | null;
                 /** @description Id from the last seen notification (must accompany before_created_at). */

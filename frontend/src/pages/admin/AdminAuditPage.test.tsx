@@ -207,6 +207,26 @@ describe("<AdminAuditPage />", () => {
     await waitFor(() => expect(mockState.lastQuery.actor_id).toBe(42));
   });
 
+  it("does not send invalid actor_id filters", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+
+    const filterBtn = document
+      .querySelector("svg.lucide-filter, svg.lucide-funnel")
+      ?.closest("button") as HTMLButtonElement;
+    await user.click(filterBtn);
+    fireEvent.change(screen.getByPlaceholderText("actor_id"), {
+      target: { value: "0" },
+    });
+    await waitFor(() => expect(mockState.lastQuery.actor_id).toBeUndefined());
+
+    fireEvent.change(screen.getByPlaceholderText("actor_id"), {
+      target: { value: "abc" },
+    });
+    await waitFor(() => expect(mockState.lastQuery.actor_id).toBeUndefined());
+  });
+
   it("renders pagination when total > page_size and disables 'Назад' on page 1", () => {
     mockState.list = { items: [makeRow()], total: 120, page: 1, page_size: 50 };
     renderPage();

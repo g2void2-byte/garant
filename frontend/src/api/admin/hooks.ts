@@ -953,6 +953,8 @@ export function useAdminAuditLog(params: {
   actor_id?: number;
   target_type?: string;
   target_id?: number;
+  since?: string;
+  until?: string;
   page?: number;
   page_size?: number;
 }) {
@@ -964,6 +966,8 @@ export function useAdminAuditLog(params: {
       if (params.actor_id !== undefined) sp.set("actor_id", String(params.actor_id));
       if (params.target_type) sp.set("target_type", params.target_type);
       if (params.target_id !== undefined) sp.set("target_id", String(params.target_id));
+      if (params.since) sp.set("since", params.since);
+      if (params.until) sp.set("until", params.until);
       sp.set("page", String(params.page ?? 1));
       sp.set("page_size", String(params.page_size ?? 50));
       return api.get("api/admin/audit", { searchParams: sp }).json();

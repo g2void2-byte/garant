@@ -1131,7 +1131,7 @@ class ReviewOut(BaseModel):
 
 class NotificationOut(BaseModel):
     id: int
-    type: str
+    type: Literal["deals", "deposits", "system"]
     title: str
     body: str
     payload: dict | None

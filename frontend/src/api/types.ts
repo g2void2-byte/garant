@@ -179,9 +179,11 @@ export interface ReviewDto {
   created_at: string;
 }
 
+export type NotificationType = "deals" | "deposits" | "system";
+
 export interface NotificationDto {
   id: number;
-  type: "deals" | "deposits" | "system" | string;
+  type: NotificationType;
   title: string;
   body: string;
   payload: Record<string, unknown>;

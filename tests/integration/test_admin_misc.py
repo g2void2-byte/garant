@@ -800,6 +800,21 @@ async def test_audit_log_lists_actions(client):
     assert resp.json()["items"][0]["action"] == "settings.update"
 
 
+async def test_audit_log_rejects_malformed_filters(client):
+    admin_init, _ = await _make_admin(client, tg=11)
+    headers = auth_headers(admin_init)
+
+    for params in (
+        {"actor_id": 0},
+        {"target_id": 0},
+        {"action": "settings update"},
+        {"target_type": "user profile"},
+        {"since": "2026-02-02T00:00:00", "until": "2026-02-01T00:00:00"},
+    ):
+        resp = await client.get("/api/admin/audit", params=params, headers=headers)
+        assert resp.status_code == 422, (params, resp.text)
+
+
 async def test_audit_log_rbac(client):
     init = signed_init_data(10, "alice")
     await _bootstrap(client, tg_user_id=10, username="alice")

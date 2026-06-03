@@ -9,15 +9,23 @@ import { useAdminAuditLog } from "@/api/admin/hooks";
 import type { AdminAuditLogDto } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
+function parsePositiveIntFilter(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!/^[1-9]\d*$/.test(trimmed)) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
 export default function AdminAuditPage() {
   const navigate = useNavigate();
   const [action, setAction] = useState("");
   const [actorId, setActorId] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
+  const actorIdFilter = parsePositiveIntFilter(actorId);
   const { data, isLoading } = useAdminAuditLog({
     action: action.trim() || undefined,
-    actor_id: actorId ? Number(actorId) : undefined,
+    actor_id: actorIdFilter,
     page,
     page_size: 50,
   });

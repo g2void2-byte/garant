@@ -17,11 +17,11 @@ import {
   useUpdateMe,
 } from "@/api/hooks";
 import { api } from "@/api/client";
-import type { NotificationDto } from "@/api/types";
+import type { NotificationDto, NotificationType } from "@/api/types";
 import { dayKey } from "@/lib/format";
 import { haptic } from "@/lib/tg";
 
-type CounterTab = "all" | "deals" | "deposits" | "system";
+type CounterTab = "all" | NotificationType;
 
 const TABS: { value: CounterTab; label: string }[] = [
   { value: "all", label: "Все" },

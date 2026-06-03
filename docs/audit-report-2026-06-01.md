@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-86: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts и public user search filters исправлены.
+- M-50-M-88: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters и notification/audit query contracts исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1005,6 +1005,26 @@ Public users endpoint принимал `filter`/`rating`/`deals`/`status`/regist
 Риск: stale UI/deep-link/API caller мог получить inconsistent 400 или silent-empty result вместо query-level 422, а generated clients не ловили неверные buckets до запроса. Retired moderator option в UI провоцировал гарантированно невалидный фильтр.
 
 Исправление: query params переведены на закрытые `Literal` unions и `date` parsing на FastAPI boundary; reversed registration range возвращает 422. Frontend `UsersQueryParams`/filter controls используют те же unions, moderator option удалён, OpenAPI/types регенерируются, а invalid bucket/status/date сценарии покрыты regression tests.
+
+### M-87. Notification list query contract был слишком мягким
+
+Ссылки: `backend/app/routers/notifications.py:23-68`, `backend/app/schemas.py:1131-1151`, `frontend/src/api/hooks.ts:624-638`, generated OpenAPI/types, regression `tests/integration/test_notification_pagination.py`.
+
+`GET /api/notifications` принимал `type` как свободную строку и неизвестный тип молча превращал в отсутствие фильтра. Cursor timestamp тоже парсился вручную как строка и возвращал late 400, а OpenAPI не показывал закрытый notification type enum и `date-time` формат cursor-а. `NotificationOut.type` был `string`, поэтому generated/manual frontend types не защищали consumers от несуществующих buckets.
+
+Риск: stale client или deep-link с `type=security` мог показать весь inbox вместо ожидаемого пустого/ошибочного результата; malformed cursor мог скрывать баг пагинации за inconsistent 400. Для уведомлений это особенно неприятно: пользователь думает, что смотрит только сделки/депозиты, но видит системные события тоже.
+
+Исправление: `type` переведён на `NotificationType` enum query, `before_created_at` - на FastAPI `datetime`, half-cursor и malformed values теперь 422 на boundary. Aware cursor timestamps нормализуются к naive UTC для DB column, `NotificationOut.type` стал закрытым enum, OpenAPI/types регенерированы, frontend query/manual DTO types используют тот же union.
+
+### M-88. Admin audit filters принимали невозможные ids/ranges
+
+Ссылки: `backend/app/routers/admin/audit.py:23-72`, `frontend/src/pages/admin/AdminAuditPage.tsx:12-27`, `frontend/src/api/admin/hooks.ts:951-972`, generated OpenAPI/types, regression `tests/integration/test_admin_misc.py`, `frontend/src/pages/admin/AdminAuditPage.test.tsx`.
+
+`GET /api/admin/audit` принимал `actor_id=0`, `target_id=0`, arbitrary whitespace-bearing action/target filters и reversed `since`/`until` ranges. Frontend actor filter также отправлял `NaN`/`0`, если оператор вводил нечисловое или нулевое значение, потому что `Number(actorId)` вызывался без positive-int guard.
+
+Риск: audit viewer мог отдавать silent-empty страницы для невозможных фильтров, а generated clients не видели bounds/patterns. Для админского расследования empty result должен означать отсутствие событий, а не технически malformed query.
+
+Исправление: audit query params получили `ge=1` для ids, bounded ASCII patterns для `action`/`target_type`, 422 для `since > until`; frontend actor filter теперь отправляет только safe positive integers. Hook/query-key types расширены под `since`/`until`, OpenAPI/types регенерированы, backend/frontend regression tests добавлены.
 
 ## Наблюдения без отдельного finding
 
