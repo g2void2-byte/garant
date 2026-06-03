@@ -14,6 +14,7 @@ import { useToast } from "@/components/ui/Toast";
 import { haptic } from "@/lib/tg";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { safeMediaUrl } from "@/lib/mediaLinks";
 
 const MAX_ATTACHMENTS = 10;
 
@@ -245,7 +246,7 @@ function ChatAttachmentImage({
   name,
   className,
 }: {
-  src: string;
+  src: string | null;
   name: string;
   className: string;
 }) {
@@ -253,7 +254,7 @@ function ChatAttachmentImage({
   useEffect(() => {
     setBroken(false);
   }, [src]);
-  if (broken) {
+  if (!src || broken) {
     return (
       <div
         className={cn(
@@ -304,21 +305,37 @@ function MessageBubble({
         {msg.text && <div className="whitespace-pre-wrap break-words">{msg.text}</div>}
         {msg.attachments.length > 0 && (
           <div className="mt-2 grid grid-cols-2 gap-1">
-            {msg.attachments.map((m) => (
-              <a
-                key={m.id}
-                href={m.url}
-                target="_blank"
-                rel="noreferrer"
-                className="block overflow-hidden rounded-md bg-panel"
-              >
+            {msg.attachments.map((m) => {
+              const mediaUrl = safeMediaUrl(m.url);
+              const preview = (
                 <ChatAttachmentImage
-                  src={m.url}
+                  src={mediaUrl}
                   name={m.name}
                   className="w-full h-24 object-cover"
                 />
-              </a>
-            ))}
+              );
+              if (!mediaUrl) {
+                return (
+                  <div
+                    key={m.id}
+                    className="block overflow-hidden rounded-md bg-panel"
+                  >
+                    {preview}
+                  </div>
+                );
+              }
+              return (
+                <a
+                  key={m.id}
+                  href={mediaUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block overflow-hidden rounded-md bg-panel"
+                >
+                  {preview}
+                </a>
+              );
+            })}
           </div>
         )}
       </div>
@@ -339,7 +356,7 @@ function AttachmentChip({
   return (
     <div className="relative">
       <ChatAttachmentImage
-        src={media.url}
+        src={safeMediaUrl(media.url)}
         name={media.name}
         className="size-16 object-cover rounded-md border border-border"
       />

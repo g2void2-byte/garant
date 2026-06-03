@@ -197,6 +197,23 @@ describe("useLiveNotifications", () => {
         ],
       },
     });
+    wsState.capturedHandlers!.onEvent({
+      event: "deal_message",
+      data: {
+        ...makeDealMessage({ id: 6 }),
+        attachments: [
+          {
+            id: 1,
+            kind: "deal",
+            url: "javascript:alert(1)",
+            name: "a.png",
+            size: 1,
+            content_type: "image/png",
+            created_at: null,
+          },
+        ],
+      },
+    });
 
     expect(qc.getQueryData(["deal", 42, "messages"])).toEqual([first]);
     expect(qc.getQueryData(["deal", undefined, "messages"])).toBeUndefined();

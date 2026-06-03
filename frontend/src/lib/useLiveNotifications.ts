@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/Toast";
 import { qk } from "@/api/queryKeys";
 import type { DealMessageDto, MediaDto, NotificationDto } from "@/api/types";
 import { isPositiveSafeInteger } from "@/lib/routeParams";
+import { safeMediaUrl } from "@/lib/mediaLinks";
 import {
   applyServerNotificationRead,
   invalidateDealParticipantSideEffects,
@@ -30,6 +31,7 @@ function isMediaDto(value: unknown): value is MediaDto {
     isPositiveSafeIntValue(value.id) &&
     typeof value.kind === "string" &&
     typeof value.url === "string" &&
+    safeMediaUrl(value.url) !== null &&
     typeof value.name === "string" &&
     isNonNegativeSafeIntValue(value.size) &&
     typeof value.content_type === "string" &&

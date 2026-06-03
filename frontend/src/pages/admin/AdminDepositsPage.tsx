@@ -18,6 +18,7 @@ import {
   useAdminDeposits,
 } from "@/api/admin/hooks";
 import { parseDecimal } from "@/lib/format";
+import { isSafeExternalLink, openPaymentLink } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { formatAdminUsername } from "./format";
 
@@ -143,16 +144,15 @@ export default function AdminDepositsPage() {
                     <RefreshCcw size={14} className="mr-1" /> Возврат
                   </Button>
                 )}
-                {d.pay_url && (
-                  <a
-                    href={d.pay_url}
-                    target="_blank"
-                    rel="noreferrer"
+                {d.pay_url && isSafeExternalLink(d.pay_url) && (
+                  <button
+                    type="button"
+                    onClick={() => openPaymentLink(d.pay_url!)}
                     className="text-xs text-text-muted underline self-center"
                   >
                     <ArrowDownToLine size={12} className="inline mr-1" />
                     pay_url
-                  </a>
+                  </button>
                 )}
               </div>
             </div>

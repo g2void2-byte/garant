@@ -235,6 +235,14 @@ describe("getTelegramUser", () => {
 });
 
 describe("openExternalLink", () => {
+  it("exposes the shared http(s)-only URL predicate for direct-link renderers", async () => {
+    vi.resetModules();
+    const mod = await import("./tg");
+    expect(mod.isSafeExternalLink("https://example.com/pay")).toBe(true);
+    expect(mod.isSafeExternalLink("http://example.com/pay")).toBe(true);
+    expect(mod.isSafeExternalLink("javascript:alert(1)")).toBe(false);
+  });
+
   it("delegates to Telegram.WebApp.openLink when available", async () => {
     const { fake, mod } = await importTgWithFake("ios");
     mod.openExternalLink("https://example.com");

@@ -10,7 +10,7 @@ import type { AdminDepositListDto } from "@/api/types";
  *
  * Covers status filter chips, deposit row rendering with badge, mark-
  * paid mutation (only on 'pending' rows) and refund mutation (only on
- * 'paid' rows), pay_url link rendering, admin guard, loading skeleton,
+ * 'paid' rows), pay_url opener rendering, admin guard, loading skeleton,
  * empty state.
  */
 
@@ -53,10 +53,16 @@ vi.mock("@/components/ui/Toast", () => ({
   useToast: () => ({ show: toastSpy }),
 }));
 
+const openPaymentLinkSpy = vi.hoisted(() => vi.fn());
+const isSafeExternalLinkSpy = vi.hoisted(() =>
+  vi.fn((url: string) => /^https?:\/\//i.test(url)),
+);
 vi.mock("@/lib/tg", () => ({
   useTelegramViewport: () => null,
   haptic: () => {},
   showBackButton: () => () => {},
+  isSafeExternalLink: isSafeExternalLinkSpy,
+  openPaymentLink: openPaymentLinkSpy,
 }));
 
 import AdminDepositsPage from "./AdminDepositsPage";
@@ -99,6 +105,11 @@ beforeEach(() => {
   mockState.shouldRender = true;
   mockState.lastDepositsQuery = undefined;
   toastSpy.mockClear();
+  openPaymentLinkSpy.mockClear();
+  isSafeExternalLinkSpy.mockClear();
+  isSafeExternalLinkSpy.mockImplementation((url: string) =>
+    /^https?:\/\//i.test(url),
+  );
 });
 
 describe("<AdminDepositsPage />", () => {
@@ -120,13 +131,14 @@ describe("<AdminDepositsPage />", () => {
     expect(screen.getByText("Депозитов нет")).toBeInTheDocument();
   });
 
-  it("renders deposit rows with amount, user, badge and pay_url link", () => {
+  it("renders deposit rows with amount, user, badge and safe pay_url opener", async () => {
     mockState.list = {
       items: [makeDeposit()],
       total: 1,
       page: 1,
       page_size: 50,
     };
+    const user = userEvent.setup();
     renderPage();
     expect(screen.getByText(/50\.00 USDT/)).toBeInTheDocument();
     expect(screen.getByText(/@alice/)).toBeInTheDocument();
@@ -134,8 +146,25 @@ describe("<AdminDepositsPage />", () => {
     expect(
       screen.getByText("pending", { selector: "span" }),
     ).toBeInTheDocument();
-    const link = screen.getByRole("link", { name: /pay_url/i });
-    expect(link).toHaveAttribute("href", "https://example.com/pay/inv-1");
+    expect(screen.queryByRole("link", { name: /pay_url/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /pay_url/i }));
+    expect(openPaymentLinkSpy).toHaveBeenCalledWith(
+      "https://example.com/pay/inv-1",
+    );
+  });
+
+  it("does not render unsafe pay_url values as links or openers", () => {
+    mockState.list = {
+      items: [makeDeposit({ pay_url: "javascript:alert(1)" })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+
+    expect(screen.queryByRole("link", { name: /pay_url/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /pay_url/i })).not.toBeInTheDocument();
+    expect(openPaymentLinkSpy).not.toHaveBeenCalled();
   });
 
   it("renders missing depositor username as a non-handle label", () => {

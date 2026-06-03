@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 75 файлов, 691 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 77 файлов, 703 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -91,6 +91,8 @@
 - M-119: Telegram contact links now go through a username URL builder, and `openTelegramLink` refuses non-`t.me` HTTP(S) URLs even in the desktop fallback.
 - M-120: deal topup invoice and admin approval DTO money fields now match OpenAPI; contract tests bridge `AdminApprovalOut` and required numeric invoice totals.
 - M-121: StatsBadge count-up no longer suppresses the React hooks dependency lint rule and restarts animations from the latest displayed value.
+- M-122: admin deposit `pay_url` no longer renders a raw `href`; it is gated through the shared safe external-link predicate and payment opener.
+- M-123: deal chat attachment URLs are validated before `href`/`img` use, and live-notification payloads reject malformed media URLs before cache insertion.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1365,6 +1367,26 @@ Links: `frontend/src/components/domain/StatsBadge.tsx`.
 Risk: public stats and admin-settings preview counters are display-only, but misleading animated totals can make a refreshed settings preview look broken or jumpy. The lint suppression also created a local exception that could hide real dependency mistakes.
 
 Fix: the hook now mirrors the latest displayed value into a ref and starts each target change from that ref. The eslint-disable is gone, so the hook is checked by the normal lint rule while preserving the intended animation behavior.
+
+### M-122. Admin deposit pay_url rendered raw external links
+
+Links: `frontend/src/pages/admin/AdminDepositsPage.tsx`, `frontend/src/lib/tg.ts`, regressions `frontend/src/pages/admin/AdminDepositsPage.test.tsx`, `frontend/src/lib/tg.test.ts`.
+
+The admin deposits queue rendered `deposit.pay_url` directly as `<a href={d.pay_url} target="_blank">`. Payment providers should emit HTTPS URLs, but this was still a raw external-link sink fed by API data and it bypassed the same Telegram/payment opener boundary used by user-facing payment flows.
+
+Risk: malformed or compromised API data could create a `javascript:`/non-HTTP link in the admin UI. Even when React blocks some dangerous URL forms, keeping a direct external `href` made the admin finance queue inconsistent with the rest of the payment-link hardening.
+
+Fix: `isSafeExternalLink()` now exposes the existing HTTP(S)-only predicate from `tg.ts`. Admin deposits render `pay_url` as an opener button only when that predicate passes, and click handling delegates to `openPaymentLink()`, which repeats the URL safety check before opening. Regression coverage verifies safe openers and rejects `javascript:` values without rendering a link/button.
+
+### M-123. Deal chat media URLs were trusted at the render/cache boundary
+
+Links: `frontend/src/pages/deals/DealChatPanel.tsx`, `frontend/src/lib/mediaLinks.ts`, `frontend/src/lib/useLiveNotifications.ts`, regressions `frontend/src/pages/deals/DealChatPanel.test.tsx`, `frontend/src/lib/mediaLinks.test.ts`, `frontend/src/lib/useLiveNotifications.test.tsx`.
+
+Deal chat attachments used server-provided `m.url` directly as both anchor `href` and image `src`. Backend media serving signs `/media/deal/...` URLs, but the frontend runtime boundary still accepted arbitrary attachment URLs from REST/WS payloads, including malformed frames injected before React Query cache insertion.
+
+Risk: a malformed live frame or API drift could place a non-media URL into the deal-message cache and render it as a clickable attachment or image source. That is a smaller surface than public free-form links, but it sits in a deal/chat workflow where users expect file previews to be trusted artifacts.
+
+Fix: added `safeMediaUrl()`, which accepts only same-origin relative `/media/...` paths and strips fragments while preserving signed query params. Deal chat now validates every attachment URL before rendering `href`/`img`; unsafe entries render only the existing broken-preview placeholder. The live-notification guard also requires a safe media URL before appending incoming deal messages to cache.
 
 ## Наблюдения без отдельного finding
 

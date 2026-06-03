@@ -305,6 +305,10 @@ function isSafeLink(url: string): boolean {
   }
 }
 
+export function isSafeExternalLink(url: string): boolean {
+  return isSafeLink(url);
+}
+
 function isTelegramLink(url: string): boolean {
   try {
     const u = new URL(url);
