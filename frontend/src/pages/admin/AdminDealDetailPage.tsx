@@ -40,6 +40,10 @@ import {
   useSendDealMessage,
 } from "@/api/hooks";
 import { parseDecimal } from "@/lib/format";
+import {
+  parseNonNegativeDecimalInput,
+  parseNonNegativeIntInput,
+} from "@/lib/formNumbers";
 import type {
   AdminDealDetailDto,
   AdminBalanceSnapshotDto,
@@ -81,6 +85,16 @@ const TERMINAL = new Set([
   "resolved_for_seller",
   "cancelled_for_inactivity",
 ]);
+
+function parsePositiveIntInput(raw: string): number | null {
+  const parsed = parseNonNegativeIntInput(raw);
+  return parsed !== null && parsed > 0 ? parsed : null;
+}
+
+function parseSplitPercentInput(raw: string): number | null {
+  const parsed = parseNonNegativeDecimalInput(raw);
+  return parsed !== null && parsed <= 100 ? parsed : null;
+}
 
 /**
  * Continental admin deal detail page.
@@ -256,6 +270,15 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
   const [arbiterUsername, setArbiterUsername] = useState("");
   const terminal = TERMINAL.has(deal.status);
   const approvals = deal.pending_approvals ?? [];
+  const hasApprovalId = approvalId.trim() !== "";
+  const parsedApprovalId = hasApprovalId ? parsePositiveIntInput(approvalId) : null;
+  const approvalIdError = hasApprovalId && parsedApprovalId === null
+    ? "Введите положительный целый ID"
+    : undefined;
+  const parsedSplitBuyerPct = parseSplitPercentInput(splitBuyerPct);
+  const splitBuyerPctError = parsedSplitBuyerPct === null
+    ? "Введите число 0..100 без экспоненты"
+    : undefined;
 
   const actionName = (action: "release" | "refund" | "split") => ({
     release: "deal.force_release",
@@ -264,14 +287,17 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
   })[action];
 
   const approvedApprovalId = (action: "release" | "refund" | "split") => {
-    const direct = Number(approvalId);
-    if (Number.isFinite(direct) && direct > 0) return direct;
+    if (parsedApprovalId !== null) return parsedApprovalId;
     return approvals.find((a) => a.status === "approved" && a.action === actionName(action))?.id;
   };
 
   const run = async (action: "release" | "refund" | "split" | "arbitration" | "assign" | "delete") => {
     haptic("light");
     try {
+      if ((action === "release" || action === "refund" || action === "split") && approvalIdError) {
+        toast.show({ kind: "error", title: "Неверный Approval ID" });
+        return;
+      }
       if (action === "release") {
         const result = await release.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined, approval_id: approvedApprovalId("release") } });
         if ("pending_approval" in result && result.pending_approval) {
@@ -293,14 +319,13 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
         }
         toast.show({ kind: "success", title: "Возврат покупателю" });
       } else if (action === "split") {
-        const buyer_percent = Number(splitBuyerPct);
-        if (!Number.isFinite(buyer_percent) || buyer_percent < 0 || buyer_percent > 100) {
+        if (parsedSplitBuyerPct === null) {
           toast.show({ kind: "error", title: "Доля покупателя должна быть 0..100" });
           return;
         }
         const result = await split.mutateAsync({
           dealId: deal.id,
-          body: { buyer_percent, reason: reason || undefined, approval_id: approvedApprovalId("split") },
+          body: { buyer_percent: parsedSplitBuyerPct, reason: reason || undefined, approval_id: approvedApprovalId("split") },
         });
         if ("pending_approval" in result && result.pending_approval) {
           toast.show({ kind: "success", title: "Needs second admin", body: `Approval #${result.pending_approval.id}` });
@@ -309,7 +334,7 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
           setApprovalId("");
           return;
         }
-        toast.show({ kind: "success", title: `Сплит ${buyer_percent}% / ${100 - buyer_percent}%` });
+        toast.show({ kind: "success", title: `Сплит ${parsedSplitBuyerPct}% / ${100 - parsedSplitBuyerPct}%` });
       } else if (action === "arbitration") {
         await arb.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined } });
         toast.show({ kind: "success", title: "Арбитраж открыт" });
@@ -482,6 +507,7 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
               type="number"
               inputMode="numeric"
               value={splitBuyerPct}
+              error={splitBuyerPctError}
               onChange={(e) => setSplitBuyerPct(e.target.value)}
             />
           )}
@@ -498,6 +524,7 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
               label="Approval ID"
               inputMode="numeric"
               value={approvalId}
+              error={approvalIdError}
               placeholder={String(approvedApprovalId(sheet) ?? "auto")}
               onChange={(e) => setApprovalId(e.target.value)}
             />

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 68 файлов, 616 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 69 файлов, 628 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-96: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing, admin finance form number parsing, user service/deal amount parsing и admin content form number parsing исправлены.
+- M-50-M-99: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing, admin finance form number parsing, user service/deal amount parsing, admin content form number parsing, admin user-detail form number parsing, admin deal action form number parsing и admin users page parsing исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1105,6 +1105,36 @@ Admin user content sheets парсили service price/deposit/views/deals_count
 Риск: админ мог сохранить неканоническое или wrong-scale значение в контентной форме, особенно для strict-int рейтингов и счетчиков. Для moderation/admin tooling это опасно тем, что UI выглядел как обычное числовое поле, но отправлял значение с JavaScript-specific parsing semantics.
 
 Исправление: content editor теперь использует shared plain decimal/int parsers. Service numeric fields блокируют invalid submit и показывают inline errors; review/comment ratings требуют strict integer `1..5`; manual service rating остаётся decimal `0..5`, но без exponent/hex. Regression покрывает exponent service fields, fractional/exponent review/comment ratings и прежний zero-rating guard.
+
+### M-97. Admin user detail forms принимали exponent/hex и дробили strict-int stats
+
+Ссылки: `frontend/src/pages/admin/AdminUserDetailPage.tsx`, `frontend/src/lib/formNumbers.ts`, regression `frontend/src/pages/admin/AdminUserDetailPage.numbers.test.tsx`.
+
+Admin user detail парсил manual rating, profile stats, trust deposit и per-user balance adjustment через `Number(...)` или `Number(raw.replace(",", "."))`. Поэтому `1e2` принимался как 100, `0x10` в части полей мог стать 16, а strict-int stats вроде `deals_total` пропускали `1.9` через `Math.trunc` и silently сохраняли 1.
+
+Риск: оператор мог изменить рейтинг, счетчики, trust deposit или ручную корректировку баланса не тем числом, которое буквально ввёл. Для stats это особенно неприятно: дробная ошибка ввода превращалась в валидный integer без подтверждения, а для balance/trust flows exponent notation меняла денежное значение.
+
+Исправление: admin user detail теперь использует shared plain decimal/int parsers. Rating override допускает только plain decimal `0..5`, stats counters требуют non-negative integer без truncation, trust deposit - non-negative decimal, per-user balance adjustment - positive decimal; invalid adjustment также отключает кнопки. Regression покрывает exponent rating/stats/trust/balance, fractional stats и happy `.5` balance adjustment.
+
+### M-98. Admin deal action sheet принимал ambiguous approval/split numbers
+
+Ссылки: `frontend/src/pages/admin/AdminDealDetailPage.tsx`, `frontend/src/lib/formNumbers.ts`, regression `frontend/src/pages/admin/AdminDealDetailPage.test.tsx`.
+
+Deal action sheet парсил `approval_id` и `buyer_percent` через `Number(...)`. Typed `approval_id="0x10"` превращался в 16, а `buyer_percent="1e2"` проходил как 100. Backend schema уже стала строже, но frontend всё ещё мог отправлять surprising values и получать late 422/approval mismatch вместо локальной ошибки.
+
+Риск: force-release/refund/split мог ссылаться на не тот approval id, а split percent мог сохранить exponent-form значение без явной UI-валидации. Это админские money-moving actions, поэтому frontend должен блокировать ambiguous numeric syntax до mutation.
+
+Исправление: approval id теперь strict positive integer, split buyer percent - plain decimal `0..100`; invalid значения подсвечиваются inline и блокируют mutation с явным toast. Regression покрывает `0x10` approval id и `1e2` split percent.
+
+### M-99. Admin users list принимал invalid `page` из URL
+
+Ссылки: `frontend/src/pages/admin/AdminUsersPage.tsx`, `frontend/src/lib/routeParams.ts`, regression `frontend/src/pages/admin/AdminUsersPage.test.tsx`.
+
+Admin users list строил `page` через `Number(searchParams.get("page") ?? "1") || 1`. В отличие от уже hardened detail routes, deep-link `?page=-5`, `?page=1e2` или `?page=0x10` доходил до `useAdminUsers` как отрицательная/ambiguous страница.
+
+Риск: повреждённая ссылка могла отправить админский список на неверную страницу или в backend 422/пустое состояние вместо стабильной первой страницы. Для URL-driven dashboard filters это тот же класс дефекта, что ранее закрывался в admin deals filters.
+
+Исправление: `page` теперь проходит canonical positive safe-int parser; malformed/ambiguous values fallback-ятся к page 1. Regression покрывает negative, exponent и hex page params.
 
 ## Наблюдения без отдельного finding
 

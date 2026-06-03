@@ -41,6 +41,11 @@ import {
 import { useMe } from "@/api/hooks";
 import type { AdminUserDetailDto } from "@/api/types";
 import { parseDecimal } from "@/lib/format";
+import {
+  parseNonNegativeDecimalInput,
+  parseNonNegativeIntInput,
+  parsePositiveDecimalInput,
+} from "@/lib/formNumbers";
 import { haptic } from "@/lib/tg";
 import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
@@ -59,6 +64,24 @@ import { parsePositiveIntRouteParam } from "@/lib/routeParams";
  * Each section is its own subcomponent — they all share the same
  * mutation pattern (mutate → toast → invalidate via hook).
  */
+
+function normalizeDecimalInput(raw: string): string {
+  return raw.trim().replace(",", ".");
+}
+
+function parseAdminNonNegativeDecimal(raw: string): number | null {
+  return parseNonNegativeDecimalInput(normalizeDecimalInput(raw));
+}
+
+function parseAdminPositiveDecimal(raw: string): number | null {
+  return parsePositiveDecimalInput(normalizeDecimalInput(raw));
+}
+
+function parseRatingOverride(raw: string): number | null {
+  const parsed = parseAdminNonNegativeDecimal(raw);
+  return parsed !== null && parsed <= 5 ? parsed : null;
+}
+
 export default function AdminUserDetailPage() {
   const { id } = useParams<{ id: string }>();
   const userId = parsePositiveIntRouteParam(id);
@@ -386,8 +409,8 @@ function RatingSection({ user }: { user: AdminUserDetailDto }) {
   );
 
   const save = async (clear = false) => {
-    const value = clear ? null : Number(draft.replace(",", "."));
-    if (!clear && Number.isNaN(value)) {
+    const value = clear ? null : parseRatingOverride(draft);
+    if (!clear && value === null) {
       toast.show({ kind: "error", title: "Неверное число" });
       return;
     }
@@ -494,13 +517,15 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
     const body: Record<string, number | null> = {};
     for (const f of fields) {
       const raw = draft[f.key];
-      if (raw === "") continue;
-      const n = Number(raw.replace(",", "."));
-      if (Number.isNaN(n)) {
+      if (raw.trim() === "") continue;
+      const n = f.type === "int"
+        ? parseNonNegativeIntInput(raw)
+        : parseAdminNonNegativeDecimal(raw);
+      if (n === null) {
         toast.show({ kind: "error", title: `Неверное число: ${f.label}` });
         return;
       }
-      body[f.key] = f.type === "int" ? Math.trunc(n) : n;
+      body[f.key] = n;
     }
     try {
       await setStats.mutateAsync({ userId: user.id, body });
@@ -555,8 +580,8 @@ function TrustDepositSection({ user }: { user: AdminUserDetailDto }) {
   const [reason, setReason] = useState("");
 
   const apply = async () => {
-    const n = Number(amount.replace(",", "."));
-    if (!Number.isFinite(n) || n < 0) {
+    const n = parseAdminNonNegativeDecimal(amount);
+    if (n === null) {
       toast.show({
         kind: "error",
         title: "Введите неотрицательное число",
@@ -629,10 +654,13 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const allCurrencies = currencies ?? [];
+  const parsedAmount = amount.trim() ? parseAdminPositiveDecimal(amount) : null;
+  const amountError = amount.trim() && parsedAmount === null
+    ? "Введите положительное число без экспоненты"
+    : undefined;
 
   async function submit(sign: 1 | -1) {
-    const n = Number(amount);
-    if (!n || !Number.isFinite(n)) {
+    if (parsedAmount === null) {
       toast.show({
         kind: "error",
         title: "Введите сумму",
@@ -643,13 +671,13 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
     try {
       await adjust.mutateAsync({
         currency_code: currency,
-        amount: sign * Math.abs(n),
+        amount: sign * parsedAmount,
         reason: reason.trim() || undefined,
       });
       toast.show({
         kind: "success",
         title: "Готово",
-        body: `${currency} ${sign > 0 ? "+" : "-"}${Math.abs(n)} применено`,
+        body: `${currency} ${sign > 0 ? "+" : "-"}${parsedAmount} применено`,
       });
       setAmount("");
       setReason("");
@@ -706,6 +734,7 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
         label="Сумма (положительная)"
         inputMode="decimal"
         value={amount}
+        error={amountError}
         onChange={(e) => setAmount(e.target.value)}
         placeholder="25.5"
       />
@@ -720,7 +749,7 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
           type="button"
           variant="danger"
           className="flex-1"
-          disabled={adjust.isPending || !Number(amount)}
+          disabled={adjust.isPending || parsedAmount === null}
           onClick={() => submit(-1)}
         >
           <Minus size={14} className="mr-1" /> Списать
@@ -729,7 +758,7 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
           type="button"
           variant="primary"
           className="flex-1"
-          disabled={adjust.isPending || !Number(amount)}
+          disabled={adjust.isPending || parsedAmount === null}
           onClick={() => submit(1)}
         >
           <Plus size={14} className="mr-1" /> Зачислить

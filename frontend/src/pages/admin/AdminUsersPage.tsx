@@ -13,6 +13,7 @@ import type {
   AdminUserStatusFilter,
 } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "no filter"
 // (replaces the string ``"any"``); the value sent to the API is
@@ -58,7 +59,7 @@ export default function AdminUsersPage() {
 
   const role = parseRoleParam(searchParams.get("role"));
   const status = parseStatusParam(searchParams.get("status"));
-  const page = Number(searchParams.get("page") ?? "1") || 1;
+  const page = parsePositiveIntRouteParam(searchParams.get("page") ?? undefined) ?? 1;
   const q = searchParams.get("q") ?? "";
 
   const query: AdminListUsersQuery = { q, role, status, page, page_size: 20 };

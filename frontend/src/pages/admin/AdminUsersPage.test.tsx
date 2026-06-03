@@ -129,6 +129,16 @@ describe("<AdminUsersPage />", () => {
     });
   });
 
+  it.each(["-5", "1e2", "0x10"])(
+    "falls back to page 1 for ambiguous page param %s",
+    (page) => {
+      mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+      renderPage([`/admin/users?page=${page}`]);
+
+      expect(mockState.lastQuery?.page).toBe(1);
+    },
+  );
+
   it("renders a user row with Бан + Заморожен badges", () => {
     mockState.list = {
       items: [
