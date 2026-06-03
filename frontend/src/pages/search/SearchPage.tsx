@@ -18,7 +18,7 @@ import {
 } from "@/components/domain/SearchFilterSheet";
 import { ActiveFilterChips } from "@/components/domain/ActiveFilterChips";
 import { useUI } from "@/stores/ui";
-import { buildUsersSearchParams, useMe, useUsers } from "@/api/hooks";
+import { buildUsersSearchParams, useMe, useUsers, type UsersQueryParams } from "@/api/hooks";
 import { api } from "@/api/client";
 import { staggerDelay } from "@/lib/animate";
 import { dealsLabel, formatMoney } from "@/lib/format";
@@ -29,12 +29,14 @@ import { Search as SearchIcon, SlidersHorizontal, Star } from "lucide-react";
 import { MOCK_USERS } from "./mockData";
 import { SearchGateOverlay } from "./SearchGateOverlay";
 
+type UserSearchFilter = NonNullable<UsersQueryParams["filter"]>;
+
 const FILTER_OPTIONS = [
   { value: "all", label: "Все" },
   { value: "arbiters", label: "Арбитры" },
   { value: "with_deposit", label: "С депозитом" },
   { value: "top_rating", label: "Топ рейтинг" },
-];
+] satisfies Array<{ value: UserSearchFilter; label: string }>;
 
 const USER_SEARCH_PAGE_SIZE = 50;
 
@@ -44,7 +46,7 @@ export default function SearchPage() {
   const setMode = useUI((s) => s.setSearchMode);
 
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState<UserSearchFilter>("all");
   const [filters, setFilters] = useState<SearchFilters>({});
   const [sheetOpen, setSheetOpen] = useState(false);
   const [users, setUsers] = useState<UserCardDto[]>([]);

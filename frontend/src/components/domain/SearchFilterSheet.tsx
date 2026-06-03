@@ -9,7 +9,7 @@ import { cn } from "@/lib/cn";
  *
  *  1. Рейтинг          — single-select: 5.0 / 4.5-4.9 / 4.0-4.4 / 3.5-3.9 / Ниже 3.5
  *  2. Количество сделок — single-select: 0-10 / 11-50 / 51-100 / 101+
- *  3. Префикс          — single-select: Администратор / Модератор / Арбитр / VIP
+ *  3. Префикс          — single-select: Администратор / Арбитр / VIP
  *  4. Дата регистрации — От / До date inputs
  *
  * On Apply the parent receives the new filter object and is responsible
@@ -21,9 +21,9 @@ import { cn } from "@/lib/cn";
  * page is the lock-in trust deposit, which is not searchable.
  */
 export interface SearchFilters {
-  rating?: string;
-  deals?: string;
-  status?: string;
+  rating?: "5.0" | "4.5-4.9" | "4.0-4.4" | "3.5-3.9" | "lt3.5";
+  deals?: "0-10" | "11-50" | "51-100" | "101+";
+  status?: "5" | "3" | "2";
   reg_from?: string;
   reg_to?: string;
 }
@@ -41,30 +41,29 @@ const RATING_OPTIONS = [
   { value: "4.0-4.4", label: "4.0 – 4.4" },
   { value: "3.5-3.9", label: "3.5 – 3.9" },
   { value: "lt3.5", label: "Ниже 3.5" },
-];
+] satisfies Array<{ value: NonNullable<SearchFilters["rating"]>; label: string }>;
 
 const DEALS_OPTIONS = [
   { value: "0-10", label: "0 – 10" },
   { value: "11-50", label: "11 – 50" },
   { value: "51-100", label: "51 – 100" },
   { value: "101+", label: "101 +" },
-];
+] satisfies Array<{ value: NonNullable<SearchFilters["deals"]>; label: string }>;
 
 const STATUS_OPTIONS = [
   { value: "5", label: "Администратор" },
-  { value: "4", label: "Модератор" },
   { value: "3", label: "Арбитр" },
   { value: "2", label: "VIP" },
-];
+] satisfies Array<{ value: NonNullable<SearchFilters["status"]>; label: string }>;
 
-function RadioRow({
+function RadioRow<T extends string>({
   options,
   value,
   onChange,
 }: {
-  options: { value: string; label: string }[];
-  value: string | undefined;
-  onChange: (v: string | undefined) => void;
+  options: { value: T; label: string }[];
+  value: T | undefined;
+  onChange: (v: T | undefined) => void;
 }) {
   return (
     <div className="flex flex-wrap gap-2">

@@ -154,6 +154,18 @@ describe("<SearchPage />", () => {
     expect(screen.getByRole("button", { name: "Услуги" })).toBeInTheDocument();
   });
 
+  it("does not offer the retired moderator prefix filter", async () => {
+    mockState.data = [];
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: /Открыть фильтры/i }));
+
+    expect(screen.queryByRole("button", { name: "Модератор" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Администратор" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Арбитр" })).toBeInTheDocument();
+  });
+
   it("renders security warning overlay when user has 0 deals and is not admin", () => {
     meState.data = makeUser({ id: 100, deals_count: 0, is_admin: false });
     mockState.data = [

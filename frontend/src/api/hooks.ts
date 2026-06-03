@@ -314,10 +314,10 @@ export function useDeleteServiceComment(id: number) {
 
 export interface UsersQueryParams {
   q?: string;
-  filter?: string;
-  rating?: string;
-  deals?: string;
-  status?: string;
+  filter?: "all" | "arbiters" | "admins" | "with_deposit" | "top_rating";
+  rating?: "5.0" | "4.5-4.9" | "4.0-4.4" | "3.5-3.9" | "lt3.5";
+  deals?: "0-10" | "11-50" | "51-100" | "101+";
+  status?: "5" | "3" | "2";
   reg_from?: string;
   reg_to?: string;
   limit?: number;

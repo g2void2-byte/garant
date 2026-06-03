@@ -54,8 +54,10 @@ async def _make_user(
     good: int = 0,
     bad: int = 0,
     deals_total: int = 0,
+    trust_deposit_balance: int = 0,
     is_admin: bool = False,
     is_arbiter: bool = False,
+    is_vip: bool = False,
     created_at: datetime | None = None,
 ) -> int:
     async with async_session() as session:
@@ -66,8 +68,10 @@ async def _make_user(
             good=good,
             bad=bad,
             deals_total=deals_total,
+            trust_deposit_balance=trust_deposit_balance,
             is_admin=is_admin,
             is_arbiter=is_arbiter,
+            is_vip=is_vip,
         )
         session.add(u)
         await session.commit()
@@ -120,6 +124,35 @@ async def test_users_listing_supports_limit_offset(client):
 
 
 @pytest.mark.asyncio
+async def test_users_filter_with_deposit_uses_trust_deposit(client):
+    await _make_user(120, "plain", deals_total=100, trust_deposit_balance=0)
+    await _make_user(121, "trusted", deals_total=1, trust_deposit_balance=25)
+
+    names = await _usernames(client, filter="with_deposit")
+
+    assert names == ["trusted"]
+
+
+@pytest.mark.asyncio
+async def test_users_filter_top_rating_sorts_by_computed_rating(client):
+    await _make_user(130, "almost", good=9, bad=1, deals_total=1000)
+    await _make_user(131, "perfect", good=10, bad=0, deals_total=1)
+    await _make_user(132, "weak", good=2, bad=8, deals_total=5000)
+
+    names = await _usernames(client, filter="top_rating")
+
+    assert names[:3] == ["perfect", "almost", "weak"]
+
+
+@pytest.mark.asyncio
+async def test_users_filter_unknown_rejected_at_query_boundary(client):
+    headers = await _caller_headers(client)
+    resp = await client.get("/api/users", params={"filter": "with-deposit"}, headers=headers)
+
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_picker_without_query_does_not_bypass_search_gate(client):
     await _make_user(140, "picker_target", deals_total=0)
     caller_init = signed_init_data(141, "picker_zero_deals")
@@ -168,7 +201,7 @@ async def test_rating_bucket_lt_3_5(client):
 async def test_rating_bucket_invalid(client):
     headers = await _caller_headers(client)
     resp = await client.get("/api/users", params={"rating": "bogus"}, headers=headers)
-    assert resp.status_code == 400
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -201,7 +234,7 @@ async def test_status_moderator_retired(client):
     """Tier 4 (moderator) was dropped; the API rejects it as unknown."""
     headers = await _caller_headers(client)
     resp = await client.get("/api/users", params={"status": "4"}, headers=headers)
-    assert resp.status_code == 400
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -216,7 +249,7 @@ async def test_status_arbiter(client):
 async def test_status_invalid(client):
     headers = await _caller_headers(client)
     resp = await client.get("/api/users", params={"status": "9"}, headers=headers)
-    assert resp.status_code == 400
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -229,6 +262,18 @@ async def test_registration_date_range(client):
     last_week = (now - timedelta(days=7)).date().isoformat()
     names = await _usernames(client, reg_from=last_week, reg_to=today)
     assert names == ["recent"]
+
+
+@pytest.mark.asyncio
+async def test_registration_date_range_rejects_reversed_bounds(client):
+    headers = await _caller_headers(client)
+    resp = await client.get(
+        "/api/users",
+        params={"reg_from": "2026-02-02", "reg_to": "2026-02-01"},
+        headers=headers,
+    )
+
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio

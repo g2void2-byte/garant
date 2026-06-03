@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy import case, func, literal, select
@@ -42,17 +43,10 @@ _DEALS_BUCKETS: dict[str, tuple[int | None, int | None]] = {
 # bundle's data attributes.
 # Tier 4 (moderator) was retired with the role; keep the three
 # remaining levels so the existing filter UI keeps working unchanged.
-_STATUS_KEYS = {"5", "3", "2"}
-
-
-def _parse_date(value: str | None) -> datetime | None:
-    """Parse an ISO date string (YYYY-MM-DD) into a midnight ``datetime``."""
-    if not value:
-        return None
-    try:
-        return datetime.combine(date.fromisoformat(value), time.min)
-    except ValueError as exc:  # pragma: no cover - guarded by Query()
-        raise HTTPException(400, f"Неверная дата: {value}") from exc
+UserListFilter = Literal["all", "arbiters", "admins", "with_deposit", "top_rating"]
+UserRatingBucket = Literal["5.0", "4.5-4.9", "4.0-4.4", "3.5-3.9", "lt3.5"]
+UserDealsBucket = Literal["0-10", "11-50", "51-100", "101+"]
+UserStatusTier = Literal["5", "3", "2"]
 
 
 @router.get("", response_model=list[UserPublicOut])
@@ -67,12 +61,24 @@ async def list_users(
     user: CurrentUser,
     _rl: RLUsersList,
     q: str | None = Query(None),
-    filter: str | None = Query(None),
-    rating: str | None = Query(None, description="Continental rating bucket"),
-    deals: str | None = Query(None, description="Continental deals bucket"),
-    status: str | None = Query(None, description="Continental prefix tier"),
-    reg_from: str | None = Query(None, description="ISO date (YYYY-MM-DD)"),
-    reg_to: str | None = Query(None, description="ISO date (YYYY-MM-DD)"),
+    filter: Annotated[
+        UserListFilter | None, Query(description="Continental top-tab filter")
+    ] = None,
+    rating: Annotated[
+        UserRatingBucket | None, Query(description="Continental rating bucket")
+    ] = None,
+    deals: Annotated[
+        UserDealsBucket | None, Query(description="Continental deals bucket")
+    ] = None,
+    status: Annotated[
+        UserStatusTier | None, Query(description="Continental prefix tier")
+    ] = None,
+    reg_from: Annotated[
+        date | None, Query(description="ISO date (YYYY-MM-DD)")
+    ] = None,
+    reg_to: Annotated[
+        date | None, Query(description="ISO date (YYYY-MM-DD)")
+    ] = None,
     picker: bool = Query(
         False,
         description=(
@@ -104,6 +110,11 @@ async def list_users(
         raise HTTPException(403, "Минимум 1 сделка для поиска")
 
     stmt = select(User).where(User.is_hidden_profile.is_(False))
+    review_total = User.good + User.bad
+    rating_expr = case(
+        (review_total > 0, (literal(5.0) * User.good) / func.nullif(review_total, 0)),
+        else_=literal(0.0),
+    )
     q_trimmed = (q or "").strip()
     if picker and not q_trimmed:
         # The picker bypasses the "min 1 deal" directory gate so a
@@ -138,19 +149,21 @@ async def list_users(
         stmt = stmt.where(User.is_arbiter.is_(True))
     elif filter == "admins":
         stmt = stmt.where(User.is_admin.is_(True))
+    elif filter == "with_deposit":
+        stmt = stmt.where(User.trust_deposit_balance > 0)
+    elif filter == "top_rating":
+        stmt = stmt.order_by(None).order_by(
+            rating_expr.desc(),
+            User.good.desc(),
+            User.deals_total.desc(),
+            User.id.desc(),
+        )
 
     if rating is not None:
-        if rating not in _RATING_BUCKETS:
-            raise HTTPException(400, f"Неизвестный rating bucket: {rating}")
         lo, hi = _RATING_BUCKETS[rating]
         # ``rating`` is computed as ``good / (good + bad) * 5``. We materialise
         # the same expression here so the filter operates on the same value
         # the UI displays. Users with zero reviews count as 0.
-        total = User.good + User.bad
-        rating_expr = case(
-            (total > 0, (literal(5.0) * User.good) / func.nullif(total, 0)),
-            else_=literal(0.0),
-        )
         if lo is not None:
             stmt = stmt.where(rating_expr >= lo)
         if hi is not None:
@@ -160,8 +173,6 @@ async def list_users(
             stmt = stmt.where(rating_expr < hi)
 
     if deals is not None:
-        if deals not in _DEALS_BUCKETS:
-            raise HTTPException(400, f"Неизвестный deals bucket: {deals}")
         d_lo, d_hi = _DEALS_BUCKETS[deals]
         if d_lo is not None:
             stmt = stmt.where(User.deals_total >= d_lo)
@@ -169,8 +180,6 @@ async def list_users(
             stmt = stmt.where(User.deals_total <= d_hi)
 
     if status is not None:
-        if status not in _STATUS_KEYS:
-            raise HTTPException(400, f"Неизвестный status: {status}")
         if status == "5":
             stmt = stmt.where(User.is_admin.is_(True))
         elif status == "3":
@@ -178,13 +187,13 @@ async def list_users(
         elif status == "2":
             stmt = stmt.where(User.is_vip.is_(True))
 
-    reg_from_dt = _parse_date(reg_from)
-    reg_to_dt = _parse_date(reg_to)
-    if reg_from_dt is not None:
-        stmt = stmt.where(User.created_at >= reg_from_dt)
-    if reg_to_dt is not None:
+    if reg_from is not None and reg_to is not None and reg_from > reg_to:
+        raise HTTPException(422, "reg_from cannot be after reg_to")
+    if reg_from is not None:
+        stmt = stmt.where(User.created_at >= datetime.combine(reg_from, time.min))
+    if reg_to is not None:
         # ``reg_to`` is inclusive; pad to end-of-day for natural UX.
-        end = datetime.combine(reg_to_dt.date(), time.max)
+        end = datetime.combine(reg_to, time.max)
         stmt = stmt.where(User.created_at <= end)
 
     total = (

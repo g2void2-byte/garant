@@ -9409,13 +9409,14 @@ export interface operations {
         parameters: {
             query?: {
                 q?: string | null;
-                filter?: string | null;
+                /** @description Continental top-tab filter */
+                filter?: ("all" | "arbiters" | "admins" | "with_deposit" | "top_rating") | null;
                 /** @description Continental rating bucket */
-                rating?: string | null;
+                rating?: ("5.0" | "4.5-4.9" | "4.0-4.4" | "3.5-3.9" | "lt3.5") | null;
                 /** @description Continental deals bucket */
-                deals?: string | null;
+                deals?: ("0-10" | "11-50" | "51-100" | "101+") | null;
                 /** @description Continental prefix tier */
-                status?: string | null;
+                status?: ("5" | "3" | "2") | null;
                 /** @description ISO date (YYYY-MM-DD) */
                 reg_from?: string | null;
                 /** @description ISO date (YYYY-MM-DD) */

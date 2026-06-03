@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-84: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract и query-filter contracts исправлены.
+- M-50-M-86: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts и public user search filters исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -985,6 +985,26 @@ Admin deposit/withdrawal list endpoints принимали `status` как `str 
 Риск: stale frontend/deep-link мог отправить `status=paid `, неизвестный статус или пробельную валюту и получить late error/silent-empty result вместо одинакового query-level 422. Generated API types оставались с `string`, то есть не помогали frontend поймать неверный статус очереди до запроса.
 
 Исправление: admin deposit status теперь `WalletDepositStatus | None`, withdrawal status - `WalletWithdrawStatus | None`, а wallet/admin currency history filters используют `CurrencyCodeStr`. OpenAPI теперь содержит enum schemas для очередей и currency pattern/bounds для history filters.
+
+### M-85. Public user search top filters were UI-only
+
+Ссылки: `frontend/src/pages/search/SearchPage.tsx:32-41`, `backend/app/routers/users.py:136-154`, regression `tests/integration/test_users_filters.py`.
+
+SearchPage отправляла верхние фильтры `with_deposit` и `top_rating`, но backend обрабатывал только `arbiters` и `admins`. В итоге deep-link или обычный клик по вкладкам выглядел успешным, но `with_deposit` возвращал общий каталог, а `top_rating` оставлял сортировку по `deals_total`/relevance.
+
+Риск: пользователь видел silently-wrong выдачу и мог принимать обычных пользователей за участников с trust deposit или считать список отсортированным по рейтингу. Это особенно плохо для поиска контрагента: UI обещал важный trust/rating критерий, а API его игнорировал.
+
+Исправление: `/api/users?filter=with_deposit` теперь фильтрует `User.trust_deposit_balance > 0`, а `filter=top_rating` сортирует по вычисленному рейтингу `5 * good / (good + bad)` с deterministic tie-breakers. Добавлены integration tests на оба режима.
+
+### M-86. `/api/users` filter query contract был слишком широким
+
+Ссылки: `backend/app/routers/users.py:44-88`, `frontend/src/api/hooks.ts:316-326`, `frontend/src/components/domain/SearchFilterSheet.tsx:21-57`, generated OpenAPI/types, regression `tests/integration/test_users_filters.py`, `frontend/src/pages/search/SearchPage.test.tsx`.
+
+Public users endpoint принимал `filter`/`rating`/`deals`/`status`/registration dates как свободные строки и валидировал часть значений поздно внутри handler. OpenAPI поэтому документировал слишком широкий contract, frontend types тоже были `string`, а retired moderator tier `status=4` всё ещё предлагался в filter sheet, хотя backend уже не поддерживал роль.
+
+Риск: stale UI/deep-link/API caller мог получить inconsistent 400 или silent-empty result вместо query-level 422, а generated clients не ловили неверные buckets до запроса. Retired moderator option в UI провоцировал гарантированно невалидный фильтр.
+
+Исправление: query params переведены на закрытые `Literal` unions и `date` parsing на FastAPI boundary; reversed registration range возвращает 422. Frontend `UsersQueryParams`/filter controls используют те же unions, moderator option удалён, OpenAPI/types регенерируются, а invalid bucket/status/date сценарии покрыты regression tests.
 
 ## Наблюдения без отдельного finding
 
