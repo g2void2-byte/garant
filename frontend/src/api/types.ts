@@ -282,7 +282,7 @@ export interface CurrencyDto {
   // Distinguishes fiat invoices (``"fiat"`` — UAH/RUB/USD) from
   // crypto invoices (``"crypto"`` — USDT/TON/...). Surfaced so the
   // deposit page can filter the dropdown to fiat-only options.
-  kind?: "crypto" | "fiat" | string;
+  kind: "crypto" | "fiat" | string;
 }
 
 export interface WalletBalanceDto {
@@ -686,8 +686,8 @@ export interface AdminUserBalanceDto {
   amount: string;
   locked: string;
   total: string;
-  usd_rate?: string | number | null;
-  usd_estimate?: string | number | null;
+  usd_rate?: string | null;
+  usd_estimate?: string | null;
   usd_rate_source?: string | null;
   usd_rate_observed_at?: string | null;
   updated_at: string | null;
@@ -704,7 +704,7 @@ export interface AdminWalletListItemDto {
   is_banned: boolean;
   is_frozen: boolean;
   balances: AdminUserBalanceDto[];
-  total_usd_estimate?: string | number | null;
+  total_usd_estimate?: string | null;
   usd_estimate_missing_rates?: string[];
 }
 
@@ -724,7 +724,7 @@ export interface AdminWalletAdjustBody {
 export interface AdminCurrencyRateDto {
   currency_id: number;
   currency_code: string;
-  usd_rate: string | number;
+  usd_rate: string;
   source: string;
   observed_at: string;
   updated_at?: string | null;
@@ -733,7 +733,7 @@ export interface AdminCurrencyRateDto {
 
 export interface AdminCurrencyRateUpsertBody {
   currency_code: string;
-  usd_rate: number;
+  usd_rate: number | string;
   source?: string;
   observed_at?: string | null;
 }
@@ -841,8 +841,8 @@ export interface AdminCurrencyDto {
   min_withdraw: number;
   is_active: boolean;
   sort_order: number;
-  address_regex?: string;
-  kind?: "crypto" | "fiat" | string;
+  address_regex: string;
+  kind: "crypto" | "fiat" | string;
 }
 
 export interface AdminCurrencyUpsertBody {

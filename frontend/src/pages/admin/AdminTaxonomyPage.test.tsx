@@ -114,6 +114,8 @@ function makeCurrency(
     min_withdraw: 10,
     is_active: true,
     sort_order: 0,
+    address_regex: "",
+    kind: "crypto",
     ...overrides,
   };
 }

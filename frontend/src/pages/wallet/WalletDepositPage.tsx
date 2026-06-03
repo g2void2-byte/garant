@@ -66,7 +66,7 @@ export default function WalletDepositPage() {
   const [modalOpen, setModalOpen] = useState(false);
 
   const fiatCurrencies = useMemo(
-    () => (currencies.data ?? []).filter((c) => (c.kind ?? "crypto") === "fiat"),
+    () => (currencies.data ?? []).filter((c) => c.kind === "fiat"),
     [currencies.data],
   );
   const current = useMemo(

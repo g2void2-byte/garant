@@ -133,6 +133,8 @@ beforeEach(() => {
       min_withdraw: 10,
       is_active: true,
       sort_order: 0,
+      address_regex: "",
+      kind: "crypto",
     },
     {
       id: 2,
@@ -145,6 +147,8 @@ beforeEach(() => {
       min_withdraw: 1,
       is_active: true,
       sort_order: 1,
+      address_regex: "",
+      kind: "crypto",
     },
   ];
   mockState.adjust = { mutateAsync: vi.fn(), isPending: false };

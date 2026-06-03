@@ -109,6 +109,7 @@ function makeBalance(
       decimals,
       min_deposit: 1,
       min_withdraw: 1,
+      kind: "fiat",
     },
     amount,
     locked: 0,

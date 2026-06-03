@@ -21,13 +21,21 @@ import { describe, expect, it } from "vitest";
 import openapi from "../../openapi.json";
 import type { components } from "./openapi.generated";
 import type {
+  AdminCurrencyDto,
+  AdminCurrencyRateDto,
+  AdminDepositDto,
   AdminDealDetailDto,
+  AdminUserBalanceDto,
   AdminUserDetailDto,
+  AdminWalletListDto,
+  AdminWithdrawalDto,
   CurrencyDto,
   DealCreateWithTopupResponseDto,
   DealDto,
   DealMessageDto,
   MediaDto,
+  NotificationCountersDto,
+  NotificationDto,
   PinStatusDto,
   ReviewDto,
   ServiceDetailDto,
@@ -36,18 +44,28 @@ import type {
   UserCardDto,
   WalletBalanceDto,
   WalletDepositDto,
+  WalletWithdrawalDto,
 } from "./types";
 
 type Schemas = components["schemas"];
+type AdminCurrencyOutSchema = Schemas["AdminCurrencyOut"];
+type AdminCurrencyRateOutSchema = Schemas["AdminCurrencyRateOut"];
+type AdminDepositOutSchema = Schemas["AdminDepositOut"];
 type AdminDealDetailOutSchema = Schemas["AdminDealDetailOut"];
+type AdminUserBalanceOutSchema = Schemas["AdminUserBalanceOut"];
 type AdminUserDetailOutSchema = Schemas["AdminUserDetailOut"];
+type AdminWalletListOutSchema = Schemas["AdminWalletListOut"];
+type AdminWithdrawalOutSchema = Schemas["AdminWithdrawalOut"];
 type DealOutSchema = Schemas["DealOut"];
 type DealCreateWithTopupOutSchema = Schemas["DealCreateWithTopupOut"];
 type CurrencyOutSchema = Schemas["CurrencyOut"];
 type DealMessageOutSchema = Schemas["DealMessageOut"];
 type MediaOutSchema = Schemas["MediaOut"];
+type NotificationCountersOutSchema = Schemas["NotificationCountersOut"];
+type NotificationOutSchema = Schemas["NotificationOut"];
 type WalletBalanceOutSchema = Schemas["WalletBalanceOut"];
 type WalletDepositOutSchema = Schemas["WalletDepositOut"];
+type WalletWithdrawalOutSchema = Schemas["WalletWithdrawalOut"];
 type PinStatusOutSchema = Schemas["PinStatusOut"];
 type ReviewOutSchema = Schemas["ReviewOut"];
 type ServiceOutSchema = Schemas["ServiceOut"];
@@ -249,6 +267,23 @@ const usdtFixture = {
   kind: "crypto",
 } as const satisfies CurrencyOutSchema;
 
+const adminCurrencyFixture = {
+  ...usdtFixture,
+  address_regex: "",
+  is_active: true,
+  sort_order: 0,
+} as const satisfies AdminCurrencyOutSchema;
+
+const adminCurrencyRateFixture = {
+  currency_id: 1,
+  currency_code: "USDT",
+  usd_rate: "1.00000000",
+  source: "manual",
+  observed_at: new Date(0).toISOString(),
+  updated_at: null,
+  updated_by_id: null,
+} as const satisfies AdminCurrencyRateOutSchema;
+
 const walletBalanceFixture = {
   currency: usdtFixture,
   amount: 123.45,
@@ -313,8 +348,105 @@ const walletDepositFixture = {
   paid_at: null,
 } as const satisfies WalletDepositOutSchema;
 
-const reviewFixture = {
+const walletWithdrawalFixture = {
+  id: 502,
+  currency: usdtFixture,
+  amount: 25,
+  address: null,
+  status: "pending",
+  admin_note: "",
+  created_at: new Date(0).toISOString(),
+  processed_at: null,
+} as const satisfies WalletWithdrawalOutSchema;
+
+const adminDepositFixture = {
+  id: 503,
+  user_id: 111,
+  username: null,
+  display_name: "Admin view",
+  currency_code: "USDT",
+  amount: "100.00000000",
+  status: "paid",
+  provider_invoice_id: "invoice-503",
+  pay_url: "https://pay.example/invoice/503",
+  created_at: new Date(0).toISOString(),
+  paid_at: null,
+} as const satisfies AdminDepositOutSchema;
+
+const adminWithdrawalFixture = {
+  id: 504,
+  user_id: 111,
+  username: null,
+  display_name: "Admin view",
+  currency_code: "USDT",
+  amount: "25.00000000",
+  address: null,
+  status: "pending",
+  admin_note: "",
+  created_at: new Date(0).toISOString(),
+  processed_at: null,
+} as const satisfies AdminWithdrawalOutSchema;
+
+const adminUserBalanceFixture = {
+  user_id: 111,
+  username: null,
+  display_name: "Admin view",
+  currency_id: 1,
+  currency_code: "USDT",
+  currency_name: "Tether",
+  decimals: 2,
+  amount: "10.00000000",
+  locked: "0",
+  total: "10.00000000",
+  usd_rate: "1.00000000",
+  usd_estimate: "10.00000000",
+  usd_rate_source: "manual",
+  usd_rate_observed_at: null,
+  updated_at: null,
+} as const satisfies AdminUserBalanceOutSchema;
+
+const adminWalletListFixture = {
+  items: [
+    {
+      user_id: 111,
+      username: null,
+      display_name: "Admin view",
+      photo_url: null,
+      is_admin: false,
+      is_arbiter: false,
+      is_vip: false,
+      is_banned: false,
+      is_frozen: false,
+      balances: [adminUserBalanceFixture],
+      total_usd_estimate: "10.00000000",
+      usd_estimate_missing_rates: [],
+    },
+  ],
+  total: 1,
+  page: 1,
+  page_size: 50,
+} as const satisfies AdminWalletListOutSchema;
+
+const notificationFixture = {
   id: 601,
+  type: "system",
+  title: "Audit",
+  body: "ok",
+  payload: null,
+  is_read: false,
+  created_at: new Date(0).toISOString(),
+} as const satisfies NotificationOutSchema;
+
+const notificationCountersFixture = {
+  all: 1,
+  deals: 0,
+  deposits: 0,
+  system: 1,
+  unread: 1,
+} as const satisfies NotificationCountersOutSchema;
+
+const reviewFixture = {
+  id: 701,
   deal_id: null,
   author_username: null,
   target_username: null,
@@ -394,10 +526,19 @@ const _topupResponseDto: DealCreateWithTopupResponseDto = topupResponseFixture;
 const _balanceFundedTopupResponseDto: DealCreateWithTopupResponseDto =
   balanceFundedTopupResponseFixture;
 const _currencyDto: CurrencyDto = usdtFixture;
+const _adminCurrencyDto: AdminCurrencyDto = adminCurrencyFixture;
+const _adminCurrencyRateDto: AdminCurrencyRateDto = adminCurrencyRateFixture;
 const _balanceDto: WalletBalanceDto = walletBalanceFixture;
 const _serviceDto: ServiceDto = serviceFixture;
 const _serviceDetailDto: ServiceDetailDto = serviceDetailFixture;
 const _walletDepositDto: WalletDepositDto = walletDepositFixture;
+const _walletWithdrawalDto: WalletWithdrawalDto = walletWithdrawalFixture;
+const _adminDepositDto: AdminDepositDto = adminDepositFixture;
+const _adminWithdrawalDto: AdminWithdrawalDto = adminWithdrawalFixture;
+const _adminUserBalanceDto: AdminUserBalanceDto = adminUserBalanceFixture;
+const _adminWalletListDto: AdminWalletListDto = adminWalletListFixture;
+const _notificationDto: NotificationDto = notificationFixture;
+const _notificationCountersDto: NotificationCountersDto = notificationCountersFixture;
 const _reviewDto: ReviewDto = reviewFixture;
 const _supportPersonDto: SupportPersonDto = supportPersonFixture;
 const _adminUserDetailDto: AdminUserDetailDto = adminUserDetailFixture;
@@ -414,10 +555,19 @@ void _adminDealDetailDto;
 void _topupResponseDto;
 void _balanceFundedTopupResponseDto;
 void _currencyDto;
+void _adminCurrencyDto;
+void _adminCurrencyRateDto;
 void _balanceDto;
 void _serviceDto;
 void _serviceDetailDto;
 void _walletDepositDto;
+void _walletWithdrawalDto;
+void _adminDepositDto;
+void _adminWithdrawalDto;
+void _adminUserBalanceDto;
+void _adminWalletListDto;
+void _notificationDto;
+void _notificationCountersDto;
 void _reviewDto;
 void _supportPersonDto;
 void _adminUserDetailDto;
@@ -436,6 +586,12 @@ describe("OpenAPI contract", () => {
   it.each([
     "UserOut",
     "AdminUserDetailOut",
+    "AdminCurrencyOut",
+    "AdminCurrencyRateOut",
+    "AdminDepositOut",
+    "AdminUserBalanceOut",
+    "AdminWalletListOut",
+    "AdminWithdrawalOut",
     "DealOut",
     "AdminDealDetailOut",
     "DealMessageOut",
@@ -478,9 +634,10 @@ describe("OpenAPI contract", () => {
     );
   });
 
-  it("CurrencyOut requires decimals so format.ts can pick the right precision", () => {
+  it("CurrencyOut exposes decimals and kind so wallet pages can format and filter", () => {
     const currency = openapi.components.schemas.CurrencyOut as {
       required: readonly string[];
+      properties: Record<string, { default?: unknown }>;
     };
     expect(currency.required).toEqual(
       expect.arrayContaining([
@@ -492,6 +649,15 @@ describe("OpenAPI contract", () => {
         "min_withdraw",
       ]),
     );
+    expect(currency.properties.kind).toEqual(expect.objectContaining({ default: "crypto" }));
+  });
+
+  it("AdminCurrencyOut exposes address_regex and kind for taxonomy editing", () => {
+    const currency = openapi.components.schemas.AdminCurrencyOut as {
+      properties: Record<string, { default?: unknown }>;
+    };
+    expect(currency.properties.address_regex).toEqual(expect.objectContaining({ default: "" }));
+    expect(currency.properties.kind).toEqual(expect.objectContaining({ default: "crypto" }));
   });
 
   it("WalletBalanceOut nests CurrencyOut so the wallet currency page can read decimals", () => {

@@ -134,7 +134,7 @@ export default function CreateDealPage() {
   const currencyOptions = useMemo(
     () =>
       (currencies ?? [])
-        .filter((c) => (c.kind ?? "crypto") === "fiat")
+        .filter((c) => c.kind === "fiat")
         .map((c) => ({
           value: c.code,
           label: `${c.code} — ${c.name}`,

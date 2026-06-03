@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 73 файла, 663 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 73 файла, 670 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -86,6 +86,7 @@
 - M-114: frontend user/deal/review/support DTO теперь отражают nullable username-поля из OpenAPI; public search/profile/deal/review/support UI не строит `@null`, `/users/null`, `/deals/new?to=null` и `t.me/null`.
 - M-115: deal media/message DTO вынесены в общий contract surface и приведены к OpenAPI; live-notification runtime guard больше не принимает attachment без обязательного `created_at`.
 - M-116: admin audit/analytics UI больше не маскирует missing username как `@7`, `@system` или `@—`.
+- M-117: frontend currency/admin finance DTOs now mirror OpenAPI default-backed fields and string money projections; contract tests cover admin currency/rate/deposit/withdrawal/wallet and notification payloads.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1310,6 +1311,16 @@ Admin audit row строил `by @{row.actor_username ?? row.actor_id ?? "system
 Риск: оператор мог принять числовой actor_id или системный источник за Telegram username, особенно при разборе audit trail. `@—` в top-листах выглядело как сломанный handle, а не как нормальное отсутствие username.
 
 Исправление: audit row теперь явно различает `by @username`, `by user #id` и `by system`; analytics top-users показывает fallback `username не задан` без `@`.
+
+### M-117. Currency/admin finance DTO drift hid OpenAPI-backed defaults and string money fields
+
+Links: `frontend/src/api/types.ts`, `frontend/src/api/openapi.contract.test.ts`, `frontend/src/pages/deals/CreateDealPage.tsx`, `frontend/src/pages/wallet/WalletDepositPage.tsx`, regressions `frontend/src/pages/admin/AdminTaxonomyPage.test.tsx`, `frontend/src/pages/admin/AdminWalletsPage.test.tsx`, `frontend/src/pages/wallet/WalletWithdrawPage.test.tsx`.
+
+Manual frontend DTOs treated `CurrencyDto.kind`, `AdminCurrencyDto.kind`, and `AdminCurrencyDto.address_regex` as optional even though the backend response schema always projects them with defaults. The same DTO surface allowed numeric admin USD-rate/estimate response fields (`usd_rate`, `usd_estimate`, `total_usd_estimate`) while OpenAPI exposes those money projections as strings. The contract bridge also listed `AdminCurrencyOut`, admin deposit/withdrawal/wallet, notification, and wallet-withdrawal schemas only by name, without representative DTO assignments.
+
+Risk: wallet/deal pages could silently classify a malformed currency without `kind` as crypto through `kind ?? "crypto"`, hiding fiat choices instead of surfacing a contract drift. Admin finance UI/tests could keep accepting numeric money projections that the backend no longer emits, making future parsing and display assumptions harder to audit.
+
+Fix: public/admin currency DTOs now require the default-backed `kind`/`address_regex` response fields, admin finance response money projections are typed as strings, and create-deal/deposit filters use the explicit `kind` value. OpenAPI contract tests now bridge admin currency, rate, deposit, withdrawal, wallet list/balance, wallet withdrawal, notification, and notification-counter fixtures into the manual DTOs.
 
 ## Наблюдения без отдельного finding
 
