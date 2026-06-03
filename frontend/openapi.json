@@ -714,6 +714,7 @@
           "audience_active_days": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -760,6 +761,7 @@
           "audience_min_deals": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {

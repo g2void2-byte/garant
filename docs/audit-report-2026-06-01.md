@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-88: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters и notification/audit query contracts исправлены.
+- M-50-M-90: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts и admin numeric filter guards исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1025,6 +1025,26 @@ Public users endpoint принимал `filter`/`rating`/`deals`/`status`/regist
 Риск: audit viewer мог отдавать silent-empty страницы для невозможных фильтров, а generated clients не видели bounds/patterns. Для админского расследования empty result должен означать отсутствие событий, а не технически malformed query.
 
 Исправление: audit query params получили `ge=1` для ids, bounded ASCII patterns для `action`/`target_type`, 422 для `since > until`; frontend actor filter теперь отправляет только safe positive integers. Hook/query-key types расширены под `since`/`until`, OpenAPI/types регенерированы, backend/frontend regression tests добавлены.
+
+### M-89. Admin broadcast composer мог silently drop numeric audience filters
+
+Ссылки: `frontend/src/pages/admin/AdminBroadcastsPage.tsx:165-225`, `backend/app/schemas.py:2655-2721`, generated OpenAPI/types, regression `frontend/src/pages/admin/AdminBroadcastsPage.test.tsx`.
+
+Composer брал `audience_active_days` и `audience_min_deals` через `Number(raw)`. Если оператор вводил `1.5`, `abc` или слишком большое значение, frontend строил `NaN`; `JSON.stringify` превращает `NaN` в `null`, и backend видел фильтр как отсутствующий. То есть предпросмотр/отправка могли уйти на более широкую аудиторию, чем оператор ожидал.
+
+Риск: рассылка с malformed numeric cohort могла быть отправлена всем matching по остальным фильтрам пользователям вместо нужного среза. Для broadcast это не просто cosmetic bug: ошибка в фильтре меняет реальную аудиторию уведомления.
+
+Исправление: frontend валидирует optional non-negative integer strings до preview/send, показывает inline error и блокирует обе primary actions при invalid input. Валидные значения уходят как safe integers. Backend schema теперь также отражает `ge=0` в OpenAPI для этих полей.
+
+### M-90. Admin deals URL filters могли отправлять NaN/retired status в API
+
+Ссылки: `frontend/src/pages/admin/AdminDealsPage.tsx:46-124`, `frontend/src/api/types.ts:545-556`, regression `frontend/src/pages/admin/AdminDealsPage.test.tsx`.
+
+Admin deals page напрямую парсил `status`, `currency`, `min_amount`, `max_amount` и `page` из URL. Deep-link вроде `?status=pending_payment&min_amount=NaN&page=-5` доходил до `useAdminDeals` как deprecated status, `NaN` amount и отрицательная page; hook затем сериализовал это в query string и backend возвращал 422/пустое состояние вместо стабильной страницы.
+
+Риск: dashboard/deep-link с устаревшим или повреждённым URL ломал админский список сделок. Оператор видел не нормальную первую страницу с очищенными фильтрами, а ошибочный запрос; active chips тоже могли показывать технический `NaN` как будто это реальный фильтр.
+
+Исправление: URL params теперь проходят allow-list для filterable statuses, currency pattern, non-negative decimal parsing и positive page parsing; malformed numbers удаляются при update/apply. `AdminListDealsQuery.status` сужен до filterable statuses без deprecated `pending_payment`.
 
 ## Наблюдения без отдельного finding
 

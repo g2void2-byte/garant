@@ -140,6 +140,24 @@ describe("<AdminDealsPage />", () => {
     });
   });
 
+  it("drops malformed URL filters before calling useAdminDeals", () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+    renderPage([
+      "/admin/deals?status=pending_payment&currency=bad%20code&min_amount=NaN&max_amount=-1&page=-5",
+    ]);
+
+    expect(mockState.lastQuery).toEqual({
+      status: undefined,
+      currency: undefined,
+      min_amount: undefined,
+      max_amount: undefined,
+      has_arbitration: undefined,
+      has_cancel_request: undefined,
+      page: 1,
+      page_size: 20,
+    });
+  });
+
   it("clicking a status chip updates URL status param", async () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
     const user = userEvent.setup();

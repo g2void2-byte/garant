@@ -260,6 +260,49 @@ describe("<AdminBroadcastsPage />", () => {
     ).toBeInTheDocument();
   });
 
+  it("blocks invalid numeric audience filters before preview/send", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hi" },
+    });
+    fireEvent.change(screen.getByLabelText("active days"), {
+      target: { value: "1.5" },
+    });
+
+    expect(screen.getByText("Введите целое число 0 или больше")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Предпросмотр" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
+    expect(mockState.preview.mutateAsync).not.toHaveBeenCalled();
+    expect(mockState.create.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("sends numeric audience filters as safe integers", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.preview.mutateAsync.mockResolvedValueOnce({ total_recipients: 7 });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hi" },
+    });
+    fireEvent.change(screen.getByLabelText("active days"), { target: { value: "30" } });
+    fireEvent.change(screen.getByLabelText("minimum deals"), { target: { value: "5" } });
+    await user.click(screen.getByRole("button", { name: "Предпросмотр" }));
+
+    await waitFor(() => {
+      const body = mockState.preview.mutateAsync.mock.calls[0]?.[0] as
+        | AdminBroadcastCreateBody
+        | undefined;
+      expect(body?.audience_active_days).toBe(30);
+      expect(body?.audience_min_deals).toBe(5);
+    });
+  });
+
   it("'Отправить' happy path calls create, toasts success, closes sheet", async () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
     mockState.create.mutateAsync.mockResolvedValueOnce({

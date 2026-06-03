@@ -165,6 +165,20 @@ function Pagination({
 const BODY_MAX_LEN = 4096;
 const DEEPLINK_MAX_LEN = 256;
 
+function parseOptionalNonNegativeInt(raw: string): number | undefined {
+  const value = raw.trim();
+  if (!value) return undefined;
+  if (!/^\d+$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+function nonNegativeIntError(raw: string): string | null {
+  return raw.trim() && parseOptionalNonNegativeInt(raw) === undefined
+    ? "Введите целое число 0 или больше"
+    : null;
+}
+
 function validateDeeplink(raw: string): string | null {
   const v = raw.trim();
   if (!v) return null;
@@ -196,17 +210,23 @@ function Composer({ onClose }: { onClose: () => void }) {
   const toast = useToast();
 
   const deeplinkError = validateDeeplink(deeplink);
+  const activeDaysError = nonNegativeIntError(activeDays);
+  const minDealsError = nonNegativeIntError(minDeals);
   const bodyOverLimit = body.length > BODY_MAX_LEN;
   const submitBlocked =
-    !body.trim() || bodyOverLimit || deeplinkError !== null;
+    !body.trim() ||
+    bodyOverLimit ||
+    deeplinkError !== null ||
+    activeDaysError !== null ||
+    minDealsError !== null;
 
   const buildBody = (): AdminBroadcastCreateBody => ({
     title: title.trim() || undefined,
     body: body.trim(),
     deeplink: deeplink.trim() || undefined,
     audience_role: audienceRole || undefined,
-    audience_active_days: activeDays ? Number(activeDays) : undefined,
-    audience_min_deals: minDeals ? Number(minDeals) : undefined,
+    audience_active_days: parseOptionalNonNegativeInt(activeDays),
+    audience_min_deals: parseOptionalNonNegativeInt(minDeals),
     audience_language: language.trim() ? language.trim().toLowerCase() : undefined,
     dispatch_inapp: inApp,
     dispatch_dm: dm,
@@ -272,17 +292,21 @@ function Composer({ onClose }: { onClose: () => void }) {
             Активен последние (дни)
           </label>
           <Input
+            aria-label="active days"
             inputMode="numeric"
             value={activeDays}
             onChange={(e) => setActiveDays(e.target.value)}
+            error={activeDaysError ?? undefined}
           />
         </div>
         <div>
           <label className="block text-xs text-text-muted mb-1">Мин. сделок</label>
           <Input
+            aria-label="minimum deals"
             inputMode="numeric"
             value={minDeals}
             onChange={(e) => setMinDeals(e.target.value)}
+            error={minDealsError ?? undefined}
           />
         </div>
       </div>

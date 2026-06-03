@@ -2655,8 +2655,8 @@ class AdminBroadcastCreateIn(BaseModel):
     body: str
     deeplink: str | None = None
     audience_role: Literal["admin", "arbiter", "vip", "regular"] | None = None
-    audience_active_days: int | None = None
-    audience_min_deals: int | None = None
+    audience_active_days: Annotated[int | None, Field(ge=0)] = None
+    audience_min_deals: Annotated[int | None, Field(ge=0)] = None
     # A-6 — temporal + language cohort filters. See ``Broadcast`` model
     # docstring for semantics; validators below enforce ordering /
     # length so the admin composer can't smuggle a 1 MiB language tag

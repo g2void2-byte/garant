@@ -46,6 +46,32 @@ const STATUSES: Array<{ value: string | null; label: string }> = [
   ...FILTERABLE_STATUS_VALUES.map((value) => ({ value, label: STATUS_LABEL[value] })),
 ];
 
+const FILTERABLE_STATUS_SET = new Set<string>(FILTERABLE_STATUS_VALUES);
+const DECIMAL_PARAM_RE = /^\d+(?:\.\d+)?$|^\.\d+$/;
+const CURRENCY_PARAM_RE = /^[A-Z0-9]{1,16}$/;
+
+function parseStatusParam(value: string | null): AdminListDealsQuery["status"] {
+  if (!value || !FILTERABLE_STATUS_SET.has(value)) return undefined;
+  return value as AdminListDealsQuery["status"];
+}
+
+function parsePageParam(value: string | null): number {
+  const parsed = Number(value ?? "1");
+  return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : 1;
+}
+
+function parseAmountParam(value: string | null): number | undefined {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed || !DECIMAL_PARAM_RE.test(trimmed)) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function parseCurrencyParam(value: string | null): string | undefined {
+  const code = (value ?? "").trim().toUpperCase();
+  return CURRENCY_PARAM_RE.test(code) ? code : undefined;
+}
+
 /**
  * Continental admin deals list.
  *
@@ -63,13 +89,13 @@ export default function AdminDealsPage() {
 
   // Audit L-10 — ``status`` is ``string | undefined``; ``undefined`` is the
   // "no filter" sentinel and translates to an omitted URL param.
-  const status = params.get("status") ?? undefined;
-  const currency = params.get("currency") ?? undefined;
-  const min_amount = params.get("min_amount") ? Number(params.get("min_amount")) : undefined;
-  const max_amount = params.get("max_amount") ? Number(params.get("max_amount")) : undefined;
+  const status = parseStatusParam(params.get("status"));
+  const currency = parseCurrencyParam(params.get("currency"));
+  const min_amount = parseAmountParam(params.get("min_amount"));
+  const max_amount = parseAmountParam(params.get("max_amount"));
   const has_arbitration = params.get("has_arbitration") === "true" || undefined;
   const has_cancel_request = params.get("has_cancel_request") === "true" || undefined;
-  const page = Number(params.get("page") ?? "1") || 1;
+  const page = parsePageParam(params.get("page"));
 
   const query: AdminListDealsQuery = {
     status,
@@ -92,6 +118,8 @@ export default function AdminDealsPage() {
       // Audit L-10 — ``null``/``undefined``/empty/``false`` all mean
       // "clear the filter". The legacy ``"any"`` sentinel is gone.
       if (v === undefined || v === null || v === "" || v === false) {
+        sp.delete(k);
+      } else if (typeof v === "number" && !Number.isFinite(v)) {
         sp.delete(k);
       } else {
         sp.set(k, String(v));
@@ -293,9 +321,9 @@ export default function AdminDealsPage() {
               fullWidth
               onClick={() => {
                 update({
-                  currency: draftCurrency || undefined,
-                  min_amount: draftMin ? Number(draftMin) : undefined,
-                  max_amount: draftMax ? Number(draftMax) : undefined,
+                  currency: parseCurrencyParam(draftCurrency),
+                  min_amount: parseAmountParam(draftMin),
+                  max_amount: parseAmountParam(draftMax),
                 });
                 setFilterOpen(false);
               }}

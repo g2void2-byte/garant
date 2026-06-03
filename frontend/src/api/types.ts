@@ -546,7 +546,7 @@ export interface AdminListDealsQuery {
   // Audit L-10 — ``undefined`` (param omitted) is the canonical "no
   // filter" value; the previous ``"any"`` literal is no longer part
   // of the union on the frontend.
-  status?: DealStatus | string;
+  status?: Exclude<DealStatus, "pending_payment">;
   currency?: string;
   min_amount?: number;
   max_amount?: number;
