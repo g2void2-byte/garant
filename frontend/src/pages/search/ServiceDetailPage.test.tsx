@@ -196,6 +196,31 @@ describe("<ServiceDetailPage />", () => {
     expect(screen.queryByRole("button", { name: /Написать/i })).not.toBeInTheDocument();
   });
 
+  it("does not build owner links or actions when the owner username is missing", () => {
+    serviceState.data = makeService({
+      owner_username: null,
+      owner: {
+        id: 2,
+        username: null,
+        display_name: "Bob",
+        photo_url: null,
+        rating: 4.8,
+        deals_count: 20,
+        good: 18,
+        bad: 2,
+        is_admin: false,
+        is_arbiter: false,
+      },
+    });
+    commentsState.data = [];
+    renderAt(7);
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+    expect(screen.getByText(/Профиль недоступен/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Bob/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Сделка/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Написать/i })).not.toBeInTheDocument();
+  });
+
   it("requests the first comments page", () => {
     serviceState.data = makeService();
     commentsState.data = [];

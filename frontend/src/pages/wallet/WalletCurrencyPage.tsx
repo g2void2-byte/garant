@@ -29,6 +29,7 @@ const DEPOSIT_STATUS_TEXT: Record<string, string> = {
   pending: "Ожидание",
   paid: "Зачислено",
   expired: "Истёк",
+  refunded: "Возврат",
 };
 
 const WITHDRAW_STATUS_TEXT: Record<string, string> = {
@@ -42,6 +43,7 @@ const STATUS_TONE: Record<string, string> = {
   pending: "text-warning",
   paid: "text-success",
   expired: "text-text-muted",
+  refunded: "text-text-muted",
   approved: "text-success",
   sent: "text-success",
   rejected: "text-danger",

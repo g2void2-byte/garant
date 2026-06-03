@@ -21,6 +21,9 @@ export function ServiceCard({
   rightSlot?: React.ReactNode;
 }) {
   const badge = STATUS_BADGE[service.status];
+  const ownerLabel = service.owner_username
+    ? `@${service.owner_username}`
+    : "Владелец недоступен";
   return (
     <div
       className="bg-panel border border-border rounded-card p-3 animate-fadein"
@@ -48,7 +51,7 @@ export function ServiceCard({
             <div className="mt-1 text-sm text-text-muted line-clamp-2">{service.description}</div>
           )}
           <div className="mt-2 flex items-center gap-2 text-xs text-text-muted">
-            <span>@{service.owner_username}</span>
+            <span>{ownerLabel}</span>
             <span>·</span>
             <span className="text-accent font-semibold">{formatMoney(service.price)}</span>
           </div>

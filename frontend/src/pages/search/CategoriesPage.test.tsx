@@ -94,6 +94,7 @@ function makeService(id: number, category: CategoryDto, overrides: Partial<Servi
     currency: "USD",
     status: "active",
     owner_username: "alice",
+    created_at: "2026-01-01T00:00:00Z",
     category,
     ...overrides,
   };
@@ -149,6 +150,7 @@ describe("<CategoriesPage />", () => {
         currency: "USD",
         status: "active",
         owner_username: "bob",
+        created_at: "2026-01-01T00:00:00Z",
         category: categoriesState.data[0],
       },
     ];

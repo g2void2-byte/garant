@@ -115,6 +115,7 @@ function makeService(id: number, overrides: Partial<ServiceDto> = {}): ServiceDt
     currency: "USD",
     status: "active",
     owner_username: "me",
+    created_at: "2026-01-01T00:00:00Z",
     category: { id: 10, name: "Development", slug: "dev", icon_key: "code", services_count: 60 },
     ...overrides,
   };

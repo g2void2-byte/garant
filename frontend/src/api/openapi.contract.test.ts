@@ -12,8 +12,8 @@
  * What's covered:
  *   - ``components.schemas`` entries we depend on exist
  *   - representative e2e fixture payloads match the backend shape
- *     (UserCard / Deal / WalletBalance / Currency / PinStatus)
- *   - frontend ``UserCardDto`` / ``DealDto`` / etc. align with their
+ *     (UserCard / Deal / WalletBalance / Currency / Service / WalletDeposit / PinStatus)
+ *   - frontend ``UserCardDto`` / ``DealDto`` / ``ServiceDto`` / etc. align with their
  *     OpenAPI counterparts on the fields the UI reads
  */
 
@@ -25,8 +25,11 @@ import type {
   DealCreateWithTopupResponseDto,
   DealDto,
   PinStatusDto,
+  ServiceDetailDto,
+  ServiceDto,
   UserCardDto,
   WalletBalanceDto,
+  WalletDepositDto,
 } from "./types";
 
 type Schemas = components["schemas"];
@@ -34,7 +37,10 @@ type DealOutSchema = Schemas["DealOut"];
 type DealCreateWithTopupOutSchema = Schemas["DealCreateWithTopupOut"];
 type CurrencyOutSchema = Schemas["CurrencyOut"];
 type WalletBalanceOutSchema = Schemas["WalletBalanceOut"];
+type WalletDepositOutSchema = Schemas["WalletDepositOut"];
 type PinStatusOutSchema = Schemas["PinStatusOut"];
+type ServiceOutSchema = Schemas["ServiceOut"];
+type ServiceDetailOutSchema = Schemas["ServiceDetailOut"];
 type UserOutSchema = Schemas["UserOut"];
 
 // ---------------------------------------------------------------------------
@@ -174,6 +180,57 @@ const walletBalanceFixture = {
   total_str: "123.45",
 } as const satisfies WalletBalanceOutSchema;
 
+const serviceFixture = {
+  id: 700,
+  owner_username: null,
+  title: "Logo design",
+  description: "Vector logo + brand book",
+  price: 250,
+  currency: "USD",
+  status: "active",
+  category: {
+    id: 12,
+    slug: "design",
+    name: "Design",
+    icon_key: "palette",
+    services_count: 3,
+  },
+  created_at: null,
+  photo_urls: [],
+} as const satisfies ServiceOutSchema;
+
+const serviceDetailFixture = {
+  ...serviceFixture,
+  owner: {
+    id: 22,
+    username: null,
+    display_name: "Deleted owner",
+    photo_url: null,
+    rating: 0,
+    deals_count: 0,
+    good: 0,
+    bad: 0,
+    is_admin: false,
+    is_arbiter: false,
+  },
+  comments_count: 0,
+  rating_avg: null,
+  rating_count: 0,
+} as const satisfies ServiceDetailOutSchema;
+
+const walletDepositFixture = {
+  id: 501,
+  currency: usdtFixture,
+  amount: 100,
+  status: "refunded",
+  pay_url: "https://pay.example/invoice/501",
+  invoice_id: "invoice-501",
+  purpose: "wallet",
+  provider: "cryptobot",
+  created_at: new Date(0).toISOString(),
+  paid_at: null,
+} as const satisfies WalletDepositOutSchema;
+
 const pinStatusFixture = {
   has_pin: true,
   attempts_left: 5,
@@ -196,6 +253,9 @@ const _balanceFundedTopupResponseDto: DealCreateWithTopupResponseDto =
   balanceFundedTopupResponseFixture;
 const _currencyDto: CurrencyDto = usdtFixture;
 const _balanceDto: WalletBalanceDto = walletBalanceFixture;
+const _serviceDto: ServiceDto = serviceFixture;
+const _serviceDetailDto: ServiceDetailDto = serviceDetailFixture;
+const _walletDepositDto: WalletDepositDto = walletDepositFixture;
 const _pinDto: PinStatusDto = pinStatusFixture;
 
 // Side-effecting reads so ``unused`` lint rules can't trim the
@@ -206,6 +266,9 @@ void _topupResponseDto;
 void _balanceFundedTopupResponseDto;
 void _currencyDto;
 void _balanceDto;
+void _serviceDto;
+void _serviceDetailDto;
+void _walletDepositDto;
 void _pinDto;
 
 // ---------------------------------------------------------------------------
@@ -225,6 +288,8 @@ describe("OpenAPI contract", () => {
     "WalletBalanceOut",
     "WalletDepositOut",
     "WalletWithdrawalOut",
+    "ServiceOut",
+    "ServiceDetailOut",
     "PinStatusOut",
     "NotificationOut",
     "NotificationCountersOut",

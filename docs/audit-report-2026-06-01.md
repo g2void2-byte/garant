@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 70 файлов, 634 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 70 файлов, 645 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -81,6 +81,8 @@
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
 - M-50-M-111: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing, admin finance form number parsing, user service/deal amount parsing, admin content form number parsing, admin user-detail form number parsing, admin deal action form number parsing, admin users page parsing, admin settings form parsing, admin deals page parsing follow-up, PIN reset price non-finite guard, display decimal parsing, topup invoice metadata, profile rating display, Retry-After/crop zoom parsing, service photo URL validation, broadcast deeplink validation, structured API error detail parsing, create-deal insufficient-funds parsing и live-notification runtime payload validation исправлены.
+- M-112: frontend service DTO теперь отражает nullable `owner_username` и обязательный nullable `created_at`; карточки/детали услуг не строят `@null`, `/users/null` и `/create-deal/null`.
+- M-113: per-currency wallet history больше не показывает refunded deposit raw-статусом, а OpenAPI contract test покрывает service/deposit DTO drift.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1255,6 +1257,26 @@ WS hook кастовал `deal_message`, `notification`, `notification.read` и 
 Риск: WebSocket канал уже проходит auth, но frontend все равно является runtime boundary: Redis/pubsub bug, backend drift или replayed malformed frame не должны отравлять React Query caches и user-facing toast lane. Для notifications был дополнительный drift: backend WS event не отправлял `created_at`, а frontend ручной `NotificationDto` не отражал допустимый `payload: null` из OpenAPI/backend.
 
 Исправление: WS hook теперь валидирует deal messages, media attachments, notification rows, read payloads и deal ids до side effects. Notification type приведен к `payload: Record<string, unknown> | null`, backend WS notification включает `created_at`, а malformed frames игнорируются без haptic/toast/cache mutations. Regression покрывает валидные payloads и malformed `deal_message`, `notification`, `notification.read`, `deal.updated` cases.
+
+### M-112. Service DTO drift позволял строить ссылки на `null` owner
+
+Ссылки: `frontend/src/api/types.ts`, `frontend/src/components/domain/ServiceCard.tsx`, `frontend/src/pages/search/ServiceDetailPage.tsx`, regression `frontend/src/components/domain/ServiceCard.test.tsx`, `frontend/src/pages/search/ServiceDetailPage.test.tsx`, contract `frontend/src/api/openapi.contract.test.ts`.
+
+Ручной `ServiceDto` расходился с OpenAPI: `ServiceOut.owner_username` и `ServiceDetailOut.owner.username` nullable, а `created_at` обязателен, но может быть `null`. Frontend тип держал `owner_username: string` и optional `created_at`, из-за чего UI-код без guard-а строил `@${owner_username}`, `/users/${owner.username}` и `/create-deal/${owner.username}`.
+
+Риск: при удаленном/недоступном владельце или backend drift карточка услуги могла показывать `@null`, а detail page - ссылку `/users/null` и CTA `/create-deal/null`. Это не давало корректного профиля/сделки и маскировало контрактную проблему за валидно выглядящим UI.
+
+Исправление: frontend DTO приведен к OpenAPI nullability, ServiceCard показывает fallback владельца, а ServiceDetailPage не рендерит профильную ссылку и action-кнопки без username. Contract test теперь фиксирует nullable service owner и required nullable `created_at`.
+
+### M-113. Refunded wallet deposit отображался raw-статусом в истории
+
+Ссылки: `frontend/src/api/types.ts`, `frontend/src/pages/wallet/WalletCurrencyPage.tsx`, regression `frontend/src/pages/wallet/WalletCurrencyPage.test.tsx`, contract `frontend/src/api/openapi.contract.test.ts`.
+
+Backend wallet enum уже содержит `refunded`, и модалки invoice/deposit обрабатывали этот статус, но per-currency history не имела label/tone для refunded deposit. Одновременно ручной `WalletDepositDto.status` перечислял только `pending`/`paid`/`expired` перед fallback `string`, что скрывало drift от OpenAPI enum.
+
+Риск: пользователь видел техническое `refunded` в истории кошелька вместо локализованного состояния возврата, хотя соседние wallet surfaces показывали нормальный label. Для финансовой истории это выглядит как несогласованное состояние платежа.
+
+Исправление: refunded deposit получил локализованный label/tone в wallet history, `WalletDepositDto.status` документирует `refunded`, а contract fixture закрепляет refunded deposit payload alongside service DTO drift checks.
 
 ## Наблюдения без отдельного finding
 

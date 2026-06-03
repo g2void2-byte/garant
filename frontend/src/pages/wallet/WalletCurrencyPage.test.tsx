@@ -330,6 +330,18 @@ describe("<WalletCurrencyPage />", () => {
         created_at: "2026-01-03T00:00:00Z",
         paid_at: null,
       },
+      {
+        id: 3,
+        currency: makeCurrency(),
+        amount: 5,
+        status: "refunded",
+        pay_url: "",
+        invoice_id: "I3",
+        purpose: "wallet",
+        provider: "cryptobot",
+        created_at: "2026-01-04T00:00:00Z",
+        paid_at: null,
+      },
     ];
     mockState.withdrawals = [
       {
@@ -347,9 +359,10 @@ describe("<WalletCurrencyPage />", () => {
     renderPage("USDT");
     await user.click(screen.getByRole("button", { name: /История/ }));
 
-    expect(screen.getAllByText("Пополнение")).toHaveLength(2);
+    expect(screen.getAllByText("Пополнение")).toHaveLength(3);
     expect(screen.getByText("Вывод")).toBeInTheDocument();
     expect(screen.getByText("Зачислено")).toBeInTheDocument();
+    expect(screen.getByText("Возврат")).toBeInTheDocument();
     expect(screen.getByText(/Одобрена/)).toBeInTheDocument();
   });
 

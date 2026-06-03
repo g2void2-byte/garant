@@ -8,14 +8,14 @@ export interface CategoryDto {
 
 export interface ServiceDto {
   id: number;
-  owner_username: string;
+  owner_username: string | null;
   title: string;
   description: string;
   price: number;
   currency: string;
   status: string;
   category: CategoryDto;
-  created_at?: string | null;
+  created_at: string | null;
   // V12-UI — gallery URLs (``/media/service/...`` or ``https://...``)
   // attached to the service by its owner. Capped at 6 server-side.
   photo_urls?: string[];
@@ -288,7 +288,7 @@ export interface WalletDepositDto {
   id: number;
   currency: CurrencyDto;
   amount: number;
-  status: "pending" | "paid" | "expired" | string;
+  status: "pending" | "paid" | "expired" | "refunded" | string;
   pay_url: string;
   invoice_id: string;
   // Routing tag chosen by the user at deposit-create time. ``"wallet"``

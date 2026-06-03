@@ -192,46 +192,48 @@ function OwnerActions({
   const navigate = useNavigate();
   const owner = service.owner;
   if (!owner) return null;
-  const isSelf = owner.username === myUsername;
+  const ownerUsername = owner.username || null;
+  const isSelf = ownerUsername === myUsername;
+  const ownerName = owner.display_name || ownerUsername || "Владелец";
+  const ownerMeta = ownerUsername
+    ? `@${ownerUsername} · ${dealsLabel(owner.deals_count)}`
+    : `Профиль недоступен · ${dealsLabel(owner.deals_count)}`;
+  const ownerInfo = (
+    <>
+      <Avatar name={ownerName} src={owner.photo_url} size={48} />
+      <div className="min-w-0">
+        <div className="font-semibold truncate">{ownerName}</div>
+        <div className="text-xs text-text-muted truncate">{ownerMeta}</div>
+      </div>
+    </>
+  );
   return (
     <Card className="p-3">
       <div className="flex items-center gap-3">
-        <Link
-          to={`/users/${owner.username}`}
-          className="flex items-center gap-3 min-w-0 flex-1"
-        >
-          <Avatar
-            name={owner.display_name || owner.username || "?"}
-            src={owner.photo_url}
-            size={48}
-          />
-          <div className="min-w-0">
-            <div className="font-semibold truncate">
-              {owner.display_name || owner.username}
-            </div>
-            <div className="text-xs text-text-muted truncate">
-              @{owner.username} · {dealsLabel(owner.deals_count)}
-            </div>
-          </div>
-        </Link>
+        {ownerUsername ? (
+          <Link
+            to={`/users/${ownerUsername}`}
+            className="flex items-center gap-3 min-w-0 flex-1"
+          >
+            {ownerInfo}
+          </Link>
+        ) : (
+          <div className="flex items-center gap-3 min-w-0 flex-1">{ownerInfo}</div>
+        )}
       </div>
-      {!isSelf && (
+      {!isSelf && ownerUsername && (
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Button
             variant="primary"
             size="md"
-            onClick={() => navigate(`/create-deal/${owner.username}`)}
+            onClick={() => navigate(`/create-deal/${ownerUsername}`)}
           >
             <HandCoins className="size-4" /> Сделка
           </Button>
           <Button
             variant="secondary"
             size="md"
-            onClick={() =>
-              owner.username
-                ? openTelegramLink(`https://t.me/${owner.username}`)
-                : undefined
-            }
+            onClick={() => openTelegramLink(`https://t.me/${ownerUsername}`)}
           >
             <MessageSquare className="size-4" /> Написать
           </Button>

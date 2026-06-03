@@ -12,6 +12,7 @@ const baseService: ServiceDto = {
   price: 250,
   currency: "USDT",
   status: "active",
+  created_at: "2026-01-01T00:00:00Z",
   category: {
     id: 1,
     slug: "design",
@@ -36,6 +37,12 @@ describe("<ServiceCard />", () => {
     expect(screen.getByText("Vector logo + brand book")).toBeInTheDocument();
     expect(screen.getByText("@alice")).toBeInTheDocument();
     expect(screen.getByText("$250")).toBeInTheDocument();
+  });
+
+  it("renders a fallback when the service owner username is missing", () => {
+    renderCard({ owner_username: null });
+    expect(screen.getByText("Владелец недоступен")).toBeInTheDocument();
+    expect(screen.queryByText("@null")).not.toBeInTheDocument();
   });
 
   it("renders the category label", () => {
