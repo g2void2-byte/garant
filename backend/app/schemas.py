@@ -4,11 +4,12 @@ import base64
 import binascii
 import json
 import math
+import posixpath
 import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from pydantic import (
     BaseModel,
@@ -67,18 +68,40 @@ def _validate_https_or_media_url(v: str, *, what: str, max_len: int = 1024) -> s
             raise ValueError(f"{what} содержит недопустимые символы")
     if v.startswith("/media/"):
         # Backend-served path — fine, no scheme to validate.
-        return v
+        return _validate_media_path_url(v, what=what)
     parsed = urlparse(v)
     if parsed.scheme.lower() != "https":
         raise ValueError(f"{what} должен быть https:// ссылкой")
-    host = (parsed.netloc or "").lower()
-    if not host:
+    if not parsed.hostname:
         raise ValueError(f"{what} должен содержать хост")
     # Reject userinfo (``user@host``) — Telegram's link preview will
     # cheerfully render ``https://example.com@evil.com/`` as
     # ``example.com``, which the user will trust. Strip-and-reject.
-    if "@" in host:
+    if parsed.username or parsed.password or "@" in parsed.netloc:
         raise ValueError(f"{what} не может содержать userinfo")
+    try:
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"{what} has invalid URL port") from exc
+    return v
+
+
+def _validate_media_path_url(v: str, *, what: str) -> str:
+    """Validate same-origin media paths before they reach ``<img src>``."""
+    parsed = urlparse(v)
+    if parsed.scheme or parsed.netloc or parsed.params or parsed.fragment:
+        raise ValueError(f"{what} must be a relative /media/ path")
+    path = parsed.path
+    if not path.startswith("/media/"):
+        raise ValueError(f"{what} must be a /media/ path")
+    decoded_path = unquote(path)
+    if decoded_path != path:
+        raise ValueError(f"{what} cannot contain URL-encoded path segments")
+    if "\x00" in decoded_path or "\\" in decoded_path or "//" in decoded_path:
+        raise ValueError(f"{what} has invalid media path")
+    normalised = posixpath.normpath(decoded_path)
+    if normalised != decoded_path or not normalised.startswith("/media/"):
+        raise ValueError(f"{what} has invalid media path")
     return v
 
 
@@ -90,7 +113,7 @@ def _validate_https_or_tg_url(v: str, *, what: str, max_len: int = 256) -> str:
     if len(v) > max_len:
         raise ValueError(f"{what} слишком длинная (≤{max_len})")
     for ch in v:
-        if ord(ch) < 0x20 or ch in (" ", "\x7f"):
+        if ord(ch) < 0x20 or ch in (" ", "\\", "\x7f"):
             raise ValueError(f"{what} содержит недопустимые символы")
     parsed = urlparse(v)
     scheme = parsed.scheme.lower()

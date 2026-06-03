@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useCategories, useCreateService, useUploadMedia } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
 import { parseNonNegativeDecimalInput } from "@/lib/formNumbers";
+import { safeMediaUrl } from "@/lib/mediaLinks";
 
 // V12-UI — inline copy of the helper used elsewhere (SettingsPage,
 // AddForumPage). Kept local to avoid a one-off shared module just for
@@ -35,6 +36,7 @@ async function extractApiError(e: unknown): Promise<string> {
 }
 
 const MAX_PHOTOS = 6;
+const INVALID_PHOTO_URL_MESSAGE = "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u0430\u044f \u0441\u0441\u044b\u043b\u043a\u0430 \u043d\u0430 \u0444\u043e\u0442\u043e";
 
 export default function AddServicePage() {
   const navigate = useNavigate();
@@ -71,7 +73,13 @@ export default function AddServicePage() {
     for (const file of slice) {
       try {
         const m = await uploadMedia.mutateAsync({ kind: "service", file });
-        setPhotoUrls((prev) => (prev.length >= MAX_PHOTOS ? prev : [...prev, m.url]));
+        const safeUrl = safeMediaUrl(m.url);
+        if (!safeUrl) {
+          haptic("error");
+          toast.show({ kind: "error", title: INVALID_PHOTO_URL_MESSAGE });
+          continue;
+        }
+        setPhotoUrls((prev) => (prev.length >= MAX_PHOTOS ? prev : [...prev, safeUrl]));
         haptic("light");
       } catch (err) {
         haptic("error");

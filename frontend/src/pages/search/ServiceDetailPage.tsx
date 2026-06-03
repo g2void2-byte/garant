@@ -24,6 +24,7 @@ import { cn } from "@/lib/cn";
 import { openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
+import { safeMediaUrl } from "@/lib/mediaLinks";
 
 const SERVICE_COMMENTS_PAGE_SIZE = 50;
 
@@ -139,10 +140,13 @@ export default function ServiceDetailPage() {
 }
 
 function ServicePhotoGallery({ photos }: { photos: string[] }) {
-  if (!photos.length) return null;
+  const safePhotos = photos
+    .map((url) => safeMediaUrl(url))
+    .filter((url): url is string => Boolean(url));
+  if (!safePhotos.length) return null;
   return (
     <div className="-mx-4 px-4 flex gap-2 overflow-x-auto snap-x snap-mandatory pb-1">
-      {photos.map((url, i) => (
+      {safePhotos.map((url, i) => (
         <div
           key={`${url}-${i}`}
           className="shrink-0 w-[78%] aspect-[4/3] rounded-card overflow-hidden bg-panel-2 snap-center border border-border"

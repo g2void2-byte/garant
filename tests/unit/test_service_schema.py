@@ -10,6 +10,7 @@ from backend.app.schemas import (
     ServiceCreate,
     ServiceModerationDecision,
     ServiceUpdate,
+    UserUpdate,
 )
 
 
@@ -55,13 +56,35 @@ def test_service_photo_urls_accept_https_and_media_urls_with_dedupe() -> None:
     [
         "http://cdn.example/photo.png",
         "https:///photo.png",
+        "https://:443/photo.png",
+        "https://cdn.example:bad/photo.png",
         "https://cdn.example@evil.example/photo.png",
         "https://cdn.example/photo\nnext.png",
+        "/media/service/../admin.png",
+        "/media/service/%2e%2e/admin.png",
+        "/media/service//photo.png",
     ],
 )
 def test_service_photo_urls_reject_malformed_links(bad: str) -> None:
     with pytest.raises(ValidationError):
         ServiceCreate(category_slug="services", title="Title", photo_urls=[bad])
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "/media/avatar/../admin.png",
+        "/media/avatar/%2e%2e/admin.png",
+        "/media/avatar//photo.png",
+        "https://:443/avatar.png",
+        "https://cdn.example:bad/avatar.png",
+    ],
+)
+def test_profile_image_urls_reject_malformed_media_and_https_links(bad: str) -> None:
+    with pytest.raises(ValidationError):
+        UserUpdate(photo_url=bad)
+    with pytest.raises(ValidationError):
+        UserUpdate(banner_url=bad)
 
 
 def test_service_update_trims_optional_title() -> None:

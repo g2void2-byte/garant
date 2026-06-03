@@ -96,6 +96,8 @@
 - M-124: admin currency create, wallet-adjust and USD-rate schemas now share the strict currency-code contract and OpenAPI pattern used by user money endpoints.
 - M-125: profile banners no longer interpolate user-controlled URLs into CSS `background-image`; they render as a single inert `<img>` URL instead.
 - M-126: shared Telegram/external/payment link openers now reject credential-bearing and whitespace/control-character URLs before reaching Telegram or `window.open`.
+- M-127: backend profile/service media URL schemas now reject encoded/dot-segment media paths and malformed HTTPS ports before storage.
+- M-128: service photo upload previews and public service galleries now gate every image URL through the shared `/media/...` runtime predicate before rendering/submitting.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1420,6 +1422,26 @@ Links: `frontend/src/lib/tg.ts`, regression `frontend/src/lib/tg.test.ts`.
 Risk: these URLs are not script-execution vectors, but they are phishing and parser-confusion inputs on payment, forum, support, and admin deposit opener surfaces. `openPaymentLink` also used a raw `startsWith("https://t.me/")` branch instead of the parsed Telegram-link predicate, so edge-case Telegram invoice URLs were routed inconsistently.
 
 Fix: link parsing is now centralized in `parseSafeLink()`: only `http`/`https` URLs with a hostname, no username/password, and no raw spaces/control bytes pass. `openTelegramLink` and `openPaymentLink` share the parsed `t.me` predicate. Tests cover safe encoded paths, credential-bearing URLs, raw-newline URLs, no-Telegram fallbacks, and Telegram invoice routing with an explicit default port.
+
+### M-127. Backend media URL schemas accepted parser-drift paths
+
+Links: `backend/app/schemas.py`, regression `tests/unit/test_service_schema.py`.
+
+`_validate_https_or_media_url()` accepted any string starting with `/media/` without canonicalizing the path. That left profile avatars/banners, service photo lists, and currency icons accepting shapes the upload pipeline never emits: dot-segments, URL-encoded dot-segments, double slashes, fragments, and malformed HTTPS hosts/ports.
+
+Risk: these inputs are usually not script-execution vectors, but they create parser drift between Pydantic, browser URL parsing, and Starlette static media serving. A future UI could treat a stored `/media/...` string as backend-generated even when it was a hand-written ambiguous path.
+
+Fix: `/media/...` values now go through `_validate_media_path_url()`, which requires a relative canonical path with no fragments, encoded path segments, backslashes, double slashes, or dot-segment normalization. The HTTPS branch now requires `parsed.hostname`, rejects userinfo through parsed username/password, and touches `parsed.port` so malformed ports fail schema validation. Schema regressions cover service photo URLs plus profile avatar/banner URL fields.
+
+### M-128. Service image rendering bypassed the shared media URL predicate
+
+Links: `frontend/src/pages/profile/AddServicePage.tsx`, `frontend/src/pages/search/ServiceDetailPage.tsx`, regressions `frontend/src/pages/profile/AddServicePage.test.tsx`, `frontend/src/pages/search/ServiceDetailPage.test.tsx`.
+
+`DealChatPanel` and live notifications already used `safeMediaUrl()`, but service image surfaces still trusted API/upload-returned strings directly: `AddServicePage` stored `uploadMedia`'s `m.url` into `photo_urls`, and `ServiceDetailPage` rendered each `service.photo_urls` entry as raw `<img src>`.
+
+Risk: backend schema validation is the primary guard, but the frontend runtime boundary was weaker than the deal media boundary. A compromised payload, legacy row, or future API drift could render a non-media image URL in the service create preview or public gallery.
+
+Fix: service uploads now validate the returned media URL before preview/storage and skip unsafe values. Public service galleries filter through `safeMediaUrl()` before rendering images. Regression tests cover mixed safe/unsafe upload responses and mixed safe/unsafe gallery data.
 
 ## Наблюдения без отдельного finding
 

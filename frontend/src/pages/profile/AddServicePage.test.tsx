@@ -109,4 +109,40 @@ describe("<AddServicePage />", () => {
     });
     expect(hapticSpy).toHaveBeenCalledWith("success");
   });
+
+  it("keeps unsafe uploaded service photo URLs out of previews and submits", async () => {
+    const user = userEvent.setup();
+    mockState.uploadMedia.mutateAsync
+      .mockResolvedValueOnce({ url: "/media/service/ok.png" })
+      .mockResolvedValueOnce({ url: "javascript:alert(1)" });
+    const { container } = renderPage();
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, [
+      new File(["ok"], "ok.png", { type: "image/png" }),
+      new File(["bad"], "bad.png", { type: "image/png" }),
+    ]);
+
+    await waitFor(() => expect(mockState.uploadMedia.mutateAsync).toHaveBeenCalledTimes(2));
+    const previews = Array.from(container.querySelectorAll("img"));
+    expect(previews).toHaveLength(1);
+    expect(previews[0].getAttribute("src")).toBe("/media/service/ok.png");
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "error",
+        title: "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u0430\u044f \u0441\u0441\u044b\u043b\u043a\u0430 \u043d\u0430 \u0444\u043e\u0442\u043e",
+      }),
+    );
+
+    await fillRequiredFields(user);
+    const buttons = screen.getAllByRole("button");
+    await user.click(buttons[buttons.length - 1]);
+
+    await waitFor(() => {
+      expect(mockState.createService.mutateAsync).toHaveBeenCalledTimes(1);
+    });
+    expect(mockState.createService.mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ photo_urls: ["/media/service/ok.png"] }),
+    );
+  });
 });

@@ -196,6 +196,22 @@ describe("<ServiceDetailPage />", () => {
     expect(screen.queryByRole("button", { name: /Написать/i })).not.toBeInTheDocument();
   });
 
+  it("filters unsafe service gallery image URLs before rendering", () => {
+    serviceState.data = makeService({
+      photo_urls: [
+        "/media/service/ok.png",
+        "javascript:alert(1)",
+        "/media/../admin/deals",
+      ],
+    });
+    commentsState.data = [];
+    const { container } = renderAt(7);
+
+    const images = Array.from(container.querySelectorAll("img"));
+    expect(images).toHaveLength(1);
+    expect(images[0].getAttribute("src")).toBe("/media/service/ok.png");
+  });
+
   it("does not build owner links or actions when the owner username is missing", () => {
     serviceState.data = makeService({
       owner_username: null,
