@@ -143,9 +143,11 @@ export const api = ky.create({
             // Audit v3 A-4 — structured errors return
             // ``{"detail": {"code": "...", "detail": "..."}}``
             if (detail && typeof detail === "object" && "code" in detail) {
-              const structured = detail as { code: string; detail: string };
-              code = structured.code;
-              err.message = structured.detail;
+              const structured = detail as { code?: unknown; detail?: unknown };
+              code = typeof structured.code === "string" ? structured.code : undefined;
+              err.message = typeof structured.detail === "string"
+                ? structured.detail
+                : JSON.stringify(detail);
             } else if (detail) {
               err.message = typeof detail === "string" ? detail : JSON.stringify(detail);
             }

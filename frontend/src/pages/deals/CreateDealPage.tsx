@@ -35,14 +35,27 @@ interface InsufficientFundsDetail {
   currency_code: string | null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isInsufficientFundsDetail(value: unknown): value is InsufficientFundsDetail {
+  if (!isRecord(value) || value.code !== "insufficient_funds") return false;
+  return (
+    typeof value.message === "string" &&
+    typeof value.required === "string" &&
+    typeof value.balance === "string" &&
+    typeof value.deficit === "string" &&
+    (typeof value.currency_code === "string" || value.currency_code === null)
+  );
+}
+
 function parseInsufficientFunds(err: unknown): InsufficientFundsDetail | null {
   const raw = (err as Error | undefined)?.message;
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as Partial<InsufficientFundsDetail>;
-    if (parsed && parsed.code === "insufficient_funds") {
-      return parsed as InsufficientFundsDetail;
-    }
+    const parsed: unknown = JSON.parse(raw);
+    if (isInsufficientFundsDetail(parsed)) return parsed;
   } catch {
     /* not JSON — fall through to generic error path */
   }

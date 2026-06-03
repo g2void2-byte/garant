@@ -80,6 +80,11 @@ vi.mock("@/lib/tg", () => ({
   showBackButton: () => () => {},
 }));
 
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock("@/components/ui/Toast", () => ({
+  useToast: () => ({ show: toastSpy }),
+}));
+
 // ``PinPromptModal`` writes a fresh PIN token to ``localStorage`` on
 // successful check via ``setPinToken``; mock the module so the test
 // doesn't have to manage browser-storage side effects.
@@ -177,6 +182,7 @@ function makeTopupResponse(over: Partial<DealDto> = {}): DealCreateWithTopupResp
 
 beforeEach(() => {
   hapticSpy.mockClear();
+  toastSpy.mockClear();
   mockState.createMutation = {
     mutateAsync: vi.fn(),
     isPending: false,
@@ -219,6 +225,16 @@ async function enterPin(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "2" }));
   await user.click(screen.getByRole("button", { name: "3" }));
   await user.click(screen.getByRole("button", { name: "4" }));
+}
+
+async function submitDealForm(
+  user: ReturnType<typeof userEvent.setup>,
+  amount = "10",
+) {
+  await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
+  await user.type(screen.getByLabelText(/Сумма \(USD\)/), amount);
+  await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
+  await enterPin(user);
 }
 
 describe("<CreateDealPage />", () => {
@@ -347,6 +363,52 @@ describe("<CreateDealPage />", () => {
     expect(await screen.findByTestId("deal-balance-paid")).toBeInTheDocument();
     expect(screen.queryByTestId("topup-invoice-preview")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Открыть оплату/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the insufficient-funds alert only for a complete structured error", async () => {
+    mockState.createMutation.mutateAsync.mockRejectedValue(
+      new Error(JSON.stringify({
+        code: "insufficient_funds",
+        message: "Not enough balance",
+        required: "10.00",
+        balance: "1.00",
+        deficit: "9.00",
+        currency_code: "USD",
+      })),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await submitDealForm(user);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("10.00 USD");
+    expect(alert).toHaveTextContent("1.00 USD");
+    expect(alert).toHaveTextContent("9.00 USD");
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "Не хватает 9.00 USD" }),
+    );
+  });
+
+  it("treats partial insufficient-funds JSON as a generic API error", async () => {
+    mockState.createMutation.mutateAsync.mockRejectedValue(
+      new Error(JSON.stringify({ code: "insufficient_funds" })),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await submitDealForm(user);
+
+    await waitFor(() => {
+      expect(hapticSpy).toHaveBeenCalledWith("error");
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "error",
+        title: JSON.stringify({ code: "insufficient_funds" }),
+      }),
+    );
   });
 
   it("fires haptic('error') when the API rejects", async () => {

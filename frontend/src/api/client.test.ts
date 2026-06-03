@@ -135,6 +135,30 @@ describe("api ky client — beforeError", () => {
     expect(caught!.message).toContain("required");
   });
 
+  it("stringifies malformed structured detail and ignores non-string codes", async () => {
+    pinState.token = "still-good";
+    fetchSpy.mockResolvedValue(
+      jsonResponse(401, { detail: { code: 123, detail: { message: "bad shape" } } }),
+    );
+
+    const { api, TOTP_REQUIRED_EVENT } = await import("./client");
+    const events: TotpRequiredDetail[] = [];
+    const onRequired = (event: Event) => {
+      events.push((event as CustomEvent<TotpRequiredDetail>).detail);
+    };
+    window.addEventListener(TOTP_REQUIRED_EVENT, onRequired);
+
+    try {
+      await expect(api.get("api/me").json()).rejects.toThrow("bad shape");
+    } finally {
+      window.removeEventListener(TOTP_REQUIRED_EVENT, onRequired);
+    }
+
+    expect(pinState.cleared).toBe(false);
+    expect(queryClientSpy.invalidateQueries).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+  });
+
   it("clears the PIN token + invalidates PIN status on 401 with PIN-session detail", async () => {
     pinState.token = "stale-token";
     fetchSpy.mockResolvedValue(

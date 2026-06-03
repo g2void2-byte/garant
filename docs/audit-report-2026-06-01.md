@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-108: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing, admin finance form number parsing, user service/deal amount parsing, admin content form number parsing, admin user-detail form number parsing, admin deal action form number parsing, admin users page parsing, admin settings form parsing, admin deals page parsing follow-up, PIN reset price non-finite guard, display decimal parsing, topup invoice metadata, profile rating display, Retry-After/crop zoom parsing, service photo URL validation и broadcast deeplink validation исправлены.
+- M-50-M-111: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing, admin finance form number parsing, user service/deal amount parsing, admin content form number parsing, admin user-detail form number parsing, admin deal action form number parsing, admin users page parsing, admin settings form parsing, admin deals page parsing follow-up, PIN reset price non-finite guard, display decimal parsing, topup invoice metadata, profile rating display, Retry-After/crop zoom parsing, service photo URL validation, broadcast deeplink validation, structured API error detail parsing, create-deal insufficient-funds parsing и live-notification runtime payload validation исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1225,6 +1225,36 @@ Admin broadcast deeplink валидировался через lowercase `starts
 Риск: broadcast DM path заворачивает deeplink в HTML `<a href="...">`; prefix-only validation оставляла место для обманчивых Telegram/HTTPS ссылок или malformed href, которые могут выглядеть как доверенный домен либо ломать Telegram parsing уже после отправки рассылки.
 
 Исправление: добавлен parser для admin deeplinks: `https` требует host без userinfo, `tg` требует target, raw whitespace/control chars запрещены, length cap сохранен. Frontend composer зеркалит тот же contract и блокирует preview/send до запроса.
+
+### M-109. Ky structured error detail принимал malformed runtime shape
+
+Ссылки: `frontend/src/api/client.ts`, regression `frontend/src/api/client.test.ts`.
+
+Общий `api` client обрабатывал backend ошибки вида `{"detail":{"code":"...","detail":"..."}}` через прямой cast. Если runtime payload приходил с нестроковым `code` или `detail`, hook мог присвоить `err.message` объект/`undefined`, а сравнение code для PIN/TOTP side effects оставалось неявным.
+
+Риск: поврежденный/error-proxy payload мог ломать user-facing текст ошибки и случайно взаимодействовать с security flow вокруг `pin_session_invalid` / `totp_required`. Это не давало privilege escalation само по себе, но делало общий error boundary менее предсказуемым именно на sensitive 401 paths.
+
+Исправление: structured branch теперь принимает только string `code` и string `detail`; malformed detail сериализуется как JSON, а non-string code не запускает PIN/TOTP side effects. Regression покрывает 401 с non-string code и object detail.
+
+### M-110. Create-deal insufficient-funds parser доверял partial JSON
+
+Ссылки: `frontend/src/pages/deals/CreateDealPage.tsx`, regression `frontend/src/pages/deals/CreateDealPage.test.tsx`.
+
+Create-deal error path считал любой JSON с `code:"insufficient_funds"` полным `InsufficientFundsDetail`. Payload без `required`/`balance`/`deficit` попадал в inline alert и toast, где UI мог показывать `undefined` вместо сумм.
+
+Риск: stale/mock/corrupt API response превращался в убедительный money-facing alert с неполными данными. Пользователь мог принять решение по сделке или пополнению на основе сломанной строки, вместо обычной generic API error ветки.
+
+Исправление: parser теперь валидирует весь shape: `message`, `required`, `balance`, `deficit` как строки и `currency_code` как string/null. Partial JSON уходит в generic error toast, полный payload продолжает показывать low-funds alert.
+
+### M-111. Live notification WS handler доверял runtime payload casts
+
+Ссылки: `frontend/src/lib/useLiveNotifications.ts`, `frontend/src/api/types.ts`, `backend/app/notifier.py`, regression `frontend/src/lib/useLiveNotifications.test.tsx`.
+
+WS hook кастовал `deal_message`, `notification`, `notification.read` и `deal.updated` data напрямую. Malformed frame мог записать сообщение в cache key `qk.deal.messages(undefined)`, показать forged toast/notification row без полного `NotificationDto`, применить read-delta с некорректными ids или инвалидировать detail cache по ambiguous `deal_id`.
+
+Риск: WebSocket канал уже проходит auth, но frontend все равно является runtime boundary: Redis/pubsub bug, backend drift или replayed malformed frame не должны отравлять React Query caches и user-facing toast lane. Для notifications был дополнительный drift: backend WS event не отправлял `created_at`, а frontend ручной `NotificationDto` не отражал допустимый `payload: null` из OpenAPI/backend.
+
+Исправление: WS hook теперь валидирует deal messages, media attachments, notification rows, read payloads и deal ids до side effects. Notification type приведен к `payload: Record<string, unknown> | null`, backend WS notification включает `created_at`, а malformed frames игнорируются без haptic/toast/cache mutations. Regression покрывает валидные payloads и malformed `deal_message`, `notification`, `notification.read`, `deal.updated` cases.
 
 ## Наблюдения без отдельного finding
 
