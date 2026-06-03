@@ -38,6 +38,20 @@ const TONE_VALUE: Record<StatTone, string> = {
   warning: "text-amber-500",
 };
 
+const RATING_STRING_RE = /^(?:\d+(?:\.\d+)?|\.\d+)$/;
+
+function parseRatingValue(value: unknown): number | null {
+  const parsed = typeof value === "number"
+    ? value
+    : typeof value === "string" && RATING_STRING_RE.test(value.trim())
+      ? Number(value.trim())
+      : null;
+  if (parsed === null || !Number.isFinite(parsed) || parsed < 0 || parsed > 5) {
+    return null;
+  }
+  return parsed;
+}
+
 function Stat({ icon, label, value, onClick, tone = "neutral" }: StatProps) {
   return (
     <button
@@ -80,9 +94,8 @@ export function ProfileStatsGrid({ user, onDepositClick }: { user: UserCardDto; 
   // a manually-set rating to surface even when ``reviews_count`` is
   // still 0, so the gate is "we have *something* to show" rather than
   // "we have reviews". The ``(N)`` suffix stays gated on review count.
-  const ratingValue = Number(user.rating) || 0;
-  const hasRating = ratingValue > 0 || user.reviews_count > 0;
-  const ratingLabel = hasRating
+  const ratingValue = parseRatingValue(user.rating);
+  const ratingLabel = ratingValue !== null && (ratingValue > 0 || user.reviews_count > 0)
     ? user.reviews_count > 0
       ? `${ratingValue.toFixed(1)} (${user.reviews_count})`
       : ratingValue.toFixed(1)

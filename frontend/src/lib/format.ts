@@ -1,7 +1,11 @@
+const DECIMAL_STRING_RE = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;
+
 export function parseDecimal(value: string | number | null | undefined): number {
   if (value === null || value === undefined) return 0;
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  const n = Number(value);
+  const trimmed = value.trim();
+  if (!DECIMAL_STRING_RE.test(trimmed)) return 0;
+  const n = Number(trimmed);
   return Number.isFinite(n) ? n : 0;
 }
 

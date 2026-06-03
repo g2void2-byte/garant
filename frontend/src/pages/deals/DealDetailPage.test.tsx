@@ -208,6 +208,31 @@ describe("<DealDetailPage />", () => {
     expect(screen.getByRole("button", { name: /^Отменить$/i })).toBeInTheDocument();
   });
 
+  it("does not append currency to topup invoice metadata or show malformed paid totals", () => {
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      commission_paid: false,
+      topup_deposit_id: 501,
+      topup_invoice: {
+        deposit_id: 501,
+        pay_url: "https://pay.example/invoice/501",
+        total: "105",
+        topup_principal: "100",
+        commission: "5",
+        paid_total: "0x10",
+        currency_code: "USD",
+        provider: "cryptobot",
+        expires_at: "2026-01-01T00:00:00Z",
+      },
+    });
+    renderAt(42);
+
+    expect(screen.getByText("CryptoBot")).toBeInTheDocument();
+    expect(screen.queryByText("CryptoBot USD")).not.toBeInTheDocument();
+    expect(screen.queryByText("0x10 USD")).not.toBeInTheDocument();
+  });
+
   it("shows the accept/decline CTAs for seller on a pending_confirmation deal", () => {
     dealState.data = makeDeal({ status: "pending_confirmation", role: "seller" });
     renderAt(42);

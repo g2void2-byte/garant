@@ -28,12 +28,16 @@ describe("parseDecimal", () => {
 
   it("parses string-form Decimals (M-9 wire format)", () => {
     expect(parseDecimal("123.45")).toBeCloseTo(123.45);
+    expect(parseDecimal("-.5")).toBeCloseTo(-0.5);
     expect(parseDecimal("0")).toBe(0);
   });
 
   it("returns 0 for malformed strings", () => {
     expect(parseDecimal("not-a-number")).toBe(0);
     expect(parseDecimal("")).toBe(0);
+    expect(parseDecimal("1e2")).toBe(0);
+    expect(parseDecimal("0x10")).toBe(0);
+    expect(parseDecimal("Infinity")).toBe(0);
   });
 });
 

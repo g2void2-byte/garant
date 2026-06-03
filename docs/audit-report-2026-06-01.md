@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 69 файлов, 629 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 70 файлов, 634 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-102: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing, admin finance form number parsing, user service/deal amount parsing, admin content form number parsing, admin user-detail form number parsing, admin deal action form number parsing, admin users page parsing, admin settings form parsing, admin deals page parsing follow-up и PIN reset price non-finite guard исправлены.
+- M-50-M-106: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing, admin finance form number parsing, user service/deal amount parsing, admin content form number parsing, admin user-detail form number parsing, admin deal action form number parsing, admin users page parsing, admin settings form parsing, admin deals page parsing follow-up, PIN reset price non-finite guard, display decimal parsing, topup invoice metadata, profile rating display и Retry-After/crop zoom parsing исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1165,6 +1165,46 @@ M-90 закрыл большую часть malformed URL filters на deals lis
 Риск: non-finite price мог дойти до ORM/DB или audit payload и сломать сохранение настроек неочевидной ошибкой. Для публичной цены PIN reset это особенно неприятно: значение читается пользователями до payment flow.
 
 Исправление: `pin_reset_price_usd` теперь использует общий finite money guard и затем прежнюю non-negative check. Unit regression покрывает `Infinity` и `NaN`.
+
+### M-103. Frontend display decimal helper принимал exponent/hex строки как деньги
+
+Ссылки: `frontend/src/lib/format.ts`, regression `frontend/src/lib/format.test.ts`.
+
+Общий `parseDecimal()` использовался в wallet/admin/deal display paths и non-zero decisions, но строковые значения парсил через `Number(value)`. Поэтому corrupt wire/display value вроде `1e2` или `0x10` превращался в 100/16 вместо malformed fallback. Для display-only helper это не money-moving mutation, но он влияет на wallet balances, admin wallets, deal rows и invoice snippets, где оператор принимает решения по видимым числам.
+
+Риск: поврежденный backend/mock/provider payload мог выглядеть как валидная сумма другого масштаба. Особенно неприятно в местах, где `parseDecimal(...) > 0` решает, показывать ли баланс/оплаченную часть.
+
+Исправление: string branch теперь принимает только plain signed decimal без exponent/hex/non-finite tokens. JSON numbers остаются валидными, если они finite; malformed strings fallback-ятся в `0` как и раньше. Regression покрывает signed decimal и `1e2`/`0x10`/`Infinity`.
+
+### M-104. Deal topup invoice показывал currency на metadata rows и ambiguous paid total
+
+Ссылки: `frontend/src/pages/deals/DealDetailPage.tsx`, regression `frontend/src/pages/deals/DealDetailPage.test.tsx`.
+
+`TopupInvoiceRow` всегда дописывал `currency`, поэтому provider row выглядел как `CryptoBot USD`, а expiry row как дата с валютой. В той же секции `paid_total` проверялся через `Number(paid_total) > 0`, так что `paid_total="0x10"` открывал строку `Уже оплачено: 0x10 USD`.
+
+Риск: invoice card смешивал metadata и money rows, а malformed partial payment мог отображаться как валидная оплаченная часть. Это сбивает покупателя/оператора в pending-topup сценарии.
+
+Исправление: currency у `TopupInvoiceRow` теперь optional; provider/expiry rows не получают валюту, money rows получают. `paid_total` gate использует hardened `parseDecimal()`, поэтому ambiguous strings не показываются.
+
+### M-105. Profile rating display мог коэрсить malformed runtime value
+
+Ссылки: `frontend/src/components/domain/ProfileStatsGrid.tsx`, regression `frontend/src/components/domain/ProfileStatsGrid.test.tsx`.
+
+Profile stats grid делал `Number(user.rating) || 0`. Если runtime payload приходил строкой `0x5`/`1e1` или non-finite number, UI мог показать валидно выглядящий рейтинг либо замаскировать corruption как `0.0` при наличии reviews.
+
+Риск: рейтинг - доверительный сигнал профиля. Даже если backend обычно держит контракт, frontend не должен превращать неканоничный payload в убедительный score.
+
+Исправление: rating display теперь принимает только finite number или plain decimal string в диапазоне `0..5`; malformed/out-of-range values показывают empty rating state. Regression закрепляет `"0x5"`.
+
+### M-106. Retry-After и banner zoom оставались на prefix/exponent parsing
+
+Ссылки: `frontend/src/api/client.ts`, `frontend/src/components/BannerCropModal.tsx`, regressions `frontend/src/api/client.test.ts`, `frontend/src/components/BannerCropModal.test.tsx`.
+
+Rate-limit toast парсил `Retry-After` через `parseFloat`, поэтому header `1abc` превращался в 1 second вместо malformed fallback. Crop zoom slider тоже использовал `parseFloat`, из-за чего synthetic/programmatic `1e2` мог поставить zoom вне ожидаемого диапазона до следующей нормализации cropper-а.
+
+Риск: это не core business mutation, но оба места являются user-facing recovery controls. Rate-limit UI мог обещать неверное время повтора, а crop modal мог получить invalid/oversized zoom state при нестандартном event payload.
+
+Исправление: `Retry-After` теперь принимает strict integer seconds или HTTP-date, иначе fallback toast остается 5 seconds. Banner zoom принимает only plain decimals, clamps to `1..3`, and keeps current zoom for malformed values.
 
 ## Наблюдения без отдельного finding
 

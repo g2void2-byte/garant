@@ -43,6 +43,18 @@ function _maybeShowRateLimitToast(url: string, retryAfter: number) {
   });
 }
 
+function _parseRetryAfter(value: string | null): number {
+  const trimmed = value?.trim();
+  if (!trimmed) return Number.NaN;
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+    return Number.isSafeInteger(seconds) ? seconds : Number.NaN;
+  }
+  const dateMs = Date.parse(trimmed);
+  if (!Number.isFinite(dateMs)) return Number.NaN;
+  return Math.max(0, (dateMs - Date.now()) / 1000);
+}
+
 const baseURL = import.meta.env.VITE_API_URL || "";
 
 // Audit v3 A-4 — match on structured ``code`` fields instead of
@@ -184,9 +196,7 @@ export const api = ky.create({
         // up to the calling component — no silent retry loop, no
         // wedged spinner.
         if (err.response.status === 429) {
-          const retryAfter = parseFloat(
-            err.response.headers.get("Retry-After") ?? "",
-          );
+          const retryAfter = _parseRetryAfter(err.response.headers.get("Retry-After"));
           _maybeShowRateLimitToast(err.request.url, retryAfter);
         }
         // Item 24 — fan out a lockout event so the root app can swap

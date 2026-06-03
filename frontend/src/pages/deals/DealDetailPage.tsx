@@ -26,7 +26,7 @@ import {
   useMe,
   useReviews,
 } from "@/api/hooks";
-import { formatAmount, relativeTime } from "@/lib/format";
+import { formatAmount, parseDecimal, relativeTime } from "@/lib/format";
 import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { useToast } from "@/components/ui/Toast";
@@ -57,13 +57,13 @@ function TopupInvoiceRow({
 }: {
   label: string;
   value: string | number;
-  currency: string;
+  currency?: string;
   strong?: boolean;
 }) {
   return (
     <div className={"flex items-center justify-between " + (strong ? "font-semibold" : "")}>
       <span>{label}</span>
-      <span>{value} {currency}</span>
+      <span>{value}{currency ? ` ${currency}` : ""}</span>
     </div>
   );
 }
@@ -335,13 +335,13 @@ export default function DealDetailPage() {
                   </div>
                   {topupInvoice && (
                     <div className="space-y-2">
-                      <TopupInvoiceRow label="Провайдер" value={topupInvoice.provider === "crystalpay" ? "Crystal Pay" : "CryptoBot"} currency={topupInvoice.currency_code} />
-                      {topupInvoice.paid_total && Number(topupInvoice.paid_total) > 0 && (
+                      <TopupInvoiceRow label="Провайдер" value={topupInvoice.provider === "crystalpay" ? "Crystal Pay" : "CryptoBot"} />
+                      {topupInvoice.paid_total && parseDecimal(topupInvoice.paid_total) > 0 && (
                         <TopupInvoiceRow label="Уже оплачено" value={topupInvoice.paid_total} currency={topupInvoice.currency_code} />
                       )}
                       <TopupInvoiceRow label="К оплате сейчас" value={topupInvoice.total} currency={topupInvoice.currency_code} strong />
                       {topupInvoice.expires_at && (
-                        <TopupInvoiceRow label="Истекает" value={new Date(topupInvoice.expires_at).toLocaleString()} currency={topupInvoice.currency_code} />
+                        <TopupInvoiceRow label="Истекает" value={new Date(topupInvoice.expires_at).toLocaleString()} />
                       )}
                     </div>
                   )}

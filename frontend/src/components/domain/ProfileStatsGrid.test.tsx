@@ -45,6 +45,15 @@ describe("<ProfileStatsGrid />", () => {
     expect(screen.queryByText(/\(0\)/)).not.toBeInTheDocument();
   });
 
+  it("does not coerce malformed rating strings into display ratings", () => {
+    render(
+      <ProfileStatsGrid
+        user={makeUser({ rating: "0x5" as unknown as number, reviews_count: 0 })}
+      />,
+    );
+    expect(screen.queryByText("5.0")).not.toBeInTheDocument();
+  });
+
   it("shows 'rating (count)' once at least one review exists", () => {
     render(<ProfileStatsGrid user={makeUser({ rating: 4.2, reviews_count: 12 })} />);
     expect(screen.getByText("4.2 (12)")).toBeInTheDocument();

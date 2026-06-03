@@ -203,6 +203,29 @@ describe("api ky client — beforeError", () => {
     await expect(api.get("api/me").json()).rejects.toBeInstanceOf(HTTPError);
     expect(pinState.cleared).toBe(false);
   });
+
+  it("does not parse malformed Retry-After prefixes as seconds", async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ detail: "limited" }), {
+        status: 429,
+        headers: { "content-type": "application/json", "Retry-After": "1abc" },
+      }),
+    );
+    const toasts: Array<{ title: string }> = [];
+    const onToast = (event: Event) => {
+      toasts.push((event as CustomEvent<{ title: string }>).detail);
+    };
+    window.addEventListener("garant:toast", onToast);
+
+    try {
+      const { api } = await import("./client");
+      await expect(api.get("api/limited").json()).rejects.toBeInstanceOf(HTTPError);
+    } finally {
+      window.removeEventListener("garant:toast", onToast);
+    }
+
+    expect(toasts[0]?.title).toMatch(/5/);
+  });
 });
 
 describe("apiUrl", () => {
