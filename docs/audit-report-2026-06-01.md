@@ -93,6 +93,7 @@
 - M-121: StatsBadge count-up no longer suppresses the React hooks dependency lint rule and restarts animations from the latest displayed value.
 - M-122: admin deposit `pay_url` no longer renders a raw `href`; it is gated through the shared safe external-link predicate and payment opener.
 - M-123: deal chat attachment URLs are validated before `href`/`img` use, and live-notification payloads reject malformed media URLs before cache insertion.
+- M-124: admin currency create, wallet-adjust and USD-rate schemas now share the strict currency-code contract and OpenAPI pattern used by user money endpoints.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1387,6 +1388,16 @@ Deal chat attachments used server-provided `m.url` directly as both anchor `href
 Risk: a malformed live frame or API drift could place a non-media URL into the deal-message cache and render it as a clickable attachment or image source. That is a smaller surface than public free-form links, but it sits in a deal/chat workflow where users expect file previews to be trusted artifacts.
 
 Fix: added `safeMediaUrl()`, which accepts only same-origin relative `/media/...` paths and strips fragments while preserving signed query params. Deal chat now validates every attachment URL before rendering `href`/`img`; unsafe entries render only the existing broken-preview placeholder. The live-notification guard also requires a safe media URL before appending incoming deal messages to cache.
+
+### M-124. Admin currency write paths accepted malformed currency codes
+
+Links: `backend/app/schemas.py`, `frontend/openapi.json`, regression `tests/unit/test_admin_currency_schema.py`.
+
+Public wallet/deal currency inputs already used the shared `CurrencyCodeStr` contract: trim, uppercase, ASCII alphanumeric, `<=16`. Admin currency creation, manual wallet adjustment, and USD-rate upsert still had local validators that only trimmed/uppercased and checked length, so values like `USD T`, `USD-T`, or unicode lookalikes passed schema parsing.
+
+Risk: the taxonomy endpoint could create malformed `Currency.code` rows from an admin payload, while wallet adjust/rate endpoints turned the same malformed shape into late 404s. That left the admin money contract wider than the user money contract and kept OpenAPI from documenting the actual code pattern for generated clients.
+
+Fix: `AdminCurrencyUpsertIn.code`, `AdminWalletAdjustIn.currency_code`, and `AdminCurrencyRateUpsertIn.currency_code` now use `CurrencyCodeStr` plus the shared validator. The committed OpenAPI snapshot now exposes `minLength`, `maxLength`, and `^[A-Z0-9]+$` for those admin payload fields, and schema regression coverage checks normalization and rejects spaces, punctuation, unicode, empty strings, and overlong codes.
 
 ## Наблюдения без отдельного finding
 

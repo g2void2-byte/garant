@@ -1371,6 +1371,9 @@
       "AdminCurrencyRateUpsertIn": {
         "properties": {
           "currency_code": {
+            "maxLength": 16,
+            "minLength": 1,
+            "pattern": "^[A-Z0-9]+$",
             "title": "Currency Code",
             "type": "string"
           },
@@ -1425,6 +1428,9 @@
             "title": "Address Regex"
           },
           "code": {
+            "maxLength": 16,
+            "minLength": 1,
+            "pattern": "^[A-Z0-9]+$",
             "title": "Code",
             "type": "string"
           },
@@ -3776,6 +3782,9 @@
             "title": "Amount"
           },
           "currency_code": {
+            "maxLength": 16,
+            "minLength": 1,
+            "pattern": "^[A-Z0-9]+$",
             "title": "Currency Code",
             "type": "string"
           },

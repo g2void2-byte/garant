@@ -2121,17 +2121,14 @@ class AdminWalletAdjustIn(BaseModel):
     корректирует баланс как я укажу").
     """
 
-    currency_code: str
+    currency_code: CurrencyCodeStr
     amount: Decimal
     reason: str | None = None
 
     @field_validator("currency_code")
     @classmethod
     def _code_ok(cls, v: str) -> str:
-        v = (v or "").strip().upper()
-        if not v or len(v) > 16:
-            raise ValueError("Некорректный код валюты")
-        return v
+        return _validate_currency_code(v)
 
     @field_validator("amount")
     @classmethod
@@ -2168,7 +2165,7 @@ class AdminCurrencyRateOut(BaseModel):
 
 
 class AdminCurrencyRateUpsertIn(BaseModel):
-    currency_code: str
+    currency_code: CurrencyCodeStr
     usd_rate: Decimal
     source: str = "manual"
     observed_at: datetime | None = None
@@ -2176,10 +2173,7 @@ class AdminCurrencyRateUpsertIn(BaseModel):
     @field_validator("currency_code")
     @classmethod
     def _rate_code_ok(cls, v: str) -> str:
-        v = (v or "").strip().upper()
-        if not v or len(v) > 16:
-            raise ValueError("Invalid currency code")
-        return v
+        return _validate_currency_code(v)
 
     @field_validator("usd_rate")
     @classmethod
@@ -2473,7 +2467,7 @@ class AdminCurrencyOut(BaseModel):
 
 
 class AdminCurrencyUpsertIn(BaseModel):
-    code: str
+    code: CurrencyCodeStr
     name: str | None = None
     network: str | None = None
     icon_url: str | None = None
@@ -2511,10 +2505,7 @@ class AdminCurrencyUpsertIn(BaseModel):
     @field_validator("code")
     @classmethod
     def _code_ok(cls, v: str) -> str:
-        v = (v or "").strip().upper()
-        if not v or len(v) > 16:
-            raise ValueError("Некорректный код валюты")
-        return v
+        return _validate_currency_code(v)
 
     @field_validator("name")
     @classmethod

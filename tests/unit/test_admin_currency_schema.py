@@ -3,7 +3,52 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from backend.app.schemas import AdminCurrencyUpsertIn
+from backend.app.schemas import (
+    MAX_CURRENCY_CODE_LEN,
+    AdminCurrencyRateUpsertIn,
+    AdminCurrencyUpsertIn,
+    AdminWalletAdjustIn,
+)
+
+
+@pytest.mark.parametrize(
+    "model,kwargs,field",
+    [
+        (AdminCurrencyUpsertIn, {}, "code"),
+        (AdminWalletAdjustIn, {"amount": 1}, "currency_code"),
+        (AdminCurrencyRateUpsertIn, {"usd_rate": 1}, "currency_code"),
+    ],
+)
+def test_admin_currency_code_fields_trim_and_uppercase(
+    model: type,
+    kwargs: dict[str, object],
+    field: str,
+) -> None:
+    body = model(**{field: " usdt ", **kwargs})
+
+    assert getattr(body, field) == "USDT"
+
+
+@pytest.mark.parametrize(
+    "model,kwargs,field",
+    [
+        (AdminCurrencyUpsertIn, {}, "code"),
+        (AdminWalletAdjustIn, {"amount": 1}, "currency_code"),
+        (AdminCurrencyRateUpsertIn, {"usd_rate": 1}, "currency_code"),
+    ],
+)
+@pytest.mark.parametrize(
+    "bad",
+    ["", "   ", "USD T", "USD-T", "\u044esd", "X" * (MAX_CURRENCY_CODE_LEN + 1)],
+)
+def test_admin_currency_code_fields_reject_invalid_values(
+    model: type,
+    kwargs: dict[str, object],
+    field: str,
+    bad: str,
+) -> None:
+    with pytest.raises(ValidationError):
+        model(**{field: bad, **kwargs})
 
 
 def test_admin_currency_integer_fields_accept_explicit_ints_or_none() -> None:
