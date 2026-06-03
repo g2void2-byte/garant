@@ -7,6 +7,7 @@ import type { DealDto, ReviewDto, UserCardDto } from "@/api/types";
 const dealState = vi.hoisted(() => ({
   data: undefined as DealDto | undefined,
   isLoading: false,
+  lastId: undefined as number | undefined,
 }));
 const meState = vi.hoisted(() => ({ data: undefined as UserCardDto | undefined }));
 const reviewsState = vi.hoisted(() => ({ data: undefined as ReviewDto[] | undefined }));
@@ -25,7 +26,10 @@ const cancelTopupState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/api/hooks", () => ({
-  useDeal: () => dealState,
+  useDeal: (id: number | undefined) => {
+    dealState.lastId = id;
+    return dealState;
+  },
   useMe: () => meState,
   useReviews: (username: string | undefined, params: unknown) => {
     reviewsCall.username = username;
@@ -124,7 +128,7 @@ function makeReview(overrides: Partial<ReviewDto> = {}): ReviewDto {
   };
 }
 
-function renderAt(id: number) {
+function renderAt(id: number | string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -142,6 +146,7 @@ function renderAt(id: number) {
 beforeEach(() => {
   dealState.data = undefined;
   dealState.isLoading = false;
+  dealState.lastId = undefined;
   meState.data = makeUser({ username: "alice" });
   reviewsState.data = [];
   reviewsCall.username = undefined;
@@ -151,6 +156,12 @@ beforeEach(() => {
 });
 
 describe("<DealDetailPage />", () => {
+  it("rejects ambiguous route ids before querying the deal detail", () => {
+    renderAt("1e2");
+    expect(dealState.lastId).toBeUndefined();
+    expect(screen.getByText("Сделка не найдена")).toBeInTheDocument();
+  });
+
   it("renders skeletons while the deal is loading", () => {
     dealState.isLoading = true;
     const { container } = renderAt(42);

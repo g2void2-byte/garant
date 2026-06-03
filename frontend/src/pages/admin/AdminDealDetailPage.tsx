@@ -48,6 +48,7 @@ import type {
 import { api } from "@/api/client";
 import { haptic } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 
 const STATUS_LABEL: Record<string, string> = {
   cancelled: "Отменена",
@@ -93,17 +94,15 @@ const TERMINAL = new Set([
  */
 export default function AdminDealDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const dealId = Number(id);
+  const dealId = parsePositiveIntRouteParam(id);
   const navigate = useNavigate();
   const { data: me } = useMe();
-  const { data: deal, isLoading } = useAdminDeal(
-    Number.isFinite(dealId) ? dealId : undefined,
-  );
+  const { data: deal, isLoading } = useAdminDeal(dealId);
 
   const __guard = useAdminRedirect({ allowArbiter: true });
   if (!__guard.shouldRender) return null;
 
-  if (!Number.isFinite(dealId)) {
+  if (!dealId) {
     return (
       <Page showBack onBack={() => navigate(-1)}>
         <AdminHeader title="Сделка" />

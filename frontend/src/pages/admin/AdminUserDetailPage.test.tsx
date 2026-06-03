@@ -17,6 +17,7 @@ import type { AdminUserDetailDto } from "@/api/types";
 
 const mockState = vi.hoisted(() => ({
   user: undefined as AdminUserDetailDto | undefined,
+  lastUserId: undefined as number | undefined,
   loading: false,
   me: { id: 999, display_name: "Admin", username: "admin" } as
     | { id: number }
@@ -62,7 +63,10 @@ const mockState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
-  useAdminUser: () => ({ data: mockState.user, isLoading: mockState.loading }),
+  useAdminUser: (userId: number | undefined) => {
+    mockState.lastUserId = userId;
+    return { data: mockState.user, isLoading: mockState.loading };
+  },
   useAdminBanUser: () => mockState.ban,
   useAdminUnbanUser: () => mockState.unban,
   useAdminFreezeUser: () => mockState.freeze,
@@ -166,6 +170,7 @@ function makeUser(
 
 beforeEach(() => {
   mockState.user = undefined;
+  mockState.lastUserId = undefined;
   mockState.loading = false;
   mockState.me = { id: 999 } as { id: number };
   mockState.shouldRender = true;
@@ -188,9 +193,19 @@ describe("<AdminUserDetailPage />", () => {
     expect(screen.queryByText("Пользователь")).not.toBeInTheDocument();
   });
 
-  it("renders 'Неверный ID' when the :id param is not numeric", () => {
-    renderPage("abc");
-    expect(screen.getByText("Неверный ID.")).toBeInTheDocument();
+  it.each(["abc", "0", "1e2", "0x5"])(
+    "renders 'Неверный ID' for invalid :id=%s without querying detail",
+    (id) => {
+      renderPage(id);
+      expect(mockState.lastUserId).toBeUndefined();
+      expect(screen.getByText("Неверный ID.")).toBeInTheDocument();
+    },
+  );
+
+  it("passes canonical route ids to useAdminUser", () => {
+    mockState.user = makeUser();
+    renderPage("5");
+    expect(mockState.lastUserId).toBe(5);
   });
 
   it("renders skeletons while loading", () => {

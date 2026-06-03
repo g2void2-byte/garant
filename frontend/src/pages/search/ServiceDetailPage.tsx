@@ -22,13 +22,14 @@ import type { ServiceCommentDto, ServiceDetailDto } from "@/api/types";
 import { dealsLabel, formatMoney, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { openTelegramLink } from "@/lib/tg";
+import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 
 const SERVICE_COMMENTS_PAGE_SIZE = 50;
 
 export default function ServiceDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const serviceId = id ? Number(id) : undefined;
-  const { data: service, isLoading } = useServiceDetail(serviceId);
+  const serviceId = parsePositiveIntRouteParam(id);
+  const { data: service, isError, isLoading } = useServiceDetail(serviceId);
   const firstCommentsParams = useMemo(
     () => ({ limit: SERVICE_COMMENTS_PAGE_SIZE, offset: 0 }),
     [],
@@ -69,7 +70,21 @@ export default function ServiceDetailPage() {
     }
   };
 
-  if (isLoading || !service || !serviceId) {
+  if (!serviceId || isError) {
+    return (
+      <Page showBack>
+        <Header title="Услуга" />
+        <div className="px-4">
+          <EmptyState
+            title="Услуга не найдена"
+            description="Проверьте ссылку или вернитесь к каталогу."
+          />
+        </div>
+      </Page>
+    );
+  }
+
+  if (isLoading) {
     return (
       <Page showBack>
         <Header title="Услуга" />
@@ -77,6 +92,17 @@ export default function ServiceDetailPage() {
           <Skeleton className="h-32" />
           <Skeleton className="h-20" />
           <Skeleton className="h-40" />
+        </div>
+      </Page>
+    );
+  }
+
+  if (!service) {
+    return (
+      <Page showBack>
+        <Header title="Услуга" />
+        <div className="px-4">
+          <EmptyState title="Услуга не найдена" />
         </div>
       </Page>
     );

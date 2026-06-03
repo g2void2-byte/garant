@@ -29,6 +29,7 @@ type MessageDto = {
 
 const mockState = vi.hoisted(() => ({
   deal: undefined as AdminDealDetailDto | undefined,
+  lastDealId: undefined as number | undefined,
   loading: false,
   me: { id: 999, is_admin: true } as
     | { id: number; is_admin: boolean }
@@ -50,7 +51,10 @@ const mockState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
-  useAdminDeal: () => ({ data: mockState.deal, isLoading: mockState.loading }),
+  useAdminDeal: (dealId: number | undefined) => {
+    mockState.lastDealId = dealId;
+    return { data: mockState.deal, isLoading: mockState.loading };
+  },
   useAdminForceRelease: () => mockState.release,
   useAdminForceRefund: () => mockState.refund,
   useAdminSplitDeal: () => mockState.split,
@@ -195,6 +199,7 @@ function getLoadOlderButton(): HTMLElement | undefined {
 
 beforeEach(() => {
   mockState.deal = undefined;
+  mockState.lastDealId = undefined;
   mockState.loading = false;
   mockState.me = { id: 999, is_admin: true };
   mockState.shouldRender = true;
@@ -231,9 +236,19 @@ describe("<AdminDealDetailPage />", () => {
     expect(mockState.lastRedirectOpts).toEqual({ allowArbiter: true });
   });
 
-  it("renders 'Неверный ID' when :id is not numeric", () => {
-    renderPage("xyz");
-    expect(screen.getByText("Неверный ID.")).toBeInTheDocument();
+  it.each(["xyz", "0", "1e2", "0x10"])(
+    "renders 'Неверный ID' for invalid :id=%s without querying detail",
+    (id) => {
+      renderPage(id);
+      expect(mockState.lastDealId).toBeUndefined();
+      expect(screen.getByText("Неверный ID.")).toBeInTheDocument();
+    },
+  );
+
+  it("passes canonical route ids to useAdminDeal", () => {
+    mockState.deal = makeDeal();
+    renderPage("10");
+    expect(mockState.lastDealId).toBe(10);
   });
 
   it("renders status banner with description + status label", () => {

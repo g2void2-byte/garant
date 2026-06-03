@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import { qk } from "./queryKeys";
+import { isPositiveSafeInteger } from "@/lib/routeParams";
 import type {
   AccountTransferConfirmDto,
   AccountTransferStartDto,
@@ -257,7 +258,7 @@ export function useServiceDetail(id: number | undefined) {
   return useQuery<ServiceDetailDto>({
     queryKey: qk.service.detail(id),
     queryFn: () => api.get(`api/services/${id}`).json(),
-    enabled: !!id,
+    enabled: isPositiveSafeInteger(id),
     staleTime: 30_000,
   });
 }
@@ -284,7 +285,7 @@ export function useServiceComments(
   return useQuery<ServiceCommentDto[]>({
     queryKey: qk.service.comments(id, params),
     queryFn: () => api.get(`api/services/${id}/comments`, { searchParams }).json(),
-    enabled: !!id,
+    enabled: isPositiveSafeInteger(id),
     staleTime: 15_000,
   });
 }
@@ -407,7 +408,7 @@ export function useDeal(id: number | undefined) {
   return useQuery<DealDto>({
     queryKey: qk.deal.detail(id),
     queryFn: () => api.get(`api/deals/${id}`).json(),
-    enabled: !!id,
+    enabled: isPositiveSafeInteger(id),
     // Item 22 — fallback poll for active deals so the UI eventually
     // catches a missed ``deal.updated`` WS frame (Telegram WebView
     // suspended, transient socket close, etc.). Terminal deals stop
@@ -458,7 +459,7 @@ export function useDealMessages(dealId: number | undefined) {
           searchParams: { limit: DEAL_MESSAGE_PAGE_SIZE },
         })
         .json(),
-    enabled: !!dealId,
+    enabled: isPositiveSafeInteger(dealId),
     staleTime: 10_000,
   });
 }
@@ -651,7 +652,7 @@ export function useNotification(id: number | undefined) {
   return useQuery<NotificationDto>({
     queryKey: qk.notifications.detail(id),
     queryFn: () => api.get(`api/notifications/${id}`).json(),
-    enabled: typeof id === "number" && Number.isFinite(id),
+    enabled: isPositiveSafeInteger(id),
   });
 }
 
@@ -987,7 +988,7 @@ export function useWalletDeposit(id: number | undefined) {
   return useQuery<WalletDepositDto>({
     queryKey: qk.wallet.deposit(id),
     queryFn: () => api.get(`api/wallet/deposits/${id}`).json(),
-    enabled: !!id,
+    enabled: isPositiveSafeInteger(id),
     refetchInterval: (q) => (q.state.data?.status === "pending" ? 5_000 : false),
   });
 }

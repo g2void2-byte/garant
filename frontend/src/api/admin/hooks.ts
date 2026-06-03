@@ -9,6 +9,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api } from "../client";
 import { qk } from "../queryKeys";
+import { isPositiveSafeInteger } from "@/lib/routeParams";
 import type {
   Admin2faConfirmBody,
   Admin2faSetupDto,
@@ -100,7 +101,7 @@ export function useAdminUser(userId: number | undefined) {
   return useQuery<AdminUserDetailDto>({
     queryKey: qk.admin.user.detail(userId),
     queryFn: () => api.get(`api/admin/users/${userId}`).json(),
-    enabled: typeof userId === "number" && Number.isFinite(userId),
+    enabled: isPositiveSafeInteger(userId),
   });
 }
 
@@ -220,7 +221,7 @@ export function useAdminDeal(dealId: number | undefined) {
   return useQuery<AdminDealDetailDto>({
     queryKey: qk.admin.deal.detail(dealId),
     queryFn: () => api.get(`api/admin/deals/${dealId}`).json(),
-    enabled: typeof dealId === "number" && Number.isFinite(dealId),
+    enabled: isPositiveSafeInteger(dealId),
   });
 }
 
@@ -361,7 +362,7 @@ export function useAdminUserServices(
       sp.set("page_size", String(params.page_size ?? 20));
       return api.get(`api/admin/users/${userId}/services`, { searchParams: sp }).json();
     },
-    enabled: typeof userId === "number" && Number.isFinite(userId),
+    enabled: isPositiveSafeInteger(userId),
     placeholderData: (prev) => prev,
   });
 }
@@ -431,7 +432,7 @@ export function useAdminUserReviews(
       sp.set("page_size", String(params.page_size ?? 20));
       return api.get(`api/admin/users/${userId}/reviews`, { searchParams: sp }).json();
     },
-    enabled: typeof userId === "number" && Number.isFinite(userId),
+    enabled: isPositiveSafeInteger(userId),
     placeholderData: (prev) => prev,
   });
 }
@@ -508,7 +509,7 @@ export function useAdminUserComments(
       sp.set("page_size", String(params.page_size ?? 20));
       return api.get(`api/admin/users/${userId}/comments`, { searchParams: sp }).json();
     },
-    enabled: typeof userId === "number" && Number.isFinite(userId),
+    enabled: isPositiveSafeInteger(userId),
     placeholderData: (prev) => prev,
   });
 }
@@ -583,7 +584,7 @@ export function useAdminUserWallet(userId: number | undefined) {
   return useQuery<AdminUserBalanceDto[]>({
     queryKey: qk.admin.userWallet.forUser(userId),
     queryFn: () => api.get(`api/admin/wallets/${userId}`).json(),
-    enabled: typeof userId === "number" && Number.isFinite(userId),
+    enabled: isPositiveSafeInteger(userId),
   });
 }
 

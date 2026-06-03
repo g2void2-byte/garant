@@ -13,6 +13,7 @@ import {
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Sheet } from "@/components/ui/Sheet";
 import { Textarea } from "@/components/ui/Textarea";
@@ -30,6 +31,7 @@ import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
+import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   cancelled: { text: "Отменена", cls: "text-danger" },
@@ -69,8 +71,8 @@ function TopupInvoiceRow({
 export default function DealDetailPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const dealId = Number(id);
-  const { data: deal, isLoading } = useDeal(dealId);
+  const dealId = parsePositiveIntRouteParam(id);
+  const { data: deal, isError, isLoading } = useDeal(dealId);
   const { data: me } = useMe();
   const toast = useToast();
 
@@ -105,13 +107,34 @@ export default function DealDetailPage() {
   );
   const createReview = useCreateReview();
 
-  if (isLoading || !deal) {
+  if (!dealId || isError) {
+    return (
+      <Page showBack>
+        <Header title="Сделка" />
+        <EmptyState
+          title="Сделка не найдена"
+          description="Проверьте ссылку или вернитесь к списку сделок."
+        />
+      </Page>
+    );
+  }
+
+  if (isLoading) {
     return (
       <Page showBack>
         <div className="p-4 space-y-3">
           <Skeleton className="h-12" />
           <Skeleton className="h-40" />
         </div>
+      </Page>
+    );
+  }
+
+  if (!deal) {
+    return (
+      <Page showBack>
+        <Header title="Сделка" />
+        <EmptyState title="Сделка не найдена" />
       </Page>
     );
   }

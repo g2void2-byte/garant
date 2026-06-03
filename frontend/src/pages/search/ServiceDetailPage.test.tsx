@@ -12,6 +12,7 @@ import type {
 const serviceState = vi.hoisted(() => ({
   data: undefined as ServiceDetailDto | undefined,
   isLoading: false,
+  lastId: undefined as number | undefined,
 }));
 const commentsState = vi.hoisted(() => ({
   data: undefined as ServiceCommentDto[] | undefined,
@@ -31,7 +32,10 @@ vi.mock("@/api/hooks", () => ({
     if (params.offset !== undefined) searchParams.offset = String(params.offset);
     return searchParams;
   },
-  useServiceDetail: () => serviceState,
+  useServiceDetail: (id: number | undefined) => {
+    serviceState.lastId = id;
+    return serviceState;
+  },
   useServiceComments: (_id: number | undefined, params: unknown) => {
     commentsState.lastParams = params;
     return { data: commentsState.data };
@@ -135,7 +139,7 @@ function makeComment(id: number, overrides: Partial<ServiceCommentDto> = {}): Se
   };
 }
 
-function renderAt(id: number) {
+function renderAt(id: number | string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -152,12 +156,19 @@ beforeEach(() => {
   apiGetMock.mockReset();
   serviceState.data = undefined;
   serviceState.isLoading = false;
+  serviceState.lastId = undefined;
   commentsState.data = undefined;
   commentsState.lastParams = undefined;
   meState.data = makeUser();
 });
 
 describe("<ServiceDetailPage />", () => {
+  it("rejects ambiguous route ids before querying the service detail", () => {
+    renderAt("1e2");
+    expect(serviceState.lastId).toBeUndefined();
+    expect(screen.getByText("Услуга не найдена")).toBeInTheDocument();
+  });
+
   it("renders skeletons while loading", () => {
     serviceState.isLoading = true;
     const { container } = renderAt(7);

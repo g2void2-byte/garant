@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-90: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts и admin numeric filter guards исправлены.
+- M-50-M-92: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing и notification deal-link parsing исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1045,6 +1045,26 @@ Admin deals page напрямую парсил `status`, `currency`, `min_amount
 Риск: dashboard/deep-link с устаревшим или повреждённым URL ломал админский список сделок. Оператор видел не нормальную первую страницу с очищенными фильтрами, а ошибочный запрос; active chips тоже могли показывать технический `NaN` как будто это реальный фильтр.
 
 Исправление: URL params теперь проходят allow-list для filterable statuses, currency pattern, non-negative decimal parsing и positive page parsing; malformed numbers удаляются при update/apply. `AdminListDealsQuery.status` сужен до filterable statuses без deprecated `pending_payment`.
+
+### M-91. Detail routes принимали ambiguous numeric ids через `Number(id)`
+
+Ссылки: `frontend/src/pages/deals/DealDetailPage.tsx`, `frontend/src/pages/search/ServiceDetailPage.tsx`, `frontend/src/pages/admin/AdminDealDetailPage.tsx`, `frontend/src/pages/admin/AdminUserDetailPage.tsx`, `frontend/src/api/hooks.ts`, `frontend/src/api/admin/hooks.ts`, regression `frontend/src/lib/routeParams.test.ts`, `frontend/src/pages/deals/DealDetailPage.test.tsx`, `frontend/src/pages/search/ServiceDetailPage.test.tsx`, `frontend/src/pages/admin/AdminDealDetailPage.test.tsx`, `frontend/src/pages/admin/AdminUserDetailPage.test.tsx`.
+
+Route params detail-экранов парсились через `Number(id)`. JavaScript принимает `1e2`, `0x5`, decimal fractions, `Infinity` и пробельные формы не так, как path-инт backend. Часть хуков дополнительно считала `0`/unsafe integers допустимыми, а публичные detail pages при invalid/not-found состоянии могли бесконечно показывать skeleton.
+
+Риск: поврежденная или злонамеренная deep-link ссылка могла открыть другой объект (`/admin/users/0x5` -> user 5, `/deals/1e2` -> deal 100) либо отправить запрос с невозможным id. Для admin detail/action pages это особенно опасно: оператор мог работать не с тем объектом, который указан в URL.
+
+Исправление: добавлен общий parser canonical positive decimal safe-int route params. Public/admin deal, service, notification и user detail pages используют его вместо `Number(id)`, а data hooks включаются только для positive safe integers. Invalid/not-found public detail states теперь показывают явный empty state вместо вечного skeleton. Regression покрывает `1e2`, `0x*`, `0`, non-numeric и happy canonical ids.
+
+### M-92. Notification detail строил deal CTA из ambiguous `deal_id`
+
+Ссылки: `frontend/src/pages/notifications/NotificationDetailPage.tsx`, `frontend/src/lib/routeParams.ts`, regression `frontend/src/pages/notifications/NotificationDetailPage.test.tsx`.
+
+Notification detail вычислял `dealRef` через `Number(payload.deal_id)` и `Number(match[1])`. Payload вроде `{deal_id: "0x2"}` превращался в deal 2, а body-reference `#0` считался валидной ссылкой-кандидатом.
+
+Риск: испорченное уведомление или stale producer мог показать CTA на неправильную сделку. Пользователь кликает trusted notification UI, но переходит не на тот объект.
+
+Исправление: notification payload/body refs используют тот же positive safe-int parser; ambiguous string ids, ноль и unsafe integers отбрасываются. Regression проверяет отсутствие CTA для `deal_id="0x2"` и `#0`, а unread notification still marks read on successful load.
 
 ## Наблюдения без отдельного finding
 

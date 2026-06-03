@@ -44,6 +44,7 @@ import { parseDecimal } from "@/lib/format";
 import { haptic } from "@/lib/tg";
 import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 
 /**
  * Continental admin user detail screen.
@@ -60,17 +61,15 @@ import { useAdminRedirect } from "@/hooks/useAdminRedirect";
  */
 export default function AdminUserDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const userId = Number(id);
+  const userId = parsePositiveIntRouteParam(id);
   const navigate = useNavigate();
   const { data: me } = useMe();
-  const { data: user, isLoading } = useAdminUser(
-    Number.isFinite(userId) ? userId : undefined,
-  );
+  const { data: user, isLoading } = useAdminUser(userId);
 
   const __guard = useAdminRedirect();
   if (!__guard.shouldRender) return null;
 
-  if (!Number.isFinite(userId)) {
+  if (!userId) {
     return (
       <Page showBack onBack={() => navigate(-1)}>
         <AdminHeader title="Пользователь" />
