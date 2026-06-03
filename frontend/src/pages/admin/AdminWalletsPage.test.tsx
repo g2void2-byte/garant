@@ -215,6 +215,18 @@ describe("<AdminWalletsPage />", () => {
     expect(screen.getByText("Alice")).toBeInTheDocument();
   });
 
+  it("renders missing wallet username as a non-handle label", () => {
+    mockState.list = {
+      items: [{ ...makeUserBalance(), username: null }],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/)).toBeInTheDocument();
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
   it("shows every non-zero balance in the adjust sheet when the row preview is capped", async () => {
     const base = makeUserBalance();
     const balances = [

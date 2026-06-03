@@ -119,6 +119,13 @@ describe("<AdminWithdrawalsPage />", () => {
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 
+  it("renders missing withdrawal username as a non-handle label", () => {
+    mockState.list = { items: [makeItem({ username: null })], counters: {} };
+    renderPage();
+    expect(screen.getByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/)).toBeInTheDocument();
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
   it("switches status when a different tab is clicked", async () => {
     mockState.list = { items: [], counters: {} };
     const user = userEvent.setup();

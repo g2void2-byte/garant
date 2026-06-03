@@ -138,6 +138,18 @@ describe("<AdminDepositsPage />", () => {
     expect(link).toHaveAttribute("href", "https://example.com/pay/inv-1");
   });
 
+  it("renders missing depositor username as a non-handle label", () => {
+    mockState.list = {
+      items: [makeDeposit({ username: null })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/)).toBeInTheDocument();
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
   it("'Зачислить' only appears on pending rows and fires mark-paid", async () => {
     mockState.list = {
       items: [

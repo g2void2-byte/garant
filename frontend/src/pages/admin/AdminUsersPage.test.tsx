@@ -154,6 +154,18 @@ describe("<AdminUsersPage />", () => {
     expect(screen.getByText("Заморожен")).toBeInTheDocument();
   });
 
+  it("renders missing usernames as non-handle labels", () => {
+    mockState.list = {
+      items: [makeUser({ username: null })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+    expect(screen.getByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/)).toBeInTheDocument();
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
   it("clicking a user row navigates to /admin/users/<id>", async () => {
     mockState.list = {
       items: [makeUser({ id: 99 })],

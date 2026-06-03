@@ -440,6 +440,13 @@ describe("<ReviewsSection /> · Новый отзыв sheet", () => {
     },
   );
 
+  it("renders missing review usernames as non-handle labels", () => {
+    mockState.reviews = [makeReview({ author_username: null, target_username: null })];
+    renderSection(42);
+    expect(screen.getAllByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
   it("blocks rating 0 before updating a review because the backend accepts 1..5", async () => {
     const user = userEvent.setup();
     mockState.reviews = [makeReview()];

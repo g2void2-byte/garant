@@ -19,6 +19,7 @@ import {
 } from "@/api/admin/hooks";
 import { parseDecimal } from "@/lib/format";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { formatAdminUsername } from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "all
 // statuses"; the legacy ``"any"`` string is gone.
@@ -92,7 +93,7 @@ export default function AdminDepositsPage() {
                     {parseDecimal(d.amount).toFixed(2)} {d.currency_code}
                   </div>
                   <div className="text-xs text-text-muted truncate">
-                    @{d.username ?? "—"} ({d.display_name}) · #{d.id}
+                    {formatAdminUsername(d.username)} ({d.display_name}) · #{d.id}
                   </div>
                   <div className="text-[11px] text-text-muted mt-1">
                     {new Date(d.created_at).toLocaleString()}

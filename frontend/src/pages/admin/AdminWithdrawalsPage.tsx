@@ -12,6 +12,7 @@ import {
 } from "@/api/admin/hooks";
 import { parseDecimal } from "@/lib/format";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { formatAdminUsername } from "./format";
 
 const STATUSES = ["pending", "approved", "rejected", "sent"] as const;
 type Status = (typeof STATUSES)[number];
@@ -90,7 +91,7 @@ export default function AdminWithdrawalsPage() {
                     {parseDecimal(w.amount).toFixed(8)} {w.currency_code}
                   </div>
                   <div className="text-xs text-text-muted">
-                    @{w.username ?? "—"} ({w.display_name}) · #{w.id}
+                    {formatAdminUsername(w.username)} ({w.display_name}) · #{w.id}
                   </div>
                   <div className="text-[11px] text-text-muted">
                     {new Date(w.created_at).toLocaleString()}

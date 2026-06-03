@@ -30,6 +30,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { confirmDialog } from "@/lib/dialog";
 import { UserPicker } from "@/components/domain/UserPicker";
+import { formatAdminUsername } from "./format";
 import {
   useAdminCreateReview,
   useAdminDeleteComment,
@@ -434,7 +435,7 @@ export function ReviewsSection({ userId }: SectionProps) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] uppercase tracking-wide text-text-muted">
-                      @{r.author_username ?? "—"} → @{r.target_username ?? "—"} · {r.rating}/5
+                      {formatAdminUsername(r.author_username)} → {formatAdminUsername(r.target_username)} · {r.rating}/5
                     </div>
                     <div className="mt-1 text-sm">{r.text}</div>
                   </div>

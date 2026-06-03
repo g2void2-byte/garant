@@ -268,6 +268,17 @@ describe("<AdminDealDetailPage />", () => {
     expect(screen.getByText("$150.00")).toBeInTheDocument();
   });
 
+  it("renders missing snapshot and chat usernames as non-handle labels", () => {
+    mockState.deal = makeDeal({
+      buyer: makeSnap({ user_id: 1, username: null, display_name: "Buyer" }),
+      seller: makeSnap({ user_id: 2, username: null, display_name: "Seller" }),
+    });
+    mockState.messages = [makeMessage({ sender_username: null })];
+    renderPage();
+    expect(screen.getAllByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
   it("shows arbitration-danger banner when status=arbitration with reason", () => {
     mockState.deal = makeDeal({
       status: "arbitration",

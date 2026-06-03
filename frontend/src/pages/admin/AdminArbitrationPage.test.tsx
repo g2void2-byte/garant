@@ -160,6 +160,17 @@ describe("<AdminArbitrationPage />", () => {
     expect(hapticSpy).toHaveBeenCalledWith("light");
   });
 
+  it("renders missing party usernames as non-handle labels", () => {
+    mockState.list = {
+      items: [makeItem({ buyer_username: null, seller_username: null })],
+      counters: { new: 1, in_progress: 0, closed: 0 },
+      queue: "new",
+    };
+    renderPage();
+    expect(screen.getAllByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
   it("pagination advances beyond the first queue page and resets when tab changes", async () => {
     mockState.list = {
       items: [makeItem()],

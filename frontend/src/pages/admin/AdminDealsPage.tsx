@@ -12,6 +12,7 @@ import { parseDecimal } from "@/lib/format";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 import type { AdminDealListItemDto, AdminListDealsQuery } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { formatAdminUsername } from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "all statuses";
 // the legacy ``"any"`` string is gone from both UI state and the URL.
@@ -392,7 +393,7 @@ function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen: () => v
           <span>#{deal.id}</span>
           <span className="text-text-muted">·</span>
           <span className="text-text-muted truncate">
-            @{deal.buyer_username ?? "—"} → @{deal.seller_username ?? "—"}
+            {formatAdminUsername(deal.buyer_username)} → {formatAdminUsername(deal.seller_username)}
           </span>
         </div>
         <div className="mt-0.5 text-xs text-text-muted flex items-center gap-2 flex-wrap">

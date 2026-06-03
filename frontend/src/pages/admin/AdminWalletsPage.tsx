@@ -26,6 +26,7 @@ import {
   parsePositiveDecimalInput,
   parseSignedNonZeroDecimalInput,
 } from "@/lib/formNumbers";
+import { formatAdminUsername } from "./format";
 
 const PAGE_SIZE = 50;
 
@@ -109,7 +110,7 @@ export default function AdminWalletsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate">{it.display_name}</div>
                   <div className="text-xs text-text-muted truncate">
-                    @{it.username ?? "—"}
+                    {formatAdminUsername(it.username)}
                   </div>
                 </div>
                 <Wallet size={16} className="text-text-muted" />

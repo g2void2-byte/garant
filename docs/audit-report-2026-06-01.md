@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 73 файла, 670 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 74 файла, 680 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -87,6 +87,7 @@
 - M-115: deal media/message DTO вынесены в общий contract surface и приведены к OpenAPI; live-notification runtime guard больше не принимает attachment без обязательного `created_at`.
 - M-116: admin audit/analytics UI больше не маскирует missing username как `@7`, `@system` или `@—`.
 - M-117: frontend currency/admin finance DTOs now mirror OpenAPI default-backed fields and string money projections; contract tests cover admin currency/rate/deposit/withdrawal/wallet and notification payloads.
+- M-118: admin deal/finance/user/content rows now share a username formatter and no longer render nullable usernames as `@--`/`@—` handles.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1321,6 +1322,16 @@ Manual frontend DTOs treated `CurrencyDto.kind`, `AdminCurrencyDto.kind`, and `A
 Risk: wallet/deal pages could silently classify a malformed currency without `kind` as crypto through `kind ?? "crypto"`, hiding fiat choices instead of surfacing a contract drift. Admin finance UI/tests could keep accepting numeric money projections that the backend no longer emits, making future parsing and display assumptions harder to audit.
 
 Fix: public/admin currency DTOs now require the default-backed `kind`/`address_regex` response fields, admin finance response money projections are typed as strings, and create-deal/deposit filters use the explicit `kind` value. OpenAPI contract tests now bridge admin currency, rate, deposit, withdrawal, wallet list/balance, wallet withdrawal, notification, and notification-counter fixtures into the manual DTOs.
+
+### M-118. Admin user rows still rendered missing usernames as Telegram handles
+
+Links: `frontend/src/pages/admin/format.ts`, `frontend/src/pages/admin/AdminDealsPage.tsx`, `frontend/src/pages/admin/AdminArbitrationPage.tsx`, `frontend/src/pages/admin/AdminDepositsPage.tsx`, `frontend/src/pages/admin/AdminWithdrawalsPage.tsx`, `frontend/src/pages/admin/AdminWalletsPage.tsx`, `frontend/src/pages/admin/AdminUsersPage.tsx`, `frontend/src/pages/admin/AdminUserDetailPage.tsx`, `frontend/src/pages/admin/AdminDealDetailPage.tsx`, `frontend/src/pages/admin/UserContentSections.tsx`.
+
+After M-116 fixed audit/analytics labels, the same `@${username ?? "--"}` pattern still existed across admin deal queues, finance queues, wallet/user lists, user detail, deal detail balance snapshots/chat, and user content review rows. OpenAPI correctly marks these username fields nullable, but the UI rendered the fallback with an `@` prefix, so a missing Telegram username looked like a broken handle.
+
+Risk: admin operators could read `@--` as an actual Telegram identity or a clickable-style handle while resolving deals, withdrawals, deposits, balances, or user content. In audit-heavy admin workflows that makes identity review noisier and can hide the real nullable-user contract.
+
+Fix: admin pages now share `formatAdminUsername()`, which emits `@username` only for a real trimmed username and otherwise renders the explicit `username не задан` label. Regression coverage was added for the formatter and representative admin deal/arbitration/finance/wallet/user/detail/content surfaces.
 
 ## Наблюдения без отдельного finding
 

@@ -12,6 +12,7 @@ import { parseDecimal } from "@/lib/format";
 import type { AdminDealListItemDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { formatAdminUsername } from "./format";
 
 type Queue = "new" | "in_progress" | "closed";
 const PAGE_SIZE = 20;
@@ -205,7 +206,7 @@ function ArbRow({
           <span>#{deal.id}</span>
           <span className="text-text-muted">·</span>
           <span className="text-text-muted truncate">
-            @{deal.buyer_username ?? "—"} ↔ @{deal.seller_username ?? "—"}
+            {formatAdminUsername(deal.buyer_username)} ↔ {formatAdminUsername(deal.seller_username)}
           </span>
           <ChevronRight size={14} className="text-text-muted ml-auto shrink-0" />
         </div>

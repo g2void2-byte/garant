@@ -123,6 +123,18 @@ describe("<AdminDealsPage />", () => {
     expect(screen.getByText(/150\.00/)).toBeInTheDocument();
   });
 
+  it("renders missing buyer/seller usernames as non-handle labels", () => {
+    mockState.list = {
+      items: [makeDeal({ buyer_username: null, seller_username: null })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+    expect(screen.getAllByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
   it("reads URL filters and passes them to useAdminDeals", () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
     renderPage([

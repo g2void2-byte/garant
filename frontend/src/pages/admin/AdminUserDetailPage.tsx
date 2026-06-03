@@ -50,6 +50,7 @@ import { haptic } from "@/lib/tg";
 import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
+import { formatAdminUsername } from "./format";
 
 /**
  * Continental admin user detail screen.
@@ -144,7 +145,7 @@ function IdentityCard({ user }: { user: AdminUserDetailDto }) {
             <h2 className="font-semibold truncate">{user.display_name}</h2>
             <BadgePrefix prefix={pickPrefix(user)} />
           </div>
-          <div className="text-xs text-text-muted">@{user.username ?? "—"}</div>
+          <div className="text-xs text-text-muted">{formatAdminUsername(user.username)}</div>
           <div className="text-xs text-text-muted">tg_id: {user.tg_user_id}</div>
         </div>
       </div>

@@ -230,6 +230,13 @@ describe("<AdminUserDetailPage />", () => {
     expect(screen.getByText("Установлен")).toBeInTheDocument();
   });
 
+  it("renders a non-handle label when username is missing", () => {
+    mockState.user = makeUser({ username: null });
+    renderPage();
+    expect(screen.getByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/)).toBeInTheDocument();
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
   it("ban click with empty reason sends reason=null", async () => {
     mockState.user = makeUser();
     mockState.ban.mutateAsync.mockResolvedValue({});

@@ -53,6 +53,7 @@ import { api } from "@/api/client";
 import { haptic } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
+import { formatAdminUsername } from "./format";
 
 const STATUS_LABEL: Record<string, string> = {
   cancelled: "Отменена",
@@ -237,7 +238,7 @@ function PartyCard({ side, snap }: { side: string; snap: AdminBalanceSnapshotDto
     <div className="bg-panel rounded-card p-3">
       <div className="text-[11px] uppercase tracking-wide text-text-muted">{side}</div>
       <div className="mt-1 font-semibold truncate">{snap.display_name}</div>
-      <div className="text-xs text-text-muted truncate">@{snap.username ?? "—"} · id {snap.user_id}</div>
+      <div className="text-xs text-text-muted truncate">{formatAdminUsername(snap.username)} · id {snap.user_id}</div>
       <div className="mt-2 text-xs text-text-muted">
         Свободно <span className="text-text font-medium">{parseDecimal(snap.amount).toFixed(4)}</span>{" "}
         {snap.currency_code ?? "USD"}
@@ -679,7 +680,7 @@ function MessagesFeed({ deal }: { deal: AdminDealDetailDto }) {
               >
                 <div className="text-[11px] uppercase tracking-wide text-text-muted mb-0.5">
                   {side === "staff" ? "Админ/арбитр" : side === "buyer" ? "Покупатель" : "Продавец"} · @
-                  {m.sender_username ?? "—"} · {shortDate(m.created_at)}
+                  {formatAdminUsername(m.sender_username)} · {shortDate(m.created_at)}
                 </div>
                 <div className="whitespace-pre-wrap">{m.text}</div>
               </li>
