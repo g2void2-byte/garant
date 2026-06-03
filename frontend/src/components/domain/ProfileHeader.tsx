@@ -64,10 +64,21 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
         style={{
           transform: `translateY(${transform.y}px)`,
           opacity: transform.opacity,
-          backgroundImage: user.banner_url ? `url(${user.banner_url})` : undefined,
         }}
         className="relative h-64 mx-4 mt-3 rounded-3xl overflow-hidden bg-gradient-to-br from-accent/20 via-panel-2 to-panel bg-cover bg-center will-change-transform"
       >
+        {user.banner_url && (
+          <img
+            src={user.banner_url}
+            alt=""
+            aria-hidden="true"
+            data-testid="profile-banner-image"
+            className="absolute inset-0 size-full object-cover"
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+          />
+        )}
         {!user.banner_url && (
           <div className="absolute inset-0 grid place-items-center">
             <Logo size={96} />

@@ -94,6 +94,8 @@
 - M-122: admin deposit `pay_url` no longer renders a raw `href`; it is gated through the shared safe external-link predicate and payment opener.
 - M-123: deal chat attachment URLs are validated before `href`/`img` use, and live-notification payloads reject malformed media URLs before cache insertion.
 - M-124: admin currency create, wallet-adjust and USD-rate schemas now share the strict currency-code contract and OpenAPI pattern used by user money endpoints.
+- M-125: profile banners no longer interpolate user-controlled URLs into CSS `background-image`; they render as a single inert `<img>` URL instead.
+- M-126: shared Telegram/external/payment link openers now reject credential-bearing and whitespace/control-character URLs before reaching Telegram or `window.open`.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1398,6 +1400,26 @@ Public wallet/deal currency inputs already used the shared `CurrencyCodeStr` con
 Risk: the taxonomy endpoint could create malformed `Currency.code` rows from an admin payload, while wallet adjust/rate endpoints turned the same malformed shape into late 404s. That left the admin money contract wider than the user money contract and kept OpenAPI from documenting the actual code pattern for generated clients.
 
 Fix: `AdminCurrencyUpsertIn.code`, `AdminWalletAdjustIn.currency_code`, and `AdminCurrencyRateUpsertIn.currency_code` now use `CurrencyCodeStr` plus the shared validator. The committed OpenAPI snapshot now exposes `minLength`, `maxLength`, and `^[A-Z0-9]+$` for those admin payload fields, and schema regression coverage checks normalization and rejects spaces, punctuation, unicode, empty strings, and overlong codes.
+
+### M-125. Profile banner URLs were interpolated into CSS
+
+Links: `frontend/src/components/domain/ProfileHeader.tsx`, regression `frontend/src/components/domain/ProfileHeader.test.tsx`.
+
+`ProfileHeader` rendered `user.banner_url` by building `backgroundImage: url(${user.banner_url})`. Backend URL validation rejects dangerous schemes, but the value is still user-controlled text placed into a CSS `url(...)` context. A path containing CSS delimiters such as `),url(...)` can change how many image URLs the browser parses, even though the same string is inert when used as an ordinary `img src` attribute.
+
+Risk: a malformed or legacy banner URL could trigger extra same-page image fetches from a profile view, bypassing the intended single-banner rendering contract and making future URL-validation drift harder to reason about.
+
+Fix: profile banners now render as an absolutely positioned `<img>` inside the existing banner frame, with lazy decoding and `referrerPolicy="no-referrer"`. The inline style keeps only transform/opacity animation state. Regression coverage uses a delimiter-bearing URL and asserts it is assigned to a single image `src`, not to a CSS `background-image` string.
+
+### M-126. Shared external-link validation still allowed credentials and raw whitespace
+
+Links: `frontend/src/lib/tg.ts`, regression `frontend/src/lib/tg.test.ts`.
+
+`openExternalLink`, `openTelegramLink`, and `openPaymentLink` all went through an `http(s)` scheme check, but the predicate still accepted URLs with embedded credentials (`https://example.com@evil.example/...`, `https://user:pass@example.com/...`) and raw whitespace/control characters before handing them to Telegram or the browser fallback.
+
+Risk: these URLs are not script-execution vectors, but they are phishing and parser-confusion inputs on payment, forum, support, and admin deposit opener surfaces. `openPaymentLink` also used a raw `startsWith("https://t.me/")` branch instead of the parsed Telegram-link predicate, so edge-case Telegram invoice URLs were routed inconsistently.
+
+Fix: link parsing is now centralized in `parseSafeLink()`: only `http`/`https` URLs with a hostname, no username/password, and no raw spaces/control bytes pass. `openTelegramLink` and `openPaymentLink` share the parsed `t.me` predicate. Tests cover safe encoded paths, credential-bearing URLs, raw-newline URLs, no-Telegram fallbacks, and Telegram invoice routing with an explicit default port.
 
 ## Наблюдения без отдельного finding
 

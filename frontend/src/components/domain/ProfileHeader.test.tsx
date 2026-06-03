@@ -56,6 +56,15 @@ describe("<ProfileHeader />", () => {
     expect(screen.getByText("VIP")).toBeInTheDocument();
   });
 
+  it("renders banner URLs as an image instead of interpolating them into CSS", () => {
+    const bannerUrl = "https://cdn.example/a),url(https://evil.example/pixel)";
+    const { container } = render(<ProfileHeader user={makeUser({ banner_url: bannerUrl })} />);
+
+    const banner = screen.getByTestId("profile-banner-image");
+    expect(banner).toHaveAttribute("src", bannerUrl);
+    expect(container.querySelector("[style*='background-image']")).toBeNull();
+  });
+
   it("renders a username fallback instead of @null", () => {
     render(<ProfileHeader user={makeUser({ username: null })} />);
     expect(screen.getByText("username не задан")).toBeInTheDocument();

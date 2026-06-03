@@ -278,12 +278,14 @@ export function openExternalLink(url: string) {
 }
 
 export function openPaymentLink(url: string) {
-  if (!isSafeLink(url)) return;
-  if (url.startsWith("https://t.me/")) {
-    openTelegramLink(url);
+  const safe = parseSafeLink(url);
+  if (!safe) return;
+  const href = safe.toString();
+  if (safe.hostname === "t.me") {
+    openTelegramLink(href);
     return;
   }
-  openExternalLink(url);
+  openExternalLink(href);
 }
 
 // Audit L-13 / H-1 — schemes we allow to flow through
@@ -296,26 +298,28 @@ export function openPaymentLink(url: string) {
 // execution against the TMA.
 const _SAFE_LINK_SCHEMES = new Set(["http:", "https:"]);
 
-function isSafeLink(url: string): boolean {
+function parseSafeLink(url: string): URL | null {
+  if (!url) return null;
+  for (let i = 0; i < url.length; i += 1) {
+    const code = url.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f || url[i] === " ") return null;
+  }
   try {
     const u = new URL(url);
-    return _SAFE_LINK_SCHEMES.has(u.protocol);
+    if (!_SAFE_LINK_SCHEMES.has(u.protocol)) return null;
+    if (!u.hostname || u.username || u.password) return null;
+    return u;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function isSafeLink(url: string): boolean {
+  return parseSafeLink(url) !== null;
 }
 
 export function isSafeExternalLink(url: string): boolean {
   return isSafeLink(url);
-}
-
-function isTelegramLink(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return _SAFE_LINK_SCHEMES.has(u.protocol) && u.hostname === "t.me";
-  } catch {
-    return false;
-  }
 }
 
 export function openTelegramLink(url: string) {
@@ -326,13 +330,15 @@ export function openTelegramLink(url: string) {
   // (e.g. Crystalpay ``pay.crystalpay.io/...``) through ``openExternalLink``
   // instead. CryptoBot invoice URLs are ``https://t.me/CryptoBot?...`` and
   // do work here.
-  if (!isTelegramLink(url)) return;
+  const safe = parseSafeLink(url);
+  if (safe?.hostname !== "t.me") return;
+  const href = safe.toString();
   // Audit M-7 — the fallback path is only taken outside of Telegram
   // (desktop preview / unit tests). Match ``openExternalLink`` and pass
   // ``noopener,noreferrer`` so the destination page can't reach back
   // through ``window.opener``.
-  if (tg) tg.openTelegramLink(url);
-  else if (typeof window !== "undefined") window.open(url, "_blank", "noopener,noreferrer");
+  if (tg) tg.openTelegramLink(href);
+  else if (typeof window !== "undefined") window.open(href, "_blank", "noopener,noreferrer");
 }
 
 export function showBackButton(onClick: () => void) {
