@@ -15,18 +15,22 @@ function useCountUp(target: number, durationMs = 1200): number {
   const [value, setValue] = useState(0);
   const rafRef = useRef<number | null>(null);
   const startRef = useRef<number | null>(null);
-  const startValueRef = useRef(0);
+  const valueRef = useRef(0);
 
   useEffect(() => {
-    startValueRef.current = value;
+    valueRef.current = value;
+  }, [value]);
+
+  useEffect(() => {
+    const startValue = valueRef.current;
     startRef.current = null;
     const animate = (now: number) => {
       if (startRef.current === null) startRef.current = now;
       const t = Math.min(1, (now - startRef.current) / durationMs);
       // ease-out cubic
       const eased = 1 - Math.pow(1 - t, 3);
-      const next =
-        startValueRef.current + (target - startValueRef.current) * eased;
+      const next = startValue + (target - startValue) * eased;
+      valueRef.current = next;
       setValue(next);
       if (t < 1) rafRef.current = requestAnimationFrame(animate);
     };
@@ -34,7 +38,6 @@ function useCountUp(target: number, durationMs = 1200): number {
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target, durationMs]);
 
   return value;

@@ -3,19 +3,21 @@ import type { SupportPersonDto } from "@/api/types";
 import { Avatar } from "@/components/ui/Avatar";
 import { BadgePrefix } from "@/components/ui/BadgePrefix";
 import { openTelegramLink } from "@/lib/tg";
+import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { staggerDelay } from "@/lib/animate";
 import { cn } from "@/lib/cn";
 
 export function SupportPersonRow({ person, index = 0 }: { person: SupportPersonDto; index?: number }) {
   const username = person.username?.trim() || null;
+  const telegramUrl = buildTelegramUserUrl(username);
   const name = person.display_name?.trim() || username || "—";
   return (
     <button
-      onClick={() => username && openTelegramLink(`https://t.me/${username}`)}
-      disabled={!username}
+      onClick={() => telegramUrl && openTelegramLink(telegramUrl)}
+      disabled={!telegramUrl}
       className={cn(
         "w-full flex items-center gap-3 bg-panel border border-border rounded-card p-3 text-left transition-transform animate-fadein",
-        username ? "active:scale-[0.98]" : "opacity-75",
+        telegramUrl ? "active:scale-[0.98]" : "opacity-75",
       )}
       style={staggerDelay(index, 40, 300)}
     >
@@ -26,10 +28,10 @@ export function SupportPersonRow({ person, index = 0 }: { person: SupportPersonD
           <span className="font-semibold truncate">{name}</span>
         </div>
         <div className="mt-0.5 text-xs text-text-muted truncate">
-          {username ? `@${username}` : "Telegram недоступен"}
+          {telegramUrl ? `@${username}` : "Telegram недоступен"}
         </div>
       </div>
-      {username && <ExternalLink className="size-4 text-text-muted" />}
+      {telegramUrl && <ExternalLink className="size-4 text-text-muted" />}
     </button>
   );
 }

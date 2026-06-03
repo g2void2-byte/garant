@@ -21,6 +21,7 @@ import {
 import { api } from "@/api/client";
 import type { ReviewDto, ServiceDto } from "@/api/types";
 import { openTelegramLink } from "@/lib/tg";
+import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { parseDecimal, relativeTime } from "@/lib/format";
 
 const PROFILE_REVIEWS_PAGE_SIZE = 50;
@@ -133,6 +134,7 @@ export default function UserProfilePage() {
   }
 
   const profileUsername = user.username?.trim() || null;
+  const profileTelegramUrl = buildTelegramUserUrl(profileUsername);
 
   return (
     <Page showBack>
@@ -152,8 +154,8 @@ export default function UserProfilePage() {
             <Button
               variant="secondary"
               size="md"
-              disabled={!profileUsername}
-              onClick={() => profileUsername && openTelegramLink(`https://t.me/${profileUsername}`)}
+              disabled={!profileTelegramUrl}
+              onClick={() => profileTelegramUrl && openTelegramLink(profileTelegramUrl)}
             >
               <MessageSquare className="size-4" /> Написать
             </Button>

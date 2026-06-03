@@ -295,11 +295,20 @@ describe("openTelegramLink", () => {
     vi.resetModules();
     const mod = await import("./tg");
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
-    mod.openTelegramLink("https://example.com");
+    mod.openTelegramLink("https://t.me/test");
     // Audit M-7 — the fallback path opens links outside Telegram (desktop
     // preview / tests). We must pass ``noopener,noreferrer`` so the target
     // page can't reach back through ``window.opener``.
-    expect(openSpy).toHaveBeenCalledWith("https://example.com", "_blank", "noopener,noreferrer");
+    expect(openSpy).toHaveBeenCalledWith("https://t.me/test", "_blank", "noopener,noreferrer");
+    openSpy.mockRestore();
+  });
+
+  it("refuses non-t.me http(s) URLs", async () => {
+    const { fake, mod } = await importTgWithFake("ios");
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    mod.openTelegramLink("https://example.com");
+    expect(fake.openTelegramLink).not.toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalled();
     openSpy.mockRestore();
   });
 

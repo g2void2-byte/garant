@@ -28,6 +28,7 @@ import {
 } from "@/api/hooks";
 import { formatAmount, parseDecimal, relativeTime } from "@/lib/format";
 import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
+import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
@@ -105,6 +106,7 @@ export default function DealDetailPage() {
         ? deal.buyer
         : null
     : null;
+  const otherTelegramUrl = buildTelegramUserUrl(otherUser);
   const existingReviewParams: { deal_id?: number; limit: number } = { limit: 1 };
   if (deal) existingReviewParams.deal_id = deal.id;
   const { data: existingReviews } = useReviews(
@@ -563,7 +565,8 @@ export default function DealDetailPage() {
             <Button
               variant="ghost"
               className="col-span-2"
-              onClick={() => openTelegramLink(`https://t.me/${otherUser}`)}
+              disabled={!otherTelegramUrl}
+              onClick={() => otherTelegramUrl && openTelegramLink(otherTelegramUrl)}
             >
               <MessageSquare className="size-4" /> Написать @{otherUser}
             </Button>

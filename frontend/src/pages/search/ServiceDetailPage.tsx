@@ -22,6 +22,7 @@ import type { ServiceCommentDto, ServiceDetailDto } from "@/api/types";
 import { dealsLabel, formatMoney, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { openTelegramLink } from "@/lib/tg";
+import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 
 const SERVICE_COMMENTS_PAGE_SIZE = 50;
@@ -193,6 +194,7 @@ function OwnerActions({
   const owner = service.owner;
   if (!owner) return null;
   const ownerUsername = owner.username || null;
+  const ownerTelegramUrl = buildTelegramUserUrl(ownerUsername);
   const isSelf = ownerUsername === myUsername;
   const ownerName = owner.display_name || ownerUsername || "Владелец";
   const ownerMeta = ownerUsername
@@ -233,7 +235,8 @@ function OwnerActions({
           <Button
             variant="secondary"
             size="md"
-            onClick={() => openTelegramLink(`https://t.me/${ownerUsername}`)}
+            disabled={!ownerTelegramUrl}
+            onClick={() => ownerTelegramUrl && openTelegramLink(ownerTelegramUrl)}
           >
             <MessageSquare className="size-4" /> Написать
           </Button>

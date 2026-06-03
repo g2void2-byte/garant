@@ -21,6 +21,7 @@ import { usePresence } from "@/lib/animate";
 import { cn } from "@/lib/cn";
 import { formatCurrency } from "@/lib/format";
 import { haptic, openTelegramLink } from "@/lib/tg";
+import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 
 type WithdrawMethod = "cryptobot" | "card";
 
@@ -354,6 +355,7 @@ interface CardWithdrawModalProps {
 function CardWithdrawModal({ open, onClose, admins }: CardWithdrawModalProps) {
   const { mounted, visible } = usePresence(open, 220);
   const adminUsername = admins[0]?.username;
+  const adminContactUrl = buildTelegramUserUrl(adminUsername);
 
   useEffect(() => {
     if (!open) return;
@@ -365,9 +367,9 @@ function CardWithdrawModal({ open, onClose, admins }: CardWithdrawModalProps) {
   }, [open, onClose]);
 
   function writeAdmin() {
-    if (!adminUsername) return;
+    if (!adminContactUrl) return;
     haptic("medium");
-    openTelegramLink(`https://t.me/${adminUsername}`);
+    openTelegramLink(adminContactUrl);
     onClose();
   }
 
@@ -441,13 +443,13 @@ function CardWithdrawModal({ open, onClose, admins }: CardWithdrawModalProps) {
             <Button
               size="md"
               onClick={writeAdmin}
-              disabled={!adminUsername}
+              disabled={!adminContactUrl}
               className="!h-11"
             >
               Написать админу
             </Button>
           </div>
-          {!adminUsername && (
+          {!adminContactUrl && (
             <p className="mt-3 text-[12px] text-danger">
               Контакт администратора пока недоступен. Попробуйте позже.
             </p>

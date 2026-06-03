@@ -131,9 +131,10 @@ function makeInvoice() {
   return {
     deposit_id: 501,
     pay_url: "https://pay.example/invoice/501",
-    total: "105.25",
-    topup_principal: "100.25",
-    commission: "5.00",
+    total: 105.25,
+    topup_principal: 100.25,
+    commission: 5,
+    paid_total: 0,
     currency_code: "USD",
     provider: "cryptobot",
     expires_at: null,

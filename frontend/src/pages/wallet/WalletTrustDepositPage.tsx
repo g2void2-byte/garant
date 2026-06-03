@@ -18,6 +18,7 @@ import { usePresence } from "@/lib/animate";
 import { cn } from "@/lib/cn";
 import { formatCurrency, formatMoney } from "@/lib/format";
 import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
+import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 
 const DECIMAL_RE = /^\d+(?:\.\d{1,18})?$|^\.\d{1,18}$/;
 
@@ -199,12 +200,11 @@ interface TrustWithdrawModalProps {
 function TrustWithdrawModal({ open, onClose, admins }: TrustWithdrawModalProps) {
   const { mounted, visible } = usePresence(open, 200);
   const adminUsername = admins?.[0]?.username;
+  const adminContactUrl = buildTelegramUserUrl(adminUsername);
 
   function writeAdmin() {
     haptic("light");
-    if (adminUsername) {
-      openTelegramLink(`https://t.me/${adminUsername}`);
-    }
+    if (adminContactUrl) openTelegramLink(adminContactUrl);
   }
 
   if (!mounted) return null;
@@ -271,13 +271,13 @@ function TrustWithdrawModal({ open, onClose, admins }: TrustWithdrawModalProps) 
             <Button
               size="md"
               onClick={writeAdmin}
-              disabled={!adminUsername}
+              disabled={!adminContactUrl}
               className="!h-11"
             >
               Написать админу
             </Button>
           </div>
-          {!adminUsername && (
+          {!adminContactUrl && (
             <p className="mt-3 text-[12px] text-danger">
               Контакт администратора пока недоступен. Попробуйте позже.
             </p>

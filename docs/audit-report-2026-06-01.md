@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 74 файла, 680 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 75 файлов, 691 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -88,6 +88,9 @@
 - M-116: admin audit/analytics UI больше не маскирует missing username как `@7`, `@system` или `@—`.
 - M-117: frontend currency/admin finance DTOs now mirror OpenAPI default-backed fields and string money projections; contract tests cover admin currency/rate/deposit/withdrawal/wallet and notification payloads.
 - M-118: admin deal/finance/user/content rows now share a username formatter and no longer render nullable usernames as `@--`/`@—` handles.
+- M-119: Telegram contact links now go through a username URL builder, and `openTelegramLink` refuses non-`t.me` HTTP(S) URLs even in the desktop fallback.
+- M-120: deal topup invoice and admin approval DTO money fields now match OpenAPI; contract tests bridge `AdminApprovalOut` and required numeric invoice totals.
+- M-121: StatsBadge count-up no longer suppresses the React hooks dependency lint rule and restarts animations from the latest displayed value.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1332,6 +1335,36 @@ After M-116 fixed audit/analytics labels, the same `@${username ?? "--"}` patter
 Risk: admin operators could read `@--` as an actual Telegram identity or a clickable-style handle while resolving deals, withdrawals, deposits, balances, or user content. In audit-heavy admin workflows that makes identity review noisier and can hide the real nullable-user contract.
 
 Fix: admin pages now share `formatAdminUsername()`, which emits `@username` only for a real trimmed username and otherwise renders the explicit `username не задан` label. Regression coverage was added for the formatter and representative admin deal/arbitration/finance/wallet/user/detail/content surfaces.
+
+### M-119. Telegram contact links accepted raw usernames and non-Telegram fallback URLs
+
+Links: `frontend/src/lib/tg.ts`, `frontend/src/lib/telegramLinks.ts`, `frontend/src/components/BannedGate.tsx`, `frontend/src/components/PinResetPaywallModal.tsx`, `frontend/src/components/domain/SupportPersonRow.tsx`, `frontend/src/pages/wallet/WalletWithdrawPage.tsx`, `frontend/src/pages/wallet/WalletTrustDepositPage.tsx`, `frontend/src/pages/search/UserProfilePage.tsx`, `frontend/src/pages/search/ServiceDetailPage.tsx`, `frontend/src/pages/deals/DealDetailPage.tsx`, regressions `frontend/src/lib/tg.test.ts`, `frontend/src/lib/telegramLinks.test.ts`, `frontend/src/components/domain/SupportPersonRow.test.tsx`.
+
+Several UI surfaces interpolated server/user usernames directly into `https://t.me/${username}`. `openTelegramLink` also accepted any safe `http(s)` URL in the no-Telegram desktop fallback, even though the Telegram API path is supposed to receive only `t.me` links.
+
+Risk: a malformed username containing path/query characters could produce a misleading Telegram URL, and a future caller could accidentally route a non-Telegram URL through `openTelegramLink` where Telegram clients reject it but desktop preview opens it. That makes the frontend URL boundary inconsistent between production Telegram and local/fallback execution.
+
+Fix: added `buildTelegramUserUrl()` with trim, optional `@` normalization, username character validation, and safe query construction for prefilled messages. All Telegram username contact CTAs now use that helper and disable themselves when the username is malformed. `openTelegramLink` now accepts only `t.me` HTTP(S) URLs before delegating to Telegram or `window.open`.
+
+### M-120. Topup invoice/admin approval DTO money fields drifted from OpenAPI
+
+Links: `frontend/src/api/types.ts`, `frontend/src/api/openapi.contract.test.ts`, regressions `frontend/src/pages/deals/CreateDealPage.test.tsx`, `frontend/src/pages/deals/DealDetailPage.test.tsx`.
+
+Manual frontend DTOs still allowed `DealTopupInvoiceDto.total`, `topup_principal`, `commission`, and `paid_total` as strings, while OpenAPI exposes the invoice values as required numbers. `AdminApprovalDto.amount` and `amount_usd_estimate` likewise allowed numbers even though `AdminApprovalOut` serializes them as strings/null.
+
+Risk: frontend fixtures and future UI code could keep accepting shapes the backend contract does not emit, weakening the OpenAPI bridge and hiding schema drift in money-facing deal/admin flows.
+
+Fix: the DTOs now mirror OpenAPI for these fields: topup invoice totals are required numbers, and admin approval money projections are strings/null. Contract tests now include an `AdminApprovalOut` fixture and bridge it into `AdminApprovalDto`, while deal topup fixtures use numeric invoice totals.
+
+### M-121. StatsBadge count-up hid a stale-state dependency with eslint-disable
+
+Links: `frontend/src/components/domain/StatsBadge.tsx`.
+
+`useCountUp()` intentionally suppressed `react-hooks/exhaustive-deps` because the animation wanted to start from the current displayed value without re-running on every animation frame. That made the hook harder to audit and left future changes one stale-closure edit away from starting a refreshed counter from the wrong value.
+
+Risk: public stats and admin-settings preview counters are display-only, but misleading animated totals can make a refreshed settings preview look broken or jumpy. The lint suppression also created a local exception that could hide real dependency mistakes.
+
+Fix: the hook now mirrors the latest displayed value into a ref and starts each target change from that ref. The eslint-disable is gone, so the hook is checked by the normal lint rule while preserving the intended animation behavior.
 
 ## Наблюдения без отдельного finding
 

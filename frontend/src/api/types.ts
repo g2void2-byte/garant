@@ -153,10 +153,10 @@ export interface DealDto {
 export interface DealTopupInvoiceDto {
   deposit_id: number;
   pay_url: string;
-  total: string | number;
-  topup_principal: string | number;
-  commission: string | number;
-  paid_total?: string | number;
+  total: number;
+  topup_principal: number;
+  commission: number;
+  paid_total: number;
   currency_code: string;
   provider: string;
   expires_at?: string | null;
@@ -537,8 +537,8 @@ export interface AdminApprovalDto {
   approved_by_id?: number | null;
   executed_by_id?: number | null;
   currency_code?: string | null;
-  amount?: string | number | null;
-  amount_usd_estimate?: string | number | null;
+  amount?: string | null;
+  amount_usd_estimate?: string | null;
   reason?: string | null;
   payload?: Record<string, unknown> | null;
   created_at: string;

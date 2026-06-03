@@ -21,6 +21,7 @@ import { describe, expect, it } from "vitest";
 import openapi from "../../openapi.json";
 import type { components } from "./openapi.generated";
 import type {
+  AdminApprovalDto,
   AdminCurrencyDto,
   AdminCurrencyRateDto,
   AdminDepositDto,
@@ -50,6 +51,7 @@ import type {
 type Schemas = components["schemas"];
 type AdminCurrencyOutSchema = Schemas["AdminCurrencyOut"];
 type AdminCurrencyRateOutSchema = Schemas["AdminCurrencyRateOut"];
+type AdminApprovalOutSchema = Schemas["AdminApprovalOut"];
 type AdminDepositOutSchema = Schemas["AdminDepositOut"];
 type AdminDealDetailOutSchema = Schemas["AdminDealDetailOut"];
 type AdminUserBalanceOutSchema = Schemas["AdminUserBalanceOut"];
@@ -180,6 +182,26 @@ const adminBalanceSnapshotFixture = {
   total: "10.00000000",
 } as const;
 
+const adminApprovalFixture = {
+  id: 31,
+  action: "release",
+  target_type: "deal",
+  target_id: 17,
+  status: "pending",
+  requested_by_id: 1,
+  approved_by_id: null,
+  executed_by_id: null,
+  currency_code: "USDT",
+  amount: "100.00000000",
+  amount_usd_estimate: "100.00000000",
+  reason: null,
+  payload: null,
+  created_at: new Date(0).toISOString(),
+  approved_at: null,
+  executed_at: null,
+  rejected_at: null,
+} as const satisfies AdminApprovalOutSchema;
+
 const adminDealDetailFixture = {
   id: 17,
   status: "in_progress",
@@ -211,6 +233,7 @@ const adminDealDetailFixture = {
   confirm_seller: false,
   events: [],
   messages: [dealMessageFixture],
+  pending_approvals: [adminApprovalFixture],
 } as const satisfies AdminDealDetailOutSchema;
 
 const topupResponseFixture = {
@@ -521,6 +544,7 @@ const _dealDto: DealDto = dealFixture;
 const _nullableDealDto: DealDto = nullableDealFixture;
 const _mediaDto: MediaDto = mediaFixture;
 const _dealMessageDto: DealMessageDto = dealMessageFixture;
+const _adminApprovalDto: AdminApprovalDto = adminApprovalFixture;
 const _adminDealDetailDto: AdminDealDetailDto = adminDealDetailFixture;
 const _topupResponseDto: DealCreateWithTopupResponseDto = topupResponseFixture;
 const _balanceFundedTopupResponseDto: DealCreateWithTopupResponseDto =
@@ -551,6 +575,7 @@ void _dealDto;
 void _nullableDealDto;
 void _mediaDto;
 void _dealMessageDto;
+void _adminApprovalDto;
 void _adminDealDetailDto;
 void _topupResponseDto;
 void _balanceFundedTopupResponseDto;
@@ -586,6 +611,7 @@ describe("OpenAPI contract", () => {
   it.each([
     "UserOut",
     "AdminUserDetailOut",
+    "AdminApprovalOut",
     "AdminCurrencyOut",
     "AdminCurrencyRateOut",
     "AdminDepositOut",

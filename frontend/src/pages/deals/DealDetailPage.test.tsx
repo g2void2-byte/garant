@@ -207,9 +207,10 @@ describe("<DealDetailPage />", () => {
       topup_invoice: {
         deposit_id: 501,
         pay_url: "https://pay.example/invoice/501",
-        total: "105",
-        topup_principal: "100",
-        commission: "5",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: 0,
         currency_code: "USD",
         provider: "cryptobot",
         expires_at: null,
@@ -232,14 +233,14 @@ describe("<DealDetailPage />", () => {
       topup_invoice: {
         deposit_id: 501,
         pay_url: "https://pay.example/invoice/501",
-        total: "105",
-        topup_principal: "100",
-        commission: "5",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
         paid_total: "0x10",
         currency_code: "USD",
         provider: "cryptobot",
         expires_at: "2026-01-01T00:00:00Z",
-      },
+      } as unknown as NonNullable<DealDto["topup_invoice"]>,
     });
     renderAt(42);
 

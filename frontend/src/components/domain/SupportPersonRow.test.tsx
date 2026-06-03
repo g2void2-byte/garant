@@ -34,4 +34,15 @@ describe("<SupportPersonRow />", () => {
     expect(screen.getByText("Telegram недоступен")).toBeInTheDocument();
     expect(screen.queryByText("@null")).not.toBeInTheDocument();
   });
+
+  it("disables the row when username is malformed", async () => {
+    const user = userEvent.setup();
+    openTelegramLink.mockClear();
+    render(<SupportPersonRow person={{ ...basePerson, username: "admin/name" }} />);
+    const row = screen.getByRole("button");
+
+    expect(row).toBeDisabled();
+    await user.click(row);
+    expect(openTelegramLink).not.toHaveBeenCalled();
+  });
 });

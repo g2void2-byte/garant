@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { usePresence } from "@/lib/animate";
 import { haptic, openTelegramLink } from "@/lib/tg";
+import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 
 interface PinResetPriceDto {
   price: number;
@@ -122,7 +123,8 @@ export function PinResetPaywallModal({
       });
       return;
     }
-    openTelegramLink(`https://t.me/${admin.username}`);
+    const url = buildTelegramUserUrl(admin.username);
+    if (url) openTelegramLink(url);
   }
 
   if (!mounted) return null;
