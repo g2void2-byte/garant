@@ -23,6 +23,12 @@ import type {
   AdminCurrencyDto,
 } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import {
+  parseNonNegativeDecimalInput,
+  parseNonNegativeIntInput,
+} from "@/lib/formNumbers";
+
+const MAX_CURRENCY_DECIMALS = 8;
 
 export default function AdminTaxonomyPage() {
   const navigate = useNavigate();
@@ -308,6 +314,24 @@ function CurrencyForm({
   const [isActive, setIsActive] = useState(initial?.is_active ?? true);
   const upsert = useAdminUpsertCurrency();
   const toast = useToast();
+  const parsedDecimals = parseNonNegativeIntInput(decimals, MAX_CURRENCY_DECIMALS);
+  const parsedMinDeposit = parseNonNegativeDecimalInput(minDeposit);
+  const parsedMinWithdraw = parseNonNegativeDecimalInput(minWithdraw);
+  const decimalsError = decimals.trim() && parsedDecimals === null
+    ? `Введите целое число 0..${MAX_CURRENCY_DECIMALS}`
+    : undefined;
+  const minDepositError = minDeposit.trim() && parsedMinDeposit === null
+    ? "Введите число 0 или больше без экспоненты"
+    : undefined;
+  const minWithdrawError = minWithdraw.trim() && parsedMinWithdraw === null
+    ? "Введите число 0 или больше без экспоненты"
+    : undefined;
+  const submitBlocked =
+    !code.trim() ||
+    parsedDecimals === null ||
+    parsedMinDeposit === null ||
+    parsedMinWithdraw === null ||
+    upsert.isPending;
   return (
     <div className="space-y-3">
       <div>
@@ -336,6 +360,7 @@ function CurrencyForm({
           <Input
             inputMode="numeric"
             value={decimals}
+            error={decimalsError}
             onChange={(e) => setDecimals(e.target.value)}
           />
         </div>
@@ -344,6 +369,7 @@ function CurrencyForm({
           <Input
             inputMode="decimal"
             value={minDeposit}
+            error={minDepositError}
             onChange={(e) => setMinDeposit(e.target.value)}
           />
         </div>
@@ -352,6 +378,7 @@ function CurrencyForm({
           <Input
             inputMode="decimal"
             value={minWithdraw}
+            error={minWithdrawError}
             onChange={(e) => setMinWithdraw(e.target.value)}
           />
         </div>
@@ -361,16 +388,25 @@ function CurrencyForm({
       </div>
       <Button
         type="button"
-        disabled={!code || upsert.isPending}
+        disabled={submitBlocked}
         onClick={async () => {
+          if (
+            !code.trim() ||
+            parsedDecimals === null ||
+            parsedMinDeposit === null ||
+            parsedMinWithdraw === null
+          ) {
+            toast.show({ kind: "error", title: "Проверьте числовые поля" });
+            return;
+          }
           try {
             await upsert.mutateAsync({
-              code,
-              name: name || undefined,
-              network: network || undefined,
-              decimals: Number(decimals),
-              min_deposit: Number(minDeposit),
-              min_withdraw: Number(minWithdraw),
+              code: code.trim().toUpperCase(),
+              name: name.trim() || undefined,
+              network: network.trim() || undefined,
+              decimals: parsedDecimals,
+              min_deposit: parsedMinDeposit,
+              min_withdraw: parsedMinWithdraw,
               is_active: isActive,
             });
             toast.show({ kind: "success", title: "Сохранено" });

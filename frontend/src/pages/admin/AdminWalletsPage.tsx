@@ -22,6 +22,10 @@ import type {
   AdminWalletListItemDto,
 } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import {
+  parsePositiveDecimalInput,
+  parseSignedNonZeroDecimalInput,
+} from "@/lib/formNumbers";
 
 const PAGE_SIZE = 50;
 
@@ -270,6 +274,10 @@ function RatesForm({ onClose }: { onClose: () => void }) {
   const [rate, setRate] = useState<string | null>(null);
   const [source, setSource] = useState("manual");
   const value = rate ?? (current ? String(current.usd_rate) : "");
+  const parsedRate = parsePositiveDecimalInput(value);
+  const rateError = value.trim() && parsedRate === null
+    ? "Введите положительное число без экспоненты"
+    : undefined;
 
   return (
     <div className="space-y-3">
@@ -295,6 +303,7 @@ function RatesForm({ onClose }: { onClose: () => void }) {
         label={`USD rate for ${currency}`}
         inputMode="decimal"
         value={value}
+        error={rateError}
         onChange={(e) => setRate(e.target.value)}
       />
       <Input label="Source" value={source} onChange={(e) => setSource(e.target.value)} />
@@ -304,10 +313,14 @@ function RatesForm({ onClose }: { onClose: () => void }) {
       <Button
         type="button"
         fullWidth
-        disabled={upsert.isPending || !Number(value)}
+        disabled={upsert.isPending || parsedRate === null}
         onClick={async () => {
+          if (parsedRate === null) {
+            toast.show({ kind: "error", title: "Некорректный USD rate" });
+            return;
+          }
           try {
-            await upsert.mutateAsync({ currency_code: currency, usd_rate: Number(value), source: source.trim() || "manual" });
+            await upsert.mutateAsync({ currency_code: currency, usd_rate: parsedRate, source: source.trim() || "manual" });
             toast.show({ kind: "success", title: "USD rate saved" });
             setRate(null);
             onClose();
@@ -338,6 +351,10 @@ function AdjustForm({
   const toast = useToast();
   const adjust = useAdminAdjustBalance(target.user_id);
   const allCurrencies = currencies ?? [];
+  const parsedAmount = parseSignedNonZeroDecimalInput(amount);
+  const amountError = amount.trim() && parsedAmount === null
+    ? "Введите ненулевую сумму без экспоненты"
+    : undefined;
   return (
     <div className="space-y-3">
       <div>
@@ -376,6 +393,7 @@ function AdjustForm({
         <Input
           inputMode="decimal"
           value={amount}
+          error={amountError}
           onChange={(e) => setAmount(e.target.value)}
           placeholder="напр. -25.5"
         />
@@ -394,7 +412,12 @@ function AdjustForm({
         <Button
           type="button"
           variant="ghost"
-          onClick={() => setAmount((v) => `-${Math.abs(Number(v || "0"))}`)}
+          onClick={() =>
+            setAmount((v) => {
+              const parsed = parseSignedNonZeroDecimalInput(v);
+              return parsed === null ? "" : `-${Math.abs(parsed)}`;
+            })
+          }
           className="flex-1"
         >
           <Minus size={14} className="mr-1" /> Списать
@@ -402,7 +425,12 @@ function AdjustForm({
         <Button
           type="button"
           variant="ghost"
-          onClick={() => setAmount((v) => `${Math.abs(Number(v || "0"))}`)}
+          onClick={() =>
+            setAmount((v) => {
+              const parsed = parseSignedNonZeroDecimalInput(v);
+              return parsed === null ? "" : `${Math.abs(parsed)}`;
+            })
+          }
           className="flex-1"
         >
           <Plus size={14} className="mr-1" /> Зачислить
@@ -410,12 +438,16 @@ function AdjustForm({
       </div>
       <Button
         type="button"
-        disabled={adjust.isPending || !Number(amount)}
+        disabled={adjust.isPending || parsedAmount === null || allCurrencies.length === 0}
         onClick={async () => {
+          if (parsedAmount === null) {
+            toast.show({ kind: "error", title: "Некорректная сумма" });
+            return;
+          }
           try {
             await adjust.mutateAsync({
               currency_code: currency,
-              amount: Number(amount),
+              amount: parsedAmount,
               reason: reason.trim() || undefined,
             });
             toast.show({

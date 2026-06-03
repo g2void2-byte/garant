@@ -290,6 +290,25 @@ describe("<AdminWalletsPage />", () => {
     expect(apply).toBeDisabled();
   });
 
+  it("blocks exponent or hex wallet adjustment amounts", async () => {
+    mockState.list = {
+      items: [makeUserBalance()],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByText("Alice"));
+
+    const amountInput = await screen.findByPlaceholderText(/напр\. -25/);
+    fireEvent.change(amountInput, { target: { value: "1e2" } });
+
+    expect(screen.getByText("Введите ненулевую сумму без экспоненты")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Применить" })).toBeDisabled();
+    expect(mockState.adjust.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it("entering an amount + 'Применить' fires adjust mutation with parsed values", async () => {
     mockState.list = {
       items: [makeUserBalance()],
@@ -357,6 +376,40 @@ describe("<AdminWalletsPage />", () => {
       expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({ currency_code: "TON", amount: 5 }),
       ),
+    );
+  });
+
+  it("blocks ambiguous USD rate inputs", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "USD" }));
+    const rateInput = await screen.findByLabelText("USD rate for USDT");
+    fireEvent.change(rateInput, { target: { value: "0x10" } });
+
+    expect(screen.getByText("Введите положительное число без экспоненты")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save rate" })).toBeDisabled();
+    expect(mockState.upsertRate.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("saves USD rates as canonical decimal numbers", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.upsertRate.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "USD" }));
+    const rateInput = await screen.findByLabelText("USD rate for USDT");
+    fireEvent.change(rateInput, { target: { value: "1.25" } });
+    await user.click(screen.getByRole("button", { name: "Save rate" }));
+
+    await waitFor(() =>
+      expect(mockState.upsertRate.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "USDT",
+        usd_rate: 1.25,
+        source: "manual",
+      }),
     );
   });
 });

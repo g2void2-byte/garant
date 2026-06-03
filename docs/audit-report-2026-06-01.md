@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-92: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing и notification deal-link parsing исправлены.
+- M-50-M-94: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing и admin finance form number parsing исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1065,6 +1065,26 @@ Notification detail вычислял `dealRef` через `Number(payload.deal_i
 Риск: испорченное уведомление или stale producer мог показать CTA на неправильную сделку. Пользователь кликает trusted notification UI, но переходит не на тот объект.
 
 Исправление: notification payload/body refs используют тот же positive safe-int parser; ambiguous string ids, ноль и unsafe integers отбрасываются. Regression проверяет отсутствие CTA для `deal_id="0x2"` и `#0`, а unread notification still marks read on successful load.
+
+### M-93. Admin wallet forms принимали hex/exponent finance values через `Number()`
+
+Ссылки: `frontend/src/pages/admin/AdminWalletsPage.tsx`, `frontend/src/lib/formNumbers.ts`, regression `frontend/src/pages/admin/AdminWalletsPage.test.tsx`, `frontend/src/lib/formNumbers.test.ts`.
+
+Admin wallet USD-rate и manual adjustment формы использовали `Number(value)`. Поэтому `0x10` превращался в 16, `1e2` превращался в 100, а `Infinity`/слишком большие значения могли стать non-finite number, который `JSON.stringify` сериализует как `null`.
+
+Риск: админ мог сохранить курс или корректировку баланса не тем числом, которое буквально ввёл, либо получить поздний 422/null-body вместо понятной UI-валидации. На финансовой форме это опасно: `0x10` визуально не выглядит как `16`, но старый код отправлял именно 16.
+
+Исправление: добавлен общий parser plain decimal form inputs без hex/exponent/non-finite/unsafe значений. Wallet rate принимает только positive decimal, wallet adjustment - signed non-zero decimal. Invalid values подсвечиваются inline, submit блокируется, а mutation получает уже распарсенное canonical number. Regression покрывает `0x10`, `1e2` и happy decimal save.
+
+### M-94. Admin currency numeric fields могли silently drop/default malformed values
+
+Ссылки: `frontend/src/pages/admin/AdminTaxonomyPage.tsx`, `frontend/src/lib/formNumbers.ts`, regression `frontend/src/pages/admin/AdminTaxonomyPage.test.tsx`, `frontend/src/lib/formNumbers.test.ts`.
+
+Currency editor отправлял `decimals`, `min_deposit` и `min_withdraw` через `Number(...)`. `Number("")` превращал очищенное поле в 0, `Number("1e2")` принимал exponent notation, а `Number("abc")` становился `NaN` и уходил в JSON как `null`. Backend для nullable upsert fields трактует `null` как default/no-op, поэтому часть ошибок формы silently меняла смысл операции.
+
+Риск: админ мог случайно сохранить decimals/min limits в другое значение или не изменить поле вообще, не понимая почему. Для справочника валют это влияет на округление и минимальные суммы депозитов/выводов.
+
+Исправление: currency editor теперь использует plain decimal/int parsers: `decimals` строго integer `0..8`, min deposit/withdraw - non-negative decimal без exponent/hex. Пустой/invalid input блокирует submit и показывает inline error; valid save отправляет trimmed code/name/network и parsed numeric values.
 
 ## Наблюдения без отдельного finding
 

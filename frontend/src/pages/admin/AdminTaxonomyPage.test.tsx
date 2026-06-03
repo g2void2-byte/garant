@@ -258,4 +258,51 @@ describe("<AdminTaxonomyPage />", () => {
     fireEvent.change(codeInput, { target: { value: "btc" } });
     expect((codeInput as HTMLInputElement).value).toBe("BTC");
   });
+
+  it("blocks ambiguous currency numeric fields", async () => {
+    mockState.categories = [];
+    mockState.currencies = [];
+    const user = userEvent.setup();
+    renderPage("/admin/taxonomy?tab=currencies");
+    await user.click(screen.getByRole("button", { name: /Добавить/ }));
+
+    const inputs = await screen.findAllByRole("textbox");
+    fireEvent.change(inputs[0], { target: { value: "btc" } });
+    fireEvent.change(inputs[3], { target: { value: "1e2" } });
+
+    expect(screen.getByText("Введите целое число 0..8")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Сохранить" })).toBeDisabled();
+    expect(mockState.upsertCurrency.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("currency save sends parsed decimal values", async () => {
+    mockState.categories = [];
+    mockState.currencies = [];
+    mockState.upsertCurrency.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage("/admin/taxonomy?tab=currencies");
+    await user.click(screen.getByRole("button", { name: /Добавить/ }));
+
+    const inputs = await screen.findAllByRole("textbox");
+    fireEvent.change(inputs[0], { target: { value: "btc" } });
+    fireEvent.change(inputs[1], { target: { value: " Bitcoin " } });
+    fireEvent.change(inputs[2], { target: { value: " mainnet " } });
+    fireEvent.change(inputs[3], { target: { value: "8" } });
+    fireEvent.change(inputs[4], { target: { value: ".5" } });
+    fireEvent.change(inputs[5], { target: { value: "0" } });
+
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() =>
+      expect(mockState.upsertCurrency.mutateAsync).toHaveBeenCalledWith({
+        code: "BTC",
+        name: "Bitcoin",
+        network: "mainnet",
+        decimals: 8,
+        min_deposit: 0.5,
+        min_withdraw: 0,
+        is_active: true,
+      }),
+    );
+  });
 });
