@@ -5,6 +5,7 @@ import { Page } from "@/components/layout/Page";
 import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { BadgePrefix } from "@/components/ui/BadgePrefix";
+import { Avatar } from "@/components/ui/Avatar";
 import { useAdminUsers } from "@/api/admin/hooks";
 import type {
   AdminListUsersQuery,
@@ -225,11 +226,7 @@ function UserRow({ user, onClick }: { user: AdminUserListItemDto; onClick: () =>
       onClick={onClick}
       className="w-full flex items-center gap-3 bg-panel rounded-card p-3 text-left active:scale-[0.98] transition"
     >
-      <div className="w-10 h-10 rounded-full bg-panel-2 overflow-hidden flex-shrink-0">
-        {user.photo_url && (
-          <img src={user.photo_url} alt="" className="w-full h-full object-cover" />
-        )}
-      </div>
+      <Avatar name={user.display_name} src={user.photo_url} size={40} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="font-medium truncate">{user.display_name}</span>

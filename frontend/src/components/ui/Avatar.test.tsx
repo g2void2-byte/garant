@@ -24,4 +24,16 @@ describe("<Avatar />", () => {
     expect(img).toHaveAttribute("src", "https://example.com/a.png");
     expect(img).toHaveAttribute("loading", "lazy");
   });
+
+  it.each([
+    "javascript:alert(1)",
+    "data:image/svg+xml,<svg onload=alert(1)>",
+    "http://example.com/a.png",
+    "https://example.com@evil.example/a.png",
+    "/media/avatar//a.png",
+  ])("renders the letter fallback for unsafe src %s", (src) => {
+    render(<Avatar name="mallory" src={src} />);
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByText("M")).toBeInTheDocument();
+  });
 });

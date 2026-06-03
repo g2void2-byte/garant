@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
+import { safeUserImageUrl } from "@/lib/mediaLinks";
 
 interface AvatarProps {
   name?: string;
@@ -19,7 +20,8 @@ export function Avatar({ name = "?", src, size = 48, className }: AvatarProps) {
     setBroken(false);
   }, [src]);
 
-  const showImage = src && !broken;
+  const imageSrc = safeUserImageUrl(src);
+  const showImage = imageSrc && !broken;
 
   return (
     <div
@@ -32,7 +34,7 @@ export function Avatar({ name = "?", src, size = 48, className }: AvatarProps) {
     >
       {showImage ? (
         <img
-          src={src}
+          src={imageSrc}
           alt={name}
           className="w-full h-full object-cover"
           loading="lazy"

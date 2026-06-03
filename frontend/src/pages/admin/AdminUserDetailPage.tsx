@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { BadgePrefix } from "@/components/ui/BadgePrefix";
+import { Avatar } from "@/components/ui/Avatar";
 import { useToast } from "@/components/ui/Toast";
 import {
   useAdminAdjustBalance,
@@ -135,11 +136,7 @@ function IdentityCard({ user }: { user: AdminUserDetailDto }) {
   return (
     <section className="bg-panel rounded-card p-4">
       <div className="flex items-start gap-3">
-        <div className="w-16 h-16 rounded-full bg-panel-2 overflow-hidden flex-shrink-0">
-          {user.photo_url && (
-            <img src={user.photo_url} alt="" className="w-full h-full object-cover" />
-          )}
-        </div>
+        <Avatar name={user.display_name} src={user.photo_url} size={64} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <h2 className="font-semibold truncate">{user.display_name}</h2>

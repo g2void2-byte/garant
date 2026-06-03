@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 79 файлов, 741 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 79 файлов, 765 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -106,6 +106,8 @@
 - M-134: UI display preferences now tolerate blocked `localStorage` at import time and still update in-memory state.
 - M-135: the dev `initData` fallback now treats blocked `localStorage` as a missing fallback instead of crashing auth bootstrap.
 - M-136: lazy route chunk retry now preserves the original import error when `sessionStorage` is unavailable and reloads only with a stored guard.
+- M-137: frontend `/media/...` runtime filtering now rejects encoded/double-slash/backslash/fragment paths instead of only checking origin and prefix.
+- M-138: avatar/banner/admin user images now pass through the same safe image URL boundary before rendering.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1399,7 +1401,7 @@ Deal chat attachments used server-provided `m.url` directly as both anchor `href
 
 Risk: a malformed live frame or API drift could place a non-media URL into the deal-message cache and render it as a clickable attachment or image source. That is a smaller surface than public free-form links, but it sits in a deal/chat workflow where users expect file previews to be trusted artifacts.
 
-Fix: added `safeMediaUrl()`, which accepts only same-origin relative `/media/...` paths and strips fragments while preserving signed query params. Deal chat now validates every attachment URL before rendering `href`/`img`; unsafe entries render only the existing broken-preview placeholder. The live-notification guard also requires a safe media URL before appending incoming deal messages to cache.
+Fix: added `safeMediaUrl()`, which accepts only same-origin relative `/media/...` paths and gates fragments/ambiguous paths before preserving signed query params. Deal chat now validates every attachment URL before rendering `href`/`img`; unsafe entries render only the existing broken-preview placeholder. The live-notification guard also requires a safe media URL before appending incoming deal messages to cache.
 
 ### M-124. Admin currency write paths accepted malformed currency codes
 
@@ -1530,6 +1532,26 @@ Links: `frontend/src/lib/lazyWithRetry.ts`, `frontend/src/lib/storage.ts`, regre
 Risk: a stale or missing route chunk in a storage-blocked WebView could surface as a misleading storage failure, or attempt a hard reload without a persisted guard. That weakens the top-level error boundary path for the exact startup/navigation failure this helper is meant to contain.
 
 Fix: the retry path now uses safe sessionStorage helpers. It reloads only when the guard can be stored, preserves the original chunk error when storage is unavailable, and treats guard cleanup as best-effort. Regression coverage verifies the one-shot reload path and the blocked-storage path.
+
+### M-137. Frontend media URL predicate still accepted parser-drift paths
+
+Links: `frontend/src/lib/mediaLinks.ts`, regressions `frontend/src/lib/mediaLinks.test.ts`.
+
+The backend media schema now rejects ambiguous `/media/...` shapes: encoded path segments, dot-segments, double slashes, backslashes, semicolon params, and fragments. The frontend runtime predicate still only checked that `new URL(raw, origin)` stayed same-origin and that the parsed pathname started with `/media/`. That left values like `/media/deal//proof.png`, `/media/deal/%2F/proof.png`, or `/media/deal/proof.png#fragment` accepted at the render/cache boundary.
+
+Risk: deal-chat attachments, service upload previews, public service galleries, and live-notification cache insertion could still treat parser-drift URLs as backend media artifacts even though the backend write schema would reject them. This weakens the runtime boundary that is supposed to protect the UI from malformed legacy rows or compromised live frames.
+
+Fix: `safeMediaUrl()` now mirrors the stricter media-path contract before rendering: relative `/media/` only, no fragments, no encoded path segments, no double slashes/backslashes/semicolon params, and no dot-segment normalization. Signed query params are still preserved.
+
+### M-138. User image rendering did not share the hardened image URL boundary
+
+Links: `frontend/src/components/ui/Avatar.tsx`, `frontend/src/components/domain/ProfileHeader.tsx`, `frontend/src/pages/admin/AdminUsersPage.tsx`, `frontend/src/pages/admin/AdminUserDetailPage.tsx`, `frontend/src/pages/admin/AdminWalletsPage.tsx`, regressions `frontend/src/components/ui/Avatar.test.tsx`, `frontend/src/components/domain/ProfileHeader.test.tsx`, `frontend/src/lib/mediaLinks.test.ts`.
+
+Most public user cards already rendered through `<Avatar />`, but that component passed any non-empty `src` straight to `<img>`. Profile banners had the same direct image render, and a few admin identity surfaces used raw `<img src={user.photo_url}>` instead of the shared avatar component. Backend validation rejects unsafe avatar/banner values on writes, but the frontend runtime boundary did not protect against API drift, legacy rows, or a compromised Telegram `photo_url` global.
+
+Risk: user-controlled image fields could become tracking or parser-confusion sinks in admin/public views if the backend contract drifted or old data bypassed current validators. This was especially inconsistent because profile banners and avatars already deliberately use `referrerPolicy="no-referrer"` once rendered, but unsafe schemes and malformed media paths could still reach the render decision.
+
+Fix: added `safeUserImageUrl()` for the HTTPS-or-strict-media image contract. `Avatar` and `ProfileHeader` sanitize before rendering, unsafe values fall back to initials/logo, and admin users/detail/wallets now use `Avatar` instead of raw image tags. Regression coverage checks malicious schemes, credential-bearing HTTPS URLs, malformed media paths, and unsafe banners.
 
 ## Наблюдения без отдельного finding
 

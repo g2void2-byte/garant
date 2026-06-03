@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Minus, Plus, Search, Wallet } from "lucide-r
 import { Page } from "@/components/layout/Page";
 import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Avatar } from "@/components/ui/Avatar";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -102,11 +103,7 @@ export default function AdminWalletsPage() {
               className="w-full text-left bg-panel rounded-card p-3 hover:bg-panel-2 transition active:scale-[0.98]"
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-panel-2 overflow-hidden flex-shrink-0">
-                  {it.photo_url && (
-                    <img src={it.photo_url} alt="" className="w-full h-full object-cover" />
-                  )}
-                </div>
+                <Avatar name={it.display_name} src={it.photo_url} size={40} />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate">{it.display_name}</div>
                   <div className="text-xs text-text-muted truncate">

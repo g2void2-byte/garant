@@ -3,6 +3,7 @@ import type { UserCardDto } from "@/api/types";
 import { Logo } from "@/components/layout/Logo";
 import { Avatar } from "@/components/ui/Avatar";
 import { countryFromCode } from "@/lib/countries";
+import { safeUserImageUrl } from "@/lib/mediaLinks";
 import { getTelegramUser } from "@/lib/tg";
 import { normalizeUsernameRef } from "@/lib/usernames";
 
@@ -58,6 +59,7 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
   const tgUser = getTelegramUser();
   const isMe = tgUser?.id === user.user_id;
   const avatarSrc = user.photo_url || (isMe ? tgUser?.photo_url : null);
+  const bannerSrc = safeUserImageUrl(user.banner_url);
 
   return (
     <div ref={ref}>
@@ -68,9 +70,9 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
         }}
         className="relative h-64 mx-4 mt-3 rounded-3xl overflow-hidden bg-gradient-to-br from-accent/20 via-panel-2 to-panel bg-cover bg-center will-change-transform"
       >
-        {user.banner_url && (
+        {bannerSrc && (
           <img
-            src={user.banner_url}
+            src={bannerSrc}
             alt=""
             aria-hidden="true"
             data-testid="profile-banner-image"
@@ -80,7 +82,7 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
             referrerPolicy="no-referrer"
           />
         )}
-        {!user.banner_url && (
+        {!bannerSrc && (
           <div className="absolute inset-0 grid place-items-center">
             <Logo size={96} />
           </div>

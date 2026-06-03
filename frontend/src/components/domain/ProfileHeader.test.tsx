@@ -65,6 +65,11 @@ describe("<ProfileHeader />", () => {
     expect(container.querySelector("[style*='background-image']")).toBeNull();
   });
 
+  it("ignores unsafe banner URLs before rendering an image", () => {
+    render(<ProfileHeader user={makeUser({ banner_url: "data:image/svg+xml,<svg onload=alert(1)>" })} />);
+    expect(screen.queryByTestId("profile-banner-image")).not.toBeInTheDocument();
+  });
+
   it("renders a username fallback for unsafe username refs", () => {
     render(<ProfileHeader user={makeUser({ username: "../admin" })} />);
     expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
