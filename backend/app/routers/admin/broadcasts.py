@@ -167,6 +167,13 @@ def _audit_payload(
     }
 
 
+def _recipient_id_page_stmt(clause: Any, *, after_id: int, max_id: int):
+    stmt = select(User.id).where(User.id > after_id, User.id <= max_id)
+    if clause is not None:
+        stmt = stmt.where(clause)
+    return stmt.order_by(User.id).limit(_CHUNK_SIZE)
+
+
 @router.post("/preview", response_model=AdminBroadcastPreviewOut)
 async def preview_audience(body: AdminBroadcastCreateIn, _admin: AdminUser, session: SessionDep):
     stmt = select(func.count()).select_from(User)
@@ -186,11 +193,13 @@ async def create_broadcast(
 ):
     clause = _audience_filter(body)
 
-    # H-4: count recipients first instead of loading all rows at once.
-    count_stmt = select(func.count()).select_from(User)
+    # H-4: snapshot the recipient count and upper id bound before fan-out.
+    stats_stmt = select(func.count(), func.coalesce(func.max(User.id), 0)).select_from(User)
     if clause is not None:
-        count_stmt = count_stmt.where(clause)
-    total_recipients = int((await session.execute(count_stmt)).scalar_one())
+        stats_stmt = stats_stmt.where(clause)
+    total_recipients_raw, max_user_id_raw = (await session.execute(stats_stmt)).one()
+    total_recipients = int(total_recipients_raw)
+    max_user_id = int(max_user_id_raw)
 
     # H-4 / audit §3.2: stream recipients in chunks. Audit §3.2 also
     # adds:
@@ -201,12 +210,6 @@ async def create_broadcast(
     # * an ``asyncio.gather`` + semaphore for the Telegram DM fan-out
     #   inside each chunk, so 500 DMs go out in parallel instead of
     #   sequentially (worst-case shrinks from minutes to ~seconds).
-    user_id_stmt = select(User.id)
-    if clause is not None:
-        user_id_stmt = user_id_stmt.where(clause)
-    user_id_stmt = user_id_stmt.order_by(User.id)
-    all_user_ids = list((await session.execute(user_id_stmt)).scalars().all())
-
     bcast = Broadcast(
         actor_id=admin.id,
         title=body.title,
@@ -241,9 +244,17 @@ async def create_broadcast(
     delivered = 0
     failed = 0
 
-    for chunk_start in range(0, len(all_user_ids), _CHUNK_SIZE):
-        chunk_ids = all_user_ids[chunk_start : chunk_start + _CHUNK_SIZE]
-        chunk_stmt = select(User).where(User.id.in_(chunk_ids))
+    last_user_id = 0
+    while True:
+        page = await session.execute(
+            _recipient_id_page_stmt(clause, after_id=last_user_id, max_id=max_user_id)
+        )
+        chunk_ids = list(page.scalars().all())
+        if not chunk_ids:
+            break
+        last_user_id = int(chunk_ids[-1])
+
+        chunk_stmt = select(User).where(User.id.in_(chunk_ids)).order_by(User.id)
         chunk_users = (await session.execute(chunk_stmt)).scalars().all()
 
         # Per-chunk buffers; nothing crosses the loop boundary.
@@ -273,9 +284,13 @@ async def create_broadcast(
                     chunk_dm_targets.append((u, dm_text))
                 else:
                     # Either DM dispatch is off, or the user has no
-                    # Telegram id — count as delivered via the inapp
-                    # leg (matches the prior single-pass semantics).
-                    chunk_inapp_only += 1
+                    # Telegram id. Only count the in-app fallback when
+                    # that leg is actually enabled; a DM-only recipient
+                    # without a usable Telegram id was not delivered.
+                    if body.dispatch_inapp:
+                        chunk_inapp_only += 1
+                    else:
+                        failed += 1
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "broadcast: delivery failed for user_id=%s",

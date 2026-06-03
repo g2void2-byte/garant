@@ -18,6 +18,34 @@ def test_admin_broadcast_audience_ints_accept_explicit_ints_or_none() -> None:
     assert AdminBroadcastCreateIn(body="message").audience_active_days is None
 
 
+def test_admin_broadcast_requires_at_least_one_delivery_channel() -> None:
+    with pytest.raises(ValidationError):
+        AdminBroadcastCreateIn(
+            body="message",
+            dispatch_inapp=False,
+            dispatch_dm=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("RU", "ru"),
+        (" pt-br ", "pt-br"),
+    ],
+)
+def test_admin_broadcast_language_normalises_ascii_tags(raw: str, expected: str) -> None:
+    body = AdminBroadcastCreateIn(body="message", audience_language=raw)
+
+    assert body.audience_language == expected
+
+
+@pytest.mark.parametrize("bad", ["ru;drop", "ru_ru", "ру", "a" * 17])
+def test_admin_broadcast_language_rejects_non_ascii_or_malformed_tags(bad: str) -> None:
+    with pytest.raises(ValidationError):
+        AdminBroadcastCreateIn(body="message", audience_language=bad)
+
+
 @pytest.mark.parametrize(
     "url",
     [

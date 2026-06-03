@@ -2764,12 +2764,15 @@ class AdminBroadcastCreateIn(BaseModel):
         # Telegram tags are alphanumerics + ``-`` only; reject anything
         # else so an admin can't drop a SQL fragment into the filter.
         for ch in v:
-            if not (ch.isalnum() or ch == "-"):
+            if not (ch.isascii() and (ch.isalnum() or ch == "-")):
                 raise ValueError("Языковой код содержит недопустимые символы")
         return v
 
     @model_validator(mode="after")
     def _validate_audience_window(self) -> AdminBroadcastCreateIn:
+        if not self.dispatch_inapp and not self.dispatch_dm:
+            raise ValueError("Нужно выбрать хотя бы один канал доставки")
+
         # A-6 — guard the obvious caller mistake (``created_after`` past
         # ``created_before``) at the edge. The audience-builder would
         # otherwise quietly emit ``0`` recipients and the admin would

@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from backend.app.auth_2fa import generate_secret, totp_now
-from backend.app.db import async_session
+from backend.app.db import async_session, get_engine
 from backend.app.models import (
     AdminAuditLog,
     AppSettings,
@@ -246,6 +246,47 @@ async def test_broadcasts_preview_and_send(client):
     async with async_session() as session:
         rows = (await session.execute(select(Broadcast))).scalars().all()
         assert len(rows) == 1
+
+
+async def test_broadcasts_page_recipient_ids_in_chunks(client, monkeypatch):
+    import backend.app.routers.admin.broadcasts as broadcasts_mod
+
+    admin_init, _ = await _make_admin(client, tg=1)
+    for tg_user_id in range(2, 7):
+        await _bootstrap(client, tg_user_id=tg_user_id, username=f"chunk_{tg_user_id}")
+
+    monkeypatch.setattr(broadcasts_mod, "_CHUNK_SIZE", 2)
+    id_page_selects: list[str] = []
+
+    def before_cursor_execute(_conn, _cursor, statement, _parameters, _context, _executemany):
+        normalized = " ".join(statement.lower().split())
+        if (
+            normalized.startswith("select users.id from users")
+            and "order by users.id" in normalized
+        ):
+            id_page_selects.append(normalized)
+
+    engine = get_engine()
+    event.listen(engine.sync_engine, "before_cursor_execute", before_cursor_execute)
+    try:
+        send = await client.post(
+            "/api/admin/broadcasts",
+            json={
+                "body": "Hello",
+                "audience_role": "regular",
+                "dispatch_inapp": True,
+                "dispatch_dm": False,
+            },
+            headers=with_totp(auth_headers(admin_init)),
+        )
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", before_cursor_execute)
+
+    assert send.status_code == 200, send.text
+    assert send.json()["total_recipients"] >= 5
+    assert len(id_page_selects) >= 3
+    assert all(" limit " in statement for statement in id_page_selects)
+    assert all("users.id <=" in statement for statement in id_page_selects)
 
 
 async def test_broadcasts_audience_filter_role(client):

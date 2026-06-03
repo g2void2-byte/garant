@@ -235,6 +235,52 @@ describe("<AdminBroadcastsPage />", () => {
     expect(send).toBeDisabled();
   });
 
+  it("blocks preview/send when all delivery channels are disabled", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hello" },
+    });
+    await user.click(screen.getAllByRole("switch")[0]);
+
+    expect(screen.getByText("Выберите хотя бы один канал доставки")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Предпросмотр" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
+    expect(mockState.preview.mutateAsync).not.toHaveBeenCalled();
+    expect(mockState.create.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("blocks invalid language before preview/send and normalizes valid tags", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.preview.mutateAsync.mockResolvedValueOnce({ total_recipients: 7 });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hello" },
+    });
+    const languageInput = screen.getByPlaceholderText("ru");
+    fireEvent.change(languageInput, { target: { value: "ru_RU" } });
+
+    expect(screen.getByText("Используйте латиницу, цифры и дефис")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Предпросмотр" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
+
+    fireEvent.change(languageInput, { target: { value: "PT-BR" } });
+    await user.click(screen.getByRole("button", { name: "Предпросмотр" }));
+
+    await waitFor(() => {
+      const body = mockState.preview.mutateAsync.mock.calls[0]?.[0] as
+        | AdminBroadcastCreateBody
+        | undefined;
+      expect(body?.audience_language).toBe("pt-br");
+    });
+  });
+
   it("'Предпросмотр' calls preview mutation and shows recipient count", async () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
     mockState.preview.mutateAsync.mockResolvedValueOnce({

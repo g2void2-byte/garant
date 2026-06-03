@@ -78,9 +78,12 @@ def test_admin_currency_is_active_rejects_coerced_bool_values() -> None:
 
 @pytest.mark.parametrize("field", ["dispatch_inapp", "dispatch_dm"])
 def test_admin_broadcast_dispatch_flags_reject_coerced_bool_values(field: str) -> None:
+    other = "dispatch_dm" if field == "dispatch_inapp" else "dispatch_inapp"
+
     assert getattr(AdminBroadcastCreateIn(body="body", **{field: True}), field) is True
-    assert getattr(AdminBroadcastCreateIn(body="body", **{field: False}), field) is False
+    body = AdminBroadcastCreateIn(body="body", **{field: False, other: True})
+    assert getattr(body, field) is False
 
     for bad in (*BAD_BOOL_VALUES, None):
         with pytest.raises(ValidationError):
-            AdminBroadcastCreateIn(body="body", **{field: bad})
+            AdminBroadcastCreateIn(body="body", **{field: bad, other: True})

@@ -164,6 +164,7 @@ function Pagination({
 // inline deeplink error match what the server would reject.
 const BODY_MAX_LEN = 4096;
 const DEEPLINK_MAX_LEN = 256;
+const LANGUAGE_MAX_LEN = 16;
 const DEEPLINK_ERROR = "Ссылка должна начинаться с https:// или tg://";
 
 function parseOptionalNonNegativeInt(raw: string): number | undefined {
@@ -225,6 +226,15 @@ function validateDeeplink(raw: string): string | null {
   return DEEPLINK_ERROR;
 }
 
+function validateLanguage(raw: string): string | null {
+  const v = raw.trim();
+  if (!v) return null;
+  if (v.length > LANGUAGE_MAX_LEN) {
+    return `Языковой код слишком длинный (≤${LANGUAGE_MAX_LEN})`;
+  }
+  return /^[a-z0-9-]+$/i.test(v) ? null : "Используйте латиницу, цифры и дефис";
+}
+
 function Composer({ onClose }: { onClose: () => void }) {
   const [body, setBody] = useState("");
   const [title, setTitle] = useState("");
@@ -243,13 +253,17 @@ function Composer({ onClose }: { onClose: () => void }) {
   const toast = useToast();
 
   const deeplinkError = validateDeeplink(deeplink);
+  const languageError = validateLanguage(language);
   const activeDaysError = nonNegativeIntError(activeDays);
   const minDealsError = nonNegativeIntError(minDeals);
+  const dispatchError = !inApp && !dm ? "Выберите хотя бы один канал доставки" : null;
   const bodyOverLimit = body.length > BODY_MAX_LEN;
   const submitBlocked =
     !body.trim() ||
     bodyOverLimit ||
     deeplinkError !== null ||
+    languageError !== null ||
+    dispatchError !== null ||
     activeDaysError !== null ||
     minDealsError !== null;
 
@@ -351,12 +365,14 @@ function Composer({ onClose }: { onClose: () => void }) {
           value={language}
           onChange={(e) => setLanguage(e.target.value)}
           placeholder="ru"
-          maxLength={16}
+          maxLength={LANGUAGE_MAX_LEN}
+          error={languageError ?? undefined}
         />
       </div>
       <div className="bg-panel-2 rounded-button p-2 space-y-2">
         <Switch checked={inApp} onChange={setInApp} label="In-app уведомление" />
         <Switch checked={dm} onChange={setDm} label="Telegram DM (от бота)" />
+        {dispatchError && <div className="text-xs text-danger">{dispatchError}</div>}
       </div>
       {previewCount !== null && (
         <div

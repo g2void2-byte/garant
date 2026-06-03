@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 77 файлов, 703 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 78 файлов, 736 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -100,6 +100,9 @@
 - M-128: service photo upload previews and public service galleries now gate every image URL through the shared `/media/...` runtime predicate before rendering/submitting.
 - M-129: frontend public username route helpers now reject non-contract usernames before `/users/...`, `/create-deal/...`, `/deals/new?to=...`, and `/api/users/...` construction.
 - M-130: profile/deal/service pages now gate route/query username refs before related services/reviews/create-deal queries, review targets, and counterparty submissions.
+- M-131: admin broadcast fan-out now keyset-pages recipient ids instead of materializing the whole audience id list before chunking.
+- M-132: admin broadcast create/preview and composer now require at least one delivery channel, so zero-channel broadcasts cannot be sent as successful records.
+- M-133: admin broadcast language filters now enforce the same ASCII language-tag contract in backend schema and frontend composer validation.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1464,6 +1467,36 @@ The profile, deal detail, service detail, and create-deal pages reused route/que
 Risk: malformed username refs could create wrong list queries, invalid create-deal counterparty submissions, or review mutations against a non-contract target. The backend rejects the worst cases, but frontend state could still open PIN prompts or show actions for a value that was never a valid public username.
 
 Fix: these pages now normalize route/query/API usernames before use. Invalid public profile routes render a not-found state and keep services/reviews hooks disabled; create-deal drops unsafe `?to=` and legacy route seeds before validation/submission; deal detail hides review/profile/contact actions for unsafe counterparties; service owner/comment actions use sanitized profile/deal paths only. Regression tests cover unsafe seeds, owners, comments, counterparties, and profile routes.
+
+### M-131. Admin broadcast fan-out still materialized the full audience id set
+
+Links: `backend/app/routers/admin/broadcasts.py`, regression `tests/integration/test_admin_misc.py`.
+
+The send path had been converted to commit notification inserts per chunk, but it still ran one `SELECT users.id ...` and converted the entire matching audience into `all_user_ids` before slicing it in Python. The comment claimed streaming/chunking, but a 50K+ recipient broadcast still paid the full id-list memory cost up front.
+
+Risk: large all-user or broad-cohort broadcasts could put avoidable pressure on worker memory before the first chunk was even sent. The later per-chunk commits did not protect this earlier materialization step.
+
+Fix: recipient ids are now fetched with keyset pages (`User.id > last_user_id AND User.id <= max_user_id ORDER BY User.id LIMIT _CHUNK_SIZE`) and each page is loaded/sent independently. Regression coverage lowers `_CHUNK_SIZE`, sends to several users, and asserts the broadcast uses multiple limited, upper-bounded recipient-id selects.
+
+### M-132. Admin broadcast could be sent with no delivery channel
+
+Links: `backend/app/schemas.py`, `backend/app/routers/admin/broadcasts.py`, `frontend/src/pages/admin/AdminBroadcastsPage.tsx`, regressions `tests/unit/test_admin_broadcast_schema.py`, `frontend/src/pages/admin/AdminBroadcastsPage.test.tsx`.
+
+`dispatch_inapp=false` and `dispatch_dm=false` was a valid payload. The backend created a `Broadcast(status=sent)` and the old accounting path could count recipients as delivered even though no notification row and no DM were produced. The composer also allowed both switches to be turned off.
+
+Risk: admin history/audit could show a successful broadcast that reached nobody. This is a bad operational record because the UI presents delivery counters as evidence of a real send.
+
+Fix: `AdminBroadcastCreateIn` now rejects payloads without any dispatch channel, and the composer blocks preview/send with the same rule. The delivery loop also only counts the in-app fallback when in-app dispatch is actually enabled.
+
+### M-133. Broadcast language filter validation drifted between backend and UI
+
+Links: `backend/app/schemas.py`, `frontend/src/pages/admin/AdminBroadcastsPage.tsx`, regressions `tests/unit/test_admin_broadcast_schema.py`, `frontend/src/pages/admin/AdminBroadcastsPage.test.tsx`.
+
+The composer only capped the language input length. It did not reject characters that the backend validator claimed to reject, and the backend used Python `str.isalnum()`, which accepts non-ASCII letters despite the stored Telegram language tags being ASCII/IETF-style values.
+
+Risk: malformed language filters could be caught only after submit, or accepted by backend while not matching the intended language-code contract. That makes a broadcast audience harder to reason about and weakens the schema/UI mirror promised in the composer comment.
+
+Fix: backend language validation now requires ASCII alphanumeric characters plus `-`, while still lowercasing and trimming. The composer applies the same max length and character rule before preview/send and normalizes valid tags such as `PT-BR` to `pt-br` in the request body.
 
 ## Наблюдения без отдельного finding
 
