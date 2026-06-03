@@ -9,6 +9,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { useAdminDeals } from "@/api/admin/hooks";
 import { parseDecimal } from "@/lib/format";
+import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 import type { AdminDealListItemDto, AdminListDealsQuery } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
@@ -56,8 +57,7 @@ function parseStatusParam(value: string | null): AdminListDealsQuery["status"] {
 }
 
 function parsePageParam(value: string | null): number {
-  const parsed = Number(value ?? "1");
-  return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : 1;
+  return parsePositiveIntRouteParam(value ?? undefined) ?? 1;
 }
 
 function parseAmountParam(value: string | null): number | undefined {

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 69 файлов, 628 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 69 файлов, 629 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-99: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing, admin finance form number parsing, user service/deal amount parsing, admin content form number parsing, admin user-detail form number parsing, admin deal action form number parsing и admin users page parsing исправлены.
+- M-50-M-102: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing, admin finance form number parsing, user service/deal amount parsing, admin content form number parsing, admin user-detail form number parsing, admin deal action form number parsing, admin users page parsing, admin settings form parsing, admin deals page parsing follow-up и PIN reset price non-finite guard исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1135,6 +1135,36 @@ Admin users list строил `page` через `Number(searchParams.get("page")
 Риск: повреждённая ссылка могла отправить админский список на неверную страницу или в backend 422/пустое состояние вместо стабильной первой страницы. Для URL-driven dashboard filters это тот же класс дефекта, что ранее закрывался в admin deals filters.
 
 Исправление: `page` теперь проходит canonical positive safe-int parser; malformed/ambiguous values fallback-ятся к page 1. Regression покрывает negative, exponent и hex page params.
+
+### M-100. Admin settings form принимал ambiguous/bounds-breaking numeric values
+
+Ссылки: `frontend/src/pages/admin/AdminSettingsPage.tsx`, `frontend/src/lib/formNumbers.ts`, regression `frontend/src/pages/admin/AdminSettingsPage.test.tsx`, `frontend/src/lib/formNumbers.test.ts`.
+
+Admin settings использовал общий `Number(e.target.value)` для всех числовых полей. Из-за этого `1e2` и `0x10` становились обычными числами, пустая строка могла стать `0`, дробные значения проходили в integer-настройки, а комиссии и цены уходили в API без frontend range/type guard. Эти поля управляют комиссиями, таймингами, лимитами, FAQ-статистикой и ценой PIN reset, поэтому поздний 422 или неожиданная конвертация в admin tool здесь не просто косметика.
+
+Риск: оператор мог сохранить не то значение, которое буквально ввел, либо получить позднюю backend-ошибку уже после нажатия save. Для integer-настроек это также ломало контракт backend schema: UI выглядел как обычное numeric поле, но мог отправить `1.5`.
+
+Исправление: settings page теперь использует shared plain-decimal/int parsers: counters/timings/limits требуют non-negative integer, обычная комиссия - decimal `0..100`, VIP комиссия - decimal `-1..100`, money/stat price fields - non-negative decimal. Ambiguous syntax и wrong-type input не dirty-ят форму и не уходят в mutation. Добавлен signed decimal parser для форм, где ноль и отрицательный sentinel допустимы.
+
+### M-101. Admin deals page все еще принимал exponent/hex `page` после URL-filter hardening
+
+Ссылки: `frontend/src/pages/admin/AdminDealsPage.tsx`, `frontend/src/lib/routeParams.ts`, regression `frontend/src/pages/admin/AdminDealsPage.test.tsx`.
+
+M-90 закрыл большую часть malformed URL filters на deals list, но `page` оставался на `Number(value)`. Поэтому `?page=1e2` превращался в page 100, а `?page=0x10` - в page 16. Для остальных route ids уже был canonical positive safe-int parser, но эта страница еще не использовала его.
+
+Риск: dashboard/deep-link мог отправить админский список сделок на неожиданную страницу без явной ошибки. Это создавало тот же класс проблем, что и предыдущие route-id fixes: URL выглядит неканонично, а UI/API работают с другим числом.
+
+Исправление: `page` в admin deals list теперь парсится через `parsePositiveIntRouteParam`; exponent/hex/negative/zero values fallback-ятся к page 1. Regression заменяет старый negative-only сценарий на exponent case, который раньше проходил.
+
+### M-102. `pin_reset_price_usd` backend schema пропускала non-finite Decimal
+
+Ссылки: `backend/app/schemas.py`, regression `tests/unit/test_admin_settings_schema.py`.
+
+Большинство money settings уже использовали `_reject_non_finite_money`, но `pin_reset_price_usd` вручную делал `Decimal(str(v))` и проверял только `< 0`. `Decimal("Infinity")` проходил как валидная цена, а `Decimal("NaN")` мог провалиться через decimal comparison path вместо нормальной Pydantic validation error.
+
+Риск: non-finite price мог дойти до ORM/DB или audit payload и сломать сохранение настроек неочевидной ошибкой. Для публичной цены PIN reset это особенно неприятно: значение читается пользователями до payment flow.
+
+Исправление: `pin_reset_price_usd` теперь использует общий finite money guard и затем прежнюю non-negative check. Unit regression покрывает `Infinity` и `NaN`.
 
 ## Наблюдения без отдельного finding
 

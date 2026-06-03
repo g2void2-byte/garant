@@ -2369,9 +2369,9 @@ class AdminSettingsUpdateIn(BaseModel):
     @field_validator("pin_reset_price_usd")
     @classmethod
     def _price_ok(cls, v: Decimal | float | int | None) -> Decimal | None:
-        if v is None:
-            return v
-        d = Decimal(str(v))
+        d = _reject_non_finite_money(v)
+        if d is None:
+            return None
         if d < 0:
             raise ValueError("Цена не может быть отрицательной")
         return d

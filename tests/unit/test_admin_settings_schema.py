@@ -60,3 +60,11 @@ def test_faq_stats_values_accept_zero_boundary():
     assert model.faq_stats_users == 0
     assert model.faq_stats_deals == 0
     assert model.faq_stats_total_usd == Decimal("0")
+
+
+@pytest.mark.parametrize("value", [Decimal("Infinity"), Decimal("NaN")])
+def test_pin_reset_price_rejects_non_finite_values(value: Decimal):
+    with pytest.raises(ValidationError) as exc:
+        AdminSettingsUpdateIn(pin_reset_price_usd=value)
+
+    assert exc.value.errors()[0]["loc"] == ("pin_reset_price_usd",)

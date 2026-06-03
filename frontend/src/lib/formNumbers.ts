@@ -26,6 +26,13 @@ export function parseSignedNonZeroDecimalInput(raw: string): number | null {
   return isFiniteSafeNumber(parsed) && parsed !== 0 ? parsed : null;
 }
 
+export function parseSignedDecimalInput(raw: string): number | null {
+  const value = raw.trim();
+  if (!SIGNED_DECIMAL_RE.test(value)) return null;
+  const parsed = Number(value);
+  return isFiniteSafeNumber(parsed) ? parsed : null;
+}
+
 export function parseNonNegativeIntInput(raw: string, max?: number): number | null {
   const value = raw.trim();
   if (!/^\d+$/.test(value)) return null;

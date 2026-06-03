@@ -143,6 +143,29 @@ describe("<AdminSettingsPage />", () => {
     );
   });
 
+  it("does not dirty settings when numeric inputs use ambiguous syntax or wrong type", () => {
+    mockState.data = makeSettings();
+    renderPage();
+
+    const buttons = screen.getAllByRole("button");
+    const save = buttons[buttons.length - 1];
+    fireEvent.change(screen.getByDisplayValue("2"), {
+      target: { value: "1e2" },
+    });
+    fireEvent.change(screen.getByDisplayValue("-1"), {
+      target: { value: "0x10" },
+    });
+    fireEvent.change(screen.getByDisplayValue("7"), {
+      target: { value: "1.5" },
+    });
+    fireEvent.change(screen.getByDisplayValue("3"), {
+      target: { value: "Infinity" },
+    });
+
+    expect(save).toBeDisabled();
+    expect(mockState.update.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it("shows warning banner when maintenance is toggled on (unsaved)", async () => {
     mockState.data = makeSettings({ maintenance_enabled: false });
     const user = userEvent.setup();

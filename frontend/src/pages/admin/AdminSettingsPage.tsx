@@ -12,6 +12,11 @@ import { useAdminSettings, useAdminUpdateSettings } from "@/api/admin/hooks";
 import type { AdminSettingsDto } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { StatsBadge } from "@/components/domain/StatsBadge";
+import {
+  parseNonNegativeDecimalInput,
+  parseNonNegativeIntInput,
+  parseSignedDecimalInput,
+} from "@/lib/formNumbers";
 
 /**
  * `/admin/settings` — global app configuration.
@@ -72,18 +77,23 @@ export default function AdminSettingsPage() {
           <Row label="Пользователей">
             <NumberField
               value={form.faq_stats_users}
+              parse={parseNonNegativeIntInput}
+              inputMode="numeric"
               onChange={(v) => setForm({ ...form, faq_stats_users: v })}
             />
           </Row>
           <Row label="Сделок">
             <NumberField
               value={form.faq_stats_deals}
+              parse={parseNonNegativeIntInput}
+              inputMode="numeric"
               onChange={(v) => setForm({ ...form, faq_stats_deals: v })}
             />
           </Row>
           <Row label="Объём (USD)">
             <NumberField
               value={form.faq_stats_total_usd}
+              parse={parseNonNegativeDecimalInput}
               onChange={(v) => setForm({ ...form, faq_stats_total_usd: v })}
             />
           </Row>
@@ -135,12 +145,14 @@ export default function AdminSettingsPage() {
           <Row label="Обычная комиссия (сделки)">
             <NumberField
               value={form.deal_commission_percent}
+              parse={parseRegularCommissionPercent}
               onChange={(v) => setForm({ ...form, deal_commission_percent: v })}
             />
           </Row>
           <Row label="VIP комиссия (−1 = такая же как обычная)">
             <NumberField
               value={form.vip_commission_percent}
+              parse={parseVipCommissionPercent}
               onChange={(v) => setForm({ ...form, vip_commission_percent: v })}
             />
           </Row>
@@ -150,6 +162,8 @@ export default function AdminSettingsPage() {
           <Row label="Авто-истечение pending payment (дни)">
             <NumberField
               value={form.inactivity_pending_confirmation_days}
+              parse={parseNonNegativeIntInput}
+              inputMode="numeric"
               onChange={(v) =>
                 setForm({ ...form, inactivity_pending_confirmation_days: v })
               }
@@ -158,6 +172,8 @@ export default function AdminSettingsPage() {
           <Row label="Авто-cancellation (дни)">
             <NumberField
               value={form.inactivity_pending_cancellation_days}
+              parse={parseNonNegativeIntInput}
+              inputMode="numeric"
               onChange={(v) =>
                 setForm({ ...form, inactivity_pending_cancellation_days: v })
               }
@@ -166,12 +182,16 @@ export default function AdminSettingsPage() {
           <Row label="Истечение pending topup (часы)">
             <NumberField
               value={form.pending_topup_expiry_hours}
+              parse={parseNonNegativeIntInput}
+              inputMode="numeric"
               onChange={(v) => setForm({ ...form, pending_topup_expiry_hours: v })}
             />
           </Row>
           <Row label="Максимум активных услуг на юзера">
             <NumberField
               value={form.max_active_services_per_user}
+              parse={parseNonNegativeIntInput}
+              inputMode="numeric"
               onChange={(v) => setForm({ ...form, max_active_services_per_user: v })}
             />
           </Row>
@@ -186,7 +206,8 @@ export default function AdminSettingsPage() {
           </Row>
           <Row label="Цена восстановления PIN ($)">
             <NumberField
-              value={Number(form.pin_reset_price_usd ?? 0)}
+              value={form.pin_reset_price_usd ?? 0}
+              parse={parseNonNegativeDecimalInput}
               onChange={(v) => setForm({ ...form, pin_reset_price_usd: v })}
             />
           </Row>
@@ -284,19 +305,33 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 function NumberField({
   value,
   onChange,
+  parse = parseNonNegativeDecimalInput,
+  inputMode = "decimal",
 }: {
   value: number;
   onChange: (v: number) => void;
+  parse?: (raw: string) => number | null;
+  inputMode?: "decimal" | "numeric";
 }) {
   return (
     <Input
-      inputMode="decimal"
+      inputMode={inputMode}
       value={String(value)}
       onChange={(e) => {
-        const v = Number(e.target.value);
-        if (!Number.isNaN(v)) onChange(v);
+        const v = parse(e.target.value);
+        if (v !== null) onChange(v);
       }}
       className="!w-28 !text-right"
     />
   );
+}
+
+function parseRegularCommissionPercent(raw: string): number | null {
+  const parsed = parseNonNegativeDecimalInput(raw);
+  return parsed !== null && parsed <= 100 ? parsed : null;
+}
+
+function parseVipCommissionPercent(raw: string): number | null {
+  const parsed = parseSignedDecimalInput(raw);
+  return parsed !== null && parsed >= -1 && parsed <= 100 ? parsed : null;
 }
