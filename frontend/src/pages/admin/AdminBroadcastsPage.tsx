@@ -164,6 +164,7 @@ function Pagination({
 // inline deeplink error match what the server would reject.
 const BODY_MAX_LEN = 4096;
 const DEEPLINK_MAX_LEN = 256;
+const DEEPLINK_ERROR = "Ссылка должна начинаться с https:// или tg://";
 
 function parseOptionalNonNegativeInt(raw: string): number | undefined {
   const value = raw.trim();
@@ -179,17 +180,49 @@ function nonNegativeIntError(raw: string): string | null {
     : null;
 }
 
+function hasRawUrlWhitespaceOrControl(value: string): boolean {
+  for (const ch of value) {
+    const code = ch.charCodeAt(0);
+    if (code <= 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
 function validateDeeplink(raw: string): string | null {
   const v = raw.trim();
   if (!v) return null;
   if (v.length > DEEPLINK_MAX_LEN) {
     return `Ссылка слишком длинная (≤${DEEPLINK_MAX_LEN})`;
   }
-  const low = v.toLowerCase();
-  if (!(low.startsWith("https://") || low.startsWith("tg://"))) {
-    return "Ссылка должна начинаться с https:// или tg://";
+  if (hasRawUrlWhitespaceOrControl(v)) {
+    return DEEPLINK_ERROR;
   }
-  return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(v);
+  } catch {
+    return DEEPLINK_ERROR;
+  }
+  const low = v.toLowerCase();
+  if (parsed.protocol === "https:") {
+    if (!low.startsWith("https://") || v.charAt("https://".length) === "/") {
+      return DEEPLINK_ERROR;
+    }
+    if (!parsed.hostname || parsed.username || parsed.password) {
+      return DEEPLINK_ERROR;
+    }
+    return null;
+  }
+  if (parsed.protocol === "tg:") {
+    if (!low.startsWith("tg://") || v.charAt("tg://".length) === "/") {
+      return DEEPLINK_ERROR;
+    }
+    if (!parsed.hostname) {
+      return DEEPLINK_ERROR;
+    }
+    return null;
+  }
+  return DEEPLINK_ERROR;
 }
 
 function Composer({ onClose }: { onClose: () => void }) {

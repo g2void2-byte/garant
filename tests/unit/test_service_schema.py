@@ -32,6 +32,38 @@ def test_service_create_rejects_empty_or_too_long_category_slug(bad: str) -> Non
         ServiceCreate(category_slug=bad, title="Title")
 
 
+def test_service_photo_urls_accept_https_and_media_urls_with_dedupe() -> None:
+    body = ServiceCreate(
+        category_slug="services",
+        title="Title",
+        photo_urls=[
+            " https://cdn.example/photo.png ",
+            "/media/service/photo.png",
+            "https://cdn.example/photo.png",
+            "",
+        ],
+    )
+
+    assert body.photo_urls == [
+        "https://cdn.example/photo.png",
+        "/media/service/photo.png",
+    ]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "http://cdn.example/photo.png",
+        "https:///photo.png",
+        "https://cdn.example@evil.example/photo.png",
+        "https://cdn.example/photo\nnext.png",
+    ],
+)
+def test_service_photo_urls_reject_malformed_links(bad: str) -> None:
+    with pytest.raises(ValidationError):
+        ServiceCreate(category_slug="services", title="Title", photo_urls=[bad])
+
+
 def test_service_update_trims_optional_title() -> None:
     assert ServiceUpdate(title="  Title  ").title == "Title"
     assert ServiceUpdate(title=None).title is None

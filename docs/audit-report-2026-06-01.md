@@ -80,7 +80,7 @@
 - M-47: users picker больше не обходит search gate пустым `picker=1` запросом.
 - M-48: offset-пагинация admin/public списков больше не сортирует страницы только по `created_at` без `id` tie-breaker.
 - M-49: admin deal approvals API больше не обрезает очередь первыми 200 заявками без total/offset.
-- M-50-M-106: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing, admin finance form number parsing, user service/deal amount parsing, admin content form number parsing, admin user-detail form number parsing, admin deal action form number parsing, admin users page parsing, admin settings form parsing, admin deals page parsing follow-up, PIN reset price non-finite guard, display decimal parsing, topup invoice metadata, profile rating display и Retry-After/crop zoom parsing исправлены.
+- M-50-M-108: admin exact-user lookup, wallet preview, content rating validation, settings bounds/stats, zero-deal own-service listing, auto-withdraw races, paid PIN reset delivery rollback, account-transfer code race, Crystalpay webhook dedupe, refunded-deposit re-credit guards, event-loop-safe maintenance cache, strict deal attachment ids/admin review ids, strict review rating/deal_id, strict service-comment ratings, strict admin deal action ids, strict admin counter integers, strict boolean payload flags, strict admin manual rating numbers, admin currency schema hardening, service write schema hardening, broadcast audience strict ints, arbitration resolve enum, username refs, currency-code normalization, 2FA secret/code contract, query-filter contracts, public user search filters, notification/audit query contracts, admin numeric filter guards, strict route id parsing, notification deal-link parsing, admin finance form number parsing, user service/deal amount parsing, admin content form number parsing, admin user-detail form number parsing, admin deal action form number parsing, admin users page parsing, admin settings form parsing, admin deals page parsing follow-up, PIN reset price non-finite guard, display decimal parsing, topup invoice metadata, profile rating display, Retry-After/crop zoom parsing, service photo URL validation и broadcast deeplink validation исправлены.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1205,6 +1205,26 @@ Rate-limit toast парсил `Retry-After` через `parseFloat`, поэто�
 Риск: это не core business mutation, но оба места являются user-facing recovery controls. Rate-limit UI мог обещать неверное время повтора, а crop modal мог получить invalid/oversized zoom state при нестандартном event payload.
 
 Исправление: `Retry-After` теперь принимает strict integer seconds или HTTP-date, иначе fallback toast остается 5 seconds. Banner zoom принимает only plain decimals, clamps to `1..3`, and keeps current zoom for malformed values.
+
+### M-107. Service photo URL schema все еще полагалась на prefix-only URL check
+
+Ссылки: `backend/app/schemas.py`, regression `tests/unit/test_service_schema.py`.
+
+`ServiceCreate.photo_urls` и `ServiceUpdate.photo_urls` имели собственный validator, который проверял только `https://` или `/media/` prefix. При этом profile/forum/banner URL уже проходили общий parser с host/userinfo/control-character checks. Из-за расхождения service photo list принимал `https:///photo.png`, `https://cdn.example@evil.example/photo.png` и raw newline/control-character формы.
+
+Риск: service gallery могла сохранить визуально обманчивую или malformed ссылку, которую frontend затем отдавал в `<img src>`. Для admin/user-generated service content это тот же URL-boundary, что уже был закрыт для avatar/banner/forum links, но оставался более слабым в service photos.
+
+Исправление: service photo validator теперь использует общий `_validate_https_or_media_url`, сохраняя прежние `/media/...` ссылки, trim/empty-drop/dedupe поведение и cap на 6 фото. Unit regression покрывает valid https/media, dedupe, empty host, userinfo, http и control-character inputs.
+
+### M-108. Broadcast deeplink backend/frontend принимали malformed URL по одному prefix
+
+Ссылки: `backend/app/schemas.py`, `frontend/src/pages/admin/AdminBroadcastsPage.tsx`, regressions `tests/unit/test_admin_broadcast_schema.py`, `frontend/src/pages/admin/AdminBroadcastsPage.test.tsx`.
+
+Admin broadcast deeplink валидировался через lowercase `startsWith("https://") || startsWith("tg://")` на backend и frontend. Поэтому `https:///garant`, `https://t.me@evil.example/garant`, raw newline/control-character URL и пустой `tg://` проходили frontend inline gate или доходили до backend schema как допустимые ссылки.
+
+Риск: broadcast DM path заворачивает deeplink в HTML `<a href="...">`; prefix-only validation оставляла место для обманчивых Telegram/HTTPS ссылок или malformed href, которые могут выглядеть как доверенный домен либо ломать Telegram parsing уже после отправки рассылки.
+
+Исправление: добавлен parser для admin deeplinks: `https` требует host без userinfo, `tg` требует target, raw whitespace/control chars запрещены, length cap сохранен. Frontend composer зеркалит тот же contract и блокирует preview/send до запроса.
 
 ## Наблюдения без отдельного finding
 

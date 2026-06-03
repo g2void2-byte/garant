@@ -82,6 +82,30 @@ def _validate_https_or_media_url(v: str, *, what: str, max_len: int = 1024) -> s
     return v
 
 
+def _validate_https_or_tg_url(v: str, *, what: str, max_len: int = 256) -> str:
+    """Validate admin-authored links used in Telegram HTML anchors."""
+    v = v.strip()
+    if not v:
+        raise ValueError(f"{what} не может быть пустой")
+    if len(v) > max_len:
+        raise ValueError(f"{what} слишком длинная (≤{max_len})")
+    for ch in v:
+        if ord(ch) < 0x20 or ch in (" ", "\x7f"):
+            raise ValueError(f"{what} содержит недопустимые символы")
+    parsed = urlparse(v)
+    scheme = parsed.scheme.lower()
+    if scheme == "https":
+        host = parsed.netloc or ""
+        if not host or "@" in host:
+            raise ValueError(f"{what} должна быть корректной https:// ссылкой без userinfo")
+        return v
+    if scheme == "tg":
+        if not parsed.netloc:
+            raise ValueError(f"{what} должна быть корректной tg:// ссылкой")
+        return v
+    raise ValueError(f"{what} должна начинаться с https:// или tg://")
+
+
 # H-1: internal calculations use ``Decimal`` for precision, but the
 # JSON wire format emits a plain number (``float``) so the frontend
 # (JavaScript) can consume values without a string→number parse step.
@@ -665,11 +689,7 @@ def _validate_service_photos(v: list[str] | None) -> list[str] | None:
         s = (entry or "").strip()
         if not s:
             continue
-        if len(s) > 1024:
-            raise ValueError("Слишком длинная ссылка на фото")
-        low = s.lower()
-        if not (low.startswith("https://") or low.startswith("/media/")):
-            raise ValueError("Фото должно быть https:// или /media/... ссылкой")
+        s = _validate_https_or_media_url(s, what="Фото", max_len=1024)
         if s in seen:
             continue
         seen.add(s)
@@ -2698,8 +2718,6 @@ class AdminBroadcastCreateIn(BaseModel):
         v = v.strip()
         if not v:
             return None
-        if len(v) > 256:
-            raise ValueError("Ссылка слишком длинная (≤256)")
         # M-12: the broadcast DM flow used to ``html.escape`` this
         # value before appending it to the message body, which
         # rewrote any ``?a=1&b=2`` query string into
@@ -2709,10 +2727,7 @@ class AdminBroadcastCreateIn(BaseModel):
         # tag (with attribute escaping only) downstream. Allowed
         # schemes mirror the public ForumOut URL validator
         # (``https://``) plus ``tg://`` for in-app deep links.
-        low = v.lower()
-        if not (low.startswith("https://") or low.startswith("tg://")):
-            raise ValueError("Ссылка должна начинаться с https:// или tg://")
-        return v
+        return _validate_https_or_tg_url(v, what="Ссылка", max_len=256)
 
     @field_validator("audience_active_days", "audience_min_deals", mode="before")
     @classmethod

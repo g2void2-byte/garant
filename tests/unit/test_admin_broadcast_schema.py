@@ -18,6 +18,34 @@ def test_admin_broadcast_audience_ints_accept_explicit_ints_or_none() -> None:
     assert AdminBroadcastCreateIn(body="message").audience_active_days is None
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        " https://t.me/garant?start=deal_42&x=1 ",
+        "tg://resolve?domain=garant_bot",
+    ],
+)
+def test_admin_broadcast_deeplink_accepts_valid_https_and_tg_urls(url: str) -> None:
+    assert AdminBroadcastCreateIn(body="message", deeplink=url).deeplink == url.strip()
+    assert AdminBroadcastCreateIn(body="message", deeplink="  ").deeplink is None
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "http://t.me/garant",
+        "https:///garant",
+        "https://t.me@evil.example/garant",
+        "https://t.me/garant\nnext",
+        "tg://",
+        "tg:///resolve?domain=garant_bot",
+    ],
+)
+def test_admin_broadcast_deeplink_rejects_malformed_urls(bad: str) -> None:
+    with pytest.raises(ValidationError):
+        AdminBroadcastCreateIn(body="message", deeplink=bad)
+
+
 @pytest.mark.parametrize("field", ["audience_active_days", "audience_min_deals"])
 @pytest.mark.parametrize("bad", [True, False, "5", 5.0, -1])
 def test_admin_broadcast_audience_ints_reject_coerced_or_negative_values(

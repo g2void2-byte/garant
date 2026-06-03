@@ -407,6 +407,19 @@ describe("<AdminBroadcastsPage />", () => {
     expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Предпросмотр" })).toBeDisabled();
 
+    fireEvent.change(deeplinkInput, {
+      target: { value: "https://t.me@evil.example/garant" },
+    });
+    expect(
+      screen.getByText(/начинаться с https:\/\/ или tg:\/\//),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
+
+    fireEvent.change(deeplinkInput, {
+      target: { value: "tg://" },
+    });
+    expect(screen.getByRole("button", { name: "Предпросмотр" })).toBeDisabled();
+
     // ``https://`` is accepted.
     fireEvent.change(deeplinkInput, {
       target: { value: "https://t.me/garant_bot/app" },
