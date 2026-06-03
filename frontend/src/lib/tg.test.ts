@@ -81,7 +81,9 @@ async function importTgWithFake(platform: string) {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   (window as unknown as { Telegram?: { WebApp: FakeWebApp } }).Telegram = undefined;
+  window.localStorage.clear();
   vi.resetModules();
 });
 
@@ -216,6 +218,14 @@ describe("getInitData", () => {
     const { mod } = await importTgWithFake("ios");
     expect(mod.getInitData()).toBe("dev-fallback-token");
     window.localStorage.clear();
+  });
+
+  it("ignores the dev fallback when localStorage reads are blocked", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("blocked", "SecurityError");
+    });
+    const { mod } = await importTgWithFake("ios");
+    expect(mod.getInitData()).toBe("");
   });
 });
 

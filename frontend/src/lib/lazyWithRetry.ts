@@ -1,5 +1,7 @@
 import { lazy, type ComponentType } from "react";
 
+import { safeSessionStorageGet, safeSessionStorageRemove, safeSessionStorageSet } from "@/lib/storage";
+
 // ``React.lazy`` itself widens to ``ComponentType<any>`` (see the
 // upstream typings) so callers can keep their original prop types
 // without contorting them through ``ComponentType<unknown>``. Match
@@ -44,10 +46,11 @@ export function lazyWithRetry<T extends AnyComponent>(
       return await factory();
     } catch (err) {
       const key = `${RELOAD_KEY_PREFIX}${cacheKey ?? factory.toString().slice(0, 60)}`;
-      if (typeof window !== "undefined" && typeof sessionStorage !== "undefined") {
-        const reloaded = sessionStorage.getItem(key);
+      if (typeof window !== "undefined") {
+        const reloaded = safeSessionStorageGet(key);
         if (!reloaded) {
-          sessionStorage.setItem(key, "1");
+          const reloadGuardStored = safeSessionStorageSet(key, "1");
+          if (!reloadGuardStored) throw err;
           // Force-fetch the latest ``index.html`` so the browser
           // re-discovers the current chunk URLs. ``true`` was the
           // legacy ``forcedReload`` flag — it's still honoured by
@@ -59,7 +62,7 @@ export function lazyWithRetry<T extends AnyComponent>(
         }
         // Clear so a subsequent successful load doesn't keep the
         // "we already tried" flag forever in this tab.
-        sessionStorage.removeItem(key);
+        safeSessionStorageRemove(key);
       }
       throw err;
     }

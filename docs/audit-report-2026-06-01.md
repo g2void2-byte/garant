@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 78 файлов, 736 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 79 файлов, 741 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -103,6 +103,9 @@
 - M-131: admin broadcast fan-out now keyset-pages recipient ids instead of materializing the whole audience id list before chunking.
 - M-132: admin broadcast create/preview and composer now require at least one delivery channel, so zero-channel broadcasts cannot be sent as successful records.
 - M-133: admin broadcast language filters now enforce the same ASCII language-tag contract in backend schema and frontend composer validation.
+- M-134: UI display preferences now tolerate blocked `localStorage` at import time and still update in-memory state.
+- M-135: the dev `initData` fallback now treats blocked `localStorage` as a missing fallback instead of crashing auth bootstrap.
+- M-136: lazy route chunk retry now preserves the original import error when `sessionStorage` is unavailable and reloads only with a stored guard.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1497,6 +1500,36 @@ The composer only capped the language input length. It did not reject characters
 Risk: malformed language filters could be caught only after submit, or accepted by backend while not matching the intended language-code contract. That makes a broadcast audience harder to reason about and weakens the schema/UI mirror promised in the composer comment.
 
 Fix: backend language validation now requires ASCII alphanumeric characters plus `-`, while still lowercasing and trimming. The composer applies the same max length and character rule before preview/send and normalizes valid tags such as `PT-BR` to `pt-br` in the request body.
+
+### M-134. UI preference store could crash at module import when localStorage was blocked
+
+Links: `frontend/src/stores/ui.ts`, `frontend/src/lib/storage.ts`, regression `frontend/src/stores/ui.test.ts`.
+
+`useUI` read `window.localStorage.getItem("hideDesignations")` while the module was evaluated, then wrote/removed the same key directly from the setter. Browsers can throw `SecurityError` when storage is disabled, origin policy blocks it, or the app is embedded in a constrained WebView. Because the read happened during import, this could fail before React mounted any recovery UI.
+
+Risk: a user with blocked storage could white-screen on startup from a display preference that should be best-effort only. Later writes could likewise throw instead of updating in-memory UI state.
+
+Fix: added safe browser-storage helpers that guard storage object access and method calls. The UI store now initializes the preference through that helper and always updates the in-memory zustand state even when persistence is unavailable. Regression coverage forces `localStorage` reads/writes to throw and verifies import/setter behavior remains stable.
+
+### M-135. Dev initData fallback could throw during auth bootstrap
+
+Links: `frontend/src/lib/tg.ts`, `frontend/src/lib/storage.ts`, regression `frontend/src/lib/tg.test.ts`.
+
+`getInitData()` had a production-gated local-development fallback for `localStorage.dev_init_data`, but the fallback still called `window.localStorage.getItem()` directly. In dev, preview, or tests with blocked storage this could throw while the API client or WebSocket auth path was bootstrapping.
+
+Risk: local/preview environments outside Telegram could crash before returning the intended empty initData string. That makes auth diagnostics noisier and keeps a dev-only convenience path wider than other best-effort storage helpers in the frontend.
+
+Fix: the dev fallback now uses the shared safe localStorage getter. Blocked storage simply behaves like a missing fallback value and `getInitData()` returns `""`; Telegram-provided `initData` still takes priority.
+
+### M-136. Lazy chunk retry could mask import failures with sessionStorage errors
+
+Links: `frontend/src/lib/lazyWithRetry.ts`, `frontend/src/lib/storage.ts`, regression `frontend/src/lib/lazyWithRetry.test.tsx`.
+
+`lazyWithRetry()` used `sessionStorage` as a one-shot reload guard after a failed dynamic import. If `sessionStorage.getItem()`/`setItem()`/`removeItem()` threw, the storage exception replaced the original chunk import error and the reload-loop guard could not be trusted.
+
+Risk: a stale or missing route chunk in a storage-blocked WebView could surface as a misleading storage failure, or attempt a hard reload without a persisted guard. That weakens the top-level error boundary path for the exact startup/navigation failure this helper is meant to contain.
+
+Fix: the retry path now uses safe sessionStorage helpers. It reloads only when the guard can be stored, preserves the original chunk error when storage is unavailable, and treats guard cleanup as best-effort. Regression coverage verifies the one-shot reload path and the blocked-storage path.
 
 ## Наблюдения без отдельного finding
 

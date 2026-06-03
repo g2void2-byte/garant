@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { safeLocalStorageGet, safeLocalStorageRemove, safeLocalStorageSet } from "@/lib/storage";
+
 interface UIState {
   searchMode: "users" | "services";
   setSearchMode: (mode: "users" | "services") => void;
@@ -17,12 +19,10 @@ interface UIState {
 export const useUI = create<UIState>((set) => ({
   searchMode: "users",
   setSearchMode: (mode) => set({ searchMode: mode }),
-  hideDesignations: typeof window !== "undefined" && window.localStorage.getItem("hideDesignations") === "1",
+  hideDesignations: safeLocalStorageGet("hideDesignations") === "1",
   setHideDesignations: (v) => {
-    if (typeof window !== "undefined") {
-      if (v) window.localStorage.setItem("hideDesignations", "1");
-      else window.localStorage.removeItem("hideDesignations");
-    }
+    if (v) safeLocalStorageSet("hideDesignations", "1");
+    else safeLocalStorageRemove("hideDesignations");
     set({ hideDesignations: v });
   },
   adminMenuOpen: false,

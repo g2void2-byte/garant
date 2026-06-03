@@ -5,6 +5,8 @@
 
 import { useEffect, useState } from "react";
 
+import { safeLocalStorageGet } from "@/lib/storage";
+
 type HapticStyle = "light" | "medium" | "heavy" | "soft" | "rigid";
 type HapticNotification = "error" | "success" | "warning";
 
@@ -244,8 +246,8 @@ export function getInitData(): string {
   // controlled ``dev_init_data`` value would let a compromised JS
   // context bypass server-side auth whenever the backend has
   // ``allow_unsigned_init_data`` enabled.
-  if (import.meta.env.DEV && typeof window !== "undefined") {
-    const stored = window.localStorage.getItem("dev_init_data");
+  if (import.meta.env.DEV) {
+    const stored = safeLocalStorageGet("dev_init_data");
     if (stored) return stored;
   }
   return "";
