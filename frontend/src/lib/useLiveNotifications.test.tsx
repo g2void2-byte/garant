@@ -2,8 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import type { DealMessageDto } from "@/api/hooks";
-import type { NotificationCountersDto, NotificationDto } from "@/api/types";
+import type { DealMessageDto, NotificationCountersDto, NotificationDto } from "@/api/types";
 
 /**
  * Verifies the React Query cache & toast side-effects of the live
@@ -180,6 +179,22 @@ describe("useLiveNotifications", () => {
       data: {
         ...makeDealMessage({ id: 4 }),
         attachments: [{ id: 1, url: "/media/a.png" }],
+      },
+    });
+    wsState.capturedHandlers!.onEvent({
+      event: "deal_message",
+      data: {
+        ...makeDealMessage({ id: 5 }),
+        attachments: [
+          {
+            id: 1,
+            kind: "deal",
+            url: "/media/a.png",
+            name: "a.png",
+            size: 1,
+            content_type: "image/png",
+          },
+        ],
       },
     });
 

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 73 файла, 659 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 73 файла, 663 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -84,6 +84,8 @@
 - M-112: frontend service DTO теперь отражает nullable `owner_username` и обязательный nullable `created_at`; карточки/детали услуг не строят `@null`, `/users/null` и `/create-deal/null`.
 - M-113: per-currency wallet history больше не показывает refunded deposit raw-статусом, а OpenAPI contract test покрывает service/deposit DTO drift.
 - M-114: frontend user/deal/review/support DTO теперь отражают nullable username-поля из OpenAPI; public search/profile/deal/review/support UI не строит `@null`, `/users/null`, `/deals/new?to=null` и `t.me/null`.
+- M-115: deal media/message DTO вынесены в общий contract surface и приведены к OpenAPI; live-notification runtime guard больше не принимает attachment без обязательного `created_at`.
+- M-116: admin audit/analytics UI больше не маскирует missing username как `@7`, `@system` или `@—`.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1288,6 +1290,26 @@ OpenAPI уже объявлял nullable username-поля у `UserOut`/`UserPub
 Риск: пользователь без Telegram username, удаленная сторона сделки или orphaned review/support row могли превращаться в `@null`, `/users/null`, `/deals/new?to=null` или `t.me/null`. Это особенно неприятно в сделках и подборе контрагента: UI выглядел кликабельным, но вел в несуществующий профиль/чат или создавал форму сделки с невалидным контрагентом.
 
 Исправление: DTO nullability приведена к OpenAPI, public cards/search/picker/profile/deal/review/support components показывают явные fallback-состояния и отключают действия, которым нужен username. Contract fixtures закрепляют nullable `UserOut.username`, `DealOut.buyer/seller`, `ReviewOut.author_username/target_username` и `SupportPersonOut.username`.
+
+### M-115. Deal message/media DTO жили вне общего contract surface и расходились с OpenAPI
+
+Ссылки: `frontend/src/api/types.ts`, `frontend/src/api/hooks.ts`, `frontend/src/lib/useLiveNotifications.ts`, `frontend/src/lib/useLiveNotifications.test.tsx`, contract `frontend/src/api/openapi.contract.test.ts`.
+
+`MediaDto` и `DealMessageDto` были объявлены прямо в `api/hooks.ts`, поэтому OpenAPI contract test их не проверял. Ручной `AdminDealMessageDto` дополнительно ожидал несуществующий `sender_display_name` и упрощал `attachments` до `{id,url,mime}`, хотя backend отдает `DealMessageOut.attachments: MediaOut[]` с `kind`, `name`, `size`, `content_type` и обязательным nullable `created_at`.
+
+Риск: frontend мог принять или закешировать message attachment, который не соответствует backend-схеме, а будущий код admin deal detail мог опереться на фантомный `sender_display_name` или неполный media object. Live WS guard тоже пропускал attachment без `created_at`, хотя REST/OpenAPI контракт это поле требует.
+
+Исправление: `MediaDto`/`DealMessageDto` перенесены в общий `api/types.ts`, `AdminDealDetailDto.messages` теперь использует тот же `DealMessageDto`, stale `sender_display_name` удален через alias, а `isMediaDto()` требует `created_at: string | null`. Contract fixtures закрепляют `MediaOut`, `DealMessageOut`, `AdminDealDetailOut` и `AdminUserDetailOut.sessions_count`.
+
+### M-116. Admin audit/analytics показывали fallback actor/username как Telegram handle
+
+Ссылки: `frontend/src/pages/admin/AdminAuditPage.tsx`, `frontend/src/pages/admin/AdminAnalyticsPage.tsx`, regressions `frontend/src/pages/admin/AdminAuditPage.test.tsx`, `frontend/src/pages/admin/AdminAnalyticsPage.test.tsx`.
+
+Admin audit row строил `by @{row.actor_username ?? row.actor_id ?? "system"}`, поэтому системное событие отображалось как `by @system`, а запись с отсутствующим username, но известным actor_id, как `by @7`. Аналитика top-users аналогично показывала пользователя без username как `@—`.
+
+Риск: оператор мог принять числовой actor_id или системный источник за Telegram username, особенно при разборе audit trail. `@—` в top-листах выглядело как сломанный handle, а не как нормальное отсутствие username.
+
+Исправление: audit row теперь явно различает `by @username`, `by user #id` и `by system`; analytics top-users показывает fallback `username не задан` без `@`.
 
 ## Наблюдения без отдельного finding
 

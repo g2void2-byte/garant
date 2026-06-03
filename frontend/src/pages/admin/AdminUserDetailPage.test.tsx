@@ -163,6 +163,7 @@ function makeUser(
     last_ip: "1.2.3.4",
     last_login_at: "2026-01-01T00:00:00Z",
     login_count: 7,
+    sessions_count: 2,
     created_at: "2025-01-01T00:00:00Z",
     ...overrides,
   };

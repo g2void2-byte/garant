@@ -151,7 +151,8 @@ describe("<AdminAnalyticsPage />", () => {
     expect(screen.getByText("Alice")).toBeInTheDocument();
     expect(screen.getByText("@alice")).toBeInTheDocument();
     expect(screen.getByText("Anon")).toBeInTheDocument();
-    expect(screen.getByText("@—")).toBeInTheDocument();
+    expect(screen.getByText("username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d")).toBeInTheDocument();
+    expect(screen.queryByText("@—")).not.toBeInTheDocument();
     expect(screen.getByText("9")).toBeInTheDocument();
   });
 

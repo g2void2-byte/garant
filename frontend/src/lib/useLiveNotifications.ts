@@ -5,13 +5,11 @@ import { haptic } from "@/lib/tg";
 import { clearPinToken } from "@/lib/pin";
 import { useToast } from "@/components/ui/Toast";
 import { qk } from "@/api/queryKeys";
-import type { NotificationDto } from "@/api/types";
+import type { DealMessageDto, MediaDto, NotificationDto } from "@/api/types";
 import { isPositiveSafeInteger } from "@/lib/routeParams";
 import {
   applyServerNotificationRead,
   invalidateDealParticipantSideEffects,
-  type DealMessageDto,
-  type MediaDto,
 } from "@/api/hooks";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -35,9 +33,7 @@ function isMediaDto(value: unknown): value is MediaDto {
     typeof value.name === "string" &&
     isNonNegativeSafeIntValue(value.size) &&
     typeof value.content_type === "string" &&
-    (typeof value.created_at === "string" ||
-      value.created_at === null ||
-      value.created_at === undefined)
+    (typeof value.created_at === "string" || value.created_at === null)
   );
 }
 

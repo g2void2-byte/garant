@@ -202,6 +202,11 @@ function SparklineCard({
   );
 }
 
+function usernameLabel(username: string | null): string {
+  const normalized = username?.trim();
+  return normalized ? `@${normalized}` : "username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d";
+}
+
 function TopList({
   title,
   entries,
@@ -227,7 +232,7 @@ function TopList({
                 <span className="text-text-muted w-5 text-right">{i + 1}.</span>
                 <span className="truncate">
                   {e.display_name}{" "}
-                  <span className="text-text-muted">@{e.username ?? "—"}</span>
+                  <span className="text-text-muted">{usernameLabel(e.username)}</span>
                 </span>
               </div>
               <span className="font-mono text-text-muted">{e.value}</span>

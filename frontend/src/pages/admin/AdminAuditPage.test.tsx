@@ -109,7 +109,7 @@ describe("<AdminAuditPage />", () => {
     expect(screen.getByText(/Причина: spam/)).toBeInTheDocument();
   });
 
-  it("falls back to actor_id when actor_username is null, and to 'system' when actor_id is also null", () => {
+  it("falls back to actor_id without pretending it is a username, and to 'system' when actor_id is also null", () => {
     mockState.list = {
       items: [
         makeRow({ id: 1, actor_username: null, actor_id: 7 }),
@@ -120,8 +120,10 @@ describe("<AdminAuditPage />", () => {
       page_size: 50,
     };
     renderPage();
-    expect(screen.getByText(/by @7/)).toBeInTheDocument();
-    expect(screen.getByText(/by @system/)).toBeInTheDocument();
+    expect(screen.getByText(/by user #7/)).toBeInTheDocument();
+    expect(screen.getByText(/by system/)).toBeInTheDocument();
+    expect(screen.queryByText(/by @7/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/by @system/)).not.toBeInTheDocument();
   });
 
   it("renders payload as a truncated JSON block when it has keys", () => {

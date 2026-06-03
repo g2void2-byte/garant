@@ -21,9 +21,13 @@ import { describe, expect, it } from "vitest";
 import openapi from "../../openapi.json";
 import type { components } from "./openapi.generated";
 import type {
+  AdminDealDetailDto,
+  AdminUserDetailDto,
   CurrencyDto,
   DealCreateWithTopupResponseDto,
   DealDto,
+  DealMessageDto,
+  MediaDto,
   PinStatusDto,
   ReviewDto,
   ServiceDetailDto,
@@ -35,9 +39,13 @@ import type {
 } from "./types";
 
 type Schemas = components["schemas"];
+type AdminDealDetailOutSchema = Schemas["AdminDealDetailOut"];
+type AdminUserDetailOutSchema = Schemas["AdminUserDetailOut"];
 type DealOutSchema = Schemas["DealOut"];
 type DealCreateWithTopupOutSchema = Schemas["DealCreateWithTopupOut"];
 type CurrencyOutSchema = Schemas["CurrencyOut"];
+type DealMessageOutSchema = Schemas["DealMessageOut"];
+type MediaOutSchema = Schemas["MediaOut"];
 type WalletBalanceOutSchema = Schemas["WalletBalanceOut"];
 type WalletDepositOutSchema = Schemas["WalletDepositOut"];
 type PinStatusOutSchema = Schemas["PinStatusOut"];
@@ -123,6 +131,69 @@ const nullableDealFixture = {
   seller: null,
   role: "unknown-role",
 } as const satisfies DealOutSchema;
+
+const mediaFixture = {
+  id: 701,
+  kind: "deal",
+  url: "/media/deal/701",
+  name: "proof.png",
+  size: 1024,
+  content_type: "image/png",
+  created_at: null,
+} as const satisfies MediaOutSchema;
+
+const dealMessageFixture = {
+  id: 801,
+  deal_id: 17,
+  sender_id: 111,
+  sender_username: null,
+  text: "proof attached",
+  attachments: [mediaFixture],
+  created_at: new Date(0).toISOString(),
+} as const satisfies DealMessageOutSchema;
+
+const adminBalanceSnapshotFixture = {
+  user_id: 111,
+  username: null,
+  display_name: "Buyer",
+  currency_code: "USDT",
+  amount: "10.00000000",
+  locked: "0",
+  total: "10.00000000",
+} as const;
+
+const adminDealDetailFixture = {
+  id: 17,
+  status: "in_progress",
+  description: "Logo design package",
+  currency_code: "USDT",
+  amount: "100.00000000",
+  commission_amount: null,
+  commission_paid: false,
+  topup_deposit_id: null,
+  buyer: adminBalanceSnapshotFixture,
+  seller: {
+    ...adminBalanceSnapshotFixture,
+    user_id: 222,
+    display_name: "Seller",
+  },
+  created_at: new Date(0).toISOString(),
+  in_progress_at: null,
+  completed_at: null,
+  cancellation_initiator: null,
+  cancellation_reason: null,
+  cancellation_requested_at: null,
+  arbitration_initiator: null,
+  arbitration_reason: null,
+  arbitration_resolved_by_id: null,
+  arbitration_resolved_by_username: null,
+  arbitration_resolution: null,
+  arbitration_resolved_at: null,
+  confirm_buyer: false,
+  confirm_seller: false,
+  events: [],
+  messages: [dealMessageFixture],
+} as const satisfies AdminDealDetailOutSchema;
 
 const topupResponseFixture = {
   deal: {
@@ -262,6 +333,42 @@ const supportPersonFixture = {
   prefix: "admin",
 } as const satisfies SupportPersonOutSchema;
 
+const adminUserDetailFixture = {
+  id: 111,
+  tg_user_id: 111,
+  username: null,
+  display_name: "Admin view",
+  photo_url: null,
+  banner_url: null,
+  description: "",
+  trust_deposit_balance: 0,
+  rating_auto: 0,
+  rating_manual: null,
+  rating_effective: 0,
+  good: 0,
+  bad: 0,
+  deals_total: 0,
+  deals_success: 0,
+  deals_failed: 0,
+  deals_arbitrage: 0,
+  deals_sum_override: 0,
+  is_admin: false,
+  is_arbiter: false,
+  is_vip: false,
+  is_banned: false,
+  ban_reason: null,
+  is_frozen: false,
+  freeze_reason: null,
+  is_anonymous_deals: false,
+  is_hidden_profile: false,
+  has_pin: false,
+  last_ip: null,
+  last_login_at: null,
+  login_count: 0,
+  sessions_count: 0,
+  created_at: new Date(0).toISOString(),
+} as const satisfies AdminUserDetailOutSchema;
+
 const pinStatusFixture = {
   has_pin: true,
   attempts_left: 5,
@@ -280,6 +387,9 @@ const pinStatusFixture = {
 const _meDto: UserCardDto = meFixture;
 const _dealDto: DealDto = dealFixture;
 const _nullableDealDto: DealDto = nullableDealFixture;
+const _mediaDto: MediaDto = mediaFixture;
+const _dealMessageDto: DealMessageDto = dealMessageFixture;
+const _adminDealDetailDto: AdminDealDetailDto = adminDealDetailFixture;
 const _topupResponseDto: DealCreateWithTopupResponseDto = topupResponseFixture;
 const _balanceFundedTopupResponseDto: DealCreateWithTopupResponseDto =
   balanceFundedTopupResponseFixture;
@@ -290,6 +400,7 @@ const _serviceDetailDto: ServiceDetailDto = serviceDetailFixture;
 const _walletDepositDto: WalletDepositDto = walletDepositFixture;
 const _reviewDto: ReviewDto = reviewFixture;
 const _supportPersonDto: SupportPersonDto = supportPersonFixture;
+const _adminUserDetailDto: AdminUserDetailDto = adminUserDetailFixture;
 const _pinDto: PinStatusDto = pinStatusFixture;
 
 // Side-effecting reads so ``unused`` lint rules can't trim the
@@ -297,6 +408,9 @@ const _pinDto: PinStatusDto = pinStatusFixture;
 void _meDto;
 void _dealDto;
 void _nullableDealDto;
+void _mediaDto;
+void _dealMessageDto;
+void _adminDealDetailDto;
 void _topupResponseDto;
 void _balanceFundedTopupResponseDto;
 void _currencyDto;
@@ -306,6 +420,7 @@ void _serviceDetailDto;
 void _walletDepositDto;
 void _reviewDto;
 void _supportPersonDto;
+void _adminUserDetailDto;
 void _pinDto;
 
 // ---------------------------------------------------------------------------
@@ -320,7 +435,11 @@ describe("OpenAPI contract", () => {
 
   it.each([
     "UserOut",
+    "AdminUserDetailOut",
     "DealOut",
+    "AdminDealDetailOut",
+    "DealMessageOut",
+    "MediaOut",
     "CurrencyOut",
     "WalletBalanceOut",
     "WalletDepositOut",

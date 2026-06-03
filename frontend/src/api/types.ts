@@ -199,6 +199,26 @@ export interface NotificationCountersDto {
   unread: number;
 }
 
+export interface MediaDto {
+  id: number;
+  kind: string;
+  url: string;
+  name: string;
+  size: number;
+  content_type: string;
+  created_at: string | null;
+}
+
+export interface DealMessageDto {
+  id: number;
+  deal_id: number;
+  sender_id: number;
+  sender_username: string | null;
+  text: string;
+  attachments: MediaDto[];
+  created_at: string;
+}
+
 export interface SupportPersonDto {
   id: number;
   user_id: number;
@@ -412,6 +432,7 @@ export interface AdminUserDetailDto {
   last_ip: string | null;
   last_login_at: string | null;
   login_count: number;
+  sessions_count: number;
   created_at: string;
 }
 
@@ -502,7 +523,7 @@ export interface AdminDealDetailDto {
   confirm_buyer: boolean;
   confirm_seller: boolean;
   events: AdminDealEventDto[];
-  messages: AdminDealMessageDto[];
+  messages: DealMessageDto[];
   pending_approvals?: AdminApprovalDto[];
 }
 
@@ -531,16 +552,7 @@ export interface AdminDealActionResultDto {
   pending_approval?: AdminApprovalDto | null;
 }
 
-export interface AdminDealMessageDto {
-  id: number;
-  deal_id: number;
-  sender_id: number;
-  sender_username: string | null;
-  sender_display_name: string;
-  text: string;
-  attachments: { id: number; url: string; mime: string | null }[];
-  created_at: string;
-}
+export type AdminDealMessageDto = DealMessageDto;
 
 export interface AdminListDealsQuery {
   // Audit L-10 — ``undefined`` (param omitted) is the canonical "no

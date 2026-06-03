@@ -16,6 +16,13 @@ function parsePositiveIntFilter(value: string): number | undefined {
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
+function actorLabel(row: AdminAuditLogDto): string {
+  const username = row.actor_username?.trim();
+  if (username) return `by @${username}`;
+  if (row.actor_id != null) return `by user #${row.actor_id}`;
+  return "by system";
+}
+
 export default function AdminAuditPage() {
   const navigate = useNavigate();
   const [action, setAction] = useState("");
@@ -93,7 +100,7 @@ export default function AdminAuditPage() {
                 </div>
               </div>
               <div className="text-xs text-text-muted mt-1">
-                <span>by @{row.actor_username ?? row.actor_id ?? "system"}</span>
+                <span>{actorLabel(row)}</span>
                 {row.target_type && row.target_id != null && (
                   <span>
                     {" "}· target: {row.target_type}#{row.target_id}

@@ -7,9 +7,8 @@ import {
   useMe,
   useSendDealMessage,
   useUploadMedia,
-  type DealMessageDto,
-  type MediaDto,
 } from "@/api/hooks";
+import type { DealMessageDto, MediaDto } from "@/api/types";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { haptic } from "@/lib/tg";

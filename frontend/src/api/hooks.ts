@@ -10,6 +10,8 @@ import type {
   CurrencyDto,
   DealCreateWithTopupResponseDto,
   DealDto,
+  DealMessageDto,
+  MediaDto,
   NotificationCountersDto,
   NotificationDto,
   NotificationType,
@@ -34,16 +36,6 @@ export function useMe() {
     queryFn: () => api.get("api/me").json(),
     staleTime: 30_000,
   });
-}
-
-export interface MediaDto {
-  id: number;
-  kind: string;
-  url: string;
-  name: string;
-  size: number;
-  content_type: string;
-  created_at?: string | null;
 }
 
 export function invalidateDealParticipantSideEffects(
@@ -431,17 +423,7 @@ export type DealActionPath =
   | "debate"
   | "resolve";
 
-export interface DealMessageDto {
-  id: number;
-  deal_id: number;
-  sender_id: number;
-  sender_username: string | null;
-  text: string;
-  attachments: MediaDto[];
-  created_at: string;
-}
-
-// Audit H2 — backend paginates ``GET /api/deals/{id}/messages`` with a
+// Audit H2 - backend paginates ``GET /api/deals/{id}/messages`` with a
 // ``limit`` (default 50, max 200) and a ``before_id`` cursor. The
 // initial query fetches the newest page; ``useLoadOlderDealMessages``
 // prepends the next older page to the same cache entry. Keeping a
