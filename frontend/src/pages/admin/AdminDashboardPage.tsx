@@ -12,6 +12,7 @@ import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useAdminDashboard } from "@/api/admin/hooks";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { formatAdminCount, parseAdminCount } from "./format";
 
 /**
  * Continental admin home page.
@@ -81,7 +82,7 @@ export default function AdminDashboardPage() {
               icon={<Gavel size={18} />}
               label="В арбитраже"
               value={data.open_arbitration}
-              accent={data.open_arbitration > 0}
+              accent={isPositiveCount(data.open_arbitration)}
               onClick={() => navigate("/admin/arbitration")}
             />
           </Section>
@@ -104,7 +105,7 @@ export default function AdminDashboardPage() {
               icon={<AlertTriangle size={18} />}
               label="Забаненные"
               value={data.banned_users}
-              accent={data.banned_users > 0}
+              accent={isPositiveCount(data.banned_users)}
               onClick={() =>
                 navigate("/admin/users?status=banned")
               }
@@ -144,6 +145,11 @@ export default function AdminDashboardPage() {
   );
 }
 
+function isPositiveCount(value: unknown): boolean {
+  const parsed = parseAdminCount(value);
+  return parsed !== null && parsed > 0;
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
@@ -164,7 +170,7 @@ function Tile({
 }: {
   icon: React.ReactNode;
   label: string;
-  value: number;
+  value: unknown;
   onClick?: () => void;
   accent?: boolean;
 }) {
@@ -178,7 +184,7 @@ function Tile({
       } ${accent ? "ring-1 ring-accent" : ""}`}
     >
       <span className="text-text-muted">{icon}</span>
-      <span className="text-2xl font-bold tabular-nums">{value}</span>
+      <span className="text-2xl font-bold tabular-nums">{formatAdminCount(value)}</span>
       <span className="text-xs text-text-muted">{label}</span>
     </button>
   );

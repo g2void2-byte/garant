@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 86 файлов, 879 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 86 файлов, 881 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -143,6 +143,7 @@
 - M-171: account-transfer code length and TTL UI policy now rejects malformed/zero runtime values before regex, input limits, and labels.
 - M-172: public stats badge now parses runtime counters/volume strictly before count-up animation and compact formatting.
 - M-173: admin displayed totals and broadcast recipient counters now reject malformed runtime counts before subtitles, headers, toasts, and empty-page rewinds.
+- M-174: admin dashboard KPI tiles now reject malformed runtime counters before display and accent-ring decisions.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1937,6 +1938,16 @@ M-170 hardened admin pagination math and several queue badges, but some admin di
 Risk: malformed DTO counters could still mislead operators in broadcasts, deposits, users, wallets, and user content sections, or silently move an admin off a page through a coerced empty-page rewind.
 
 Fix: these surfaces now route displayed totals and broadcast recipient counts through `formatAdminCount`, and user-content rewind checks use `parseAdminCount` before comparing. Malformed totals/counters render as a neutral dash, do not appear raw in subtitles/headers/toasts, and no longer trigger empty-page rewind logic. Regression coverage pins malformed admin totals, broadcast list/preview/create counts, and user-content total rewinds.
+
+### M-174. Admin dashboard KPI tiles coerced malformed runtime counters
+
+Links: `frontend/src/pages/admin/AdminDashboardPage.tsx`, shared formatter `frontend/src/pages/admin/format.ts`, regression `frontend/src/pages/admin/AdminDashboardPage.test.tsx`.
+
+The admin dashboard rendered `/api/admin/dashboard` counters directly in KPI tiles and used raw comparisons like `data.open_arbitration > 0` / `data.banned_users > 0` to add urgent accent rings. Runtime strings such as `"1e2"` or `"0x10"` could therefore appear as credible admin counts, and JavaScript coercion could mark arbitration or banned-user tiles as urgent even though the payload was malformed.
+
+Risk: the dashboard is the admin landing page, so malformed counters could mislead operators before they enter the stricter list pages fixed by M-170/M-173.
+
+Fix: KPI tile values now use `formatAdminCount`, and accent rings use `parseAdminCount` before comparing to zero. Malformed counters render as a neutral dash and do not trigger urgent styling. Regression coverage pins malformed display values and positive-looking malformed accent inputs.
 
 ## Наблюдения без отдельного finding
 

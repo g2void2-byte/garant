@@ -77,6 +77,14 @@ function makeData(overrides: Partial<AdminDashboardDto> = {}): AdminDashboardDto
   };
 }
 
+function findTile(container: HTMLElement, label: string): HTMLButtonElement {
+  const tile = Array.from(
+    container.querySelectorAll<HTMLButtonElement>("button"),
+  ).find((b) => b.textContent?.includes(label));
+  expect(tile).toBeDefined();
+  return tile!;
+}
+
 beforeEach(() => {
   mockState.data = undefined;
   mockState.loading = false;
@@ -115,34 +123,50 @@ describe("<AdminDashboardPage />", () => {
     expect(screen.getByText("200")).toBeInTheDocument(); // total_deals
   });
 
+  it("renders malformed KPI counters as neutral dashes", () => {
+    mockState.data = makeData({
+      total_users: "1e2" as unknown as number,
+      open_arbitration: "0x10" as unknown as number,
+      banned_users: "bad" as unknown as number,
+    });
+    renderPage();
+
+    expect(screen.getAllByText("\u2014").length).toBeGreaterThanOrEqual(3);
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/bad/)).not.toBeInTheDocument();
+  });
+
   it("applies the accent ring to 'open arbitration' tile when count > 0", () => {
     mockState.data = makeData({ open_arbitration: 4 });
     const { container } = renderPage();
-    const arbBtn = Array.from(
-      container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((b) => b.textContent?.includes("В арбитраже"));
-    expect(arbBtn).toBeDefined();
-    expect(arbBtn!.className).toMatch(/ring-1 ring-accent/);
+    const arbBtn = findTile(container, "В арбитраже");
+    expect(arbBtn.className).toMatch(/ring-1 ring-accent/);
   });
 
   it("does NOT apply the accent ring to 'open arbitration' tile when count is 0", () => {
     mockState.data = makeData({ open_arbitration: 0 });
     const { container } = renderPage();
-    const arbBtn = Array.from(
-      container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((b) => b.textContent?.includes("В арбитраже"));
-    expect(arbBtn).toBeDefined();
-    expect(arbBtn!.className).not.toMatch(/ring-1 ring-accent/);
+    const arbBtn = findTile(container, "В арбитраже");
+    expect(arbBtn.className).not.toMatch(/ring-1 ring-accent/);
+  });
+
+  it("does NOT apply accent rings to malformed positive-looking counters", () => {
+    mockState.data = makeData({
+      open_arbitration: "1e2" as unknown as number,
+      banned_users: "0x10" as unknown as number,
+    });
+    const { container } = renderPage();
+
+    expect(findTile(container, "В арбитраже").className).not.toMatch(/ring-1 ring-accent/);
+    expect(findTile(container, "Забаненные").className).not.toMatch(/ring-1 ring-accent/);
   });
 
   it("tile without onClick is rendered as disabled (new_users_24h)", () => {
     mockState.data = makeData();
     const { container } = renderPage();
-    const newBtn = Array.from(
-      container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((b) => b.textContent?.includes("Новые за 24ч"));
-    expect(newBtn).toBeDefined();
-    expect(newBtn!.disabled).toBe(true);
+    const newBtn = findTile(container, "Новые за 24ч");
+    expect(newBtn.disabled).toBe(true);
   });
 
   it("clicking 'Всего' under Сделки navigates to /admin/deals", async () => {
