@@ -195,6 +195,19 @@ describe("<ProfilePage />", () => {
     expect(reviewsState.lastParams).toEqual({ limit: 50, offset: 0 });
   });
 
+  it("renders malformed own review ratings as a neutral dash", async () => {
+    meState.data = makeUser({ username: "me", reviews_count: 1 });
+    servicesState.data = [];
+    reviewsState.data = [makeReview(1, { rating: "1e1" as unknown as number })];
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(screen.getByRole("button", { name: /\u041e\u0442\u0437\u044b\u0432\u044b/i }));
+
+    expect(screen.getByText(/\u2605 \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/\u2605 0\.0/)).not.toBeInTheDocument();
+  });
+
   it("requests the first services page", () => {
     meState.data = makeUser({ username: "me" });
     servicesState.data = [];

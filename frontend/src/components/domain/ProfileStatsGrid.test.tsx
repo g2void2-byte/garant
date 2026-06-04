@@ -45,6 +45,11 @@ describe("<ProfileStatsGrid />", () => {
     expect(screen.queryByText(/\(0\)/)).not.toBeInTheDocument();
   });
 
+  it("shows decimal-string ratings through the shared rating parser", () => {
+    render(<ProfileStatsGrid user={makeUser({ rating: "4.25" as unknown as number, reviews_count: 0 })} />);
+    expect(screen.getByText("4.3")).toBeInTheDocument();
+  });
+
   it("does not coerce malformed rating strings into display ratings", () => {
     render(
       <ProfileStatsGrid

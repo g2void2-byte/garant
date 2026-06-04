@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 84 файлов, 828 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 84 файлов, 831 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -131,6 +131,7 @@
 - M-159: public user/service rating badges now parse string ratings and render malformed/out-of-range values as a neutral dash instead of calling `.toFixed()` on runtime payloads.
 - M-160: admin user/service metric rows now share strict decimal/rating display helpers instead of calling `.toFixed()` on runtime payloads.
 - M-161: admin finance/deal amount surfaces now share strict amount display helpers instead of rendering malformed Decimal payloads as `$0`/`0.00`.
+- M-162: public profile review ratings now use the shared strict rating formatter instead of coercing malformed review payloads to `0.0`.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1805,6 +1806,16 @@ Admin deal list/detail, arbitration, deposit, withdrawal and wallet rows still f
 Risk: a malformed admin finance row could mislead operators into treating a deal, deposit, withdrawal or user balance as zero-valued while the backend value was actually invalid.
 
 Fix: added `formatAdminAmount()` and routed the affected admin finance rows through strict amount/USD display helpers. Canonical decimal strings render normally; malformed/exponent/hex values render as a neutral dash. Regression coverage pins list/detail/arbitration/deposit/withdrawal/wallet displays.
+
+### M-162. Public profile review ratings coerced malformed payloads to zero
+
+Links: `frontend/src/lib/format.ts`, `frontend/src/components/domain/ProfileStatsGrid.tsx`, `frontend/src/pages/profile/ProfilePage.tsx`, `frontend/src/pages/search/UserProfilePage.tsx`, regressions `frontend/src/components/domain/ProfileStatsGrid.test.tsx`, `frontend/src/pages/profile/ProfilePage.test.tsx`, `frontend/src/pages/search/UserProfilePage.test.tsx`.
+
+Own-profile and public-profile review rows still displayed `parseDecimal(r.rating).toFixed(1)`. The strict decimal parser returns zero for malformed strings, so exponent/hex/bad rating payloads could render as a real-looking `0.0` review score. The profile stats grid also carried a local rating parser, which made public rating behavior diverge from the shared helper added for the other rating surfaces.
+
+Risk: one malformed review rating could lower visible profile reputation to `0.0` instead of showing an invalid/neutral value, misleading users and operators while the rest of the profile remained valid.
+
+Fix: profile stats now use the shared `parseRatingValue()`, and own/public review rows render via `formatRatingValue()`. Canonical decimal strings still render normally; malformed/exponent/hex/out-of-range ratings render as a neutral dash. Regression coverage pins the stats grid plus both review tabs.
 
 ## Наблюдения без отдельного finding
 

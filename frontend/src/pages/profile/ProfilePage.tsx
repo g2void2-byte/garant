@@ -34,7 +34,7 @@ import { api } from "@/api/client";
 import type { ReviewDto, ServiceDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 import { confirmDialog } from "@/lib/dialog";
-import { parseDecimal, relativeTime } from "@/lib/format";
+import { formatRatingValue, relativeTime } from "@/lib/format";
 import { normalizeUsernameRef } from "@/lib/usernames";
 
 const PROFILE_REVIEWS_PAGE_SIZE = 50;
@@ -300,9 +300,9 @@ export default function ProfilePage() {
                       OpenAPI client, but it round-trips through
                       Pydantic's ``Decimal`` serializer and a future
                       ``json_encoders`` change could surface it as a
-                      JSON string. ``parseDecimal`` accepts both shapes,
-                      so the call below stays runtime-safe regardless. */}
-                  <span className="text-accent font-bold">★ {parseDecimal(r.rating).toFixed(1)}</span>
+                      JSON string. ``formatRatingValue`` accepts strict decimal shapes,
+                      so malformed/exponent payloads render as a neutral dash. */}
+                  <span className="text-accent font-bold">★ {formatRatingValue(r.rating)}</span>
                   <span className="text-text-muted">
                     {r.author_username ? `от @${r.author_username}` : "автор недоступен"}
                   </span>

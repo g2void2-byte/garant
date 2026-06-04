@@ -22,7 +22,7 @@ import { api } from "@/api/client";
 import type { ReviewDto, ServiceDto } from "@/api/types";
 import { openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
-import { parseDecimal, relativeTime } from "@/lib/format";
+import { formatRatingValue, relativeTime } from "@/lib/format";
 import { newDealToPath, normalizeUsernameRef } from "@/lib/usernames";
 
 const PROFILE_REVIEWS_PAGE_SIZE = 50;
@@ -227,7 +227,7 @@ export default function UserProfilePage() {
                   return (
                 <div key={r.id} className="bg-panel border border-border rounded-card p-3">
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="text-accent font-bold">★ {parseDecimal(r.rating).toFixed(1)}</span>
+                    <span className="text-accent font-bold">★ {formatRatingValue(r.rating)}</span>
                     <span className="text-text-muted">
                       {r.author_username ? `от @${r.author_username}` : "автор недоступен"}
                     </span>

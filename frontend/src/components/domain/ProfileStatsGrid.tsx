@@ -9,7 +9,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import type { UserCardDto } from "@/api/types";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, parseRatingValue } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
 type StatTone = "neutral" | "accent" | "success" | "danger" | "warning";
@@ -37,20 +37,6 @@ const TONE_VALUE: Record<StatTone, string> = {
   danger: "text-rose-500",
   warning: "text-amber-500",
 };
-
-const RATING_STRING_RE = /^(?:\d+(?:\.\d+)?|\.\d+)$/;
-
-function parseRatingValue(value: unknown): number | null {
-  const parsed = typeof value === "number"
-    ? value
-    : typeof value === "string" && RATING_STRING_RE.test(value.trim())
-      ? Number(value.trim())
-      : null;
-  if (parsed === null || !Number.isFinite(parsed) || parsed < 0 || parsed > 5) {
-    return null;
-  }
-  return parsed;
-}
 
 function Stat({ icon, label, value, onClick, tone = "neutral" }: StatProps) {
   return (
