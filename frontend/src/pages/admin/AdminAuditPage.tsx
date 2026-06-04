@@ -9,6 +9,7 @@ import { useAdminAuditLog } from "@/api/admin/hooks";
 import type { AdminAuditLogDto } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { formatDateTime } from "@/lib/format";
+import { formatAdminCount, getAdminTotalPages, shouldShowAdminPagination } from "./format";
 
 function parsePositiveIntFilter(value: string): number | undefined {
   const trimmed = value.trim();
@@ -37,6 +38,9 @@ export default function AdminAuditPage() {
     page,
     page_size: 50,
   });
+  const total = formatAdminCount(data?.total);
+  const totalPages = data ? getAdminTotalPages(data.total, data.page_size) : 1;
+  const showPagination = data ? shouldShowAdminPagination(data.total, data.page_size) : false;
 
   const __guard = useAdminRedirect();
   if (!__guard.shouldRender) return null;
@@ -45,7 +49,7 @@ export default function AdminAuditPage() {
     <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Аудит"
-        subtitle={data ? `${data.total} событий` : undefined}
+        subtitle={data ? `${total} событий` : undefined}
         right={
           <button
             type="button"
@@ -121,7 +125,7 @@ export default function AdminAuditPage() {
           ))
         )}
       </div>
-      {data && data.total > data.page_size && (
+      {showPagination && (
         <div className="flex items-center justify-center gap-2 mt-2 px-4 pb-4">
           <button
             type="button"
@@ -132,12 +136,12 @@ export default function AdminAuditPage() {
             <History size={12} className="inline mr-1" /> Назад
           </button>
           <span className="text-xs text-text-muted">
-            {page} / {Math.ceil(data.total / data.page_size)}
+            {page} / {totalPages}
           </span>
           <button
             type="button"
             onClick={() => setPage((p) => p + 1)}
-            disabled={page * data.page_size >= data.total}
+            disabled={page >= totalPages}
             className="rounded-button bg-panel px-3 py-1.5 text-sm disabled:opacity-40"
           >
             Вперёд

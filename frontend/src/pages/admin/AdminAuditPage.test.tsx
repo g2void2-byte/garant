@@ -266,4 +266,18 @@ describe("<AdminAuditPage />", () => {
       screen.queryByRole("button", { name: /Вперёд/ }),
     ).not.toBeInTheDocument();
   });
+
+  it("does not coerce malformed totals into pagination", () => {
+    mockState.list = {
+      items: [makeRow()],
+      total: "1e2" as unknown as number,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.queryByText("1e2")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Вперёд/ }),
+    ).not.toBeInTheDocument();
+  });
 });

@@ -11,7 +11,7 @@ import { useAdminDeals } from "@/api/admin/hooks";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 import type { AdminDealListItemDto, AdminListDealsQuery } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminUsername } from "./format";
+import { formatAdminAmount, formatAdminCount, formatAdminUsername, getAdminTotalPages } from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "all statuses";
 // the legacy ``"any"`` string is gone from both UI state and the URL.
@@ -150,8 +150,8 @@ export default function AdminDealsPage() {
   };
 
   const items: AdminDealListItemDto[] = data?.items ?? [];
-  const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / 20));
+  const total = formatAdminCount(data?.total);
+  const totalPages = getAdminTotalPages(data?.total, 20);
 
   return (
     <Page showBack onBack={() => navigate(-1)}>

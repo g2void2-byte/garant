@@ -11,7 +11,7 @@ import { useAdminArbitration, useAdminClaimArbitration } from "@/api/admin/hooks
 import type { AdminDealListItemDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminUsername } from "./format";
+import { formatAdminAmount, formatAdminUsername, getAdminTotalPages, parseAdminCount } from "./format";
 
 type Queue = "new" | "in_progress" | "closed";
 const PAGE_SIZE = 20;
@@ -46,6 +46,7 @@ export default function AdminArbitrationPage() {
 
   const items = data?.items ?? [];
   const counters = data?.counters ?? { new: 0, in_progress: 0, closed: 0 };
+  const totalPages = getAdminTotalPages(counters[queue], PAGE_SIZE);
 
   const onClaim = async (dealId: number) => {
     haptic("medium");
@@ -70,7 +71,7 @@ export default function AdminArbitrationPage() {
 
       <div className="px-4 grid grid-cols-3 gap-2 mb-3">
         {QUEUE_TABS.map((t) => {
-          const count = counters[t.key];
+          const count = parseAdminCount(counters[t.key]);
           const active = queue === t.key;
           return (
             <button
@@ -87,7 +88,7 @@ export default function AdminArbitrationPage() {
             >
               <t.icon size={16} />
               <span className="mt-1 text-[11px] font-medium">{t.label}</span>
-              {count > 0 && (
+              {count !== null && count > 0 && (
                 <span
                   className={`absolute top-1 right-1 min-w-[18px] h-[18px] rounded-full px-1 text-[10px] font-bold grid place-items-center ${
                     active ? "bg-black text-accent" : "bg-accent text-black"
@@ -138,10 +139,10 @@ export default function AdminArbitrationPage() {
           ))}
         </ul>
       )}
-      {Math.ceil((counters[queue] ?? 0) / PAGE_SIZE) > 1 && (
+      {totalPages > 1 && (
         <Pagination
           page={page}
-          totalPages={Math.max(1, Math.ceil((counters[queue] ?? 0) / PAGE_SIZE))}
+          totalPages={totalPages}
           onPage={setPage}
         />
       )}

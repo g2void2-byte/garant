@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 85 файлов, 861 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 85 файлов, 865 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -139,6 +139,7 @@
 - M-167: admin analytics KPI, sparkline and top-list metrics now reject malformed runtime numeric payloads before display/SVG plotting.
 - M-168: public review star rows now parse runtime ratings strictly before filling stars instead of relying on JavaScript numeric coercion.
 - M-169: notification unread counters now use strict integer parsing before badge/header display and local read-cache decrements.
+- M-170: admin list pagination and queue badges now parse runtime totals/counters strictly before display and page math.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1893,6 +1894,16 @@ The bottom nav badge and notifications header compared `counters.unread` directl
 Risk: a malformed notification counter payload could show a bogus unread badge/header action or make a cross-tab `notification.read` event normalize corrupted counters into believable numbers. This is user-facing state rather than authorization, but it is still a notification reliability and trust signal.
 
 Fix: unread badge/header decisions now parse counters with the shared non-negative safe-integer parser. Local read-cache decrement also parses each cached counter before arithmetic and leaves malformed values uncoerced so display boundaries can treat them as invalid. Regression coverage pins malformed bottom-nav/header unread counters and malformed cached counters during WS read mirroring.
+
+### M-170. Admin list pagination coerced malformed runtime totals and counters
+
+Links: `frontend/src/pages/admin/format.ts`, `frontend/src/pages/admin/AdminDealsPage.tsx`, `frontend/src/pages/admin/AdminAuditPage.tsx`, `frontend/src/pages/admin/AdminDepositsPage.tsx`, `frontend/src/pages/admin/AdminBroadcastsPage.tsx`, `frontend/src/pages/admin/AdminWalletsPage.tsx`, `frontend/src/pages/admin/AdminUsersPage.tsx`, `frontend/src/pages/admin/UserContentSections.tsx`, `frontend/src/pages/admin/AdminWithdrawalsPage.tsx`, `frontend/src/pages/admin/AdminArbitrationPage.tsx`, regressions `frontend/src/pages/admin/format.test.ts`, `frontend/src/pages/admin/AdminDealsPage.test.tsx`, `frontend/src/pages/admin/AdminAuditPage.test.tsx`, `frontend/src/pages/admin/AdminWithdrawalsPage.test.tsx`.
+
+Several admin list pages computed pagination or queue badges directly from `data.total`, `data.page_size`, or `counters[...]`. Runtime strings like `"1e2"` and `"0x10"` were coerced by comparisons, `Math.ceil`, and direct rendering into valid-looking counts/pages.
+
+Risk: malformed admin DTO counters could show bogus queue badges, enable unexpected pagination, or make operational lists look larger than the server's validated contract. This affects admin decision surfaces across deals, audit, wallets, deposits, broadcasts, user content, withdrawals and arbitration queues.
+
+Fix: added shared strict admin count helpers for count display and pagination math. Admin list totals/page sizes/status counters now require non-negative safe integers before display, badge rendering, or total-page calculations. Malformed totals fall back to a neutral dash/no pagination, and malformed queue counters are not shown as badges. Regression coverage pins malformed totals/counters.
 
 ## Наблюдения без отдельного finding
 

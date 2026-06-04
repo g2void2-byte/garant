@@ -119,6 +119,20 @@ describe("<AdminWithdrawalsPage />", () => {
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 
+  it("does not coerce malformed status counters into badges or pagination", () => {
+    mockState.list = {
+      items: [makeItem()],
+      counters: {
+        pending: "1e2" as unknown as number,
+        sent: "0x10" as unknown as number,
+      },
+    };
+    renderPage();
+    expect(screen.queryByText("1e2")).not.toBeInTheDocument();
+    expect(screen.queryByText("0x10")).not.toBeInTheDocument();
+    expect(screen.queryByText(/1 \/ 2/)).not.toBeInTheDocument();
+  });
+
   it("renders missing withdrawal username as a non-handle label", () => {
     mockState.list = { items: [makeItem({ username: null })], counters: {} };
     renderPage();

@@ -27,7 +27,7 @@ import {
   parsePositiveDecimalInput,
   parseSignedNonZeroDecimalInput,
 } from "@/lib/formNumbers";
-import { formatAdminAmount, formatAdminUsd, formatAdminUsername } from "./format";
+import { formatAdminAmount, formatAdminUsd, formatAdminUsername, getAdminTotalPages, shouldShowAdminPagination } from "./format";
 
 const PAGE_SIZE = 50;
 
@@ -162,10 +162,10 @@ export default function AdminWalletsPage() {
           ))
         )}
       </div>
-      {data && data.total > data.page_size && (
+      {data && shouldShowAdminPagination(data.total, data.page_size) && (
         <Pagination
           page={page}
-          totalPages={Math.max(1, Math.ceil(data.total / data.page_size))}
+          totalPages={getAdminTotalPages(data.total, data.page_size)}
           onPage={setPage}
         />
       )}

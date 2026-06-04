@@ -1,4 +1,4 @@
-import { formatRatingValue, parseDecimalValue } from "@/lib/format";
+import { formatRatingValue, parseDecimalValue, parseNonNegativeIntegerValue } from "@/lib/format";
 
 const MISSING_USERNAME_LABEL = "username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d";
 const DASH = "\u2014";
@@ -36,4 +36,26 @@ export function formatAdminUsdSuffix(value: string | number | null | undefined):
 
 export function formatAdminRating(value: string | number | null | undefined): string {
   return formatRatingValue(value);
+}
+
+export function parseAdminCount(value: unknown): number | null {
+  return parseNonNegativeIntegerValue(value);
+}
+
+export function formatAdminCount(value: unknown): string {
+  const parsed = parseAdminCount(value);
+  return parsed === null ? DASH : String(parsed);
+}
+
+export function getAdminTotalPages(total: unknown, pageSize: unknown): number {
+  const totalCount = parseAdminCount(total);
+  const parsedPageSize = parseAdminCount(pageSize);
+  if (totalCount === null || parsedPageSize === null || parsedPageSize <= 0) return 1;
+  return Math.max(1, Math.ceil(totalCount / parsedPageSize));
+}
+
+export function shouldShowAdminPagination(total: unknown, pageSize: unknown): boolean {
+  const totalCount = parseAdminCount(total);
+  const parsedPageSize = parseAdminCount(pageSize);
+  return totalCount !== null && parsedPageSize !== null && parsedPageSize > 0 && totalCount > parsedPageSize;
 }

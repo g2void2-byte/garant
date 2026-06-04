@@ -135,6 +135,18 @@ describe("<AdminDealsPage />", () => {
     expect(screen.queryByText(/0\.00 USDT/)).not.toBeInTheDocument();
   });
 
+  it("does not coerce malformed totals into admin pagination", () => {
+    mockState.list = {
+      items: [makeDeal()],
+      total: "1e2" as unknown as number,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+    expect(screen.queryByText("1e2")).not.toBeInTheDocument();
+    expect(screen.queryByText(/1 \/ 5/)).not.toBeInTheDocument();
+  });
+
   it("renders missing buyer/seller usernames as non-handle labels", () => {
     mockState.list = {
       items: [makeDeal({ buyer_username: null, seller_username: null })],

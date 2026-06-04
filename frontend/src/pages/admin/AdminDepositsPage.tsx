@@ -20,7 +20,7 @@ import {
 import { formatDateTime } from "@/lib/format";
 import { isSafeExternalLink, openPaymentLink } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminUsername } from "./format";
+import { formatAdminAmount, formatAdminUsername, getAdminTotalPages } from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "all
 // statuses"; the legacy ``"any"`` string is gone.
@@ -159,10 +159,10 @@ export default function AdminDepositsPage() {
           ))
         )}
       </div>
-      {data && Math.ceil(data.total / PAGE_SIZE) > 1 && (
+      {data && getAdminTotalPages(data.total, PAGE_SIZE) > 1 && (
         <Pagination
           page={page}
-          totalPages={Math.max(1, Math.ceil(data.total / PAGE_SIZE))}
+          totalPages={getAdminTotalPages(data.total, PAGE_SIZE)}
           onPage={setPage}
         />
       )}

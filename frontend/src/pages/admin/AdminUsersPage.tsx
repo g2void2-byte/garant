@@ -15,7 +15,7 @@ import type {
 } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
-import { formatAdminRating, formatAdminUsd, formatAdminUsername } from "./format";
+import { formatAdminRating, formatAdminUsd, formatAdminUsername, getAdminTotalPages, shouldShowAdminPagination } from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "no filter"
 // (replaces the string ``"any"``); the value sent to the API is
@@ -157,7 +157,7 @@ export default function AdminUsersPage() {
               ))}
       </div>
 
-      {data && data.total > data.page_size && (
+      {data && shouldShowAdminPagination(data.total, data.page_size) && (
         <Pagination
           page={data.page}
           total={data.total}
@@ -266,7 +266,7 @@ function Pagination({
   pageSize: number;
   onChange: (next: number) => void;
 }) {
-  const totalPages = Math.ceil(total / pageSize);
+  const totalPages = getAdminTotalPages(total, pageSize);
   return (
     <div className="flex items-center justify-center gap-2 mt-4 px-4">
       <button

@@ -30,7 +30,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { confirmDialog } from "@/lib/dialog";
 import { UserPicker } from "@/components/domain/UserPicker";
-import { formatAdminUsdSuffix, formatAdminUsername } from "./format";
+import { formatAdminUsdSuffix, formatAdminUsername, getAdminTotalPages, shouldShowAdminPagination } from "./format";
 import {
   useAdminCreateReview,
   useAdminDeleteComment,
@@ -146,10 +146,10 @@ export function ServicesSection({ userId }: SectionProps) {
             ))}
         </ul>
       )}
-      {data && data.total > data.page_size && (
+      {data && shouldShowAdminPagination(data.total, data.page_size) && (
         <ContentPagination
           page={page}
-          totalPages={Math.max(1, Math.ceil(data.total / data.page_size))}
+          totalPages={getAdminTotalPages(data.total, data.page_size)}
           onPage={setPage}
         />
       )}
@@ -452,10 +452,10 @@ export function ReviewsSection({ userId }: SectionProps) {
             ))}
         </ul>
       )}
-      {data && data.total > data.page_size && (
+      {data && shouldShowAdminPagination(data.total, data.page_size) && (
         <ContentPagination
           page={page}
-          totalPages={Math.max(1, Math.ceil(data.total / data.page_size))}
+          totalPages={getAdminTotalPages(data.total, data.page_size)}
           onPage={setPage}
         />
       )}
@@ -707,10 +707,10 @@ export function CommentsSection({ userId }: SectionProps) {
             ))}
         </ul>
       )}
-      {data && data.total > data.page_size && (
+      {data && shouldShowAdminPagination(data.total, data.page_size) && (
         <ContentPagination
           page={page}
-          totalPages={Math.max(1, Math.ceil(data.total / data.page_size))}
+          totalPages={getAdminTotalPages(data.total, data.page_size)}
           onPage={setPage}
         />
       )}

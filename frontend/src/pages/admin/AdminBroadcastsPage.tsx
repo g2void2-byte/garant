@@ -19,6 +19,7 @@ import {
 } from "@/api/admin/hooks";
 import type { AdminBroadcastCreateBody } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { getAdminTotalPages, shouldShowAdminPagination } from "./format";
 
 const ROLES: Array<{ value: "" | "admin" | "arbiter" | "vip" | "regular"; label: string }> = [
   { value: "", label: "Все" },
@@ -104,10 +105,10 @@ export default function AdminBroadcastsPage() {
           ))
         )}
       </div>
-      {data && data.total > data.page_size && (
+      {data && shouldShowAdminPagination(data.total, data.page_size) && (
         <Pagination
           page={page}
-          totalPages={Math.max(1, Math.ceil(data.total / data.page_size))}
+          totalPages={getAdminTotalPages(data.total, data.page_size)}
           onPage={setPage}
         />
       )}

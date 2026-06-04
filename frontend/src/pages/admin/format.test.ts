@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatAdminAmount,
+  formatAdminCount,
   formatAdminRating,
   formatAdminUsd,
   formatAdminUsdSuffix,
   formatAdminUsername,
+  getAdminTotalPages,
+  shouldShowAdminPagination,
 } from "./format";
 
 describe("admin format helpers", () => {
@@ -29,5 +32,16 @@ describe("admin format helpers", () => {
     expect(formatAdminRating("4.75")).toBe("4.8");
     expect(formatAdminRating("1e1")).toBe("\u2014");
     expect(formatAdminRating(6)).toBe("\u2014");
+  });
+
+  it("parses admin counters strictly before display and pagination math", () => {
+    expect(formatAdminCount("42")).toBe("42");
+    expect(formatAdminCount("1e2")).toBe("\u2014");
+    expect(formatAdminCount("0x10")).toBe("\u2014");
+    expect(getAdminTotalPages("100", "20")).toBe(5);
+    expect(getAdminTotalPages("1e2", 20)).toBe(1);
+    expect(getAdminTotalPages(100, "0")).toBe(1);
+    expect(shouldShowAdminPagination("100", 20)).toBe(true);
+    expect(shouldShowAdminPagination("1e2", 20)).toBe(false);
   });
 });

@@ -12,7 +12,7 @@ import {
 } from "@/api/admin/hooks";
 import { formatDateTime } from "@/lib/format";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminUsername } from "./format";
+import { formatAdminAmount, formatAdminUsername, getAdminTotalPages, parseAdminCount } from "./format";
 
 const STATUSES = ["pending", "approved", "rejected", "sent"] as const;
 type Status = (typeof STATUSES)[number];
@@ -38,6 +38,7 @@ export default function AdminWithdrawalsPage() {
   if (!__guard.shouldRender) return null;
 
   const counters = data?.counters ?? {};
+  const totalPages = getAdminTotalPages(counters[status], PAGE_SIZE);
 
   return (
     <Page showBack onBack={() => navigate(-1)}>
@@ -58,15 +59,18 @@ export default function AdminWithdrawalsPage() {
             }`}
           >
             {labelOf(s)}
-            {counters[s] !== undefined && counters[s] > 0 && (
+            {(() => {
+              const count = parseAdminCount(counters[s]);
+              return count !== null && count > 0 ? (
               <span
                 className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full ${
                   s === status ? "bg-accent-fg/20" : "bg-panel-2 text-text"
                 }`}
               >
-                {counters[s]}
+                {count}
               </span>
-            )}
+              ) : null;
+            })()}
           </button>
         ))}
       </div>
@@ -209,10 +213,10 @@ export default function AdminWithdrawalsPage() {
           ))
         )}
       </div>
-      {Math.ceil((counters[status] ?? 0) / PAGE_SIZE) > 1 && (
+      {totalPages > 1 && (
         <Pagination
           page={page}
-          totalPages={Math.max(1, Math.ceil((counters[status] ?? 0) / PAGE_SIZE))}
+          totalPages={totalPages}
           onPage={setPage}
         />
       )}
