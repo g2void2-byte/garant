@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 82 файлов, 779 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 83 файлов, 786 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -114,6 +114,8 @@
 - M-142: wallet history query params now mirror the backend currency/limit/offset contract before requests are enabled.
 - M-143: wallet currency routes and balance rows now reject malformed API currency codes before path construction.
 - M-144: profile fiat balance actions now normalize display currency refs before rendering wallet query links.
+- M-145: cached PIN tokens with malformed stored expiry values are now treated as invalid and cleared before auth headers/UI gates can trust them.
+- M-146: cached admin TOTP session tokens with malformed stored expiry values are now treated as invalid and cleared before admin auth headers can trust them.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1618,6 +1620,26 @@ The profile fiat balance card used `user.display_currency_code` directly in the 
 Risk: current profile writes validate the preferred currency, but legacy/profile API drift could inject query separators or non-contract codes into wallet action links, causing the wallet forms to open with malformed URL state.
 
 Fix: the card now normalizes the preferred display currency through the shared helper, falls back to `USD` for invalid values, and builds wallet action links with `URLSearchParams`. Regression coverage checks malformed fallback and lowercase/space normalization.
+
+### M-145. PIN token reads accepted malformed stored expiry values
+
+Links: `frontend/src/lib/pin.ts`, regression `frontend/src/lib/pin.test.ts`.
+
+`setPinToken()` rejected malformed `expiresAt` values, but `getPinToken()` did not revalidate the expiry already stored in `localStorage`. If a corrupted storage entry, legacy build, test fixture, or WebView storage glitch left `garant.pin_token_expires = "not-a-date"`, `new Date(expires).getTime()` returned `NaN`; the old `NaN <= Date.now()` check was false, so the helper returned the token as valid.
+
+Risk: the frontend could attach a stale/corrupted `X-Pin-Token` header and keep `PinGate` unlocked until the backend rejected the request. That turns a malformed local cache entry into avoidable authenticated UI state and extra 401 recovery churn.
+
+Fix: PIN expiry parsing is now centralized and requires a finite timestamp on both write and read. Invalid stored expiries are treated the same as expired tokens: the helper clears both storage keys, emits the existing token-change event, and returns `null`.
+
+### M-146. TOTP session token reads accepted malformed stored expiry values
+
+Links: `frontend/src/lib/totp.ts`, regression `frontend/src/lib/totp.test.ts`.
+
+The admin TOTP session helper mirrored the PIN bug: malformed `garant.totp_session_token_expires` values already in `localStorage` bypassed the expiry comparison because `NaN <= Date.now()` is false. A corrupted cached admin session token could therefore be forwarded as `X-Totp-Session` until the backend forced the gate again.
+
+Risk: admin actions could start from stale local 2FA state, producing unnecessary 401/TOTP prompts and weakening the frontend's own session boundary. The backend still validates the JWT, but the client should not trust a cache entry with an invalid expiry contract.
+
+Fix: TOTP expiry parsing now requires a finite timestamp on write and read, matching the PIN helper. Invalid stored expiries clear the token and expiry keys and return `null`. A new dedicated TOTP storage regression file covers empty, valid, expired, malformed-expiry, clear, and event semantics.
 
 ## Наблюдения без отдельного finding
 

@@ -51,9 +51,13 @@ function notifyTokenChanged() {
   }
 }
 
-export function setTotpSessionToken(token: string, expiresAt: string) {
+function parseExpiryTime(expiresAt: string): number | null {
   const ts = new Date(expiresAt).getTime();
-  if (!Number.isFinite(ts)) return;
+  return Number.isFinite(ts) ? ts : null;
+}
+
+export function setTotpSessionToken(token: string, expiresAt: string) {
+  if (parseExpiryTime(expiresAt) === null) return;
   try {
     window.localStorage.setItem(STORAGE_KEY, token);
     window.localStorage.setItem(EXPIRES_KEY, expiresAt);
@@ -78,7 +82,8 @@ export function getTotpSessionToken(): string | null {
     const token = window.localStorage.getItem(STORAGE_KEY);
     const expires = window.localStorage.getItem(EXPIRES_KEY);
     if (!token || !expires) return null;
-    if (new Date(expires).getTime() <= Date.now()) {
+    const expiresTs = parseExpiryTime(expires);
+    if (expiresTs === null || expiresTs <= Date.now()) {
       clearTotpSessionToken();
       return null;
     }
