@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 84 файлов, 853 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 85 файлов, 858 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -137,6 +137,7 @@
 - M-165: public wallet balance gates now parse string money mirrors strictly before showing withdraw/locked states.
 - M-166: public user/profile/service/category counters now use strict integer parsing before display, gates, and pagination decisions.
 - M-167: admin analytics KPI, sparkline and top-list metrics now reject malformed runtime numeric payloads before display/SVG plotting.
+- M-168: public review star rows now parse runtime ratings strictly before filling stars instead of relying on JavaScript numeric coercion.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1871,6 +1872,16 @@ Admin analytics KPI cards, sparklines and top-user lists rendered API metric fie
 Risk: the operational analytics dashboard could show inflated/ambiguous business metrics or malformed chart geometry instead of surfacing that a metric payload was invalid. This is admin-only, but it is still a decision surface for volume, user growth, withdrawals and arbitration workload.
 
 Fix: analytics now uses strict non-negative integer parsing for count metrics and strict plain-decimal parsing for volume/amount metrics. Malformed KPI/top-list values render a neutral dash, malformed sparkline points are dropped before plotting, and SVG points are generated only from validated finite numbers. Regression coverage pins malformed KPI values, malformed sparkline points and malformed top-list metrics.
+
+### M-168. Public review stars coerced malformed runtime ratings
+
+Links: `frontend/src/components/domain/ReviewRow.tsx`, regression `frontend/src/components/domain/ReviewRow.rating.test.tsx`.
+
+Public profile review rows already rendered text rating values through a strict formatter, but the star strip still rounded `review.rating` directly. JavaScript coerces strings such as `"1e1"` and `"0x5"` to numbers before `Math.round`, so malformed runtime payloads could show five filled stars even when the textual rating path treated the same payload as invalid.
+
+Risk: a corrupted or drifted review DTO could make an invalid review look like a perfect rating in own-profile and public-profile review lists. This is a trust-signal mismatch rather than a write-path vulnerability, but it affects the same public reputation surface as the hardened rating text.
+
+Fix: `ReviewRow` now uses the shared strict rating parser before deriving filled stars. Malformed, exponent/hex-like and out-of-range values render zero filled stars; canonical decimal-string ratings still render normally. Regression coverage pins valid decimal strings and malformed runtime rating strings.
 
 ## Наблюдения без отдельного finding
 

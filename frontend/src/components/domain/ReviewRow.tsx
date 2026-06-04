@@ -1,7 +1,7 @@
 import { Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { ReviewDto } from "@/api/types";
-import { relativeTime } from "@/lib/format";
+import { parseRatingValue, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { staggerDelay } from "@/lib/animate";
 import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
@@ -16,7 +16,8 @@ export function ReviewRow({ review: rawReview, index = 0 }: Props) {
     ...rawReview,
     author_username: normalizeUsernameRef(rawReview.author_username),
   };
-  const stars = Math.max(0, Math.min(5, Math.round(review.rating)));
+  const rating = parseRatingValue(review.rating);
+  const stars = rating === null ? 0 : Math.max(0, Math.min(5, Math.round(rating)));
   const authorUsername = normalizeUsernameRef(review.author_username);
   const authorPath = userProfilePath(authorUsername);
   const authorLabel = authorUsername
