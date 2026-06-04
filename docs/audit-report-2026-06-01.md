@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 86 файлов, 869 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 86 файлов, 879 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -142,6 +142,7 @@
 - M-170: admin list pagination and queue badges now parse runtime totals/counters strictly before display and page math.
 - M-171: account-transfer code length and TTL UI policy now rejects malformed/zero runtime values before regex, input limits, and labels.
 - M-172: public stats badge now parses runtime counters/volume strictly before count-up animation and compact formatting.
+- M-173: admin displayed totals and broadcast recipient counters now reject malformed runtime counts before subtitles, headers, toasts, and empty-page rewinds.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1926,6 +1927,16 @@ Links: `frontend/src/components/domain/StatsBadge.tsx`, regression `frontend/src
 Risk: the FAQ/public trust badge and admin settings preview could display bogus platform statistics instead of treating the DTO as corrupt. Because this badge is a public credibility surface, malformed counter coercion can mislead users even though it does not move money.
 
 Fix: public stats counters now use the shared strict non-negative safe-integer parser, and USD volume accepts only finite non-negative canonical decimal values. Malformed counters/volume fall back to zero before animation and formatting, while canonical decimal-string runtime values still render correctly. Regression coverage pins both accepted canonical strings and rejected exponent/hex/malformed values.
+
+### M-173. Admin displayed totals still trusted malformed runtime counters
+
+Links: `frontend/src/pages/admin/format.ts`, `frontend/src/pages/admin/AdminBroadcastsPage.tsx`, `frontend/src/pages/admin/AdminDepositsPage.tsx`, `frontend/src/pages/admin/AdminWalletsPage.tsx`, `frontend/src/pages/admin/AdminUsersPage.tsx`, `frontend/src/pages/admin/UserContentSections.tsx`, regressions `frontend/src/pages/admin/AdminBroadcastsPage.test.tsx`, `frontend/src/pages/admin/AdminDepositsPage.test.tsx`, `frontend/src/pages/admin/AdminWalletsPage.test.tsx`, `frontend/src/pages/admin/AdminUsersPage.test.tsx`, `frontend/src/pages/admin/UserContentSections.test.tsx`.
+
+M-170 hardened admin pagination math and several queue badges, but some admin display surfaces still interpolated raw `data.total` values. Broadcast history also rendered `total_recipients`/`delivered_count` directly, and preview/create success paths trusted `total_recipients` in visible counters/toasts. User-content sections still used `data.total > 0` for empty-page rewind, so runtime strings like `"1e2"` could be coerced by JavaScript even after pagination stopped trusting them.
+
+Risk: malformed DTO counters could still mislead operators in broadcasts, deposits, users, wallets, and user content sections, or silently move an admin off a page through a coerced empty-page rewind.
+
+Fix: these surfaces now route displayed totals and broadcast recipient counts through `formatAdminCount`, and user-content rewind checks use `parseAdminCount` before comparing. Malformed totals/counters render as a neutral dash, do not appear raw in subtitles/headers/toasts, and no longer trigger empty-page rewind logic. Regression coverage pins malformed admin totals, broadcast list/preview/create counts, and user-content total rewinds.
 
 ## Наблюдения без отдельного finding
 

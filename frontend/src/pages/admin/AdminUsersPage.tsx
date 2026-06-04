@@ -15,7 +15,7 @@ import type {
 } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
-import { formatAdminRating, formatAdminUsd, formatAdminUsername, getAdminTotalPages, shouldShowAdminPagination } from "./format";
+import { formatAdminCount, formatAdminRating, formatAdminUsd, formatAdminUsername, getAdminTotalPages, shouldShowAdminPagination } from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "no filter"
 // (replaces the string ``"any"``); the value sent to the API is
@@ -89,7 +89,7 @@ export default function AdminUsersPage() {
     <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Пользователи"
-        subtitle={data ? `${data.total} всего` : undefined}
+        subtitle={data ? `${formatAdminCount(data.total)} всего` : undefined}
         right={
           <button
             type="button"

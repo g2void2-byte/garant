@@ -131,6 +131,18 @@ describe("<AdminDepositsPage />", () => {
     expect(screen.getByText("Депозитов нет")).toBeInTheDocument();
   });
 
+  it("renders malformed list totals as a neutral dash", () => {
+    mockState.list = {
+      items: [],
+      total: "1e2" as unknown as number,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText(/\u2014 всего/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it("renders deposit rows with amount, user, badge and safe pay_url opener", async () => {
     mockState.list = {
       items: [makeDeposit()],

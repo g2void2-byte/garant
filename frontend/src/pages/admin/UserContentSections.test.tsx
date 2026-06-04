@@ -18,11 +18,13 @@ import type { UserCardDto } from "@/api/types";
 
 const mockState = vi.hoisted(() => ({
   reviews: [] as unknown[],
-  reviewsTotal: 0,
+  reviewsTotal: undefined as unknown,
   reviewsLoading: false,
   services: [] as unknown[],
+  servicesTotal: undefined as unknown,
   servicesLoading: false,
   comments: [] as unknown[],
+  commentsTotal: undefined as unknown,
   commentsLoading: false,
   users: [] as UserCardDto[],
   usersLoading: false,
@@ -74,7 +76,7 @@ vi.mock("@/api/admin/hooks", () => ({
     return {
       data: {
         items: mockState.reviews,
-        total: mockState.reviewsTotal || mockState.reviews.length,
+        total: mockState.reviewsTotal ?? mockState.reviews.length,
         page: params.page ?? 1,
         page_size: params.page_size ?? 20,
       },
@@ -82,21 +84,21 @@ vi.mock("@/api/admin/hooks", () => ({
     };
   },
   useAdminUserServices: () => ({
-    data: {
-      items: mockState.services,
-      total: mockState.services.length,
-      page: 1,
-      page_size: 20,
-    },
+      data: {
+        items: mockState.services,
+        total: mockState.servicesTotal ?? mockState.services.length,
+        page: 1,
+        page_size: 20,
+      },
     isLoading: mockState.servicesLoading,
   }),
   useAdminUserComments: () => ({
-    data: {
-      items: mockState.comments,
-      total: mockState.comments.length,
-      page: 1,
-      page_size: 20,
-    },
+      data: {
+        items: mockState.comments,
+        total: mockState.commentsTotal ?? mockState.comments.length,
+        page: 1,
+        page_size: 20,
+      },
     isLoading: mockState.commentsLoading,
   }),
   useAdminCreateReview: () => mockState.createReview,
@@ -229,11 +231,13 @@ function renderServicesSection(userId = 42) {
 
 beforeEach(() => {
   mockState.reviews = [];
-  mockState.reviewsTotal = 0;
+  mockState.reviewsTotal = undefined;
   mockState.reviewsLoading = false;
   mockState.services = [];
+  mockState.servicesTotal = undefined;
   mockState.servicesLoading = false;
   mockState.comments = [];
+  mockState.commentsTotal = undefined;
   mockState.commentsLoading = false;
   mockState.users = [];
   mockState.usersLoading = false;
@@ -249,6 +253,15 @@ beforeEach(() => {
 });
 
 describe("<ServicesSection />", () => {
+  it("renders malformed service totals as a neutral dash", () => {
+    mockState.servicesTotal = "1e2";
+
+    renderServicesSection(42);
+
+    expect(screen.getByText(/\(\u2014\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it.each([
     [/Цена/i, "1e2"],
     [/Просмотры/i, "1e2"],
@@ -279,6 +292,15 @@ describe("<ServicesSection />", () => {
 });
 
 describe("<CommentsSection />", () => {
+  it("renders malformed comment totals as a neutral dash", () => {
+    mockState.commentsTotal = "0x10";
+
+    renderCommentsSection(42);
+
+    expect(screen.getByText(/\(\u2014\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+  });
+
   it("blocks rating 0 before updating a comment because the backend accepts 1..5", async () => {
     const user = userEvent.setup();
     mockState.comments = [makeComment()];
@@ -323,6 +345,42 @@ describe("<CommentsSection />", () => {
 });
 
 describe("<ReviewsSection /> · Новый отзыв sheet", () => {
+  it("renders malformed review totals as a neutral dash", () => {
+    mockState.reviewsTotal = "1e2";
+
+    renderSection(42);
+
+    expect(screen.getByText(/\(\u2014\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
+  it("does not rewind review pages from malformed totals", async () => {
+    const user = userEvent.setup();
+    mockState.reviews = [makeReview()];
+    mockState.reviewsTotal = 45;
+    renderSection(42);
+
+    await user.click(
+      screen.getByRole("button", { name: "\u0412\u043f\u0435\u0440\u0451\u0434" }),
+    );
+    await waitFor(() => {
+      expect(mockState.lastReviewsQuery?.page).toBe(2);
+    });
+
+    mockState.reviews = [];
+    mockState.reviewsTotal = "1e2";
+    await user.click(
+      screen.getByRole("button", { name: "\u0412\u043f\u0435\u0440\u0451\u0434" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "\u0412\u043f\u0435\u0440\u0451\u0434" })).not.toBeInTheDocument();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockState.lastReviewsQuery?.page).toBe(3);
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it("opens the sheet with a UserPicker for the author", async () => {
     const user = userEvent.setup();
     renderSection();

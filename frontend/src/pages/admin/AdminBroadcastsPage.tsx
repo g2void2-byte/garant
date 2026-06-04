@@ -19,7 +19,7 @@ import {
 } from "@/api/admin/hooks";
 import type { AdminBroadcastCreateBody } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { getAdminTotalPages, shouldShowAdminPagination } from "./format";
+import { formatAdminCount, getAdminTotalPages, shouldShowAdminPagination } from "./format";
 
 const ROLES: Array<{ value: "" | "admin" | "arbiter" | "vip" | "regular"; label: string }> = [
   { value: "", label: "Все" },
@@ -45,7 +45,7 @@ export default function AdminBroadcastsPage() {
     <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Рассылки"
-        subtitle={data ? `${data.total} всего` : undefined}
+        subtitle={data ? `${formatAdminCount(data.total)} всего` : undefined}
         right={
           <button
             type="button"
@@ -74,8 +74,8 @@ export default function AdminBroadcastsPage() {
                   {b.title && <div className="font-medium truncate">{b.title}</div>}
                   <div className="text-sm text-text-muted line-clamp-2">{b.body}</div>
                   <div className="text-[11px] text-text-muted mt-1 flex items-center gap-2">
-                    <Users size={11} /> {b.total_recipients} получателей · доставлено{" "}
-                    {b.delivered_count}
+                    <Users size={11} /> {formatAdminCount(b.total_recipients)} получателей · доставлено{" "}
+                    {formatAdminCount(b.delivered_count)}
                   </div>
                 </div>
                 <button
@@ -248,7 +248,7 @@ function Composer({ onClose }: { onClose: () => void }) {
   const [language, setLanguage] = useState("");
   const [inApp, setInApp] = useState(true);
   const [dm, setDm] = useState(false);
-  const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [previewCount, setPreviewCount] = useState<string | null>(null);
   const preview = useAdminBroadcastPreview();
   const create = useAdminCreateBroadcast();
   const toast = useToast();
@@ -402,7 +402,7 @@ function Composer({ onClose }: { onClose: () => void }) {
             onClick={async () => {
               try {
                 const res = await preview.mutateAsync(buildBody());
-                setPreviewCount(res.total_recipients);
+                setPreviewCount(formatAdminCount(res.total_recipients));
               } catch (e) {
                 toast.show({
                   kind: "error",
@@ -424,7 +424,7 @@ function Composer({ onClose }: { onClose: () => void }) {
                 toast.show({
                   kind: "success",
                   title: "Отправлено",
-                  body: `${res.total_recipients} получателей`,
+                  body: `${formatAdminCount(res.total_recipients)} получателей`,
                 });
                 onClose();
               } catch (e) {

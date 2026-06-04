@@ -151,6 +151,27 @@ describe("<AdminBroadcastsPage />", () => {
     expect(screen.getByText(/доставлено 480/)).toBeInTheDocument();
   });
 
+  it("renders malformed broadcast totals as neutral dashes", () => {
+    mockState.list = {
+      items: [
+        makeRow({
+          total_recipients: "1e2" as unknown as number,
+          delivered_count: "0x10" as unknown as number,
+        }),
+      ],
+      total: "1e2" as unknown as number,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+
+    expect(screen.getByText(/\u2014 всего/)).toBeInTheDocument();
+    expect(screen.getByText(/\u2014 получателей/)).toBeInTheDocument();
+    expect(screen.getByText(/доставлено \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+  });
+
   it("pagination advances beyond the first broadcasts page", async () => {
     mockState.list = {
       items: [makeRow()],
@@ -306,6 +327,24 @@ describe("<AdminBroadcastsPage />", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders malformed preview recipient counts as a neutral dash", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.preview.mutateAsync.mockResolvedValueOnce({
+      total_recipients: "1e2" as unknown as number,
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hello" },
+    });
+    await user.click(screen.getByRole("button", { name: "Предпросмотр" }));
+
+    expect(await screen.findByText(/Будет отправлено: \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it("blocks invalid numeric audience filters before preview/send", async () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
     const user = userEvent.setup();
@@ -378,6 +417,31 @@ describe("<AdminBroadcastsPage />", () => {
         body: "42 получателей",
       }),
     );
+  });
+
+  it("renders malformed create recipient counts as a neutral dash in toast", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.create.mutateAsync.mockResolvedValueOnce({
+      total_recipients: "0x10" as unknown as number,
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hi" },
+    });
+    await user.click(screen.getByRole("button", { name: /Отправить/ }));
+
+    await waitFor(() => {
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "success",
+          title: "Отправлено",
+          body: "\u2014 получателей",
+        }),
+      );
+    });
   });
 
   it("'Отправить' failure shows an error toast", async () => {

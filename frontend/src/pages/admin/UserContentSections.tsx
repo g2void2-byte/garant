@@ -30,7 +30,14 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { confirmDialog } from "@/lib/dialog";
 import { UserPicker } from "@/components/domain/UserPicker";
-import { formatAdminUsdSuffix, formatAdminUsername, getAdminTotalPages, shouldShowAdminPagination } from "./format";
+import {
+  formatAdminCount,
+  formatAdminUsdSuffix,
+  formatAdminUsername,
+  getAdminTotalPages,
+  parseAdminCount,
+  shouldShowAdminPagination,
+} from "./format";
 import {
   useAdminCreateReview,
   useAdminDeleteComment,
@@ -80,23 +87,24 @@ export function ServicesSection({ userId }: SectionProps) {
   });
   const [editing, setEditing] = useState<AdminServiceItemDto | null>(null);
   const services = data?.items ?? [];
+  const totalCount = parseAdminCount(data?.total);
 
   useEffect(() => {
     setPage(1);
   }, [userId]);
 
   useEffect(() => {
-    if (data && data.total > 0 && services.length === 0 && page > 1) {
+    if (totalCount !== null && totalCount > 0 && services.length === 0 && page > 1) {
       setPage(page - 1);
     }
-  }, [data, services.length, page]);
+  }, [totalCount, services.length, page]);
 
   return (
     <section className="bg-panel rounded-card p-4">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-text-muted flex items-center gap-1.5">
           <Briefcase size={14} /> Услуги
-          {data && <span className="text-text">({data.total})</span>}
+          {data && <span className="text-text">({formatAdminCount(data.total)})</span>}
         </h3>
       </div>
       {isLoading ? (
@@ -378,23 +386,24 @@ export function ReviewsSection({ userId }: SectionProps) {
   const [editing, setEditing] = useState<AdminReviewItemDto | null>(null);
   const [creating, setCreating] = useState(false);
   const reviews = data?.items ?? [];
+  const totalCount = parseAdminCount(data?.total);
 
   useEffect(() => {
     setPage(1);
   }, [userId, direction]);
 
   useEffect(() => {
-    if (data && data.total > 0 && reviews.length === 0 && page > 1) {
+    if (totalCount !== null && totalCount > 0 && reviews.length === 0 && page > 1) {
       setPage(page - 1);
     }
-  }, [data, reviews.length, page]);
+  }, [totalCount, reviews.length, page]);
 
   return (
     <section className="bg-panel rounded-card p-4">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-text-muted flex items-center gap-1.5">
           <Star size={14} /> Отзывы
-          {data && <span className="text-text">({data.total})</span>}
+          {data && <span className="text-text">({formatAdminCount(data.total)})</span>}
         </h3>
         <div className="flex gap-1">
           <ToggleButton
@@ -654,23 +663,24 @@ export function CommentsSection({ userId }: SectionProps) {
   });
   const [editing, setEditing] = useState<AdminCommentItemDto | null>(null);
   const comments = data?.items ?? [];
+  const totalCount = parseAdminCount(data?.total);
 
   useEffect(() => {
     setPage(1);
   }, [userId]);
 
   useEffect(() => {
-    if (data && data.total > 0 && comments.length === 0 && page > 1) {
+    if (totalCount !== null && totalCount > 0 && comments.length === 0 && page > 1) {
       setPage(page - 1);
     }
-  }, [data, comments.length, page]);
+  }, [totalCount, comments.length, page]);
 
   return (
     <section className="bg-panel rounded-card p-4">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-text-muted flex items-center gap-1.5">
           <MessageSquare size={14} /> Комментарии
-          {data && <span className="text-text">({data.total})</span>}
+          {data && <span className="text-text">({formatAdminCount(data.total)})</span>}
         </h3>
       </div>
       {isLoading ? (

@@ -181,6 +181,18 @@ describe("<AdminWalletsPage />", () => {
     expect(screen.getByText("Ничего не найдено")).toBeInTheDocument();
   });
 
+  it("renders malformed list totals as a neutral dash", () => {
+    mockState.list = {
+      items: [],
+      total: "1e2" as unknown as number,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText(/\u2014 пользователей/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it("renders rows with non-zero balances and 'лок.' annotation", () => {
     mockState.list = {
       items: [makeUserBalance()],

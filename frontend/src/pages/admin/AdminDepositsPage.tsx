@@ -20,7 +20,7 @@ import {
 import { formatDateTime } from "@/lib/format";
 import { isSafeExternalLink, openPaymentLink } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminUsername, getAdminTotalPages } from "./format";
+import { formatAdminAmount, formatAdminCount, formatAdminUsername, getAdminTotalPages } from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "all
 // statuses"; the legacy ``"any"`` string is gone.
@@ -52,7 +52,7 @@ export default function AdminDepositsPage() {
     <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Депозиты"
-        subtitle={data ? `${data.total} всего` : undefined}
+        subtitle={data ? `${formatAdminCount(data.total)} всего` : undefined}
       />
       <div className="px-4 mb-3 flex flex-wrap gap-1.5">
         {STATUSES.map((s) => (

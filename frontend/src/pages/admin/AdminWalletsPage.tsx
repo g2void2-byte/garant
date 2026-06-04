@@ -27,7 +27,7 @@ import {
   parsePositiveDecimalInput,
   parseSignedNonZeroDecimalInput,
 } from "@/lib/formNumbers";
-import { formatAdminAmount, formatAdminUsd, formatAdminUsername, getAdminTotalPages, shouldShowAdminPagination } from "./format";
+import { formatAdminAmount, formatAdminCount, formatAdminUsd, formatAdminUsername, getAdminTotalPages, shouldShowAdminPagination } from "./format";
 
 const PAGE_SIZE = 50;
 
@@ -55,7 +55,7 @@ export default function AdminWalletsPage() {
     <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Балансы"
-        subtitle={data ? `${data.total} пользователей` : undefined}
+        subtitle={data ? `${formatAdminCount(data.total)} пользователей` : undefined}
       />
       <div className="px-4 mb-3">
         <div className="flex items-center gap-2">
