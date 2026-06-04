@@ -154,6 +154,23 @@ describe("<AdminUsersPage />", () => {
     expect(screen.getByText("Заморожен")).toBeInTheDocument();
   });
 
+  it("renders string metric payloads in user rows without crashing", () => {
+    mockState.list = {
+      items: [
+        makeUser({
+          rating: "4.5" as unknown as number,
+          trust_deposit_balance: "1500.5" as unknown as number,
+        }),
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+    expect(screen.getAllByText(/4\.5/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/\$1500\.50/).length).toBeGreaterThan(0);
+  });
+
   it("renders missing usernames as non-handle labels", () => {
     mockState.list = {
       items: [makeUser({ username: null })],

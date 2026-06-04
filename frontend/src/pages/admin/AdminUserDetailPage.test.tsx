@@ -230,6 +230,19 @@ describe("<AdminUserDetailPage />", () => {
     expect(screen.getByText("Установлен")).toBeInTheDocument();
   });
 
+  it("renders string trust deposit and rating payloads without crashing", () => {
+    mockState.user = makeUser({
+      trust_deposit_balance: "1500.5" as unknown as number,
+      rating_auto: "4.25" as unknown as number,
+      rating_effective: "4.5" as unknown as number,
+    });
+
+    renderPage();
+
+    expect(screen.getByText("$1500.50")).toBeInTheDocument();
+    expect(screen.getAllByText("4.5").length).toBeGreaterThan(0);
+  });
+
   it("renders malformed identity timestamps as neutral values", () => {
     mockState.user = makeUser({
       created_at: "not-a-date",

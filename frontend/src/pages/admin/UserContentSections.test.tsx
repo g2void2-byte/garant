@@ -268,6 +268,14 @@ describe("<ServicesSection />", () => {
     expect(save).toBeDisabled();
     expect(mockState.updateService.mutateAsync).not.toHaveBeenCalled();
   });
+
+  it("renders string service prices without crashing", () => {
+    mockState.services = [makeService({ price: "15.25" })];
+
+    renderServicesSection(42);
+
+    expect(screen.getByText("15.25 $")).toBeInTheDocument();
+  });
 });
 
 describe("<CommentsSection />", () => {

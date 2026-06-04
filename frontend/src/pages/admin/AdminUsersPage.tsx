@@ -15,7 +15,7 @@ import type {
 } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
-import { formatAdminUsername } from "./format";
+import { formatAdminRating, formatAdminUsd, formatAdminUsername } from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "no filter"
 // (replaces the string ``"any"``); the value sent to the API is
@@ -236,7 +236,7 @@ function UserRow({ user, onClick }: { user: AdminUserListItemDto; onClick: () =>
           {formatAdminUsername(user.username)} · tg {user.tg_user_id}
         </div>
         <div className="text-xs text-text-muted">
-          Сделок: {user.deals_total} · ★ {user.rating.toFixed(1)} · Траст ${user.trust_deposit_balance.toFixed(2)}
+          Сделок: {user.deals_total} · ★ {formatAdminRating(user.rating)} · Траст {formatAdminUsd(user.trust_deposit_balance)}
         </div>
       </div>
       <div className="flex flex-col items-end gap-1">

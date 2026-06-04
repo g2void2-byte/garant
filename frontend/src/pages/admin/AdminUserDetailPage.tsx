@@ -51,7 +51,7 @@ import { haptic } from "@/lib/tg";
 import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
-import { formatAdminUsername } from "./format";
+import { formatAdminRating, formatAdminUsd, formatAdminUsername } from "./format";
 
 /**
  * Continental admin user detail screen.
@@ -154,9 +154,9 @@ function IdentityCard({ user }: { user: AdminUserDetailDto }) {
         <Detail label="Входов всего" value={String(user.login_count)} />
         <Detail
           label="Трастовый депозит"
-          value={`$${user.trust_deposit_balance.toFixed(2)}`}
+          value={formatAdminUsd(user.trust_deposit_balance)}
         />
-        <Detail label="Рейтинг" value={user.rating_effective.toFixed(1)} />
+        <Detail label="Рейтинг" value={formatAdminRating(user.rating_effective)} />
         <Detail label="PIN" value={user.has_pin ? "Установлен" : "Нет"} />
       </dl>
 
@@ -434,8 +434,8 @@ function RatingSection({ user }: { user: AdminUserDetailDto }) {
         <Star size={16} /> Рейтинг (0..5)
       </h3>
       <p className="text-xs text-text-muted">
-        Авто-рейтинг: {user.rating_auto.toFixed(1)} · Сейчас:{" "}
-        {user.rating_effective.toFixed(1)}
+        Авто-рейтинг: {formatAdminRating(user.rating_auto)} · Сейчас:{" "}
+        {formatAdminRating(user.rating_effective)}
         {user.rating_manual !== null && " (override)"}
       </p>
       <Input

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 84 файлов, 817 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 84 файлов, 822 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -129,6 +129,7 @@
 - M-157: notifications load-more now refuses malformed keyset cursors before sending `before_created_at`/`before_id` to the API.
 - M-158: shared frontend money badges now parse decimal-string payloads and reject exponent/hex notation instead of collapsing valid string amounts to `$0`.
 - M-159: public user/service rating badges now parse string ratings and render malformed/out-of-range values as a neutral dash instead of calling `.toFixed()` on runtime payloads.
+- M-160: admin user/service metric rows now share strict decimal/rating display helpers instead of calling `.toFixed()` on runtime payloads.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1784,7 +1785,17 @@ Risk: one malformed rating in a public card/list/detail payload could crash the 
 
 Fix: added shared `parseRatingValue()`/`formatRatingValue()` helpers. Public rating displays now accept canonical decimal strings, reject exponent/hex and out-of-range values, and render a neutral dash for invalid ratings instead of throwing. Regression coverage exercises user cards, picker suggestions, search rows and service detail.
 
+### M-160. Admin user/service metrics called `.toFixed()` on runtime payloads
+
+Links: `frontend/src/lib/format.ts`, `frontend/src/pages/admin/format.ts`, `frontend/src/pages/admin/AdminUsersPage.tsx`, `frontend/src/pages/admin/AdminUserDetailPage.tsx`, `frontend/src/pages/admin/UserContentSections.tsx`, regressions `frontend/src/pages/admin/format.test.ts`, `frontend/src/pages/admin/AdminUsersPage.test.tsx`, `frontend/src/pages/admin/AdminUserDetailPage.test.tsx`, `frontend/src/pages/admin/UserContentSections.test.tsx`.
+
+Admin user rows, user detail identity/rating blocks and service content rows still called `.toFixed()` directly on rating, trust-deposit and service price fields. These admin DTOs are typed as numbers, but the surrounding admin finance surfaces already had to tolerate string money projections; a string decimal here would crash the admin panel while inspecting users/content.
+
+Risk: one malformed or stringified metric in an admin response could hide moderation controls, user identity data, or user service rows from operators.
+
+Fix: added shared admin display helpers backed by the strict decimal/rating parsers. Canonical decimal strings render normally, malformed/exponent/hex values render as a neutral dash, and regression coverage pins list/detail/content rows.
 ## Наблюдения без отдельного finding
+
 
 - Media upload/serve выглядит сильной зоной: есть streaming cap, magic bytes, Pillow reencode, reject animation, signed deal URLs и path validation.
 - CSP report и client-error endpoints имеют body cap/rate limit; именно на их фоне webhook gap из H-03 выглядит явным расхождением.

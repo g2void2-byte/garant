@@ -1,12 +1,16 @@
 const DECIMAL_STRING_RE = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;
 
-export function parseDecimal(value: string | number | null | undefined): number {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+export function parseDecimalValue(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
   const trimmed = value.trim();
-  if (!DECIMAL_STRING_RE.test(trimmed)) return 0;
+  if (!DECIMAL_STRING_RE.test(trimmed)) return null;
   const n = Number(trimmed);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n) ? n : null;
+}
+
+export function parseDecimal(value: string | number | null | undefined): number {
+  return parseDecimalValue(value) ?? 0;
 }
 
 const DEFAULT_DECIMALS: Record<string, number> = {
@@ -73,12 +77,8 @@ export function formatMoney(value: number | string | null | undefined): string {
 
 export function parseRatingValue(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
-  const parsed = typeof value === "number"
-    ? value
-    : DECIMAL_STRING_RE.test(value.trim())
-      ? Number(value.trim())
-      : null;
-  if (parsed === null || !Number.isFinite(parsed) || parsed < 0 || parsed > 5) return null;
+  const parsed = parseDecimalValue(value);
+  if (parsed === null || parsed < 0 || parsed > 5) return null;
   return parsed;
 }
 

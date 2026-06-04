@@ -30,7 +30,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { confirmDialog } from "@/lib/dialog";
 import { UserPicker } from "@/components/domain/UserPicker";
-import { formatAdminUsername } from "./format";
+import { formatAdminUsdSuffix, formatAdminUsername } from "./format";
 import {
   useAdminCreateReview,
   useAdminDeleteComment,
@@ -118,7 +118,7 @@ export function ServicesSection({ userId }: SectionProps) {
                     <div className="font-medium truncate">{s.title}</div>
                     <div className="text-xs text-text-muted line-clamp-2">{s.description}</div>
                     <div className="mt-1 text-[11px] text-text-muted flex items-center gap-2 flex-wrap">
-                      <span>{s.price.toFixed(2)} $</span>
+                      <span>{formatAdminUsdSuffix(s.price)}</span>
                       <span>·</span>
                       <span>{s.status}</span>
                       <span>·</span>
