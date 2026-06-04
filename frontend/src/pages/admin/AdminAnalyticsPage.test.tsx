@@ -100,6 +100,23 @@ describe("<AdminAnalyticsPage />", () => {
     expect(screen.getByText("2")).toBeInTheDocument(); // pending_withdrawals
   });
 
+  it("renders neutral KPI values for malformed runtime counters and volume", () => {
+    mockState.kpi = {
+      ...kpiData(),
+      dau: "1e2" as unknown as number,
+      wau: "50" as unknown as number,
+      deals_volume_usd_30d: "0x10" as unknown as number,
+      open_arbitration: "1.5" as unknown as number,
+      pending_withdrawals: -1,
+    };
+
+    renderPage();
+
+    expect(screen.getByText(`\u2014 / 50 / 200`)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2|0x10|1\.5/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("\u2014").length).toBeGreaterThanOrEqual(3);
+  });
+
   it("applies warning ring to 'Открытых арбитражей' and 'Ожидают вывод' cards", () => {
     mockState.kpi = kpiData();
     const { container } = renderPage();
@@ -138,6 +155,30 @@ describe("<AdminAnalyticsPage />", () => {
     expect(screen.getByText("$1,500")).toBeInTheDocument();
   });
 
+  it("drops malformed sparkline values before plotting or displaying them", () => {
+    mockState.series = {
+      deals_count_30d: [
+        { date: "2026-01-01", value: "1e2" as unknown as number },
+        { date: "2026-01-02", value: "2" as unknown as number },
+      ],
+      deals_volume_30d: [
+        { date: "2026-01-01", value: "1500.5" as unknown as number },
+        { date: "2026-01-02", value: "0x10" as unknown as number },
+      ],
+      new_users_30d: [],
+      deposits_30d: [],
+      withdrawals_30d: [],
+    };
+
+    const { container } = renderPage();
+
+    expect(screen.queryByText(/1e2|0x10/)).not.toBeInTheDocument();
+    expect(screen.getByText("$1,501")).toBeInTheDocument();
+    for (const polyline of container.querySelectorAll("polyline")) {
+      expect(polyline.getAttribute("points") ?? "").not.toMatch(/NaN|Infinity/);
+    }
+  });
+
   it("renders top-user entries with rank, name, and value", () => {
     mockState.top = {
       top_sellers: [
@@ -154,6 +195,27 @@ describe("<AdminAnalyticsPage />", () => {
     expect(screen.getByText("username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d")).toBeInTheDocument();
     expect(screen.queryByText("@—")).not.toBeInTheDocument();
     expect(screen.getByText("9")).toBeInTheDocument();
+  });
+
+  it("renders neutral top-list values for malformed runtime metrics", () => {
+    mockState.top = {
+      top_sellers: [
+        { user_id: 1, username: "alice", display_name: "Alice", value: "1e2" as unknown as number },
+      ],
+      top_buyers: [
+        { user_id: 2, username: "bob", display_name: "Bob", value: "1500.5" as unknown as number },
+      ],
+      top_arbiters: [
+        { user_id: 3, username: "carol", display_name: "Carol", value: "1.5" as unknown as number },
+      ],
+    };
+
+    renderPage();
+
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+    expect(screen.queryByText("1.5")).not.toBeInTheDocument();
+    expect(screen.getByText("1,500.5")).toBeInTheDocument();
+    expect(screen.getAllByText("\u2014").length).toBeGreaterThanOrEqual(2);
   });
 
   it("renders skeletons while series is loading", () => {

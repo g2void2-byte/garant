@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 84 файлов, 850 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 84 файлов, 853 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -136,6 +136,7 @@
 - M-164: public currency precision and create-deal commission previews now normalize runtime numeric DTOs before formatting.
 - M-165: public wallet balance gates now parse string money mirrors strictly before showing withdraw/locked states.
 - M-166: public user/profile/service/category counters now use strict integer parsing before display, gates, and pagination decisions.
+- M-167: admin analytics KPI, sparkline and top-list metrics now reject malformed runtime numeric payloads before display/SVG plotting.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1860,6 +1861,16 @@ Public user, profile, category, and service pages trusted runtime integer counte
 Risk: malformed public DTO counters could make restricted search/catalog pages visible to a user with zero completed deals, show bogus trust/activity stats, or expose misleading load-more controls. These fields are not money-moving by themselves, but they are trust and access signals on user-facing discovery/profile surfaces.
 
 Fix: added a shared non-negative safe-integer parser and count formatter. Public gates now treat missing/malformed/zero `deals_count` as restricted for non-admins; count labels and tab badges render a neutral placeholder for malformed counters; rating badges require a valid positive review count; service/category/profile comment/review pagination only trusts strict counters. Regression coverage pins string-zero gates, malformed display counters, and malformed pagination counts.
+
+### M-167. Admin analytics trusted runtime metric numbers
+
+Links: `frontend/src/pages/admin/AdminAnalyticsPage.tsx`, regression `frontend/src/pages/admin/AdminAnalyticsPage.test.tsx`.
+
+Admin analytics KPI cards, sparklines and top-user lists rendered API metric fields directly. KPI cards interpolated counters as strings, volume called `toLocaleString` on the runtime value, sparklines used `Math.max`, division and `.toFixed()` on `d.value`, and top-list rows rendered `e.value` directly. A malformed payload like `"1e2"` or `"0x10"` could therefore appear as a legitimate metric or produce `NaN`/`Infinity` coordinates in the SVG polyline.
+
+Risk: the operational analytics dashboard could show inflated/ambiguous business metrics or malformed chart geometry instead of surfacing that a metric payload was invalid. This is admin-only, but it is still a decision surface for volume, user growth, withdrawals and arbitration workload.
+
+Fix: analytics now uses strict non-negative integer parsing for count metrics and strict plain-decimal parsing for volume/amount metrics. Malformed KPI/top-list values render a neutral dash, malformed sparkline points are dropped before plotting, and SVG points are generated only from validated finite numbers. Regression coverage pins malformed KPI values, malformed sparkline points and malformed top-list metrics.
 
 ## Наблюдения без отдельного finding
 
