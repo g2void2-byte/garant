@@ -6,6 +6,20 @@ export function normalizeCurrencyCode(value: unknown): string | null {
   return CURRENCY_CODE_RE.test(code) ? code : null;
 }
 
+export function normalizeCurrencyCodeRows<T extends { code: string }>(
+  rows: readonly T[],
+): T[] {
+  const seen = new Set<string>();
+  const normalized: T[] = [];
+  for (const row of rows) {
+    const code = normalizeCurrencyCode(row.code);
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    normalized.push({ ...row, code });
+  }
+  return normalized;
+}
+
 export function walletCurrencyPath(value: unknown): string | null {
   const code = normalizeCurrencyCode(value);
   return code ? `/wallet/${code}` : null;

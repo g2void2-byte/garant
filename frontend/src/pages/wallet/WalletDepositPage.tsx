@@ -14,6 +14,10 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
+import {
+  normalizeCurrencyCode,
+  normalizeCurrencyCodeRows,
+} from "@/lib/currencyCodes";
 import { formatCurrency } from "@/lib/format";
 import { haptic, openPaymentLink } from "@/lib/tg";
 import type { WalletDepositDto } from "@/api/types";
@@ -54,7 +58,7 @@ export default function WalletDepositPage() {
   // ``?currency=USD``; honour the URL hint so the dropdown lands on
   // the user's preferred fiat code without a manual click.
   const [searchParams] = useSearchParams();
-  const initialCode = (searchParams.get("currency") ?? "").toUpperCase();
+  const initialCode = normalizeCurrencyCode(searchParams.get("currency"));
 
   const [code, setCode] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
@@ -66,7 +70,10 @@ export default function WalletDepositPage() {
   const [modalOpen, setModalOpen] = useState(false);
 
   const fiatCurrencies = useMemo(
-    () => (currencies.data ?? []).filter((c) => c.kind === "fiat"),
+    () =>
+      normalizeCurrencyCodeRows(
+        (currencies.data ?? []).filter((c) => c.kind === "fiat"),
+      ),
     [currencies.data],
   );
   const current = useMemo(
@@ -74,7 +81,7 @@ export default function WalletDepositPage() {
     [fiatCurrencies, code],
   );
   const balance = useMemo(
-    () => balances.data?.find((b) => b.currency.code === code),
+    () => balances.data?.find((b) => normalizeCurrencyCode(b.currency.code) === code),
     [balances.data, code],
   );
 

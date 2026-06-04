@@ -98,6 +98,7 @@ function makeBalance(
   amount: number,
   code = "USDT",
   decimals = 2,
+  currencyOver: Partial<WalletBalanceDto["currency"]> = {},
 ): WalletBalanceDto {
   return {
     currency: {
@@ -110,6 +111,7 @@ function makeBalance(
       min_deposit: 1,
       min_withdraw: 1,
       kind: "fiat",
+      ...currencyOver,
     },
     amount,
     locked: 0,
@@ -175,6 +177,32 @@ describe("<WalletWithdrawPage />", () => {
     // Only BTC should be listed; USDT is filtered out.
     expect(screen.getByText(/BTC · 0.5 BTC/)).toBeInTheDocument();
     expect(screen.queryByText(/USDT · 0 USDT/)).not.toBeInTheDocument();
+  });
+
+  it("hides malformed and non-fiat positive balance rows before submit", async () => {
+    mockState.balances = [
+      makeBalance(10, "USDT", 2, { kind: "crypto", name: "Tether" }),
+      makeBalance(10, "USD/../admin", 2, { name: "Broken Dollar" }),
+      makeBalance(25, " uah ", 2, { name: "Hryvnia", network: "" }),
+    ];
+    mockState.createMutation.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.queryByText(/Tether/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Broken Dollar/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Hryvnia · 25 UAH/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Всё" }));
+    await user.click(screen.getByRole("button", { name: /Запросить вывод/ }));
+    await enterPin(user);
+
+    await waitFor(() => {
+      expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "UAH",
+        amount: "25",
+      });
+    });
   });
 
   it("blocks submit with haptic('error') when the amount is invalid", async () => {

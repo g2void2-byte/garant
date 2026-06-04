@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { normalizeCurrencyCode, walletActionPath, walletCurrencyPath } from "./currencyCodes";
+import {
+  normalizeCurrencyCode,
+  normalizeCurrencyCodeRows,
+  walletActionPath,
+  walletCurrencyPath,
+} from "./currencyCodes";
 
 describe("currency code helpers", () => {
   it("normalizes ASCII currency codes", () => {
@@ -17,5 +22,19 @@ describe("currency code helpers", () => {
   it("builds encoded wallet action paths only for valid codes", () => {
     expect(walletActionPath("deposit", "usd")).toBe("/wallet/deposit?currency=USD");
     expect(walletActionPath("withdraw", "USD&provider=x")).toBe("/wallet/withdraw");
+  });
+
+  it("normalizes row codes and drops invalid or duplicate rows", () => {
+    expect(
+      normalizeCurrencyCodeRows([
+        { code: " usd ", name: "Dollar" },
+        { code: "USD", name: "Duplicate dollar" },
+        { code: "USD/../admin", name: "Broken" },
+        { code: "uah", name: "Hryvnia" },
+      ]),
+    ).toEqual([
+      { code: "USD", name: "Dollar" },
+      { code: "UAH", name: "Hryvnia" },
+    ]);
   });
 });

@@ -19,6 +19,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { usePresence } from "@/lib/animate";
 import { cn } from "@/lib/cn";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { formatCurrency } from "@/lib/format";
 import { haptic, openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
@@ -57,7 +58,7 @@ export default function WalletWithdrawPage() {
   // Item 13 — ProfilePage's "Вывести" CTA can hint at a preferred
   // currency code via ``?currency=USD``; we honour it on first paint.
   const [searchParams] = useSearchParams();
-  const initialCode = (searchParams.get("currency") ?? "").toUpperCase();
+  const initialCode = normalizeCurrencyCode(searchParams.get("currency"));
 
   const [method, setMethod] = useState<WithdrawMethod>("cryptobot");
   const [cardOpen, setCardOpen] = useState(false);
@@ -66,7 +67,22 @@ export default function WalletWithdrawPage() {
   const [amount, setAmount] = useState<string>("");
 
   const eligible = useMemo(
-    () => (balances.data ?? []).filter((b) => b.amount > 0),
+    () => {
+      const seen = new Set<string>();
+      return (balances.data ?? []).flatMap((b) => {
+        const normalizedCode = normalizeCurrencyCode(b.currency.code);
+        if (
+          b.currency.kind !== "fiat" ||
+          !normalizedCode ||
+          seen.has(normalizedCode) ||
+          b.amount <= 0
+        ) {
+          return [];
+        }
+        seen.add(normalizedCode);
+        return [{ ...b, currency: { ...b.currency, code: normalizedCode } }];
+      });
+    },
     [balances.data],
   );
   const current = useMemo(

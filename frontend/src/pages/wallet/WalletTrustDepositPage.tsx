@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { usePresence } from "@/lib/animate";
 import { cn } from "@/lib/cn";
+import { normalizeCurrencyCodeRows } from "@/lib/currencyCodes";
 import { formatCurrency, formatMoney } from "@/lib/format";
 import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
@@ -38,16 +39,21 @@ export default function WalletTrustDepositPage() {
   const [amount, setAmount] = useState<string>("");
   const [withdrawOpen, setWithdrawOpen] = useState(false);
 
+  const currencyRows = useMemo(
+    () => normalizeCurrencyCodeRows(currencies.data ?? []),
+    [currencies.data],
+  );
+
   const current = useMemo(
-    () => currencies.data?.find((c) => c.code === code),
-    [currencies.data, code],
+    () => currencyRows.find((c) => c.code === code),
+    [currencyRows, code],
   );
 
   useEffect(() => {
-    if (!code && currencies.data?.length) {
-      setCode(currencies.data[0].code);
+    if (!code && currencyRows.length) {
+      setCode(currencyRows[0].code);
     }
-  }, [code, currencies.data]);
+  }, [code, currencyRows]);
 
   useEffect(() => {
     if (current && !amount) {
@@ -98,7 +104,7 @@ export default function WalletTrustDepositPage() {
     }
   }
 
-  const currencyOptions = (currencies.data ?? []).map((c) => ({
+  const currencyOptions = currencyRows.map((c) => ({
     value: c.code,
     label: `${c.name} (${c.network || c.code})`,
   }));

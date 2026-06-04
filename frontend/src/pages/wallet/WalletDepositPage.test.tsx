@@ -74,11 +74,11 @@ vi.mock("react-router-dom", async () => {
 
 import WalletDepositPage from "./WalletDepositPage";
 
-function renderPage() {
+function renderPage(initialEntry = "/wallet/deposit") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <WalletDepositPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -171,6 +171,33 @@ describe("<WalletDepositPage />", () => {
     // Tether (kind='crypto') is filtered out; only fiat rows remain.
     expect(screen.queryByText(/Tether/)).not.toBeInTheDocument();
     expect(screen.getByText(/US Dollar · USD/)).toBeInTheDocument();
+  });
+
+  it("hides malformed fiat currency rows and submits normalized codes", async () => {
+    mockState.currencies = [
+      makeCurrency({ id: 1, code: "USD/../admin", name: "Broken Dollar" }),
+      makeCurrency({ id: 2, code: " uah ", name: "Hryvnia", min_deposit: 50 }),
+    ];
+    mockState.createMutation.mutateAsync.mockResolvedValue(
+      makeDeposit({ currency: makeCurrency({ code: "UAH", name: "Hryvnia" }) }),
+    );
+    const user = userEvent.setup();
+    renderPage("/wallet/deposit?currency=USD%2F..%2Fadmin");
+
+    expect(screen.queryByText(/Broken Dollar/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/Hryvnia · UAH/)).toBeInTheDocument();
+
+    const amount = screen.getByDisplayValue("50") as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: "75" } });
+    await user.click(screen.getByRole("button", { name: /Пополнить баланс/ }));
+
+    await waitFor(() => {
+      expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "UAH",
+        amount: "75",
+        provider: "cryptobot",
+      });
+    });
   });
 
   it("renders a loading skeleton while currencies are loading", () => {

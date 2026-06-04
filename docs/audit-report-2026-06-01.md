@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 83 файлов, 786 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 84 файлов, 790 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -116,6 +116,9 @@
 - M-144: profile fiat balance actions now normalize display currency refs before rendering wallet query links.
 - M-145: cached PIN tokens with malformed stored expiry values are now treated as invalid and cleared before auth headers/UI gates can trust them.
 - M-146: cached admin TOTP session tokens with malformed stored expiry values are now treated as invalid and cleared before admin auth headers can trust them.
+- M-147: wallet deposit currency options now drop malformed API currency codes and normalize URL hints before creating invoices.
+- M-148: wallet withdrawal options now require positive fiat balances with valid currency codes before selection/submission.
+- M-149: trust-deposit currency options now normalize/drop malformed API currency rows before creating trust invoices.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1640,6 +1643,36 @@ The admin TOTP session helper mirrored the PIN bug: malformed `garant.totp_sessi
 Risk: admin actions could start from stale local 2FA state, producing unnecessary 401/TOTP prompts and weakening the frontend's own session boundary. The backend still validates the JWT, but the client should not trust a cache entry with an invalid expiry contract.
 
 Fix: TOTP expiry parsing now requires a finite timestamp on write and read, matching the PIN helper. Invalid stored expiries clear the token and expiry keys and return `null`. A new dedicated TOTP storage regression file covers empty, valid, expired, malformed-expiry, clear, and event semantics.
+
+### M-147. Wallet deposit form trusted API currency codes after filtering only by kind
+
+Links: `frontend/src/pages/wallet/WalletDepositPage.tsx`, `frontend/src/lib/currencyCodes.ts`, regressions `frontend/src/pages/wallet/WalletDepositPage.test.tsx`, `frontend/src/lib/currencyCodes.test.ts`.
+
+The standalone wallet deposit page requested `kind=fiat` and filtered stale responses by `c.kind === "fiat"`, but it still used `c.code` directly as the select value and `currency_code` mutation body. It also normalized `?currency=` by uppercasing only, so a malformed deep link was not passed through the same currency-code contract used by wallet routes and action links.
+
+Risk: a malformed legacy/API fiat row such as `USD/../admin` could be displayed as a deposit option and submitted to `POST /api/wallet/deposits`, relying on backend validation to reject a form state the client could have omitted locally.
+
+Fix: added a shared row normalizer that trims/uppercases valid codes, drops invalid and duplicate rows, and reuses the backend `^[A-Z0-9]{1,16}$` contract. The deposit page now normalizes URL hints, omits malformed fiat rows, and submits only normalized `currency_code` values.
+
+### M-148. Wallet withdrawal form could offer malformed or stale non-fiat balance rows
+
+Links: `frontend/src/pages/wallet/WalletWithdrawPage.tsx`, regression `frontend/src/pages/wallet/WalletWithdrawPage.test.tsx`.
+
+The withdrawal page asked the API for fiat balances, but its local eligibility filter only checked `amount > 0`. If a stale cache or API drift returned a positive crypto row or a fiat row with a malformed code, the dropdown could offer it and submit the raw `currency_code` after the PIN prompt.
+
+Risk: users could enter a sensitive PIN flow for a withdrawal that the backend would reject as an invalid or unsupported currency. This is especially poor on money-moving screens because the UI should not present an action that cannot satisfy the backend contract.
+
+Fix: withdrawal eligibility now requires `currency.kind === "fiat"`, a valid normalized currency code, positive balance, and one row per normalized code. Query-string hints are normalized through the same helper before matching. Regression coverage verifies positive crypto/malformed rows are hidden and a lowercase/space-padded fiat row submits as the normalized code.
+
+### M-149. Trust-deposit form submitted raw currency catalogue codes
+
+Links: `frontend/src/pages/wallet/WalletTrustDepositPage.tsx`, regression `frontend/src/pages/wallet/WalletTrustDepositPage.test.tsx`.
+
+The trust-deposit page used the full currency catalogue directly for its select values. A malformed catalogue row could therefore become the selected `currency_code` for a `purpose: "trust"` deposit invoice.
+
+Risk: malformed currency catalogue drift could turn the trust-deposit screen into a backend validation failure instead of a local omission. The trust balance is user-visible reputation capital, so its funding UI should share the same currency-code boundary as wallet deposit/withdrawal screens.
+
+Fix: trust-deposit options now pass through the shared currency-row normalizer before selection and invoice creation. Invalid rows are omitted, valid codes are normalized, and regression coverage verifies a malformed row is hidden while a space/lowercase code submits as `UAH` with `purpose: "trust"`.
 
 ## Наблюдения без отдельного finding
 
