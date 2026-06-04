@@ -96,6 +96,47 @@ describe("<AccountTransferPage />", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("falls back to safe policy values for malformed runtime length and ttl", async () => {
+    mockState.status = {
+      has_active: false,
+      expires_at: null,
+      code_length: "1e2" as unknown as number,
+      ttl_seconds: "0x10" as unknown as number,
+    };
+    const user = userEvent.setup();
+    renderPage();
+    expect(document.body.textContent).toContain("15 ");
+
+    await user.click(screen.getByRole("button", { name: /\u0412\u0432\u0435\u0441\u0442\u0438 \u043a\u043e\u0434/ }));
+    const input = screen.getByPlaceholderText("000000") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "1234567" } });
+    expect(input.value).toBe("123456");
+    expect(
+      screen.getByRole("button", {
+        name: /\u041f\u0435\u0440\u0435\u043d\u0435\u0441\u0442\u0438 \u0430\u043a\u043a\u0430\u0443\u043d\u0442/,
+      }),
+    ).not.toBeDisabled();
+  });
+
+  it("does not let a zero-length runtime policy enable empty-code confirm", async () => {
+    mockState.status = {
+      has_active: false,
+      expires_at: null,
+      code_length: 0,
+      ttl_seconds: 0,
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: /\u0412\u0432\u0435\u0441\u0442\u0438 \u043a\u043e\u0434/ }));
+    expect(screen.getByPlaceholderText("000000")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: /\u041f\u0435\u0440\u0435\u043d\u0435\u0441\u0442\u0438 \u0430\u043a\u043a\u0430\u0443\u043d\u0442/,
+      }),
+    ).toBeDisabled();
+  });
+
   it("renders the header and 'Send' tab by default", () => {
     renderPage();
     expect(

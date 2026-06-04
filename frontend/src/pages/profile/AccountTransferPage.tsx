@@ -13,10 +13,14 @@ import {
   useConfirmAccountTransfer,
   useStartAccountTransfer,
 } from "@/api/hooks";
+import { parseNonNegativeIntegerValue } from "@/lib/format";
 import { clearPinToken } from "@/lib/pin";
 import { haptic } from "@/lib/tg";
 
 type Tab = "send" | "receive";
+const DEFAULT_CODE_LENGTH = 6;
+const MAX_CODE_LENGTH = 32;
+const DEFAULT_TTL_SECONDS = 15 * 60;
 
 function relativeMinutes(expiresAt: string | null | undefined): string {
   if (!expiresAt) return "—";
@@ -28,8 +32,20 @@ function relativeMinutes(expiresAt: string | null | undefined): string {
   return `${minutes} мин.`;
 }
 
-function ttlLabel(seconds: number | null | undefined): string {
-  const minutes = Math.max(1, Math.round((seconds ?? 15 * 60) / 60));
+function parsePositivePolicyInteger(
+  value: unknown,
+  fallback: number,
+  max?: number,
+): number {
+  const parsed = parseNonNegativeIntegerValue(value);
+  if (parsed === null || parsed <= 0) return fallback;
+  if (max !== undefined && parsed > max) return fallback;
+  return parsed;
+}
+
+function ttlLabel(seconds: unknown): string {
+  const ttlSeconds = parsePositivePolicyInteger(seconds, DEFAULT_TTL_SECONDS);
+  const minutes = Math.max(1, Math.round(ttlSeconds / 60));
   return `${minutes} мин.`;
 }
 
@@ -44,7 +60,11 @@ export default function AccountTransferPage() {
   const confirmMutation = useConfirmAccountTransfer();
 
   const [code, setCode] = useState("");
-  const codeLength = status.data?.code_length ?? 6;
+  const codeLength = parsePositivePolicyInteger(
+    status.data?.code_length,
+    DEFAULT_CODE_LENGTH,
+    MAX_CODE_LENGTH,
+  );
   const ttlText = ttlLabel(status.data?.ttl_seconds);
 
   // Re-render every 15s so the countdown stays roughly fresh without

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 85 файлов, 865 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 85 файлов, 867 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -140,6 +140,7 @@
 - M-168: public review star rows now parse runtime ratings strictly before filling stars instead of relying on JavaScript numeric coercion.
 - M-169: notification unread counters now use strict integer parsing before badge/header display and local read-cache decrements.
 - M-170: admin list pagination and queue badges now parse runtime totals/counters strictly before display and page math.
+- M-171: account-transfer code length and TTL UI policy now rejects malformed/zero runtime values before regex, input limits, and labels.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1904,6 +1905,16 @@ Several admin list pages computed pagination or queue badges directly from `data
 Risk: malformed admin DTO counters could show bogus queue badges, enable unexpected pagination, or make operational lists look larger than the server's validated contract. This affects admin decision surfaces across deals, audit, wallets, deposits, broadcasts, user content, withdrawals and arbitration queues.
 
 Fix: added shared strict admin count helpers for count display and pagination math. Admin list totals/page sizes/status counters now require non-negative safe integers before display, badge rendering, or total-page calculations. Malformed totals fall back to a neutral dash/no pagination, and malformed queue counters are not shown as badges. Regression coverage pins malformed totals/counters.
+
+### M-171. Account-transfer UI trusted malformed runtime policy values
+
+Links: `frontend/src/pages/profile/AccountTransferPage.tsx`, regression `frontend/src/pages/profile/AccountTransferPage.test.tsx`.
+
+The account-transfer page used `status.data.code_length` directly in the confirmation regex, input `slice()` limit, placeholder generation, disabled-state comparison, and error copy. It also rounded `ttl_seconds` directly for the visible TTL label. Runtime values like `"1e2"` and `"0x10"` were therefore coerced by JavaScript into large or misleading values, and `code_length=0` could enable the confirm button for an empty local code before the backend rejected it.
+
+Risk: a malformed account-transfer policy payload could make the receive-code UI impossible to use, show a misleading TTL, or let a zero-length policy activate an empty-code confirm path. The backend still enforces the real code policy, but the frontend was presenting a broken security-sensitive workflow instead of failing back to a bounded local policy.
+
+Fix: account-transfer code length and TTL now pass through strict positive safe-integer parsing. Code length falls back to the default 6 digits unless it is a positive integer within the backend request cap of 32; TTL falls back to the default 15 minutes unless it is a positive integer. Regression coverage pins malformed exponent/hex-like values and zero-length policy values.
 
 ## Наблюдения без отдельного finding
 
