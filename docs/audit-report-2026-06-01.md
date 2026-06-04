@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 84 файлов, 834 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 84 файлов, 837 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -134,6 +134,7 @@
 - M-162: public profile review ratings now use the shared strict rating formatter instead of coercing malformed review payloads to `0.0`.
 - M-163: admin system latency/uptime displays now reject malformed runtime numeric payloads instead of throwing or rendering `NaN`.
 - M-164: public currency precision and create-deal commission previews now normalize runtime numeric DTOs before formatting.
+- M-165: public wallet balance gates now parse string money mirrors strictly before showing withdraw/locked states.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1838,6 +1839,16 @@ Public wallet/deal surfaces passed API-provided currency `decimals` directly int
 Risk: one malformed public settings or currency payload could crash deal creation or wallet amount displays, hiding the form while the rest of the page data was still usable.
 
 Fix: added a shared display-decimal resolver that accepts only integer precision in the browser-safe display range and falls back to per-currency defaults. Create-deal now parses commission settings and active balances through the strict decimal parser before preview/max calculations, falls back to the default 5% commission when settings are invalid, and keeps canonical decimal strings working. Regression coverage pins malformed precision overrides and string/malformed commission settings.
+
+### M-165. Public wallet gates coerced malformed balance payloads
+
+Links: `frontend/src/lib/walletAmounts.ts`, `frontend/src/pages/wallet/WalletWithdrawPage.tsx`, `frontend/src/pages/wallet/WalletPage.tsx`, `frontend/src/pages/wallet/WalletCurrencyPage.tsx`, regressions `frontend/src/pages/wallet/WalletWithdrawPage.test.tsx`, `frontend/src/pages/wallet/WalletPage.test.tsx`, `frontend/src/pages/wallet/WalletCurrencyPage.test.tsx`.
+
+Wallet withdrawal eligibility and locked-balance hints compared runtime DTO money fields with plain JavaScript relational operators (`b.amount <= 0`, `locked > 0`). Backend contracts normally provide numbers plus canonical `*_str` mirrors, but a stringified exponent/hex payload would be coerced by JavaScript for the gate while the display formatter rejected it as malformed.
+
+Risk: a malformed balance could appear as withdrawable or locked even though the rendered amount looked like zero/invalid, confusing users and letting them enter a withdrawal path that later fails validation.
+
+Fix: added shared wallet balance parsing helpers that prefer canonical string money mirrors and reject malformed/exponent/hex values before gating UI state. Withdrawal options now require a strictly parsed positive balance and keep the canonical amount string for the “all” button. Wallet landing and per-currency pages now use the same strict locked-balance gate and display the string mirror. Regression coverage pins malformed withdraw balances and malformed locked hints.
 
 ## Наблюдения без отдельного finding
 

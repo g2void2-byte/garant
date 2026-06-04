@@ -219,6 +219,17 @@ describe("<WalletCurrencyPage />", () => {
     expect(screen.getByText(/в заявках:/)).toBeInTheDocument();
   });
 
+  it("does not show the locked hint for malformed runtime locked values", () => {
+    const malformed = makeBalance(50, 25);
+    malformed.locked = "1e1" as unknown as number;
+    malformed.locked_str = "1e1";
+    mockState.balances = [malformed];
+
+    renderPage("USDT");
+
+    expect(screen.queryByText(/РІ Р·Р°СЏРІРєР°С…:/)).not.toBeInTheDocument();
+  });
+
   it("shows the loading skeleton while currencies / balances load", () => {
     mockState.currenciesLoading = true;
     const { container } = renderPage("USDT");

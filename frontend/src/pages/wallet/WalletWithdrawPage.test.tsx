@@ -205,6 +205,18 @@ describe("<WalletWithdrawPage />", () => {
     });
   });
 
+  it("hides balances with malformed runtime amount strings", () => {
+    const malformed = makeBalance(100, "USD");
+    malformed.amount = "1e2" as unknown as number;
+    malformed.amount_str = "1e2";
+    mockState.balances = [malformed];
+
+    renderPage();
+
+    expect(screen.queryByText(/USD В·/)).not.toBeInTheDocument();
+    expect(screen.getByText(/доступных для вывода валют/)).toBeInTheDocument();
+  });
+
   it("blocks submit with haptic('error') when the amount is invalid", async () => {
     mockState.balances = [makeBalance(50, "USDT")];
     const user = userEvent.setup();

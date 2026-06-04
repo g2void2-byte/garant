@@ -23,6 +23,10 @@ import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { formatCurrency } from "@/lib/format";
 import { haptic, openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
+import {
+  parseWalletBalanceDecimal,
+  walletBalanceDecimalInput,
+} from "@/lib/walletAmounts";
 
 type WithdrawMethod = "cryptobot" | "card";
 
@@ -71,16 +75,27 @@ export default function WalletWithdrawPage() {
       const seen = new Set<string>();
       return (balances.data ?? []).flatMap((b) => {
         const normalizedCode = normalizeCurrencyCode(b.currency.code);
+        const amount = parseWalletBalanceDecimal(b, "amount");
+        const amountInput = walletBalanceDecimalInput(b, "amount");
         if (
           b.currency.kind !== "fiat" ||
           !normalizedCode ||
           seen.has(normalizedCode) ||
-          b.amount <= 0
+          amount === null ||
+          amount <= 0 ||
+          amountInput === null
         ) {
           return [];
         }
         seen.add(normalizedCode);
-        return [{ ...b, currency: { ...b.currency, code: normalizedCode } }];
+        return [
+          {
+            ...b,
+            amount,
+            amount_str: amountInput,
+            currency: { ...b.currency, code: normalizedCode },
+          },
+        ];
       });
     },
     [balances.data],

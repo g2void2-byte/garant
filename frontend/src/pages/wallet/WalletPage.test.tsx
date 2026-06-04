@@ -215,6 +215,33 @@ describe("<WalletPage />", () => {
     expect(screen.getByText(/в заявках/)).toBeInTheDocument();
   });
 
+  it("does not render the locked hint for malformed runtime locked values", () => {
+    mockState.data = [
+      {
+        currency: {
+          id: 2,
+          code: "USD",
+          name: "US Dollar",
+          network: "",
+          icon_url: "",
+          decimals: 2,
+          min_deposit: 1,
+          min_withdraw: 1,
+          kind: "fiat",
+        },
+        amount: 0.5,
+        locked: "1e1" as unknown as number,
+        total: 10.5,
+        updated_at: null,
+        amount_str: "0.5",
+        locked_str: "1e1",
+        total_str: "10.5",
+      },
+    ];
+    renderPage();
+    expect(screen.queryByText(/РІ Р·Р°СЏРІРєР°С…/)).not.toBeInTheDocument();
+  });
+
   it("renders deposit and withdrawal action tiles", () => {
     mockState.data = [];
     renderPage();

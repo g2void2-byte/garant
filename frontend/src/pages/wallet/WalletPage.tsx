@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { normalizeCurrencyCode, walletCurrencyPath } from "@/lib/currencyCodes";
 import { formatMoney } from "@/lib/format";
 import { formatCurrency } from "@/lib/format";
+import { hasPositiveWalletBalance } from "@/lib/walletAmounts";
 import type { WalletBalanceDto } from "@/api/types";
 
 /**
@@ -144,7 +145,7 @@ export default function WalletPage() {
 }
 
 function WalletBalanceRow({ balance }: { balance: WalletBalanceDto }) {
-  const { currency, amount } = balance;
+  const { currency } = balance;
   const code = normalizeCurrencyCode(currency.code);
   const path = walletCurrencyPath(code);
   if (!code || !path) return null;
@@ -167,11 +168,11 @@ function WalletBalanceRow({ balance }: { balance: WalletBalanceDto }) {
       </div>
       <div className="text-right">
         <div className="font-semibold tabular-nums">
-          {formatCurrency(amount, code, currency.decimals)}
+          {formatCurrency(balance.amount_str, code, currency.decimals)}
         </div>
-        {balance.locked > 0 && (
+        {hasPositiveWalletBalance(balance, "locked") && (
           <div className="text-xs text-text-muted">
-            +{formatCurrency(balance.locked, code, currency.decimals)} в заявках
+            +{formatCurrency(balance.locked_str, code, currency.decimals)} в заявках
           </div>
         )}
       </div>
