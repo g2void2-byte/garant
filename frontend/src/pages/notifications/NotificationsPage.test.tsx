@@ -152,6 +152,22 @@ describe("<NotificationsPage />", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not coerce malformed unread counters into header actions", () => {
+    mockState.counters = {
+      all: 5,
+      deals: 3,
+      deposits: 1,
+      system: 1,
+      unread: "1e2" as unknown as number,
+    };
+    mockState.list = [];
+    renderPage();
+    expect(screen.queryByText(/непрочитанных/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Прочитать все/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("'Прочитать все' calls useMarkAllRead.mutate", async () => {
     mockState.counters = { all: 1, deals: 1, deposits: 0, system: 0, unread: 1 };
     mockState.list = [];

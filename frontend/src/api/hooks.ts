@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import { qk } from "./queryKeys";
 import { normalizeCurrencyCode } from "@/lib/currencyCodes";
+import { parseNonNegativeIntegerValue } from "@/lib/format";
 import { isPositiveSafeInteger } from "@/lib/routeParams";
 import { normalizeUsernameRef, userDetailApiPath } from "@/lib/usernames";
 import type {
@@ -685,13 +686,17 @@ function applyCountersDelta(
   flippedByType: Record<string, number>,
   flippedTotal: number,
 ) {
+  const decrementCounterValue = (value: unknown, delta: number): unknown => {
+    const parsed = parseNonNegativeIntegerValue(value);
+    return parsed === null ? value : Math.max(0, parsed - delta);
+  };
   qc.setQueryData<NotificationCountersDto | undefined>(
     qk.notifications.counters(),
     (prev) => {
       if (!prev) return prev;
       const dec = (key: keyof NotificationCountersDto) => {
         const delta = flippedByType[key as string] ?? 0;
-        return Math.max(0, (prev[key] ?? 0) - delta);
+        return decrementCounterValue(prev[key], delta) as number;
       };
       return {
         ...prev,
@@ -699,7 +704,7 @@ function applyCountersDelta(
         deals: dec("deals"),
         deposits: dec("deposits"),
         system: dec("system"),
-        unread: Math.max(0, (prev.unread ?? 0) - flippedTotal),
+        unread: decrementCounterValue(prev.unread, flippedTotal) as number,
       };
     },
   );

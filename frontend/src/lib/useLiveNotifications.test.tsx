@@ -392,6 +392,25 @@ describe("useLiveNotifications", () => {
     );
   });
 
+  it("does not coerce malformed cached counters while mirroring reads", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const counters = makeCounters({
+      deals: "1e2" as unknown as number,
+      unread: "0x10" as unknown as number,
+    });
+    qc.setQueryData(["notifications"], [makeNotification({ id: 1, type: "deals" })]);
+    qc.setQueryData(["notifications", "counters"], counters);
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "notification.read",
+      data: { ids: [1], all: false },
+    });
+
+    expect(qc.getQueryData(["notifications", "counters"])).toEqual(counters);
+  });
+
   it("ignores malformed notification.read payloads instead of mutating counters", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const notifications = [

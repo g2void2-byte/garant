@@ -18,7 +18,7 @@ import {
 } from "@/api/hooks";
 import { api } from "@/api/client";
 import type { NotificationDto, NotificationType } from "@/api/types";
-import { dayKey, parseDateTimeMs } from "@/lib/format";
+import { dayKey, parseDateTimeMs, parseNonNegativeIntegerValue } from "@/lib/format";
 import { haptic } from "@/lib/tg";
 
 type CounterTab = "all" | NotificationType;
@@ -51,6 +51,8 @@ export default function NotificationsPage() {
   const updateMe = useUpdateMe();
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllRead();
+  const unreadCount = parseNonNegativeIntegerValue(counters?.unread);
+  const hasUnread = unreadCount !== null && unreadCount > 0;
 
   const markNotificationRead = (id: number) => {
     setItems((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
@@ -125,9 +127,9 @@ export default function NotificationsPage() {
     <Page>
       <Header
         title="Оповещения"
-        subtitle={counters && counters.unread > 0 ? `${counters.unread} непрочитанных` : undefined}
+        subtitle={hasUnread ? `${unreadCount} непрочитанных` : undefined}
         right={
-          counters && counters.unread > 0 ? (
+          hasUnread ? (
             <Button size="sm" variant="ghost" onClick={markAllVisibleRead}>
               Прочитать все
             </Button>

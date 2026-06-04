@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 85 файлов, 858 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 85 файлов, 861 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -138,6 +138,7 @@
 - M-166: public user/profile/service/category counters now use strict integer parsing before display, gates, and pagination decisions.
 - M-167: admin analytics KPI, sparkline and top-list metrics now reject malformed runtime numeric payloads before display/SVG plotting.
 - M-168: public review star rows now parse runtime ratings strictly before filling stars instead of relying on JavaScript numeric coercion.
+- M-169: notification unread counters now use strict integer parsing before badge/header display and local read-cache decrements.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1882,6 +1883,16 @@ Public profile review rows already rendered text rating values through a strict 
 Risk: a corrupted or drifted review DTO could make an invalid review look like a perfect rating in own-profile and public-profile review lists. This is a trust-signal mismatch rather than a write-path vulnerability, but it affects the same public reputation surface as the hardened rating text.
 
 Fix: `ReviewRow` now uses the shared strict rating parser before deriving filled stars. Malformed, exponent/hex-like and out-of-range values render zero filled stars; canonical decimal-string ratings still render normally. Regression coverage pins valid decimal strings and malformed runtime rating strings.
+
+### M-169. Notification counters coerced malformed runtime unread counts
+
+Links: `frontend/src/api/hooks.ts`, `frontend/src/components/layout/BottomNav.tsx`, `frontend/src/pages/notifications/NotificationsPage.tsx`, regressions `frontend/src/components/layout/BottomNav.test.tsx`, `frontend/src/pages/notifications/NotificationsPage.test.tsx`, `frontend/src/lib/useLiveNotifications.test.tsx`.
+
+The bottom nav badge and notifications header compared `counters.unread` directly, while the optimistic/read-event cache updater decremented cached counters with `(prev[key] ?? 0) - delta`. Runtime strings such as `"1e2"` and `"0x10"` therefore became valid-looking unread counts or were rewritten into numeric cache values during local mark-read mirroring.
+
+Risk: a malformed notification counter payload could show a bogus unread badge/header action or make a cross-tab `notification.read` event normalize corrupted counters into believable numbers. This is user-facing state rather than authorization, but it is still a notification reliability and trust signal.
+
+Fix: unread badge/header decisions now parse counters with the shared non-negative safe-integer parser. Local read-cache decrement also parses each cached counter before arithmetic and leaves malformed values uncoerced so display boundaries can treat them as invalid. Regression coverage pins malformed bottom-nav/header unread counters and malformed cached counters during WS read mirroring.
 
 ## Наблюдения без отдельного finding
 
