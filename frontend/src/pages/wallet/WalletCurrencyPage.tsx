@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ToggleTabs } from "@/components/ui/ToggleTabs";
 import { useToast } from "@/components/ui/Toast";
 import { normalizeCurrencyCode } from "@/lib/currencyCodes";
-import { formatCurrency, relativeTime } from "@/lib/format";
+import { formatCurrency, parseDateTimeMs, relativeTime } from "@/lib/format";
 import { haptic, openPaymentLink } from "@/lib/tg";
 
 type Tab = "deposit" | "history";
@@ -323,6 +323,15 @@ function HistoryList({
     provider?: string;
   };
 
+  const compareRowsByCreatedAt = (a: Row, b: Row): number => {
+    const aMs = parseDateTimeMs(a.created_at);
+    const bMs = parseDateTimeMs(b.created_at);
+    if (aMs === bMs) return 0;
+    if (aMs === null) return 1;
+    if (bMs === null) return -1;
+    return bMs - aMs;
+  };
+
   const rows: Row[] = [
     ...deposits.map<Row>((d) => ({
       key: `d-${d.id}`,
@@ -348,7 +357,7 @@ function HistoryList({
       status: w.status,
       created_at: w.created_at,
     })),
-  ].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+  ].sort(compareRowsByCreatedAt);
 
   if (depositsLoading) {
     return (
@@ -370,7 +379,11 @@ function HistoryList({
   return (
     <div className="space-y-2">
       {rows.map((r) => (
-        <div key={r.key} className="bg-panel border border-border rounded-card p-3 flex items-center justify-between">
+        <div
+          key={r.key}
+          data-testid={`wallet-history-row-${r.key}`}
+          className="bg-panel border border-border rounded-card p-3 flex items-center justify-between"
+        >
           <div className="min-w-0">
             <div className="font-semibold truncate flex items-center gap-2">
               <span>{r.title}</span>

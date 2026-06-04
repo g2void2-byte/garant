@@ -76,10 +76,15 @@ export function formatRating(rating: number, count: number): string {
   return rating.toFixed(1);
 }
 
-function parseDate(value: string | null | undefined): Date | null {
+export function parseDateTimeMs(value: string | null | undefined): number | null {
   if (!value) return null;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date : null;
+  const ts = new Date(value).getTime();
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function parseDate(value: string | null | undefined): Date | null {
+  const ts = parseDateTimeMs(value);
+  return ts === null ? null : new Date(ts);
 }
 
 export function formatDateTime(

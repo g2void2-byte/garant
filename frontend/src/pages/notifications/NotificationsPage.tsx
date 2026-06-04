@@ -18,7 +18,7 @@ import {
 } from "@/api/hooks";
 import { api } from "@/api/client";
 import type { NotificationDto, NotificationType } from "@/api/types";
-import { dayKey } from "@/lib/format";
+import { dayKey, parseDateTimeMs } from "@/lib/format";
 import { haptic } from "@/lib/tg";
 
 type CounterTab = "all" | NotificationType;
@@ -31,6 +31,8 @@ const TABS: { value: CounterTab; label: string }[] = [
 ];
 
 const NOTIFICATIONS_PAGE_SIZE = 50;
+const NOTIFICATIONS_LOAD_MORE_ERROR =
+  "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0435\u0449\u0435 \u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0439";
 
 export default function NotificationsPage() {
   const [tab, setTab] = useState<CounterTab>("all");
@@ -70,6 +72,15 @@ export default function NotificationsPage() {
   const loadMoreNotifications = async () => {
     const last = items.at(-1);
     if (!last || loadingMore || reachedEnd) return;
+    if (
+      parseDateTimeMs(last.created_at) === null ||
+      !Number.isSafeInteger(last.id) ||
+      last.id <= 0
+    ) {
+      setReachedEnd(true);
+      setLoadMoreError(NOTIFICATIONS_LOAD_MORE_ERROR);
+      return;
+    }
     setLoadingMore(true);
     setLoadMoreError(null);
     try {
@@ -88,10 +99,7 @@ export default function NotificationsPage() {
         setReachedEnd(true);
       }
     } catch (e: unknown) {
-      setLoadMoreError(
-        (e as Error)?.message ||
-          "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0435\u0449\u0435 \u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0439",
-      );
+      setLoadMoreError((e as Error)?.message || NOTIFICATIONS_LOAD_MORE_ERROR);
     } finally {
       setLoadingMore(false);
     }

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 84 файлов, 806 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 84 файлов, 810 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -125,6 +125,8 @@
 - M-153: admin queue timestamps now share a safe formatter instead of rendering `Invalid Date` for malformed `created_at` values.
 - M-154: operational/detail timestamp surfaces now render malformed dates as a neutral placeholder instead of raw invalid-date text.
 - M-155: admin deal chat now uses the shared username formatter without adding a second `@` prefix.
+- M-156: per-currency wallet history now pushes malformed timestamp rows behind valid dated rows instead of letting `NaN` freeze merge order.
+- M-157: notifications load-more now refuses malformed keyset cursors before sending `before_created_at`/`before_id` to the API.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1739,6 +1741,26 @@ The admin deal chat header prepended a literal `@` before calling `formatAdminUs
 Risk: admin chat metadata looked inconsistent with other admin identity surfaces and could mislead operators when copying or comparing usernames in dispute review.
 
 Fix: removed the extra literal prefix and kept the shared formatter as the single username boundary. Regression coverage verifies chat rows no longer render `@@username`.
+
+### M-156. Wallet history merge sorted malformed timestamps as equal rows
+
+Links: `frontend/src/pages/wallet/WalletCurrencyPage.tsx`, regression `frontend/src/pages/wallet/WalletCurrencyPage.test.tsx`.
+
+The per-currency wallet history merged deposits first and withdrawals second, then sorted with `+new Date(created_at)`. For malformed `created_at`, the comparator returned `NaN`; JavaScript treats that as an equal comparison, so an invalid deposit row could remain above a valid newer withdrawal row.
+
+Risk: corrupted or legacy timestamp data could make wallet history look out of chronological order on a money-facing screen. The row still rendered a neutral date label, but ordering remained misleading.
+
+Fix: wallet history now sorts through the shared finite timestamp parser. Valid dated rows always sort ahead of malformed rows, equal timestamps remain stable, and regression coverage pins the malformed-deposit/newer-withdrawal merge order.
+
+### M-157. Notification load-more sent malformed keyset cursors
+
+Links: `frontend/src/pages/notifications/NotificationsPage.tsx`, regression `frontend/src/pages/notifications/NotificationsPage.test.tsx`.
+
+The notifications page used the last rendered row as a keyset cursor without validating `created_at` or `id`. A malformed runtime row could send `before_created_at=not-a-date` or `before_id=0` to `GET /api/notifications`, producing a repeated late backend failure instead of a local pagination stop.
+
+Risk: stale cache/API drift in the last visible notification could leave the load-more button issuing doomed requests and showing a generic backend error every time the user retried.
+
+Fix: load-more now requires a finite timestamp and positive safe integer id before building the cursor. Invalid cursors stop pagination locally with the existing load-more error, and regression coverage verifies no API call is made.
 
 ## Наблюдения без отдельного finding
 

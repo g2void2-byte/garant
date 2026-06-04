@@ -382,6 +382,26 @@ describe("<WalletCurrencyPage />", () => {
     expect(screen.getByText(/Одобрена/)).toBeInTheDocument();
   });
 
+  it("history tab places malformed timestamps after dated rows", async () => {
+    mockState.deposits = [makeDeposit(1, { created_at: "not-a-date" })];
+    mockState.withdrawals = [
+      makeWithdrawal(2, { created_at: "2026-03-01T00:00:00Z" }),
+    ];
+
+    const user = userEvent.setup();
+    const historyTabName = /\u0418\u0441\u0442\u043e\u0440\u0438\u044f/;
+    renderPage("USDT");
+    await user.click(screen.getByRole("button", { name: historyTabName }));
+
+    const rowIds = screen
+      .getAllByTestId(/^wallet-history-row-/)
+      .map((row) => row.getAttribute("data-testid"));
+    expect(rowIds).toEqual([
+      "wallet-history-row-w-2",
+      "wallet-history-row-d-1",
+    ]);
+  });
+
   it("history tab shows empty-state when no rows", async () => {
     const user = userEvent.setup();
     renderPage("USDT");

@@ -8,6 +8,7 @@ import {
   formatMoney,
   formatRating,
   parseDecimal,
+  parseDateTimeMs,
   relativeTime,
 } from "./format";
 
@@ -104,6 +105,17 @@ describe("dealsLabel", () => {
     expect(dealsLabel(11)).toBe("11 сделок");
     expect(dealsLabel(21)).toBe("21 сделка");
     expect(dealsLabel(22)).toBe("22 сделки");
+  });
+});
+
+describe("parseDateTimeMs", () => {
+  it("returns a finite timestamp for valid date strings", () => {
+    expect(parseDateTimeMs("2026-01-01T00:00:00Z")).toBe(Date.UTC(2026, 0, 1));
+  });
+
+  it("returns null for missing or malformed date strings", () => {
+    expect(parseDateTimeMs("not-a-date")).toBeNull();
+    expect(parseDateTimeMs(null)).toBeNull();
   });
 });
 

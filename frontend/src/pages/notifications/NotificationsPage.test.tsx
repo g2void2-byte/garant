@@ -211,6 +211,29 @@ describe("<NotificationsPage />", () => {
     expect(await screen.findByText("Older notification")).toBeInTheDocument();
   });
 
+  it("does not send load-more when the keyset cursor is malformed", async () => {
+    const user = userEvent.setup();
+    const loadMoreName = /\u041f\u043e\u043a\u0430\u0437\u0430\u0442\u044c \u0435\u0449\u0435/;
+    const loadMoreError = "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0435\u0449\u0435 \u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0439";
+
+    mockState.list = Array.from({ length: 50 }, (_, idx) =>
+      makeNotification({
+        id: idx === 49 ? 0 : 100 - idx,
+        title: `Notification ${idx}`,
+        created_at: idx === 49
+          ? "not-a-date"
+          : `2026-01-01T00:${String(59 - idx).padStart(2, "0")}:00Z`,
+      }),
+    );
+
+    renderPage();
+    await user.click(screen.getByRole("button", { name: loadMoreName }));
+
+    expect(apiMock.get).not.toHaveBeenCalled();
+    expect(screen.getByText(loadMoreError)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: loadMoreName })).not.toBeInTheDocument();
+  });
+
   it("clicking a notification row navigates to /notifications/<id>", async () => {
     mockState.list = [makeNotification({ id: 99 })];
     const user = userEvent.setup();
