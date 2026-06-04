@@ -10,7 +10,7 @@ import {
   useAdminDecideWithdrawal,
   useAdminWithdrawals,
 } from "@/api/admin/hooks";
-import { parseDecimal } from "@/lib/format";
+import { formatDateTime, parseDecimal } from "@/lib/format";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { formatAdminUsername } from "./format";
 
@@ -94,7 +94,7 @@ export default function AdminWithdrawalsPage() {
                     {formatAdminUsername(w.username)} ({w.display_name}) · #{w.id}
                   </div>
                   <div className="text-[11px] text-text-muted">
-                    {new Date(w.created_at).toLocaleString()}
+                    {formatDateTime(w.created_at)}
                   </div>
                 </div>
               </div>

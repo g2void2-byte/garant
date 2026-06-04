@@ -126,6 +126,18 @@ describe("<AdminAuditPage />", () => {
     expect(screen.queryByText(/by @system/)).not.toBeInTheDocument();
   });
 
+  it("renders malformed created_at as a neutral timestamp", () => {
+    mockState.list = {
+      items: [makeRow({ created_at: "not-a-date" })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+  });
+
   it("renders payload as a truncated JSON block when it has keys", () => {
     mockState.list = {
       items: [

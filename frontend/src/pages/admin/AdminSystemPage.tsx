@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { confirmDialog } from "@/lib/dialog";
+import { formatDateTime } from "@/lib/format";
 import { useAdminFlushRedis, useAdminSystemStatus } from "@/api/admin/hooks";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 
@@ -102,7 +103,7 @@ export default function AdminSystemPage() {
                 <div>Версия: {data.backend_version}</div>
                 <div>
                   Аптайм: {formatUptime(data.uptime_seconds)}
-                  {data.started_at && ` (с ${new Date(data.started_at).toLocaleString()})`}
+                  {data.started_at && ` (с ${formatDateTime(data.started_at)})`}
                 </div>
               </div>
 

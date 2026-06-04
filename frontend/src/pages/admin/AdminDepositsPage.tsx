@@ -17,7 +17,7 @@ import {
   useAdminDepositRefund,
   useAdminDeposits,
 } from "@/api/admin/hooks";
-import { parseDecimal } from "@/lib/format";
+import { formatDateTime, parseDecimal } from "@/lib/format";
 import { isSafeExternalLink, openPaymentLink } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { formatAdminUsername } from "./format";
@@ -97,7 +97,7 @@ export default function AdminDepositsPage() {
                     {formatAdminUsername(d.username)} ({d.display_name}) · #{d.id}
                   </div>
                   <div className="text-[11px] text-text-muted mt-1">
-                    {new Date(d.created_at).toLocaleString()}
+                    {formatDateTime(d.created_at)}
                   </div>
                 </div>
                 <StatusBadge status={d.status} />

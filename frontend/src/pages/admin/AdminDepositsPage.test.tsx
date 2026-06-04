@@ -179,6 +179,18 @@ describe("<AdminDepositsPage />", () => {
     expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
   });
 
+  it("renders malformed created_at as a neutral timestamp", () => {
+    mockState.list = {
+      items: [makeDeposit({ created_at: "not-a-date" })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+  });
+
   it("'Зачислить' only appears on pending rows and fires mark-paid", async () => {
     mockState.list = {
       items: [

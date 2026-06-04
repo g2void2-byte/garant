@@ -76,9 +76,18 @@ export function formatRating(rating: number, count: number): string {
   return rating.toFixed(1);
 }
 
-function parseDate(value: string): Date | null {
+function parseDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date : null;
+}
+
+export function formatDateTime(
+  value: string | null | undefined,
+  options?: Intl.DateTimeFormatOptions,
+): string {
+  const date = parseDate(value);
+  return date ? date.toLocaleString("ru-RU", options) : "\u2014";
 }
 
 export function dealsLabel(count: number): string {

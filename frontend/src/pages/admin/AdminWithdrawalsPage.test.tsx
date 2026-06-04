@@ -126,6 +126,13 @@ describe("<AdminWithdrawalsPage />", () => {
     expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
   });
 
+  it("renders malformed created_at as a neutral timestamp", () => {
+    mockState.list = { items: [makeItem({ created_at: "not-a-date" })], counters: {} };
+    renderPage();
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+  });
+
   it("switches status when a different tab is clicked", async () => {
     mockState.list = { items: [], counters: {} };
     const user = userEvent.setup();

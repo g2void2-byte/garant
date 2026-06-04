@@ -39,7 +39,7 @@ import {
   useMe,
   useSendDealMessage,
 } from "@/api/hooks";
-import { parseDecimal } from "@/lib/format";
+import { formatDateTime, parseDecimal } from "@/lib/format";
 import {
   parseNonNegativeDecimalInput,
   parseNonNegativeIntInput,
@@ -679,8 +679,7 @@ function MessagesFeed({ deal }: { deal: AdminDealDetailDto }) {
                 }`}
               >
                 <div className="text-[11px] uppercase tracking-wide text-text-muted mb-0.5">
-                  {side === "staff" ? "Админ/арбитр" : side === "buyer" ? "Покупатель" : "Продавец"} · @
-                  {formatAdminUsername(m.sender_username)} · {shortDate(m.created_at)}
+                  {side === "staff" ? "Админ/арбитр" : side === "buyer" ? "Покупатель" : "Продавец"} · {formatAdminUsername(m.sender_username)} · {shortDate(m.created_at)}
                 </div>
                 <div className="whitespace-pre-wrap">{m.text}</div>
               </li>
@@ -705,16 +704,10 @@ function MessagesFeed({ deal }: { deal: AdminDealDetailDto }) {
 }
 
 function shortDate(value: string): string {
-  try {
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return value;
-    return d.toLocaleString("ru-RU", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return value;
-  }
+  return formatDateTime(value, {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

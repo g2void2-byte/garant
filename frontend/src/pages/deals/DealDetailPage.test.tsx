@@ -264,6 +264,30 @@ describe("<DealDetailPage />", () => {
     expect(screen.queryByText("0x10 USD")).not.toBeInTheDocument();
   });
 
+  it("renders malformed topup invoice expiry as a neutral timestamp", () => {
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      commission_paid: false,
+      topup_deposit_id: 501,
+      topup_invoice: {
+        deposit_id: 501,
+        pay_url: "https://pay.example/invoice/501",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: 0,
+        currency_code: "USD",
+        provider: "cryptobot",
+        expires_at: "not-a-date",
+      },
+    });
+    renderAt(42);
+
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+  });
+
   it("shows the accept/decline CTAs for seller on a pending_confirmation deal", () => {
     dealState.data = makeDeal({ status: "pending_confirmation", role: "seller" });
     renderAt(42);

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 84 файлов, 795 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 84 файлов, 806 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -122,6 +122,9 @@
 - M-150: shared frontend date labels now reject malformed timestamps and avoid treating far-future timestamps as fresh activity.
 - M-151: PIN lock countdown now ignores malformed `locked_until` values instead of rendering `NaN` and locking the keypad.
 - M-152: account-transfer active-code countdown now renders malformed `expires_at` values as a neutral placeholder instead of `NaN мин.`.
+- M-153: admin queue timestamps now share a safe formatter instead of rendering `Invalid Date` for malformed `created_at` values.
+- M-154: operational/detail timestamp surfaces now render malformed dates as a neutral placeholder instead of raw invalid-date text.
+- M-155: admin deal chat now uses the shared username formatter without adding a second `@` prefix.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1706,6 +1709,36 @@ The account-transfer page used the same unchecked date arithmetic for `expires_a
 Risk: the account migration screen could present an active transfer code with a broken lifetime label, making it unclear whether the code was usable, expired, or corrupted.
 
 Fix: `relativeMinutes()` now requires a finite expiry timestamp and falls back to a neutral placeholder for malformed data. Valid expired and future values keep the existing labels.
+
+### M-153. Admin queues rendered raw invalid-date labels for malformed timestamps
+
+Links: `frontend/src/lib/format.ts`, `frontend/src/pages/admin/AdminDepositsPage.tsx`, `frontend/src/pages/admin/AdminWithdrawalsPage.tsx`, `frontend/src/pages/admin/AdminAuditPage.tsx`, regressions in the adjacent tests.
+
+Deposit, withdrawal, and audit-log queues formatted `created_at` with direct `new Date(...).toLocaleString()` calls. If API drift, legacy rows, or test fixtures produced a malformed timestamp, these admin queues rendered browser invalid-date text instead of a controlled UI value.
+
+Risk: operators could see broken timestamps on money-moving and audit-log screens, making queue ordering/history harder to trust and obscuring whether the row data was simply malformed or the UI had failed.
+
+Fix: added a shared `formatDateTime()` helper that requires finite timestamps and returns a neutral dash for malformed values. Admin deposit, withdrawal, and audit queues now use it, with regression coverage for malformed `created_at` rows.
+
+### M-154. Operational/detail pages exposed unchecked timestamp formatting
+
+Links: `frontend/src/pages/deals/DealDetailPage.tsx`, `frontend/src/pages/admin/AdminSystemPage.tsx`, `frontend/src/pages/admin/AdminWalletsPage.tsx`, `frontend/src/pages/admin/AdminUserDetailPage.tsx`, `frontend/src/pages/admin/AdminDealDetailPage.tsx`, regressions in the adjacent tests.
+
+Several non-queue detail surfaces had the same unchecked date formatting: pending-topup invoice expiry, system `started_at`, USD-rate `observed_at`, admin user identity dates, and admin deal event/chat timestamps. Some used direct locale formatting, while admin deal detail returned the raw malformed value from its local `shortDate()` helper.
+
+Risk: malformed timestamps could leak as `Invalid Date` or raw contract-breaking strings across admin/detail screens. These surfaces are used for operational diagnosis and payment/deal inspection, so a neutral timestamp boundary is preferable to browser-dependent invalid-date text.
+
+Fix: those surfaces now use the shared safe formatter. Valid date formatting remains localized, while malformed values render as a neutral dash. Regression tests cover topup expiry, system uptime, USD rates, identity timestamps, and admin deal event/message timestamps.
+
+### M-155. Admin deal chat double-prefixed formatted usernames
+
+Links: `frontend/src/pages/admin/AdminDealDetailPage.tsx`, regression `frontend/src/pages/admin/AdminDealDetailPage.test.tsx`.
+
+The admin deal chat header prepended a literal `@` before calling `formatAdminUsername()`, even though that helper already returns `@username` for present usernames and a non-handle label for missing usernames. A normal chat row could therefore display `@@buyer`, while a missing username was rendered with an extra handle prefix before the non-handle label.
+
+Risk: admin chat metadata looked inconsistent with other admin identity surfaces and could mislead operators when copying or comparing usernames in dispute review.
+
+Fix: removed the extra literal prefix and kept the shared formatter as the single username boundary. Regression coverage verifies chat rows no longer render `@@username`.
 
 ## Наблюдения без отдельного finding
 

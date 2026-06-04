@@ -230,6 +230,16 @@ describe("<AdminUserDetailPage />", () => {
     expect(screen.getByText("Установлен")).toBeInTheDocument();
   });
 
+  it("renders malformed identity timestamps as neutral values", () => {
+    mockState.user = makeUser({
+      created_at: "not-a-date",
+      last_login_at: "also-not-a-date",
+    });
+    renderPage();
+    expect(screen.getAllByText("\u2014").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+  });
+
   it("renders a non-handle label when username is missing", () => {
     mockState.user = makeUser({ username: null });
     renderPage();

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { useAdminAuditLog } from "@/api/admin/hooks";
 import type { AdminAuditLogDto } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { formatDateTime } from "@/lib/format";
 
 function parsePositiveIntFilter(value: string): number | undefined {
   const trimmed = value.trim();
@@ -96,7 +97,7 @@ export default function AdminAuditPage() {
               <div className="flex items-baseline justify-between">
                 <div className="font-mono text-xs text-accent">{row.action}</div>
                 <div className="text-[11px] text-text-muted">
-                  {new Date(row.created_at).toLocaleString()}
+                  {formatDateTime(row.created_at)}
                 </div>
               </div>
               <div className="text-xs text-text-muted mt-1">

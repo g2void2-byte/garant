@@ -279,6 +279,33 @@ describe("<AdminDealDetailPage />", () => {
     expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
   });
 
+  it("does not double-prefix admin chat usernames with @", () => {
+    mockState.deal = makeDeal();
+    mockState.messages = [makeMessage({ sender_username: "buyer" })];
+    renderPage();
+    expect(screen.getAllByText(/@buyer/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/@@buyer/)).not.toBeInTheDocument();
+  });
+
+  it("renders malformed event and message timestamps as neutral values", () => {
+    mockState.deal = makeDeal({
+      events: [
+        {
+          at: "not-a-date",
+          kind: "created",
+          actor: "buyer",
+          description: "bad timestamp",
+        },
+      ],
+    });
+    mockState.messages = [makeMessage({ created_at: "not-a-date" })];
+    renderPage();
+    expect(
+      screen.getAllByText((_, element) => Boolean(element?.textContent?.includes("\u2014"))).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+  });
+
   it("shows arbitration-danger banner when status=arbitration with reason", () => {
     mockState.deal = makeDeal({
       status: "arbitration",

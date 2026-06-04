@@ -41,7 +41,7 @@ import {
 } from "@/api/admin/hooks";
 import { useMe } from "@/api/hooks";
 import type { AdminUserDetailDto } from "@/api/types";
-import { parseDecimal } from "@/lib/format";
+import { formatDateTime, parseDecimal } from "@/lib/format";
 import {
   parseNonNegativeDecimalInput,
   parseNonNegativeIntInput,
@@ -191,8 +191,7 @@ function Detail({ label, value, mono }: { label: string; value: string; mono?: b
 }
 
 function shortDate(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
+  return formatDateTime(iso, { dateStyle: "short", timeStyle: "short" });
 }
 
 // ── Moderation actions ────────────────────────────────────────────────

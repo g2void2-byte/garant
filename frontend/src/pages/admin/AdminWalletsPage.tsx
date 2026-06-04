@@ -16,7 +16,7 @@ import {
   useAdminUpsertCurrencyRate,
   useAdminWallets,
 } from "@/api/admin/hooks";
-import { parseDecimal } from "@/lib/format";
+import { formatDateTime, parseDecimal } from "@/lib/format";
 import type {
   AdminCurrencyRateDto,
   AdminUserBalanceDto,
@@ -306,7 +306,7 @@ function RatesForm({ onClose }: { onClose: () => void }) {
       />
       <Input label="Source" value={source} onChange={(e) => setSource(e.target.value)} />
       {current?.observed_at && (
-        <div className="text-xs text-text-muted">Last observed: {new Date(current.observed_at).toLocaleString()}</div>
+        <div className="text-xs text-text-muted">Last observed: {formatDateTime(current.observed_at)}</div>
       )}
       <Button
         type="button"

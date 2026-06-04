@@ -4,6 +4,7 @@ import {
   dayKey,
   formatAmount,
   formatCurrency,
+  formatDateTime,
   formatMoney,
   formatRating,
   parseDecimal,
@@ -103,6 +104,23 @@ describe("dealsLabel", () => {
     expect(dealsLabel(11)).toBe("11 сделок");
     expect(dealsLabel(21)).toBe("21 сделка");
     expect(dealsLabel(22)).toBe("22 сделки");
+  });
+});
+
+describe("formatDateTime", () => {
+  it("returns a neutral marker for malformed timestamps", () => {
+    expect(formatDateTime("not-a-date")).toBe("\u2014");
+    expect(formatDateTime(null)).toBe("\u2014");
+  });
+
+  it("formats valid timestamps with caller-supplied options", () => {
+    expect(
+      formatDateTime("2026-01-01T00:00:00Z", {
+        timeZone: "UTC",
+        dateStyle: "short",
+        timeStyle: "short",
+      }),
+    ).toMatch(/01\.01\.2026|1\.01\.2026/);
   });
 });
 

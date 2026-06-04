@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
   AdminCurrencyDto,
+  AdminCurrencyRateDto,
   AdminWalletListDto,
 } from "@/api/types";
 
@@ -21,6 +22,7 @@ const mockState = vi.hoisted(() => ({
   list: undefined as AdminWalletListDto | undefined,
   loading: false,
   currencies: [] as AdminCurrencyDto[],
+  rates: [] as AdminCurrencyRateDto[],
   adjust: {
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
@@ -40,7 +42,7 @@ vi.mock("@/api/admin/hooks", () => ({
     return { data: mockState.list, isLoading: mockState.loading };
   },
   useAdminCurrencies: () => ({ data: mockState.currencies }),
-  useAdminCurrencyRates: () => ({ data: [] }),
+  useAdminCurrencyRates: () => ({ data: mockState.rates }),
   useAdminUpsertCurrencyRate: () => mockState.upsertRate,
   useAdminAdjustBalance: (userId: number) => {
     mockState.lastAdjustUserId = userId;
@@ -153,6 +155,7 @@ beforeEach(() => {
   ];
   mockState.adjust = { mutateAsync: vi.fn(), isPending: false };
   mockState.upsertRate = { mutateAsync: vi.fn(), isPending: false };
+  mockState.rates = [];
   mockState.shouldRender = true;
   mockState.lastAdjustUserId = undefined;
   mockState.lastWalletsQuery = undefined;
@@ -407,6 +410,26 @@ describe("<AdminWalletsPage />", () => {
     expect(screen.getByText("Введите положительное число без экспоненты")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save rate" })).toBeDisabled();
     expect(mockState.upsertRate.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("renders malformed USD-rate observed_at as a neutral timestamp", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.rates = [
+      {
+        currency_id: 1,
+        currency_code: "USDT",
+        usd_rate: "1.00",
+        source: "manual",
+        observed_at: "not-a-date",
+      },
+    ];
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "USD" }));
+
+    expect(await screen.findByText(/Last observed: \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
   });
 
   it("saves USD rates as canonical decimal numbers", async () => {

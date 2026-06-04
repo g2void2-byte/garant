@@ -114,6 +114,15 @@ describe("<AdminSystemPage />", () => {
     expect(screen.getByText(/Версия: 1\.2\.3/)).toBeInTheDocument();
   });
 
+  it("renders malformed started_at as a neutral timestamp", () => {
+    mockState.data = makeStatus({ started_at: "not-a-date" });
+    renderPage();
+    expect(
+      screen.getAllByText((_, element) => Boolean(element?.textContent?.includes("(с \u2014)"))).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+  });
+
   it("renders danger detail when redis is not configured", () => {
     mockState.data = makeStatus({
       redis_ok: false,

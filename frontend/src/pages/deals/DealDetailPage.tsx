@@ -26,7 +26,7 @@ import {
   useMe,
   useReviews,
 } from "@/api/hooks";
-import { formatAmount, parseDecimal, relativeTime } from "@/lib/format";
+import { formatAmount, formatDateTime, parseDecimal, relativeTime } from "@/lib/format";
 import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
@@ -361,7 +361,7 @@ export default function DealDetailPage() {
                       )}
                       <TopupInvoiceRow label="К оплате сейчас" value={topupInvoice.total} currency={topupInvoice.currency_code} strong />
                       {topupInvoice.expires_at && (
-                        <TopupInvoiceRow label="Истекает" value={new Date(topupInvoice.expires_at).toLocaleString()} />
+                        <TopupInvoiceRow label="Истекает" value={formatDateTime(topupInvoice.expires_at)} />
                       )}
                     </div>
                   )}
