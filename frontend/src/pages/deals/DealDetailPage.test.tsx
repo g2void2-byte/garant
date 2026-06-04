@@ -177,6 +177,16 @@ describe("<DealDetailPage />", () => {
     expect(screen.getByText("Комиссия оплачена")).toBeInTheDocument();
   });
 
+  it("does not render a commission row from malformed runtime amounts", () => {
+    dealState.data = makeDeal({
+      commission_amount: "1e2" as unknown as number,
+    });
+    renderAt(42);
+
+    expect(screen.queryByText("Размер комиссии")).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it("does not render @null actions when the counterparty username is missing", () => {
     dealState.data = makeDeal({
       id: 42,

@@ -118,6 +118,20 @@ function makeDeposit(over: Partial<WalletDepositDto> = {}): WalletDepositDto {
   };
 }
 
+function makeBalance(over: Partial<WalletBalanceDto> = {}): WalletBalanceDto {
+  return {
+    currency: makeCurrency(),
+    amount: 10,
+    locked: 0,
+    total: 10,
+    updated_at: null,
+    amount_str: "10",
+    locked_str: "0",
+    total_str: "10",
+    ...over,
+  };
+}
+
 beforeEach(() => {
   hapticSpy.mockClear();
   openTelegramLinkSpy.mockClear();
@@ -164,6 +178,33 @@ describe("<WalletDepositPage />", () => {
   it("shows the min-deposit hint for the selected currency", () => {
     renderPage();
     expect(screen.getByText(/Минимум: 5 USD/)).toBeInTheDocument();
+  });
+
+  it("does not show available balance from malformed runtime amounts", () => {
+    mockState.balances = [
+      makeBalance({
+        amount: "1e2" as unknown as number,
+        amount_str: "1e2",
+      }),
+    ];
+    renderPage();
+
+    expect(screen.queryByText(/Доступно/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
+  it("renders available balance from canonical string mirrors", () => {
+    mockState.balances = [
+      makeBalance({
+        amount: "1e2" as unknown as number,
+        amount_str: "25.5",
+      }),
+    ];
+    renderPage();
+
+    expect(screen.getByText(/Доступно:/)).toBeInTheDocument();
+    expect(screen.getByText(/25\.5 USD/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
   });
 
   it("hides crypto currencies from the dropdown", () => {

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 86 файлов, 881 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 86 файлов, 884 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -144,6 +144,7 @@
 - M-172: public stats badge now parses runtime counters/volume strictly before count-up animation and compact formatting.
 - M-173: admin displayed totals and broadcast recipient counters now reject malformed runtime counts before subtitles, headers, toasts, and empty-page rewinds.
 - M-174: admin dashboard KPI tiles now reject malformed runtime counters before display and accent-ring decisions.
+- M-175: frontend positive money gates now reject malformed runtime amounts before wallet available-balance hints and deal commission rows.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1948,6 +1949,16 @@ The admin dashboard rendered `/api/admin/dashboard` counters directly in KPI til
 Risk: the dashboard is the admin landing page, so malformed counters could mislead operators before they enter the stricter list pages fixed by M-170/M-173.
 
 Fix: KPI tile values now use `formatAdminCount`, and accent rings use `parseAdminCount` before comparing to zero. Malformed counters render as a neutral dash and do not trigger urgent styling. Regression coverage pins malformed display values and positive-looking malformed accent inputs.
+
+### M-175. Positive money gates trusted malformed runtime amounts
+
+Links: `frontend/src/pages/wallet/WalletDepositPage.tsx`, `frontend/src/pages/deals/DealDetailPage.tsx`, shared helpers `frontend/src/lib/walletAmounts.ts`, `frontend/src/lib/format.ts`, regressions `frontend/src/pages/wallet/WalletDepositPage.test.tsx`, `frontend/src/pages/deals/DealDetailPage.test.tsx`.
+
+Several frontend money surfaces already formatted malformed amounts as neutral values, but their visibility gates still compared raw runtime payloads. The wallet deposit page used `(balance?.amount ?? 0) > 0` before showing the available-balance hint, and deal detail used `deal.commission_amount > 0` before rendering the commission row. Runtime strings like `"1e2"` could pass those gates through JavaScript coercion even though the display formatter would reject the amount.
+
+Risk: users could see balance/commission rows that should have been treated as corrupt input, including misleading zero/neutral displays opened by a positive-looking malformed payload.
+
+Fix: wallet deposit now uses the shared wallet decimal parser and displays the canonical `amount_str` mirror when present. Deal detail parses `commission_amount` with the strict decimal parser before both visibility and formatting. Malformed exponent-like values no longer open either row, while canonical decimal strings still render.
 
 ## Наблюдения без отдельного finding
 

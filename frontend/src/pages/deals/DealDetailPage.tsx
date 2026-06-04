@@ -26,7 +26,7 @@ import {
   useMe,
   useReviews,
 } from "@/api/hooks";
-import { formatAmount, formatDateTime, parseDecimal, relativeTime } from "@/lib/format";
+import { formatAmount, formatDateTime, parseDecimal, parseDecimalValue, relativeTime } from "@/lib/format";
 import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
@@ -154,6 +154,7 @@ export default function DealDetailPage() {
     STATUS_LABEL[deal.status] ?? { text: deal.status, cls: "text-text-muted" };
   const amount = deal.amount;
   const currency = deal.currency_code ?? "USD";
+  const commissionAmount = parseDecimalValue(deal.commission_amount);
   const counterpartyLabel = deal.role === "buyer" ? "Продавец" : "Покупатель";
   const counterpartyText = otherUser ? `@${otherUser}` : "Контрагент недоступен";
   const isParticipant = deal.role === "buyer" || deal.role === "seller";
@@ -330,11 +331,11 @@ export default function DealDetailPage() {
             <span>Комиссия оплачена</span>
             <span className="font-semibold">{deal.commission_paid ? "Да" : "Нет"}</span>
           </div>
-          {deal.commission_amount !== null && deal.commission_amount > 0 && (
+          {commissionAmount !== null && commissionAmount > 0 && (
             <div className="flex items-center justify-between text-sm">
               <span>Размер комиссии</span>
               <span>
-                {formatAmount(deal.commission_amount, currency)} {currency}
+                {formatAmount(commissionAmount, currency)} {currency}
               </span>
             </div>
           )}

@@ -19,6 +19,7 @@ import {
   normalizeCurrencyCodeRows,
 } from "@/lib/currencyCodes";
 import { formatCurrency } from "@/lib/format";
+import { hasPositiveWalletBalance, walletBalanceDecimalInput } from "@/lib/walletAmounts";
 import { haptic, openPaymentLink } from "@/lib/tg";
 import type { WalletDepositDto } from "@/api/types";
 
@@ -84,6 +85,7 @@ export default function WalletDepositPage() {
     () => balances.data?.find((b) => normalizeCurrencyCode(b.currency.code) === code),
     [balances.data, code],
   );
+  const balanceAmount = balance ? walletBalanceDecimalInput(balance, "amount") : null;
 
   useEffect(() => {
     if (!code && fiatCurrencies.length) {
@@ -210,11 +212,11 @@ export default function WalletDepositPage() {
         {current && (
           <div className="text-xs text-text-muted">
             Минимум: {formatCurrency(current.min_deposit, current.code, current.decimals)}
-            {(balance?.amount ?? 0) > 0 && (
+            {hasPositiveWalletBalance(balance, "amount") && balanceAmount !== null && (
               <>
                 {" "}
                 · Доступно:{" "}
-                {formatCurrency(balance!.amount, current.code, current.decimals)}
+                {formatCurrency(balanceAmount, current.code, current.decimals)}
               </>
             )}
           </div>
