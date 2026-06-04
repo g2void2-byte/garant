@@ -153,6 +153,18 @@ describe("<AdminDepositsPage />", () => {
     );
   });
 
+  it("renders malformed deposit amounts as a neutral dash", () => {
+    mockState.list = {
+      items: [makeDeposit({ amount: "1e3" })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText(/\u2014 USDT/)).toBeInTheDocument();
+    expect(screen.queryByText(/0\.00 USDT/)).not.toBeInTheDocument();
+  });
+
   it("does not render unsafe pay_url values as links or openers", () => {
     mockState.list = {
       items: [makeDeposit({ pay_url: "javascript:alert(1)" })],

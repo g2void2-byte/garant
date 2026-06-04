@@ -204,6 +204,17 @@ describe("<AdminArbitrationPage />", () => {
     expect(screen.getByText(/147\.00 USDT/)).toBeInTheDocument();
   });
 
+  it("renders malformed arbitration amounts as a neutral dash", () => {
+    mockState.list = {
+      items: [makeItem({ amount: "1e3" })],
+      counters: { new: 1, in_progress: 0, closed: 0 },
+      queue: "new",
+    };
+    renderPage();
+    expect(screen.getByText(/\u2014 USDT/)).toBeInTheDocument();
+    expect(screen.queryByText(/0\.00 USDT/)).not.toBeInTheDocument();
+  });
+
   it("renders 'Взять в работу' button on 'new' rows only", () => {
     mockState.list = {
       items: [makeItem()],

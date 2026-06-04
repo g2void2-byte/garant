@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 84 файлов, 822 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 84 файлов, 828 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -130,6 +130,7 @@
 - M-158: shared frontend money badges now parse decimal-string payloads and reject exponent/hex notation instead of collapsing valid string amounts to `$0`.
 - M-159: public user/service rating badges now parse string ratings and render malformed/out-of-range values as a neutral dash instead of calling `.toFixed()` on runtime payloads.
 - M-160: admin user/service metric rows now share strict decimal/rating display helpers instead of calling `.toFixed()` on runtime payloads.
+- M-161: admin finance/deal amount surfaces now share strict amount display helpers instead of rendering malformed Decimal payloads as `$0`/`0.00`.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1794,6 +1795,17 @@ Admin user rows, user detail identity/rating blocks and service content rows sti
 Risk: one malformed or stringified metric in an admin response could hide moderation controls, user identity data, or user service rows from operators.
 
 Fix: added shared admin display helpers backed by the strict decimal/rating parsers. Canonical decimal strings render normally, malformed/exponent/hex values render as a neutral dash, and regression coverage pins list/detail/content rows.
+
+### M-161. Admin finance/deal amount displays coerced malformed decimals to zero
+
+Links: `frontend/src/pages/admin/format.ts`, `frontend/src/pages/admin/AdminDealsPage.tsx`, `frontend/src/pages/admin/AdminDealDetailPage.tsx`, `frontend/src/pages/admin/AdminArbitrationPage.tsx`, `frontend/src/pages/admin/AdminDepositsPage.tsx`, `frontend/src/pages/admin/AdminWithdrawalsPage.tsx`, `frontend/src/pages/admin/AdminWalletsPage.tsx`, regressions `frontend/src/pages/admin/format.test.ts`, `frontend/src/pages/admin/AdminDealsPage.test.tsx`, `frontend/src/pages/admin/AdminDealDetailPage.test.tsx`, `frontend/src/pages/admin/AdminArbitrationPage.test.tsx`, `frontend/src/pages/admin/AdminDepositsPage.test.tsx`, `frontend/src/pages/admin/AdminWithdrawalsPage.test.tsx`, `frontend/src/pages/admin/AdminWalletsPage.test.tsx`.
+
+Admin deal list/detail, arbitration, deposit, withdrawal and wallet rows still formatted runtime decimal payloads with `parseDecimal(...).toFixed(...)`. The strict parser returned zero for malformed strings, so exponent/hex/bad money payloads could render as `0.00`, `$0.00`, or a zeroed locked amount instead of an invalid value.
+
+Risk: a malformed admin finance row could mislead operators into treating a deal, deposit, withdrawal or user balance as zero-valued while the backend value was actually invalid.
+
+Fix: added `formatAdminAmount()` and routed the affected admin finance rows through strict amount/USD display helpers. Canonical decimal strings render normally; malformed/exponent/hex values render as a neutral dash. Regression coverage pins list/detail/arbitration/deposit/withdrawal/wallet displays.
+
 ## Наблюдения без отдельного finding
 
 

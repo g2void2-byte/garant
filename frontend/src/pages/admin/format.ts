@@ -17,6 +17,13 @@ export function formatAdminFixedDecimal(
   return parsed === null ? DASH : parsed.toFixed(decimals);
 }
 
+export function formatAdminAmount(
+  value: string | number | null | undefined,
+  decimals = 2,
+): string {
+  return formatAdminFixedDecimal(value, decimals);
+}
+
 export function formatAdminUsd(value: string | number | null | undefined): string {
   const fixed = formatAdminFixedDecimal(value, 2);
   return fixed === DASH ? DASH : `$${fixed}`;

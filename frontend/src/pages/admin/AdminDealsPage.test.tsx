@@ -123,6 +123,18 @@ describe("<AdminDealsPage />", () => {
     expect(screen.getByText(/150\.00/)).toBeInTheDocument();
   });
 
+  it("renders malformed deal amounts as a neutral dash", () => {
+    mockState.list = {
+      items: [makeDeal({ amount: "1e3" })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+    expect(screen.getByText(/\u2014 USDT/)).toBeInTheDocument();
+    expect(screen.queryByText(/0\.00 USDT/)).not.toBeInTheDocument();
+  });
+
   it("renders missing buyer/seller usernames as non-handle labels", () => {
     mockState.list = {
       items: [makeDeal({ buyer_username: null, seller_username: null })],

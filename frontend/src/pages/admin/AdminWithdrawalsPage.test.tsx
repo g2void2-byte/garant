@@ -173,6 +173,13 @@ describe("<AdminWithdrawalsPage />", () => {
     expect(screen.getByRole("button", { name: /Отклонить/ })).toBeInTheDocument();
   });
 
+  it("renders malformed withdrawal amounts as a neutral dash", () => {
+    mockState.list = { items: [makeItem({ amount: "1e1" })], counters: { pending: 1 } };
+    renderPage();
+    expect(screen.getByText(/\u2014 USDT/)).toBeInTheDocument();
+    expect(screen.queryByText(/0\.00000000 USDT/)).not.toBeInTheDocument();
+  });
+
   it("approve action calls mutate with action='approve' and toasts success", async () => {
     mockState.list = { items: [makeItem()], counters: {} };
     mockState.decideMutation.mutateAsync.mockResolvedValue({});

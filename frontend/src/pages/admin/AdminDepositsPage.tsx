@@ -17,10 +17,10 @@ import {
   useAdminDepositRefund,
   useAdminDeposits,
 } from "@/api/admin/hooks";
-import { formatDateTime, parseDecimal } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 import { isSafeExternalLink, openPaymentLink } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminUsername } from "./format";
+import { formatAdminAmount, formatAdminUsername } from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "all
 // statuses"; the legacy ``"any"`` string is gone.
@@ -91,7 +91,7 @@ export default function AdminDepositsPage() {
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium">
-                    {parseDecimal(d.amount).toFixed(2)} {d.currency_code}
+                    {formatAdminAmount(d.amount)} {d.currency_code}
                   </div>
                   <div className="text-xs text-text-muted truncate">
                     {formatAdminUsername(d.username)} ({d.display_name}) · #{d.id}

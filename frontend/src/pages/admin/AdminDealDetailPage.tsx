@@ -39,7 +39,7 @@ import {
   useMe,
   useSendDealMessage,
 } from "@/api/hooks";
-import { formatDateTime, parseDecimal } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 import {
   parseNonNegativeDecimalInput,
   parseNonNegativeIntInput,
@@ -53,7 +53,7 @@ import { api } from "@/api/client";
 import { haptic } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
-import { formatAdminUsername } from "./format";
+import { formatAdminAmount, formatAdminUsd, formatAdminUsername } from "./format";
 
 const STATUS_LABEL: Record<string, string> = {
   cancelled: "Отменена",
@@ -213,7 +213,7 @@ function BalanceSnapshotCard({
         <div className="flex items-center gap-2">
           <DollarSign size={14} className="text-text-muted" /> Сумма сделки
         </div>
-        <div className="font-semibold">${parseDecimal(amount).toFixed(2)}</div>
+        <div className="font-semibold">{formatAdminUsd(amount)}</div>
       </div>
       {commission !== null && (
         <div className="col-span-2 bg-panel rounded-card p-3 flex items-center justify-between text-sm">
@@ -221,7 +221,7 @@ function BalanceSnapshotCard({
             <Lock size={14} className="text-text-muted" /> Комиссия
           </div>
           <div className="text-right">
-            <div className="font-semibold">{parseDecimal(commission).toFixed(2)}</div>
+            <div className="font-semibold">{formatAdminAmount(commission)}</div>
             <div className="text-[11px] text-text-muted">
               {commissionPaid ? "оплачена" : "ожидает оплаты"}
               {topupDepositId ? ` · депозит #${topupDepositId}` : ""}
@@ -240,11 +240,11 @@ function PartyCard({ side, snap }: { side: string; snap: AdminBalanceSnapshotDto
       <div className="mt-1 font-semibold truncate">{snap.display_name}</div>
       <div className="text-xs text-text-muted truncate">{formatAdminUsername(snap.username)} · id {snap.user_id}</div>
       <div className="mt-2 text-xs text-text-muted">
-        Свободно <span className="text-text font-medium">{parseDecimal(snap.amount).toFixed(4)}</span>{" "}
+        Свободно <span className="text-text font-medium">{formatAdminAmount(snap.amount, 4)}</span>{" "}
         {snap.currency_code ?? "USD"}
       </div>
       <div className="text-xs text-text-muted">
-        В сделке <span className="text-text font-medium">{parseDecimal(snap.locked).toFixed(4)}</span>{" "}
+        В сделке <span className="text-text font-medium">{formatAdminAmount(snap.locked, 4)}</span>{" "}
         {snap.currency_code ?? "USD"}
       </div>
     </div>

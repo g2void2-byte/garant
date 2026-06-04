@@ -8,11 +8,10 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { useAdminArbitration, useAdminClaimArbitration } from "@/api/admin/hooks";
-import { parseDecimal } from "@/lib/format";
 import type { AdminDealListItemDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminUsername } from "./format";
+import { formatAdminAmount, formatAdminUsername } from "./format";
 
 type Queue = "new" | "in_progress" | "closed";
 const PAGE_SIZE = 20;
@@ -212,7 +211,7 @@ function ArbRow({
         </div>
         <div className="mt-0.5 text-xs text-text-muted flex items-center gap-2 flex-wrap">
           <span className="font-medium text-text">
-            {parseDecimal(deal.amount).toFixed(2)}{" "}
+            {formatAdminAmount(deal.amount)}{" "}
             {deal.currency_code ?? "USD"}
           </span>
           <span>·</span>

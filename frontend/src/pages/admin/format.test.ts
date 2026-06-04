@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatAdminAmount,
   formatAdminRating,
   formatAdminUsd,
   formatAdminUsdSuffix,
@@ -16,6 +17,8 @@ describe("admin format helpers", () => {
   });
 
   it("formats decimal-string admin money values without accepting ambiguous notation", () => {
+    expect(formatAdminAmount("12.3456", 4)).toBe("12.3456");
+    expect(formatAdminAmount("1e3", 4)).toBe("\u2014");
     expect(formatAdminUsd("1500.5")).toBe("$1500.50");
     expect(formatAdminUsdSuffix("1500.5")).toBe("1500.50 $");
     expect(formatAdminUsd("1e3")).toBe("\u2014");

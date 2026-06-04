@@ -27,7 +27,7 @@ import {
   parsePositiveDecimalInput,
   parseSignedNonZeroDecimalInput,
 } from "@/lib/formNumbers";
-import { formatAdminUsername } from "./format";
+import { formatAdminAmount, formatAdminUsd, formatAdminUsername } from "./format";
 
 const PAGE_SIZE = 50;
 
@@ -114,7 +114,7 @@ export default function AdminWalletsPage() {
               </div>
               {it.total_usd_estimate !== undefined && it.total_usd_estimate !== null ? (
                 <div className="mt-2 text-xs text-success">
-                  USD estimate: ${parseDecimal(it.total_usd_estimate).toFixed(2)}
+                  USD estimate: {formatAdminUsd(it.total_usd_estimate)}
                 </div>
               ) : it.usd_estimate_missing_rates?.length ? (
                 <div className="mt-2 text-xs text-warning">
@@ -137,7 +137,6 @@ export default function AdminWalletsPage() {
                 return (
                   <div className="mt-3 grid grid-cols-2 gap-1.5">
                     {nonZero.slice(0, 4).map((b) => {
-                      const amt = parseDecimal(b.amount);
                       const locked = parseDecimal(b.locked);
                       return (
                         <div
@@ -146,10 +145,10 @@ export default function AdminWalletsPage() {
                         >
                           <div className="text-text-muted">{b.currency_code}</div>
                           <div className="font-mono">
-                            {amt.toFixed(b.decimals)}
+                            {formatAdminAmount(b.amount, b.decimals)}
                             {locked > 0 && (
                               <span className="text-warning ml-1">
-                                (+{locked.toFixed(b.decimals)} лок.)
+                                (+{formatAdminAmount(b.locked, b.decimals)} лок.)
                               </span>
                             )}
                           </div>
@@ -245,16 +244,15 @@ function BalanceOverview({ target }: { target: AdminWalletListItemDto }) {
 }
 
 function BalancePill({ balance }: { balance: AdminUserBalanceDto }) {
-  const amt = parseDecimal(balance.amount);
   const locked = parseDecimal(balance.locked);
   return (
     <div className="text-xs bg-panel-2 rounded-button px-2 py-1.5">
       <div className="text-text-muted">{balance.currency_code}</div>
       <div className="font-mono">
-        {amt.toFixed(balance.decimals)}
+        {formatAdminAmount(balance.amount, balance.decimals)}
         {locked > 0 && (
           <span className="text-warning ml-1">
-            (+{locked.toFixed(balance.decimals)} lock)
+            (+{formatAdminAmount(balance.locked, balance.decimals)} lock)
           </span>
         )}
       </div>

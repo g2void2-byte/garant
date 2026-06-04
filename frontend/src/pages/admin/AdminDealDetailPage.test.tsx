@@ -268,6 +268,19 @@ describe("<AdminDealDetailPage />", () => {
     expect(screen.getByText("$150.00")).toBeInTheDocument();
   });
 
+  it("renders string and malformed finance fields without numeric coercion", () => {
+    mockState.deal = makeDeal({
+      amount: "150.5",
+      commission_amount: "1e3",
+      buyer: makeSnap({ user_id: 1, username: "buyer", display_name: "Buyer", amount: "12.3456", locked: "0x10" }),
+    });
+    renderPage();
+    expect(screen.getByText("$150.50")).toBeInTheDocument();
+    expect(screen.getByText("12.3456")).toBeInTheDocument();
+    expect(screen.queryByText("0.00")).not.toBeInTheDocument();
+    expect(screen.queryByText("0.0000")).not.toBeInTheDocument();
+  });
+
   it("renders missing snapshot and chat usernames as non-handle labels", () => {
     mockState.deal = makeDeal({
       buyer: makeSnap({ user_id: 1, username: null, display_name: "Buyer" }),

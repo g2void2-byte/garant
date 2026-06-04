@@ -196,6 +196,26 @@ describe("<AdminWalletsPage />", () => {
     expect(screen.queryByText("TON")).not.toBeInTheDocument();
   });
 
+  it("renders malformed wallet amounts as neutral values", () => {
+    const base = makeUserBalance();
+    mockState.list = {
+      items: [
+        {
+          ...base,
+          total_usd_estimate: "1500.5",
+          balances: [{ ...base.balances[0], amount: "1e2", locked: "0", total: "1" }],
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText("USD estimate: $1500.50")).toBeInTheDocument();
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText(/0\.00/)).not.toBeInTheDocument();
+  });
+
   it("shows 'Балансов нет' placeholder when all balances are zero", () => {
     const zeroUser = {
       ...makeUserBalance(),
