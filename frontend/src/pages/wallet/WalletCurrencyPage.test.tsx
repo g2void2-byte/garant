@@ -33,7 +33,9 @@ const mockState = vi.hoisted(() => ({
   withdrawals: [] as WalletWithdrawalDto[],
   withdrawalsLoading: false,
   lastDepositsParams: undefined as unknown,
+  lastDepositsOptions: undefined as unknown,
   lastWithdrawalsParams: undefined as unknown,
+  lastWithdrawalsOptions: undefined as unknown,
   createDeposit: {
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
@@ -70,15 +72,17 @@ vi.mock("@/api/hooks", () => ({
     data: mockState.balances,
     isLoading: mockState.balancesLoading,
   }),
-  useWalletDeposits: (params: unknown) => {
+  useWalletDeposits: (params: unknown, options: unknown) => {
     mockState.lastDepositsParams = params;
+    mockState.lastDepositsOptions = options;
     return {
       data: mockState.deposits,
       isLoading: mockState.depositsLoading,
     };
   },
-  useWalletWithdrawals: (params: unknown) => {
+  useWalletWithdrawals: (params: unknown, options: unknown) => {
     mockState.lastWithdrawalsParams = params;
+    mockState.lastWithdrawalsOptions = options;
     return {
       data: mockState.withdrawals,
       isLoading: mockState.withdrawalsLoading,
@@ -188,7 +192,9 @@ beforeEach(() => {
   mockState.depositsLoading = false;
   mockState.withdrawalsLoading = false;
   mockState.lastDepositsParams = undefined;
+  mockState.lastDepositsOptions = undefined;
   mockState.lastWithdrawalsParams = undefined;
+  mockState.lastWithdrawalsOptions = undefined;
   mockState.currencies = [makeCurrency()];
   mockState.balances = [makeBalance(100)];
   mockState.deposits = [];
@@ -222,7 +228,15 @@ describe("<WalletCurrencyPage />", () => {
   it("shows 'Валюта не поддерживается' for an unknown code", () => {
     mockState.currencies = [makeCurrency({ code: "USDT" })];
     renderPage("DOGE");
+    expect(mockState.lastDepositsOptions).toEqual({ enabled: false });
+    expect(mockState.lastWithdrawalsOptions).toEqual({ enabled: false });
     expect(screen.getByText("Валюта не поддерживается.")).toBeInTheDocument();
+  });
+
+  it("does not enable wallet history queries for malformed route currency codes", () => {
+    renderPage("USD!x");
+    expect(mockState.lastDepositsOptions).toEqual({ enabled: false });
+    expect(mockState.lastWithdrawalsOptions).toEqual({ enabled: false });
   });
 
   it("redirects crypto currencies to /wallet (Item 15)", () => {
@@ -275,11 +289,13 @@ describe("<WalletCurrencyPage />", () => {
       limit: 50,
       offset: 0,
     });
+    expect(mockState.lastDepositsOptions).toEqual({ enabled: true });
     expect(mockState.lastWithdrawalsParams).toEqual({
       currency: "USDT",
       limit: 50,
       offset: 0,
     });
+    expect(mockState.lastWithdrawalsOptions).toEqual({ enabled: true });
   });
 
   it("loads more currency history with backend offsets", async () => {

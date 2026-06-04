@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ToggleTabs } from "@/components/ui/ToggleTabs";
 import { useToast } from "@/components/ui/Toast";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { formatCurrency, relativeTime } from "@/lib/format";
 import { haptic, openPaymentLink } from "@/lib/tg";
 
@@ -51,31 +52,39 @@ const STATUS_TONE: Record<string, string> = {
 
 export default function WalletCurrencyPage() {
   const { code = "" } = useParams<{ code: string }>();
-  const upper = code.toUpperCase();
+  const routeCurrencyCode = normalizeCurrencyCode(code);
+  const upper = routeCurrencyCode ?? "";
+  const headerTitle = routeCurrencyCode ?? "\u0412\u0430\u043b\u044e\u0442\u0430";
 
   const currencies = useCurrencies();
   const balances = useWalletBalances();
+  const currency = useMemo(
+    () =>
+      routeCurrencyCode
+        ? currencies.data?.find((c) => normalizeCurrencyCode(c.code) === routeCurrencyCode)
+        : undefined,
+    [currencies.data, routeCurrencyCode],
+  );
+  const balance = useMemo(
+    () =>
+      routeCurrencyCode
+        ? balances.data?.find((b) => normalizeCurrencyCode(b.currency.code) === routeCurrencyCode)
+        : undefined,
+    [balances.data, routeCurrencyCode],
+  );
+  const historyEnabled = !!currency && (currency.kind ?? "crypto") === "fiat";
   const historyParams = useMemo(
     () => ({ currency: upper, limit: WALLET_HISTORY_PAGE_SIZE, offset: 0 }),
     [upper],
   );
-  const deposits = useWalletDeposits(historyParams);
-  const withdrawals = useWalletWithdrawals(historyParams);
+  const deposits = useWalletDeposits(historyParams, { enabled: historyEnabled });
+  const withdrawals = useWalletWithdrawals(historyParams, { enabled: historyEnabled });
   const [depositItems, setDepositItems] = useState<WalletDepositDto[]>([]);
   const [withdrawalItems, setWithdrawalItems] = useState<WalletWithdrawalDto[]>([]);
   const [depositsReachedEnd, setDepositsReachedEnd] = useState(false);
   const [withdrawalsReachedEnd, setWithdrawalsReachedEnd] = useState(false);
   const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
-
-  const currency = useMemo(
-    () => currencies.data?.find((c) => c.code === upper),
-    [currencies.data, upper],
-  );
-  const balance = useMemo(
-    () => balances.data?.find((b) => b.currency.code === upper),
-    [balances.data, upper],
-  );
 
   const [tab, setTab] = useState<Tab>("deposit");
 
@@ -94,6 +103,7 @@ export default function WalletCurrencyPage() {
   }, [withdrawals.data]);
 
   const loadMoreHistory = async () => {
+    if (!routeCurrencyCode) return;
     if (loadingMoreHistory || (depositsReachedEnd && withdrawalsReachedEnd)) return;
     setLoadingMoreHistory(true);
     setHistoryError(null);
@@ -104,7 +114,7 @@ export default function WalletCurrencyPage() {
           api
             .get("api/wallet/deposits", {
               searchParams: buildWalletHistorySearchParams({
-                currency: upper,
+                currency: routeCurrencyCode,
                 limit: WALLET_HISTORY_PAGE_SIZE,
                 offset: depositItems.length,
               }),
@@ -121,7 +131,7 @@ export default function WalletCurrencyPage() {
           api
             .get("api/wallet/withdrawals", {
               searchParams: buildWalletHistorySearchParams({
-                currency: upper,
+                currency: routeCurrencyCode,
                 limit: WALLET_HISTORY_PAGE_SIZE,
                 offset: withdrawalItems.length,
               }),
@@ -144,7 +154,7 @@ export default function WalletCurrencyPage() {
   if (currencies.isLoading || balances.isLoading) {
     return (
       <Page showBack>
-        <Header title={upper} />
+        <Header title={headerTitle} />
         <div className="px-4 space-y-2">
           <Skeleton className="h-24 w-full rounded-card" />
           <Skeleton className="h-12 w-full rounded-2xl" />
@@ -154,10 +164,10 @@ export default function WalletCurrencyPage() {
     );
   }
 
-  if (!currency) {
+  if (!routeCurrencyCode || !currency) {
     return (
       <Page showBack>
-        <Header title={upper} />
+        <Header title={headerTitle} />
         <div className="px-4 text-text-muted text-sm">Валюта не поддерживается.</div>
       </Page>
     );

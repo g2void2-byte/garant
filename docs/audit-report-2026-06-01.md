@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 80 файлов, 770 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 82 файлов, 779 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -111,6 +111,9 @@
 - M-139: admin deals amount filters now drop/block reversed min/max ranges before querying.
 - M-140: public user search registration-date filters now block reversed ranges in the sheet.
 - M-141: public deal rows no longer nest profile links inside deal-detail links; row/profile navigation is separated.
+- M-142: wallet history query params now mirror the backend currency/limit/offset contract before requests are enabled.
+- M-143: wallet currency routes and balance rows now reject malformed API currency codes before path construction.
+- M-144: profile fiat balance actions now normalize display currency refs before rendering wallet query links.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1585,6 +1588,36 @@ Public deal rows rendered the entire row as a React Router link to `/deals/:id`,
 Risk: nested anchors are invalid HTML and profile clicks could bubble into row navigation in some browser/router paths, making the profile action unreliable and weakening keyboard behavior around the row.
 
 Fix: the row wrapper is now a keyboard-accessible `role=link` surface that navigates programmatically, while the profile action remains a normal profile link and stops event propagation. Regression coverage checks row navigation and profile-link isolation.
+
+### M-142. Wallet history filters could send malformed currency/pagination params
+
+Links: `frontend/src/api/hooks.ts`, `frontend/src/pages/wallet/WalletCurrencyPage.tsx`, regressions `frontend/src/api/hooks.test.tsx`, `frontend/src/pages/wallet/WalletCurrencyPage.test.tsx`.
+
+The wallet history helpers serialized `currency`, `limit`, and `offset` directly. The per-currency wallet route also mounted deposit/withdrawal history queries before proving the route `:code` was a valid backend currency code and an active fiat row.
+
+Risk: malformed routes such as `/wallet/USD!x`, stale links, or future hook misuse could hit `/api/wallet/deposits` and `/api/wallet/withdrawals` with values the backend rejects, turning an unsupported wallet page into a noisy validation failure instead of a local unsupported-currency state.
+
+Fix: wallet history query params now normalize currency codes through the backend `^[A-Z0-9]{1,16}$` contract, drop invalid `limit`/`offset` values, and use normalized params in query keys. The per-currency page disables both history queries until the route code is valid and resolves to an active fiat currency. Regression coverage checks helper normalization and disabled malformed/unknown route queries.
+
+### M-143. Wallet balance rows interpolated API currency codes into routes
+
+Links: `frontend/src/lib/currencyCodes.ts`, `frontend/src/pages/wallet/WalletPage.tsx`, regressions `frontend/src/lib/currencyCodes.test.ts`, `frontend/src/pages/wallet/WalletPage.test.tsx`.
+
+The wallet landing page filtered balances by `currency.kind === "fiat"`, but still used `currency.code` directly in `/wallet/${code}` links and display formatting. A malformed legacy/API row could therefore build a route path that does not represent a valid wallet currency.
+
+Risk: the backend normally controls currency rows, but a stale cache, legacy row, or admin catalogue drift could produce broken client-side links and route/query behavior from a value outside the currency-code contract.
+
+Fix: added shared frontend currency-code helpers and made the wallet list omit fiat balance rows whose code does not normalize to the backend contract. Valid codes are normalized before path construction and formatting. Regression coverage checks path/query-breaking currency code rejection.
+
+### M-144. Profile fiat balance actions trusted display_currency_code
+
+Links: `frontend/src/components/domain/ProfileFiatBalanceCard.tsx`, regression `frontend/src/components/domain/ProfileFiatBalanceCard.test.tsx`.
+
+The profile fiat balance card used `user.display_currency_code` directly in the visible balance label and in `?currency=${code}` links for deposit/withdrawal actions.
+
+Risk: current profile writes validate the preferred currency, but legacy/profile API drift could inject query separators or non-contract codes into wallet action links, causing the wallet forms to open with malformed URL state.
+
+Fix: the card now normalizes the preferred display currency through the shared helper, falls back to `USD` for invalid values, and builds wallet action links with `URLSearchParams`. Regression coverage checks malformed fallback and lowercase/space normalization.
 
 ## Наблюдения без отдельного finding
 

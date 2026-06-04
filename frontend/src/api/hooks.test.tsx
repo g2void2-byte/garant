@@ -24,12 +24,33 @@ vi.mock("./client", () => ({
 }));
 
 import {
+  buildWalletHistorySearchParams,
   useCreateReview,
   useDealAction,
   useDeleteService,
   useUpdateMe,
   useUpdateService,
 } from "./hooks";
+
+describe("buildWalletHistorySearchParams", () => {
+  it("normalizes valid currency codes and bounded pagination", () => {
+    expect(buildWalletHistorySearchParams({ currency: " usd ", limit: 50, offset: 10 })).toEqual({
+      currency: "USD",
+      limit: "50",
+      offset: "10",
+    });
+  });
+
+  it("drops malformed currency and backend-invalid pagination params", () => {
+    expect(
+      buildWalletHistorySearchParams({
+        currency: "USD/../admin",
+        limit: 101,
+        offset: -1,
+      }),
+    ).toEqual({});
+  });
+});
 
 function spyInvalidate(qc: QueryClient) {
   return vi.spyOn(qc, "invalidateQueries");

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import { qk } from "./queryKeys";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { isPositiveSafeInteger } from "@/lib/routeParams";
 import { normalizeUsernameRef, userDetailApiPath } from "@/lib/usernames";
 import type {
@@ -954,19 +955,53 @@ export interface WalletHistoryQueryParams {
   offset?: number;
 }
 
+export interface WalletHistoryQueryOptions {
+  enabled?: boolean;
+}
+
+function normalizeWalletHistoryQueryParams(
+  params: WalletHistoryQueryParams = {},
+): WalletHistoryQueryParams {
+  const normalized: WalletHistoryQueryParams = {};
+  const currency = normalizeCurrencyCode(params.currency);
+  if (currency) normalized.currency = currency;
+  if (
+    params.limit !== undefined &&
+    Number.isSafeInteger(params.limit) &&
+    params.limit >= 1 &&
+    params.limit <= 100
+  ) {
+    normalized.limit = params.limit;
+  }
+  if (
+    params.offset !== undefined &&
+    Number.isSafeInteger(params.offset) &&
+    params.offset >= 0
+  ) {
+    normalized.offset = params.offset;
+  }
+  return normalized;
+}
+
 export function buildWalletHistorySearchParams(params: WalletHistoryQueryParams = {}) {
+  const normalized = normalizeWalletHistoryQueryParams(params);
   const searchParams: Record<string, string> = {};
-  if (params.currency) searchParams.currency = params.currency;
-  if (params.limit !== undefined) searchParams.limit = String(params.limit);
-  if (params.offset !== undefined) searchParams.offset = String(params.offset);
+  if (normalized.currency) searchParams.currency = normalized.currency;
+  if (normalized.limit !== undefined) searchParams.limit = String(normalized.limit);
+  if (normalized.offset !== undefined) searchParams.offset = String(normalized.offset);
   return searchParams;
 }
 
-export function useWalletDeposits(params: WalletHistoryQueryParams = {}) {
-  const searchParams = buildWalletHistorySearchParams(params);
+export function useWalletDeposits(
+  params: WalletHistoryQueryParams = {},
+  options: WalletHistoryQueryOptions = {},
+) {
+  const normalized = normalizeWalletHistoryQueryParams(params);
+  const searchParams = buildWalletHistorySearchParams(normalized);
   return useQuery<WalletDepositDto[]>({
-    queryKey: qk.wallet.deposits(params),
+    queryKey: qk.wallet.deposits(normalized),
     queryFn: () => api.get("api/wallet/deposits", { searchParams }).json(),
+    enabled: options.enabled ?? true,
   });
 }
 
@@ -1009,11 +1044,16 @@ export function useCreateWalletDeposit() {
   });
 }
 
-export function useWalletWithdrawals(params: WalletHistoryQueryParams = {}) {
-  const searchParams = buildWalletHistorySearchParams(params);
+export function useWalletWithdrawals(
+  params: WalletHistoryQueryParams = {},
+  options: WalletHistoryQueryOptions = {},
+) {
+  const normalized = normalizeWalletHistoryQueryParams(params);
+  const searchParams = buildWalletHistorySearchParams(normalized);
   return useQuery<WalletWithdrawalDto[]>({
-    queryKey: qk.wallet.withdrawals(params),
+    queryKey: qk.wallet.withdrawals(normalized),
     queryFn: () => api.get("api/wallet/withdrawals", { searchParams }).json(),
+    enabled: options.enabled ?? true,
   });
 }
 

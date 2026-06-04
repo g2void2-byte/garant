@@ -2,6 +2,7 @@ import { ArrowDownToLine, ArrowUpFromLine, Wallet } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { UserCardDto } from "@/api/types";
 import { useWalletBalances } from "@/api/hooks";
+import { normalizeCurrencyCode, walletActionPath } from "@/lib/currencyCodes";
 import { formatCurrency } from "@/lib/format";
 import { Skeleton } from "@/components/ui/Skeleton";
 
@@ -25,8 +26,8 @@ export function ProfileFiatBalanceCard({ user }: { user: UserCardDto }) {
   // Item 15 — fetch the fiat-only slice; the historical crypto rows
   // stay in the ledger but the user-facing surfaces never see them.
   const { data, isLoading } = useWalletBalances({ kind: "fiat" });
-  const code = user.display_currency_code || "USD";
-  const balance = data?.find((b) => b.currency.code === code);
+  const code = normalizeCurrencyCode(user.display_currency_code) ?? "USD";
+  const balance = data?.find((b) => normalizeCurrencyCode(b.currency.code) === code);
   const decimals = balance?.currency.decimals ?? 2;
   const amount = balance?.amount_str ?? "0";
 
@@ -48,7 +49,7 @@ export function ProfileFiatBalanceCard({ user }: { user: UserCardDto }) {
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
-          onClick={() => navigate(`/wallet/deposit?currency=${code}`)}
+          onClick={() => navigate(walletActionPath("deposit", code))}
           className="flex items-center justify-center gap-2 bg-panel-2 rounded-button px-3 py-2 text-sm font-medium active:scale-[0.98] transition"
         >
           <ArrowDownToLine className="size-4 text-accent" />
@@ -56,7 +57,7 @@ export function ProfileFiatBalanceCard({ user }: { user: UserCardDto }) {
         </button>
         <button
           type="button"
-          onClick={() => navigate(`/wallet/withdraw?currency=${code}`)}
+          onClick={() => navigate(walletActionPath("withdraw", code))}
           className="flex items-center justify-center gap-2 bg-panel-2 rounded-button px-3 py-2 text-sm font-medium active:scale-[0.98] transition"
         >
           <ArrowUpFromLine className="size-4 text-accent" />

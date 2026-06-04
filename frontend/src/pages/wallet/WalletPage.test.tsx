@@ -161,6 +161,33 @@ describe("<WalletPage />", () => {
     expect(screen.getByText("Пока пусто")).toBeInTheDocument();
   });
 
+  it("hides fiat balance rows with malformed currency codes", () => {
+    mockState.data = [
+      {
+        currency: {
+          id: 1,
+          code: "USD/../admin",
+          name: "Broken Dollar",
+          network: "",
+          icon_url: "",
+          decimals: 2,
+          min_deposit: 1,
+          min_withdraw: 1,
+          kind: "fiat",
+        },
+        amount: 5,
+        locked: 0,
+        total: 5,
+        updated_at: null,
+        amount_str: "5",
+        locked_str: "0",
+        total_str: "5",
+      },
+    ];
+    renderPage();
+    expect(screen.queryByText("Broken Dollar")).not.toBeInTheDocument();
+  });
+
   it('renders the "locked" hint when balance has reserves', () => {
     mockState.data = [
       {
