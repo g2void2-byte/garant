@@ -170,6 +170,14 @@ describe("<AdminDealsPage />", () => {
     });
   });
 
+  it("drops reversed amount ranges from URL filters before calling useAdminDeals", () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+    renderPage(["/admin/deals?min_amount=500&max_amount=10"]);
+
+    expect(mockState.lastQuery?.min_amount).toBeUndefined();
+    expect(mockState.lastQuery?.max_amount).toBeUndefined();
+  });
+
   it("clicking a status chip updates URL status param", async () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
     const user = userEvent.setup();
@@ -254,5 +262,19 @@ describe("<AdminDealsPage />", () => {
     const input = await screen.findByPlaceholderText(/USDT, BTC/);
     fireEvent.change(input, { target: { value: "btc" } });
     expect((input as HTMLInputElement).value).toBe("BTC");
+  });
+
+  it("filter sheet blocks reversed amount ranges before applying", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByLabelText("\u0424\u0438\u043b\u044c\u0442\u0440\u044b"));
+    const amountInputs = screen.getAllByRole("spinbutton");
+    fireEvent.change(amountInputs[0], { target: { value: "500" } });
+    fireEvent.change(amountInputs[1], { target: { value: "10" } });
+
+    const apply = screen.getByText("\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c").closest("button");
+    expect(apply).toBeDisabled();
   });
 });

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 79 файлов, 765 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 80 файлов, 770 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -108,6 +108,9 @@
 - M-136: lazy route chunk retry now preserves the original import error when `sessionStorage` is unavailable and reloads only with a stored guard.
 - M-137: frontend `/media/...` runtime filtering now rejects encoded/double-slash/backslash/fragment paths instead of only checking origin and prefix.
 - M-138: avatar/banner/admin user images now pass through the same safe image URL boundary before rendering.
+- M-139: admin deals amount filters now drop/block reversed min/max ranges before querying.
+- M-140: public user search registration-date filters now block reversed ranges in the sheet.
+- M-141: public deal rows no longer nest profile links inside deal-detail links; row/profile navigation is separated.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1552,6 +1555,36 @@ Most public user cards already rendered through `<Avatar />`, but that component
 Risk: user-controlled image fields could become tracking or parser-confusion sinks in admin/public views if the backend contract drifted or old data bypassed current validators. This was especially inconsistent because profile banners and avatars already deliberately use `referrerPolicy="no-referrer"` once rendered, but unsafe schemes and malformed media paths could still reach the render decision.
 
 Fix: added `safeUserImageUrl()` for the HTTPS-or-strict-media image contract. `Avatar` and `ProfileHeader` sanitize before rendering, unsafe values fall back to initials/logo, and admin users/detail/wallets now use `Avatar` instead of raw image tags. Regression coverage checks malicious schemes, credential-bearing HTTPS URLs, malformed media paths, and unsafe banners.
+
+### M-139. Admin deal amount filters accepted reversed ranges
+
+Links: `frontend/src/pages/admin/AdminDealsPage.tsx`, regression `frontend/src/pages/admin/AdminDealsPage.test.tsx`.
+
+The admin deals page parsed `min_amount` and `max_amount` independently from the URL and from the filter sheet. A damaged deep link such as `?min_amount=500&max_amount=10`, or the same values entered by an operator, could reach `useAdminDeals()` as a reversed range.
+
+Risk: backend validation rejects the inconsistent range, which turns a simple malformed filter into a broken admin list instead of a recoverable local validation state.
+
+Fix: URL ranges are parsed as a pair and dropped when `min_amount > max_amount`. The filter sheet now shows an inline range error and disables Apply while the draft range is reversed. Regression coverage checks both URL parsing and sheet submission.
+
+### M-140. Public user search could submit reversed registration-date ranges
+
+Links: `frontend/src/components/domain/SearchFilterSheet.tsx`, regression `frontend/src/components/domain/SearchFilterSheet.test.tsx`.
+
+The public search filter sheet allowed `reg_from` later than `reg_to` and passed the draft filters to the caller unchanged.
+
+Risk: a reversed date range could be sent to the backend and fail as a validation error, leaving the user-facing search results in an avoidably broken state.
+
+Fix: the sheet now validates the local registration-date pair before applying filters, surfaces an inline date-range error, and disables Apply until the range is coherent. Regression coverage checks that reversed ranges are blocked and valid ranges still apply.
+
+### M-141. Deal rows nested profile links inside deal-detail links
+
+Links: `frontend/src/components/domain/DealRow.tsx`, regression `frontend/src/components/domain/DealRow.test.tsx`.
+
+Public deal rows rendered the entire row as a React Router link to `/deals/:id`, then rendered the counterparty profile action as another link inside that anchor.
+
+Risk: nested anchors are invalid HTML and profile clicks could bubble into row navigation in some browser/router paths, making the profile action unreliable and weakening keyboard behavior around the row.
+
+Fix: the row wrapper is now a keyboard-accessible `role=link` surface that navigates programmatically, while the profile action remains a normal profile link and stops event propagation. Regression coverage checks row navigation and profile-link isolation.
 
 ## Наблюдения без отдельного finding
 

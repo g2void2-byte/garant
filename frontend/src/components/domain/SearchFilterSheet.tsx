@@ -56,6 +56,12 @@ const STATUS_OPTIONS = [
   { value: "2", label: "VIP" },
 ] satisfies Array<{ value: NonNullable<SearchFilters["status"]>; label: string }>;
 
+function registrationRangeError(filters: SearchFilters): string | null {
+  return filters.reg_from && filters.reg_to && filters.reg_from > filters.reg_to
+    ? "\u0414\u0430\u0442\u0430 \u043d\u0430\u0447\u0430\u043b\u0430 \u043d\u0435 \u043c\u043e\u0436\u0435\u0442 \u0431\u044b\u0442\u044c \u043f\u043e\u0437\u0436\u0435 \u0434\u0430\u0442\u044b \u043e\u043a\u043e\u043d\u0447\u0430\u043d\u0438\u044f"
+    : null;
+}
+
 function RadioRow<T extends string>({
   options,
   value,
@@ -103,7 +109,9 @@ export function SearchFilterSheet({
   }, [open, value]);
 
   const reset = () => setLocal({});
+  const rangeError = registrationRangeError(local);
   const apply = () => {
+    if (rangeError) return;
     onApply(local);
     onClose();
   };
@@ -160,6 +168,7 @@ export function SearchFilterSheet({
               type="date"
               placeholder="До"
               value={local.reg_to ?? ""}
+              error={rangeError ?? undefined}
               onChange={(e) =>
                 setLocal({
                   ...local,
@@ -186,7 +195,7 @@ export function SearchFilterSheet({
         <Button variant="secondary" onClick={reset}>
           Сбросить
         </Button>
-        <Button variant="primary" onClick={apply}>
+        <Button variant="primary" onClick={apply} disabled={rangeError !== null}>
           Применить фильтры
         </Button>
       </div>

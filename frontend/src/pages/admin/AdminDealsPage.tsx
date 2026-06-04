@@ -68,6 +68,23 @@ function parseAmountParam(value: string | null): number | undefined {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
+function parseAmountRange(minRaw: string | null, maxRaw: string | null) {
+  const min = parseAmountParam(minRaw);
+  const max = parseAmountParam(maxRaw);
+  if (min !== undefined && max !== undefined && min > max) {
+    return { min_amount: undefined, max_amount: undefined };
+  }
+  return { min_amount: min, max_amount: max };
+}
+
+function amountRangeError(minRaw: string, maxRaw: string): string | null {
+  const min = parseAmountParam(minRaw);
+  const max = parseAmountParam(maxRaw);
+  return min !== undefined && max !== undefined && min > max
+    ? "\u041c\u0438\u043d\u0438\u043c\u0430\u043b\u044c\u043d\u0430\u044f \u0441\u0443\u043c\u043c\u0430 \u043d\u0435 \u043c\u043e\u0436\u0435\u0442 \u0431\u044b\u0442\u044c \u0431\u043e\u043b\u044c\u0448\u0435 \u043c\u0430\u043a\u0441\u0438\u043c\u0430\u043b\u044c\u043d\u043e\u0439"
+    : null;
+}
+
 function parseCurrencyParam(value: string | null): string | undefined {
   const code = (value ?? "").trim().toUpperCase();
   return CURRENCY_PARAM_RE.test(code) ? code : undefined;
@@ -92,11 +109,14 @@ export default function AdminDealsPage() {
   // "no filter" sentinel and translates to an omitted URL param.
   const status = parseStatusParam(params.get("status"));
   const currency = parseCurrencyParam(params.get("currency"));
-  const min_amount = parseAmountParam(params.get("min_amount"));
-  const max_amount = parseAmountParam(params.get("max_amount"));
+  const { min_amount, max_amount } = parseAmountRange(
+    params.get("min_amount"),
+    params.get("max_amount"),
+  );
   const has_arbitration = params.get("has_arbitration") === "true" || undefined;
   const has_cancel_request = params.get("has_cancel_request") === "true" || undefined;
   const page = parsePageParam(params.get("page"));
+  const draftAmountRangeError = amountRangeError(draftMin, draftMax);
 
   const query: AdminListDealsQuery = {
     status,
@@ -286,6 +306,11 @@ export default function AdminDealsPage() {
               />
             </label>
           </div>
+          {draftAmountRangeError && (
+            <div className="text-xs text-danger" aria-live="polite">
+              {draftAmountRangeError}
+            </div>
+          )}
           <div className="space-y-2">
             <ToggleRow
               label="Только с арбитражем"
@@ -320,7 +345,9 @@ export default function AdminDealsPage() {
             </Button>
             <Button
               fullWidth
+              disabled={draftAmountRangeError !== null}
               onClick={() => {
+                if (draftAmountRangeError) return;
                 update({
                   currency: parseCurrencyParam(draftCurrency),
                   min_amount: parseAmountParam(draftMin),

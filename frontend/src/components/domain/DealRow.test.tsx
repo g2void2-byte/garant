@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { DealRow } from "./DealRow";
 import type { DealDto } from "@/api/types";
 
@@ -40,6 +41,20 @@ function renderRow(deal: Partial<DealDto> = {}) {
   );
 }
 
+function LocationProbe() {
+  const loc = useLocation();
+  return <span data-testid="path">{loc.pathname}</span>;
+}
+
+function renderRowWithLocation(deal: Partial<DealDto> = {}) {
+  return render(
+    <MemoryRouter>
+      <DealRow deal={{ ...baseDeal, ...deal }} />
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+}
+
 describe("<DealRow />", () => {
   it("renders the deal description and id", () => {
     renderRow();
@@ -47,15 +62,16 @@ describe("<DealRow />", () => {
     expect(screen.getByText("#17")).toBeInTheDocument();
   });
 
-  it("links to the deal detail page", () => {
-    renderRow();
-    // After item 21 the row also renders a "Профиль" deep-link, so
-    // ``getByRole('link')`` returns two matches; pick the row-wrapper
-    // (the deal-detail link) by its ``href`` instead of relying on
-    // there being a single link in the document.
-    const links = screen.getAllByRole("link");
-    const detailLink = links.find((l) => l.getAttribute("href") === "/deals/17");
+  it("opens the deal detail page from the row link", async () => {
+    const user = userEvent.setup();
+    renderRowWithLocation();
+    const detailLink = screen
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href") === null);
+
     expect(detailLink).toBeDefined();
+    await user.click(detailLink!);
+    expect(screen.getByTestId("path").textContent).toBe("/deals/17");
   });
 
   it("renders the in-progress status label", () => {
@@ -92,6 +108,18 @@ describe("<DealRow />", () => {
     const profileLink = links.find((l) => l.getAttribute("href") === "/users/bob");
     expect(profileLink).toBeDefined();
     expect(profileLink).toHaveTextContent("Профиль");
+  });
+
+  it("does not let the profile link click bubble into deal navigation", async () => {
+    const user = userEvent.setup();
+    renderRowWithLocation({ role: "buyer", seller: "bob" });
+    const profileLink = screen
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href") === "/users/bob");
+
+    expect(profileLink).toBeDefined();
+    await user.click(profileLink!);
+    expect(screen.getByTestId("path").textContent).toBe("/users/bob");
   });
 
   it("does not render @null or a profile link when the counterparty username is missing", () => {

@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import type { DealDto } from "@/api/types";
 import { Avatar } from "@/components/ui/Avatar";
 import { formatAmount, relativeTime } from "@/lib/format";
@@ -42,6 +42,7 @@ const STATUS_LABEL: Record<string, { text: string; cls: string; icon: string }> 
 };
 
 export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) {
+  const navigate = useNavigate();
   const status = STATUS_LABEL[deal.status] ?? { text: deal.status, cls: "bg-panel-2 text-text-muted", icon: "•" };
   // Item 21 — show the counterparty (i.e. the other side of the deal)
   // avatar + a "Профиль" deep-link. The seller's row in the buyer's
@@ -56,12 +57,26 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
   const counterpartyText = counterpartyUsername
     ? `${counterpartyLabel}: @${counterpartyUsername}`
     : `${counterpartyLabel}: профиль недоступен`;
+  const openDeal = () => navigate(`/deals/${deal.id}`);
+  const onDealKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openDeal();
+    }
+  };
+
   return (
     <div
       className="animate-fadein"
       style={staggerDelay(index, 25, 250)}
     >
-      <Link to={`/deals/${deal.id}`} className="block bg-panel border border-border rounded-card p-3 active:scale-[.99] transition-transform">
+      <div
+        role="link"
+        tabIndex={0}
+        onClick={openDeal}
+        onKeyDown={onDealKeyDown}
+        className="block bg-panel border border-border rounded-card p-3 active:scale-[.99] transition-transform cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
+      >
         <div className="flex items-start gap-3">
           <Avatar
             name={counterpartyName}
@@ -92,6 +107,7 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
                 <Link
                   to={counterpartyPath}
                   onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
                   className="inline-flex items-center gap-1 px-2 py-1 rounded-button bg-panel-2 border border-border text-[11px] text-text hover:bg-secondary active:scale-95 transition"
                 >
                   Профиль
@@ -111,7 +127,7 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
             </div>
           </div>
         </div>
-      </Link>
+      </div>
     </div>
   );
 }
