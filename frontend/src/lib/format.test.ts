@@ -54,6 +54,11 @@ describe("formatCurrency", () => {
     expect(formatCurrency("1.23456789", "BTC", 4)).toBe("1.2346 BTC");
   });
 
+  it("falls back to per-currency precision for malformed decimals overrides", () => {
+    expect(formatCurrency("1.2345", "USDT", "8" as unknown as number)).toBe("1.23 USDT");
+    expect(formatCurrency("1.2345", "BTC", 999 as unknown as number)).toBe("1.2345 BTC");
+  });
+
   it("falls back to 0 for malformed input", () => {
     expect(formatCurrency("oops", "USDT")).toBe("0 USDT");
   });

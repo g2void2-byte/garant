@@ -382,6 +382,37 @@ describe("<CreateDealPage />", () => {
     expect(screen.queryByRole("button", { name: /Открыть оплату/i })).not.toBeInTheDocument();
   });
 
+  it("normalizes runtime string commission settings before rendering the preview", async () => {
+    mockState.me = { is_vip: true };
+    mockState.publicSettings = {
+      deal_commission_percent: "2.5",
+      vip_commission_percent: "1e1",
+      auto_withdraw_enabled: false,
+    } as unknown as typeof mockState.publicSettings;
+    mockState.balances = [
+      {
+        currency: makeCurrency(),
+        amount: "100.00" as unknown as number,
+        locked: 0,
+        total: 100,
+        updated_at: null,
+        amount_str: "100.00",
+        locked_str: "0.00",
+        total_str: "100.00",
+      },
+    ];
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByLabelText(/Сумма \(USD\)/), "10");
+
+    const preview = await screen.findByTestId("deal-commission-preview");
+    expect(preview).toHaveTextContent("(2.5%)");
+    expect(preview).toHaveTextContent("10.00 USD");
+    expect(preview).toHaveTextContent("0.25 USD");
+    expect(preview).toHaveTextContent("10.25 USD");
+  });
+
   it("shows the insufficient-funds alert only for a complete structured error", async () => {
     mockState.createMutation.mutateAsync.mockRejectedValue(
       new Error(JSON.stringify({

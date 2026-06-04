@@ -25,6 +25,7 @@ const DEFAULT_DECIMALS: Record<string, number> = {
   DOGE: 4,
   SOL: 6,
 };
+const MAX_DISPLAY_DECIMALS = 20;
 
 // Resolve the display precision when a caller did not pass an
 // explicit ``decimals``. Falls back to the per-currency table above
@@ -34,8 +35,15 @@ const DEFAULT_DECIMALS: Record<string, number> = {
 // remains for unknown / fiat codes the table doesn't cover (RUB,
 // USD, etc.) — those have at most 2 meaningful fractional digits
 // anyway, so the previous behaviour is preserved.
-function _displayDecimals(code: string, override?: number): number {
-  if (override !== undefined) return override;
+export function resolveDisplayDecimals(code: string, override?: number): number {
+  if (
+    typeof override === "number" &&
+    Number.isInteger(override) &&
+    override >= 0 &&
+    override <= MAX_DISPLAY_DECIMALS
+  ) {
+    return override;
+  }
   return DEFAULT_DECIMALS[code.toUpperCase()] ?? 2;
 }
 
@@ -48,7 +56,7 @@ export function formatCurrency(
   if (!Number.isFinite(n)) return `0 ${code}`;
   const fixed = n.toLocaleString("en-US", {
     minimumFractionDigits: 0,
-    maximumFractionDigits: _displayDecimals(code, decimals),
+    maximumFractionDigits: resolveDisplayDecimals(code, decimals),
   });
   return `${fixed} ${code}`;
 }

@@ -17,7 +17,11 @@ import {
   usePublicSettings,
   useWalletBalances,
 } from "@/api/hooks";
-import { formatCurrency } from "@/lib/format";
+import {
+  formatCurrency,
+  parseDecimalValue,
+  resolveDisplayDecimals,
+} from "@/lib/format";
 import { haptic } from "@/lib/tg";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { parsePositiveDecimalInput } from "@/lib/formNumbers";
@@ -89,6 +93,13 @@ function invoiceRequiresPayment(
   return parsePositiveDecimalInput(String(invoice.total)) !== null;
 }
 
+const DEFAULT_DEAL_COMMISSION_PERCENT = 5;
+
+function parseCommissionPercent(value: string | number | null | undefined): number | null {
+  const parsed = parseDecimalValue(value);
+  return parsed !== null && parsed >= 0 && parsed <= 100 ? parsed : null;
+}
+
 export default function CreateDealPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -151,7 +162,10 @@ export default function CreateDealPage() {
   // change to the dropdown is sticky.
   useEffect(() => {
     if (currencyDefaulted || !balances || balances.length === 0) return;
-    const funded = balances.find((b) => b.amount > 0);
+    const funded = balances.find((b) => {
+      const amount = parseDecimalValue(b.amount);
+      return amount !== null && amount > 0;
+    });
     if (funded) {
       setCurrencyCode(funded.currency.code);
     }
@@ -166,23 +180,30 @@ export default function CreateDealPage() {
     [balances, currencyCode],
   );
   const commissionPercent = useMemo(() => {
-    if (!publicSettings) return 5;
+    const dealPercent =
+      parseCommissionPercent(publicSettings?.deal_commission_percent) ??
+      DEFAULT_DEAL_COMMISSION_PERCENT;
+    const vipPercent = parseCommissionPercent(publicSettings?.vip_commission_percent);
     if (
       me?.is_vip === true &&
-      publicSettings.vip_commission_percent >= 0
+      vipPercent !== null
     ) {
-      return publicSettings.vip_commission_percent;
+      return vipPercent;
     }
-    return publicSettings.deal_commission_percent;
+    return dealPercent;
   }, [publicSettings, me]);
   const parsedAmount = useMemo(() => {
     return parsePositiveDecimalInput(sum) ?? 0;
   }, [sum]);
-  const decimals = activeBalance?.currency.decimals ?? 2;
+  const activeBalanceAmount = parseDecimalValue(activeBalance?.amount) ?? 0;
+  const decimals = resolveDisplayDecimals(
+    activeBalance?.currency.code ?? currencyCode,
+    activeBalance?.currency.decimals,
+  );
   const commissionAmount = parsedAmount * (commissionPercent / 100);
   const totalFromBalance = parsedAmount + commissionAmount;
   const balanceCoversFull =
-    !!activeBalance && activeBalance.amount >= totalFromBalance && parsedAmount > 0;
+    !!activeBalance && activeBalanceAmount >= totalFromBalance && parsedAmount > 0;
 
   function validate(): boolean {
     const amount = sum.trim();
@@ -307,14 +328,14 @@ export default function CreateDealPage() {
                 activeBalance.currency.decimals,
               )}
             </span>
-            {activeBalance.amount > 0 && (
+            {activeBalanceAmount > 0 && (
               <button
                 type="button"
                 className="text-accent underline"
                 onClick={() => {
                   const maxDealAmount = Math.max(
                     0,
-                    activeBalance.amount / (1 + commissionPercent / 100),
+                    activeBalanceAmount / (1 + commissionPercent / 100),
                   );
                   setSum(maxDealAmount.toFixed(decimals));
                 }}

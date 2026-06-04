@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 84 файлов, 832 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 84 файлов, 834 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -133,6 +133,7 @@
 - M-161: admin finance/deal amount surfaces now share strict amount display helpers instead of rendering malformed Decimal payloads as `$0`/`0.00`.
 - M-162: public profile review ratings now use the shared strict rating formatter instead of coercing malformed review payloads to `0.0`.
 - M-163: admin system latency/uptime displays now reject malformed runtime numeric payloads instead of throwing or rendering `NaN`.
+- M-164: public currency precision and create-deal commission previews now normalize runtime numeric DTOs before formatting.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1827,6 +1828,16 @@ The admin system page called `.toFixed(1)` directly on `db_latency_ms` and `redi
 Risk: a single bad health payload could hide the operational dashboard from admins exactly when they are checking service status, or display invalid uptime/latency as real diagnostic data.
 
 Fix: latency now goes through the strict admin decimal formatter, preserving normal decimal-string values and rendering malformed values as a neutral dash. Uptime parses through the strict decimal parser and rejects malformed/negative values. Regression coverage pins string latency, malformed latency, and malformed uptime behavior.
+
+### M-164. Public currency precision and deal commission preview trusted runtime numbers
+
+Links: `frontend/src/lib/format.ts`, `frontend/src/pages/deals/CreateDealPage.tsx`, regressions `frontend/src/lib/format.test.ts`, `frontend/src/pages/deals/CreateDealPage.test.tsx`.
+
+Public wallet/deal surfaces passed API-provided currency `decimals` directly into `Intl.NumberFormat`, and the create-deal page returned `deal_commission_percent`/`vip_commission_percent` straight from the public settings DTO before calling `.toFixed()` in the preview label. Backend contracts normally emit bounded numbers, but a stringified or malformed runtime payload could still throw during render, while exponent-style balances could be coerced in the max-amount path.
+
+Risk: one malformed public settings or currency payload could crash deal creation or wallet amount displays, hiding the form while the rest of the page data was still usable.
+
+Fix: added a shared display-decimal resolver that accepts only integer precision in the browser-safe display range and falls back to per-currency defaults. Create-deal now parses commission settings and active balances through the strict decimal parser before preview/max calculations, falls back to the default 5% commission when settings are invalid, and keeps canonical decimal strings working. Regression coverage pins malformed precision overrides and string/malformed commission settings.
 
 ## Наблюдения без отдельного finding
 
