@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 84 файлов, 831 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 84 файлов, 832 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -132,6 +132,7 @@
 - M-160: admin user/service metric rows now share strict decimal/rating display helpers instead of calling `.toFixed()` on runtime payloads.
 - M-161: admin finance/deal amount surfaces now share strict amount display helpers instead of rendering malformed Decimal payloads as `$0`/`0.00`.
 - M-162: public profile review ratings now use the shared strict rating formatter instead of coercing malformed review payloads to `0.0`.
+- M-163: admin system latency/uptime displays now reject malformed runtime numeric payloads instead of throwing or rendering `NaN`.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1816,6 +1817,16 @@ Own-profile and public-profile review rows still displayed `parseDecimal(r.ratin
 Risk: one malformed review rating could lower visible profile reputation to `0.0` instead of showing an invalid/neutral value, misleading users and operators while the rest of the profile remained valid.
 
 Fix: profile stats now use the shared `parseRatingValue()`, and own/public review rows render via `formatRatingValue()`. Canonical decimal strings still render normally; malformed/exponent/hex/out-of-range ratings render as a neutral dash. Regression coverage pins the stats grid plus both review tabs.
+
+### M-163. Admin system latency and uptime displays trusted runtime numbers
+
+Links: `frontend/src/pages/admin/AdminSystemPage.tsx`, `frontend/src/pages/admin/format.ts`, regression `frontend/src/pages/admin/AdminSystemPage.test.tsx`.
+
+The admin system page called `.toFixed(1)` directly on `db_latency_ms` and `redis_latency_ms`, and `formatUptime()` trusted `uptime_seconds` as a finite number. Backend schemas emit numbers, but a stringified, malformed, or compromised runtime payload could crash the system page or render `NaN` in the uptime line.
+
+Risk: a single bad health payload could hide the operational dashboard from admins exactly when they are checking service status, or display invalid uptime/latency as real diagnostic data.
+
+Fix: latency now goes through the strict admin decimal formatter, preserving normal decimal-string values and rendering malformed values as a neutral dash. Uptime parses through the strict decimal parser and rejects malformed/negative values. Regression coverage pins string latency, malformed latency, and malformed uptime behavior.
 
 ## Наблюдения без отдельного finding
 

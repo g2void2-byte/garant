@@ -114,6 +114,20 @@ describe("<AdminSystemPage />", () => {
     expect(screen.getByText(/Версия: 1\.2\.3/)).toBeInTheDocument();
   });
 
+  it("renders string and malformed system numeric fields without crashing", () => {
+    mockState.data = makeStatus({
+      db_latency_ms: "1.25" as unknown as number,
+      redis_latency_ms: "1e1" as unknown as number,
+      uptime_seconds: "not-a-number" as unknown as number,
+    });
+    renderPage();
+
+    expect(screen.getByText("1.3ms")).toBeInTheDocument();
+    expect(screen.getAllByText("\u2014").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/10\.0ms/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+  });
+
   it("renders malformed started_at as a neutral timestamp", () => {
     mockState.data = makeStatus({ started_at: "not-a-date" });
     renderPage();

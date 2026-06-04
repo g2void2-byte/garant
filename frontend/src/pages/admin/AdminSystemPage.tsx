@@ -6,9 +6,10 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { confirmDialog } from "@/lib/dialog";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, parseDecimalValue } from "@/lib/format";
 import { useAdminFlushRedis, useAdminSystemStatus } from "@/api/admin/hooks";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { formatAdminFixedDecimal } from "./format";
 
 /**
  * `/admin/system` — service-health introspection.
@@ -41,21 +42,13 @@ export default function AdminSystemPage() {
                 ok={data.db_ok}
                 icon={<Database size={14} />}
                 label="Postgres"
-                detail={
-                  data.db_latency_ms !== null
-                    ? `${data.db_latency_ms.toFixed(1)}ms`
-                    : "недоступен"
-                }
+                detail={formatLatencyMs(data.db_latency_ms, "недоступен")}
               />
               <Lamp
                 ok={data.redis_ok}
                 icon={<Activity size={14} />}
                 label="Redis"
-                detail={
-                  data.redis_latency_ms !== null
-                    ? `${data.redis_latency_ms.toFixed(1)}ms`
-                    : "не настроен / недоступен"
-                }
+                detail={formatLatencyMs(data.redis_latency_ms, "не настроен / недоступен")}
                 warningIfOff
               />
               <Lamp
@@ -186,7 +179,16 @@ function Lamp({
   );
 }
 
-function formatUptime(seconds: number): string {
+function formatLatencyMs(value: string | number | null | undefined, unavailable: string): string {
+  if (value === null || value === undefined) return unavailable;
+  const fixed = formatAdminFixedDecimal(value, 1);
+  return fixed === "\u2014" ? fixed : `${fixed}ms`;
+}
+
+function formatUptime(seconds: string | number | null | undefined): string {
+  const parsed = parseDecimalValue(seconds);
+  if (parsed === null || parsed < 0) return "\u2014";
+  seconds = parsed;
   if (seconds < 60) return `${Math.floor(seconds)}s`;
   const m = Math.floor(seconds / 60);
   if (m < 60) return `${m}m`;
