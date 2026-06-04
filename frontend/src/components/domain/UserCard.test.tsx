@@ -54,4 +54,15 @@ describe("<UserCard />", () => {
     expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
+
+  it("renders string money/rating payloads without crashing", () => {
+    renderCard({
+      deposit: "1500" as unknown as number,
+      rating: "4.5" as unknown as number,
+      reviews_count: 3,
+    });
+
+    expect(screen.getByText("$1.5k+")).toBeInTheDocument();
+    expect(screen.getByText("4.5")).toBeInTheDocument();
+  });
 });

@@ -187,6 +187,20 @@ describe("<ServiceDetailPage />", () => {
     expect(screen.getByRole("button", { name: /Написать/i })).toBeInTheDocument();
   });
 
+  it("renders string price/rating payloads without crashing", () => {
+    serviceState.data = makeService({
+      price: "1500" as unknown as number,
+      rating_avg: "4.5" as unknown as number,
+      rating_count: 3,
+    });
+    commentsState.data = [];
+
+    renderAt(7);
+
+    expect(screen.getByText("$1.5k+")).toBeInTheDocument();
+    expect(screen.getAllByText("4.5").length).toBeGreaterThan(0);
+  });
+
   it("hides 'Сделка/Написать' when viewing one's own service", () => {
     meState.data = makeUser({ username: "bob" });
     serviceState.data = makeService();

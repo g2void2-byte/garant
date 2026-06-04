@@ -19,7 +19,7 @@ import {
 } from "@/api/hooks";
 import { api } from "@/api/client";
 import type { ServiceCommentDto, ServiceDetailDto } from "@/api/types";
-import { dealsLabel, formatMoney, relativeTime } from "@/lib/format";
+import { dealsLabel, formatMoney, formatRatingValue, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
@@ -160,8 +160,7 @@ function ServicePhotoGallery({ photos }: { photos: string[] }) {
 }
 
 function ServiceHeroCard({ service }: { service: ServiceDetailDto }) {
-  const rating =
-    service.rating_avg !== null ? service.rating_avg.toFixed(1) : null;
+  const rating = service.rating_avg !== null ? formatRatingValue(service.rating_avg) : null;
   return (
     <Card className="p-0 overflow-hidden">
       <div className="relative h-32 bg-gradient-to-br from-accent/30 via-panel-2 to-panel flex items-center justify-center">
@@ -258,7 +257,7 @@ function ServiceStatsRow({ service }: { service: ServiceDetailDto }) {
     {
       label: "Рейтинг",
       value:
-        service.rating_avg !== null ? service.rating_avg.toFixed(1) : "—",
+        service.rating_avg !== null ? formatRatingValue(service.rating_avg) : "—",
       hint: service.rating_count
         ? `${service.rating_count} оценок`
         : "нет оценок",

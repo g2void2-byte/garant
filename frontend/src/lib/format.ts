@@ -62,18 +62,34 @@ export function formatAmount(
   });
 }
 
-export function formatMoney(value: number): string {
-  if (!Number.isFinite(value)) return "$0";
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 10_000) return `$${(value / 1000).toFixed(1)}k`;
-  if (value >= 1000) return `$${(value / 1000).toFixed(1)}k+`;
-  if (Number.isInteger(value)) return `$${value}`;
-  return `$${value.toFixed(2)}`;
+export function formatMoney(value: number | string | null | undefined): string {
+  const n = parseDecimal(value);
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `$${(n / 1000).toFixed(1)}k`;
+  if (n >= 1000) return `$${(n / 1000).toFixed(1)}k+`;
+  if (Number.isInteger(n)) return `$${n}`;
+  return `$${n.toFixed(2)}`;
 }
 
-export function formatRating(rating: number, count: number): string {
+export function parseRatingValue(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = typeof value === "number"
+    ? value
+    : DECIMAL_STRING_RE.test(value.trim())
+      ? Number(value.trim())
+      : null;
+  if (parsed === null || !Number.isFinite(parsed) || parsed < 0 || parsed > 5) return null;
+  return parsed;
+}
+
+export function formatRatingValue(value: string | number | null | undefined): string {
+  const rating = parseRatingValue(value);
+  return rating === null ? "\u2014" : rating.toFixed(1);
+}
+
+export function formatRating(rating: string | number | null | undefined, count: number): string {
   if (!count) return "—";
-  return rating.toFixed(1);
+  return formatRatingValue(rating);
 }
 
 export function parseDateTimeMs(value: string | null | undefined): number | null {

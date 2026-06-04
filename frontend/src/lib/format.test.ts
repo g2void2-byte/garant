@@ -7,8 +7,10 @@ import {
   formatDateTime,
   formatMoney,
   formatRating,
+  formatRatingValue,
   parseDecimal,
   parseDateTimeMs,
+  parseRatingValue,
   relativeTime,
 } from "./format";
 
@@ -85,6 +87,13 @@ describe("formatMoney", () => {
   it("returns $0 for non-finite values", () => {
     expect(formatMoney(Number.NaN)).toBe("$0");
   });
+
+  it("parses string money values without accepting ambiguous notation", () => {
+    expect(formatMoney("250.50")).toBe("$250.50");
+    expect(formatMoney("1500")).toBe("$1.5k+");
+    expect(formatMoney("1e3")).toBe("$0");
+    expect(formatMoney("0x10")).toBe("$0");
+  });
 });
 
 describe("formatRating", () => {
@@ -94,6 +103,15 @@ describe("formatRating", () => {
 
   it("renders one decimal when there are reviews", () => {
     expect(formatRating(4.5, 12)).toBe("4.5");
+  });
+
+  it("parses string ratings and rejects malformed or out-of-range values", () => {
+    expect(parseRatingValue("4.75")).toBeCloseTo(4.75);
+    expect(formatRatingValue("4.75")).toBe("4.8");
+    expect(formatRating("4.5", 1)).toBe("4.5");
+    expect(formatRating("0x5", 1)).toBe("\u2014");
+    expect(formatRating("1e1", 1)).toBe("\u2014");
+    expect(formatRating(6, 1)).toBe("\u2014");
   });
 });
 

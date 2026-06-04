@@ -39,6 +39,13 @@ describe("<ServiceCard />", () => {
     expect(screen.getByText("$250")).toBeInTheDocument();
   });
 
+  it("renders string price payloads without accepting exponent notation", () => {
+    renderCard({ price: "1500" as unknown as number });
+    expect(screen.getByText("$1.5k+")).toBeInTheDocument();
+    renderCard({ price: "1e3" as unknown as number });
+    expect(screen.getByText("$0")).toBeInTheDocument();
+  });
+
   it("renders a fallback when the service owner username is missing", () => {
     renderCard({ owner_username: null });
     expect(screen.getByText("Владелец недоступен")).toBeInTheDocument();

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 84 файлов, 810 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 84 файлов, 817 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -127,6 +127,8 @@
 - M-155: admin deal chat now uses the shared username formatter without adding a second `@` prefix.
 - M-156: per-currency wallet history now pushes malformed timestamp rows behind valid dated rows instead of letting `NaN` freeze merge order.
 - M-157: notifications load-more now refuses malformed keyset cursors before sending `before_created_at`/`before_id` to the API.
+- M-158: shared frontend money badges now parse decimal-string payloads and reject exponent/hex notation instead of collapsing valid string amounts to `$0`.
+- M-159: public user/service rating badges now parse string ratings and render malformed/out-of-range values as a neutral dash instead of calling `.toFixed()` on runtime payloads.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1761,6 +1763,26 @@ The notifications page used the last rendered row as a keyset cursor without val
 Risk: stale cache/API drift in the last visible notification could leave the load-more button issuing doomed requests and showing a generic backend error every time the user retried.
 
 Fix: load-more now requires a finite timestamp and positive safe integer id before building the cursor. Invalid cursors stop pagination locally with the existing load-more error, and regression coverage verifies no API call is made.
+
+### M-158. Money badges collapsed valid decimal-string payloads
+
+Links: `frontend/src/lib/format.ts`, `frontend/src/components/domain/ServiceCard.tsx`, `frontend/src/components/domain/UserCard.tsx`, `frontend/src/pages/search/SearchPage.tsx`, `frontend/src/pages/search/ServiceDetailPage.tsx`, regressions `frontend/src/lib/format.test.ts`, `frontend/src/components/domain/ServiceCard.test.tsx`, `frontend/src/components/domain/UserCard.test.tsx`, `frontend/src/pages/search/SearchPage.test.tsx`, `frontend/src/pages/search/ServiceDetailPage.test.tsx`.
+
+Several public money badges used `formatMoney()` on values that are typed as numbers locally but may cross the JSON/runtime boundary as decimal strings when serializers or generated DTOs drift. The helper only accepted finite numbers, so a valid payload like `"1500"` rendered as `$0`. At the same time, accepting arbitrary `Number()` coercion would make exponent or hex-like strings look valid.
+
+Risk: service cards, service detail, user cards and search rows could understate a price/deposit after harmless serializer drift. On money-facing surfaces, a silent `$0` is worse than a neutral fallback because it looks like a real value.
+
+Fix: `formatMoney()` now parses through the shared strict decimal parser. Canonical decimal strings render normally, non-finite/malformed values still fall back to `$0`, and regression coverage pins both valid string amounts and rejected `1e3`/`0x10` shapes.
+
+### M-159. Public rating badges called `.toFixed()` on runtime payloads
+
+Links: `frontend/src/lib/format.ts`, `frontend/src/components/domain/UserCard.tsx`, `frontend/src/components/domain/UserPicker.tsx`, `frontend/src/pages/search/SearchPage.tsx`, `frontend/src/pages/search/ServiceDetailPage.tsx`, regressions `frontend/src/lib/format.test.ts`, `frontend/src/components/domain/UserCard.test.tsx`, `frontend/src/components/domain/UserPicker.test.tsx`, `frontend/src/pages/search/SearchPage.test.tsx`, `frontend/src/pages/search/ServiceDetailPage.test.tsx`.
+
+User cards, user picker rows, search rows and service detail stats called `.toFixed(1)` directly on rating fields. The backend normally emits numbers, but a string decimal from API drift or cache injection would throw during render. Malformed or out-of-range values also had no shared display boundary.
+
+Risk: one malformed rating in a public card/list/detail payload could crash the affected React subtree and hide otherwise usable search/profile/service content.
+
+Fix: added shared `parseRatingValue()`/`formatRatingValue()` helpers. Public rating displays now accept canonical decimal strings, reject exponent/hex and out-of-range values, and render a neutral dash for invalid ratings instead of throwing. Regression coverage exercises user cards, picker suggestions, search rows and service detail.
 
 ## Наблюдения без отдельного finding
 

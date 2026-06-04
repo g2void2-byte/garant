@@ -4,7 +4,7 @@ import type { UserCardDto } from "@/api/types";
 import { Avatar } from "@/components/ui/Avatar";
 import { BadgePrefix } from "@/components/ui/BadgePrefix";
 import { OnlineDot } from "@/components/ui/OnlineDot";
-import { formatMoney, dealsLabel } from "@/lib/format";
+import { formatMoney, dealsLabel, formatRatingValue } from "@/lib/format";
 import { staggerDelay } from "@/lib/animate";
 import { countryFromCode } from "@/lib/countries";
 import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
@@ -14,7 +14,7 @@ export function UserCard({ user, index = 0 }: { user: UserCardDto; index?: numbe
   const profilePath = userProfilePath(username);
   const name = user.display_name?.trim() || username || "—";
   const country = countryFromCode(user.country);
-  const ratingLabel = user.reviews_count ? user.rating.toFixed(1) : "0.0";
+  const ratingLabel = user.reviews_count ? formatRatingValue(user.rating) : "0.0";
   const body = (
     <>
       <div className="relative shrink-0">

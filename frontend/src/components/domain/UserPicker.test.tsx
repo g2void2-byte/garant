@@ -114,4 +114,24 @@ describe("<UserPicker />", () => {
     await user.click(screen.getByRole("option"));
     expect(onChange).not.toHaveBeenCalledWith("null");
   });
+
+  it("renders string ratings in suggestions without crashing", async () => {
+    usersSpy.data = [
+      makeUser({
+        rating: "4.5" as unknown as number,
+        reviews_count: 2,
+      }),
+    ];
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <UserPicker value="alice" onChange={vi.fn()} debounceMs={0} />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("textbox"));
+
+    expect(await screen.findByText("Alice")).toBeInTheDocument();
+    expect(screen.getByText("4.5")).toBeInTheDocument();
+  });
 });

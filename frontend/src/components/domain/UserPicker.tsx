@@ -7,7 +7,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { BadgePrefix } from "@/components/ui/BadgePrefix";
 import { OnlineDot } from "@/components/ui/OnlineDot";
 import { Button } from "@/components/ui/Button";
-import { dealsLabel } from "@/lib/format";
+import { dealsLabel, formatRatingValue } from "@/lib/format";
 import { staggerDelay } from "@/lib/animate";
 import { cn } from "@/lib/cn";
 import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
@@ -271,7 +271,7 @@ export function UserPicker({
                         <span className="inline-flex items-center gap-1 text-accent text-[12px] font-semibold">
                           <Star className="size-3" strokeWidth={2.5} />
                           {u.reviews_count
-                            ? u.rating.toFixed(1)
+                            ? formatRatingValue(u.rating)
                             : "0.0"}
                         </span>
                         <span className="text-[11px] text-text-muted tabular-nums">
@@ -304,7 +304,7 @@ function SelectedUserCard({
   onStartDeal,
 }: SelectedUserCardProps) {
   const ratingLabel = user.reviews_count
-    ? user.rating.toFixed(1)
+    ? formatRatingValue(user.rating)
     : "0.0";
   const username = normalizeUsernameRef(user.username);
   const profilePath = userProfilePath(username);

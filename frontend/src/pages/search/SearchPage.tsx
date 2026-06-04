@@ -21,7 +21,7 @@ import { useUI } from "@/stores/ui";
 import { buildUsersSearchParams, useMe, useUsers, type UsersQueryParams } from "@/api/hooks";
 import { api } from "@/api/client";
 import { staggerDelay } from "@/lib/animate";
-import { dealsLabel, formatMoney } from "@/lib/format";
+import { dealsLabel, formatMoney, formatRatingValue } from "@/lib/format";
 import { countryFromCode } from "@/lib/countries";
 import { cn } from "@/lib/cn";
 import type { UserCardDto } from "@/api/types";
@@ -280,7 +280,7 @@ function SearchUserRow({
   onPick: () => void;
 }) {
   const country = countryFromCode(user.country);
-  const ratingLabel = user.reviews_count ? user.rating.toFixed(1) : "0.0";
+  const ratingLabel = user.reviews_count ? formatRatingValue(user.rating) : "0.0";
   const username = normalizeUsernameRef(user.username);
   const displayName = user.display_name?.trim() || username || "—";
   return (

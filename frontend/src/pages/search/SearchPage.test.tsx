@@ -119,6 +119,22 @@ describe("<SearchPage />", () => {
     expect(screen.getByText("Bob")).toBeInTheDocument();
   });
 
+  it("renders string rating/deposit values in user rows without crashing", () => {
+    mockState.data = [
+      makeUser({
+        id: 6,
+        username: "runtime",
+        display_name: "Runtime Payload",
+        rating: "4.5" as unknown as number,
+        reviews_count: 2,
+        deposit: "1500" as unknown as number,
+      }),
+    ];
+    renderPage();
+    expect(screen.getAllByText("4.5").length).toBeGreaterThan(0);
+    expect(screen.getByText("$1.5k+")).toBeInTheDocument();
+  });
+
   it("does not build a profile navigation row for a user without username", () => {
     mockState.data = [makeUser({ id: 3, username: null, display_name: "No Username" })];
     renderPage();
