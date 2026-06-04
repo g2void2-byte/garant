@@ -3,11 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Users, Handshake, DollarSign } from "lucide-react";
 import { api } from "@/api/client";
 import { qk } from "@/api/queryKeys";
+import { parseDecimalValue, parseNonNegativeIntegerValue } from "@/lib/format";
 
 interface PublicStats {
-  users: number;
-  deals: number;
-  total_usd: number;
+  users: unknown;
+  deals: unknown;
+  total_usd: unknown;
 }
 
 /** Smoothly count from 0 to ``target`` over ~1.2s. */
@@ -77,6 +78,18 @@ function formatUsd(n: number): string {
   );
 }
 
+function parsePublicCount(value: unknown): number {
+  return parseNonNegativeIntegerValue(value) ?? 0;
+}
+
+function parsePublicUsd(value: unknown): number {
+  if (value !== null && value !== undefined && typeof value !== "number" && typeof value !== "string") {
+    return 0;
+  }
+  const parsed = parseDecimalValue(value);
+  return parsed !== null && parsed >= 0 ? parsed : 0;
+}
+
 interface StatsBadgeProps {
   /** Optional title above the stats row. */
   title?: string;
@@ -120,9 +133,9 @@ export function StatsBadge({
   const data = stats ?? query.data;
   const isLoading = stats === undefined && query.isLoading;
 
-  const users = useCountUp(data?.users ?? 0);
-  const deals = useCountUp(data?.deals ?? 0);
-  const usd = useCountUp(data?.total_usd ?? 0);
+  const users = useCountUp(parsePublicCount(data?.users));
+  const deals = useCountUp(parsePublicCount(data?.deals));
+  const usd = useCountUp(parsePublicUsd(data?.total_usd));
 
   const isHero = variant === "hero";
 

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 85 файлов, 867 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 86 файлов, 869 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -141,6 +141,7 @@
 - M-169: notification unread counters now use strict integer parsing before badge/header display and local read-cache decrements.
 - M-170: admin list pagination and queue badges now parse runtime totals/counters strictly before display and page math.
 - M-171: account-transfer code length and TTL UI policy now rejects malformed/zero runtime values before regex, input limits, and labels.
+- M-172: public stats badge now parses runtime counters/volume strictly before count-up animation and compact formatting.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1915,6 +1916,16 @@ The account-transfer page used `status.data.code_length` directly in the confirm
 Risk: a malformed account-transfer policy payload could make the receive-code UI impossible to use, show a misleading TTL, or let a zero-length policy activate an empty-code confirm path. The backend still enforces the real code policy, but the frontend was presenting a broken security-sensitive workflow instead of failing back to a bounded local policy.
 
 Fix: account-transfer code length and TTL now pass through strict positive safe-integer parsing. Code length falls back to the default 6 digits unless it is a positive integer within the backend request cap of 32; TTL falls back to the default 15 minutes unless it is a positive integer. Regression coverage pins malformed exponent/hex-like values and zero-length policy values.
+
+### M-172. Public stats badge coerced malformed runtime counters during animation
+
+Links: `frontend/src/components/domain/StatsBadge.tsx`, regression `frontend/src/components/domain/StatsBadge.test.tsx`.
+
+`StatsBadge` animated `/api/stats/public` and admin-settings preview values directly. The component's TypeScript interface said `users`, `deals`, and `total_usd` were numbers, but at runtime a malformed payload like `"1e2"`, `"0x10"`, or `"bad"` still reached the count-up arithmetic and compact formatters. JavaScript then coerced exponent/hex-like strings into legitimate-looking public counters or propagated `NaN` into the rendered USD badge.
+
+Risk: the FAQ/public trust badge and admin settings preview could display bogus platform statistics instead of treating the DTO as corrupt. Because this badge is a public credibility surface, malformed counter coercion can mislead users even though it does not move money.
+
+Fix: public stats counters now use the shared strict non-negative safe-integer parser, and USD volume accepts only finite non-negative canonical decimal values. Malformed counters/volume fall back to zero before animation and formatting, while canonical decimal-string runtime values still render correctly. Regression coverage pins both accepted canonical strings and rejected exponent/hex/malformed values.
 
 ## Наблюдения без отдельного finding
 
