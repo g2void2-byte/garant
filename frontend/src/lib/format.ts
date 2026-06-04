@@ -76,6 +76,11 @@ export function formatRating(rating: number, count: number): string {
   return rating.toFixed(1);
 }
 
+function parseDate(value: string): Date | null {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
 export function dealsLabel(count: number): string {
   if (count % 10 === 1 && count % 100 !== 11) return `${count} сделка`;
   if (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14)) return `${count} сделки`;
@@ -83,8 +88,10 @@ export function dealsLabel(count: number): string {
 }
 
 export function relativeTime(iso: string): string {
-  const date = new Date(iso);
+  const date = parseDate(iso);
+  if (!date) return "\u2014";
   const diff = (Date.now() - date.getTime()) / 1000;
+  if (diff < -60) return date.toLocaleDateString("ru-RU");
   if (diff < 60) return "только что";
   if (diff < 3600) return `${Math.floor(diff / 60)} мин назад`;
   if (diff < 86400) return `${Math.floor(diff / 3600)} ч назад`;
@@ -93,7 +100,8 @@ export function relativeTime(iso: string): string {
 }
 
 export function dayKey(iso: string): string {
-  const d = new Date(iso);
+  const d = parseDate(iso);
+  if (!d) return "\u2014";
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(today.getDate() - 1);

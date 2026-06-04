@@ -83,6 +83,19 @@ beforeEach(() => {
 });
 
 describe("<AccountTransferPage />", () => {
+  it("renders malformed active expiry without a NaN countdown", () => {
+    mockState.status = {
+      has_active: true,
+      expires_at: "not-a-date",
+      ...transferPolicy,
+    };
+    renderPage();
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+    expect(
+      screen.queryAllByText((_, element) => Boolean(element?.textContent?.includes("\u2014."))).length,
+    ).toBeGreaterThan(0);
+  });
+
   it("renders the header and 'Send' tab by default", () => {
     renderPage();
     expect(

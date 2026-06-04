@@ -102,6 +102,12 @@ beforeEach(() => {
 });
 
 describe("<PinPage />", () => {
+  it("ignores malformed locked_until instead of showing NaN lock state", () => {
+    renderPage({ has_pin: true, locked_until: "not-a-date" });
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "1" })).not.toBeDisabled();
+  });
+
   it("renders 'Введите PIN-код' heading when has_pin=true", () => {
     renderPage({ has_pin: true });
     expect(screen.getByText("Введите PIN-код")).toBeInTheDocument();

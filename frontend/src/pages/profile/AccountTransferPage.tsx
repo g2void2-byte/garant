@@ -20,7 +20,9 @@ type Tab = "send" | "receive";
 
 function relativeMinutes(expiresAt: string | null | undefined): string {
   if (!expiresAt) return "—";
-  const ms = new Date(expiresAt).getTime() - Date.now();
+  const expiresMs = new Date(expiresAt).getTime();
+  if (!Number.isFinite(expiresMs)) return "\u2014";
+  const ms = expiresMs - Date.now();
   if (ms <= 0) return "истёк";
   const minutes = Math.ceil(ms / 60_000);
   return `${minutes} мин.`;

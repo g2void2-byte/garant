@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 84 файлов, 790 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 84 файлов, 795 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -119,6 +119,9 @@
 - M-147: wallet deposit currency options now drop malformed API currency codes and normalize URL hints before creating invoices.
 - M-148: wallet withdrawal options now require positive fiat balances with valid currency codes before selection/submission.
 - M-149: trust-deposit currency options now normalize/drop malformed API currency rows before creating trust invoices.
+- M-150: shared frontend date labels now reject malformed timestamps and avoid treating far-future timestamps as fresh activity.
+- M-151: PIN lock countdown now ignores malformed `locked_until` values instead of rendering `NaN` and locking the keypad.
+- M-152: account-transfer active-code countdown now renders malformed `expires_at` values as a neutral placeholder instead of `NaN мин.`.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1673,6 +1676,36 @@ The trust-deposit page used the full currency catalogue directly for its select 
 Risk: malformed currency catalogue drift could turn the trust-deposit screen into a backend validation failure instead of a local omission. The trust balance is user-visible reputation capital, so its funding UI should share the same currency-code boundary as wallet deposit/withdrawal screens.
 
 Fix: trust-deposit options now pass through the shared currency-row normalizer before selection and invoice creation. Invalid rows are omitted, valid codes are normalized, and regression coverage verifies a malformed row is hidden while a space/lowercase code submits as `UAH` with `purpose: "trust"`.
+
+### M-150. Shared date labels trusted malformed and future timestamps
+
+Links: `frontend/src/lib/format.ts`, regression `frontend/src/lib/format.test.ts`.
+
+`relativeTime()` and `dayKey()` called `new Date(iso)` and then used comparisons or locale formatting without checking that the parsed timestamp was finite. Malformed values could fall through to invalid date display, while far-future values produced a negative diff and were shown as `только что`.
+
+Risk: notifications, deal rows/chat, reviews, wallet history, and other shared date surfaces could make stale or malformed API data look like fresh user activity, or render a broken date label instead of a neutral state.
+
+Fix: shared date parsing now requires a finite timestamp before formatting. Malformed timestamps render a neutral dash, and future timestamps beyond small clock skew are formatted as a calendar date instead of a fresh relative label.
+
+### M-151. PIN lock banner rendered NaN for malformed lock expiry
+
+Links: `frontend/src/pages/pin/PinPage.tsx`, regression `frontend/src/pages/pin/PinPage.test.tsx`.
+
+`formatLock(status.locked_until)` subtracted `Date.now()` from `new Date(locked_until).getTime()` without validating the parse result. For malformed `locked_until`, `ms` became `NaN`; the expired check did not catch it and the page could render `NaN мин` or `NaN ч` while treating the keypad as locked.
+
+Risk: a malformed lock timestamp from API drift or stale cache could block the PIN pad and show a nonsensical countdown instead of letting the user continue through the normal unlocked state.
+
+Fix: PIN lock parsing now rejects non-finite timestamps before computing the countdown. Malformed lock data is treated as no active frontend lock, and regression coverage verifies no `NaN` banner or keypad disablement.
+
+### M-152. Account-transfer active-code countdown rendered NaN for malformed expiry
+
+Links: `frontend/src/pages/profile/AccountTransferPage.tsx`, regression `frontend/src/pages/profile/AccountTransferPage.test.tsx`.
+
+The account-transfer page used the same unchecked date arithmetic for `expires_at` in the active-code banner. A malformed active transfer expiry rendered `NaN мин.` even though the value could not be trusted as a valid countdown.
+
+Risk: the account migration screen could present an active transfer code with a broken lifetime label, making it unclear whether the code was usable, expired, or corrupted.
+
+Fix: `relativeMinutes()` now requires a finite expiry timestamp and falls back to a neutral placeholder for malformed data. Valid expired and future values keep the existing labels.
 
 ## Наблюдения без отдельного finding
 

@@ -22,7 +22,9 @@ interface PinPageProps {
 
 function formatLock(locked: string | null): string | null {
   if (!locked) return null;
-  const ms = new Date(locked).getTime() - Date.now();
+  const lockedMs = new Date(locked).getTime();
+  if (!Number.isFinite(lockedMs)) return null;
+  const ms = lockedMs - Date.now();
   if (ms <= 0) return null;
   const minutes = Math.ceil(ms / 60_000);
   return minutes >= 60 ? `${Math.ceil(minutes / 60)} ч` : `${minutes} мин`;

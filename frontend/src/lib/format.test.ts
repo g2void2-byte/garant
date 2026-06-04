@@ -107,6 +107,15 @@ describe("dealsLabel", () => {
 });
 
 describe("relativeTime", () => {
+  it("returns a neutral marker for malformed timestamps", () => {
+    expect(relativeTime("not-a-date")).toBe("\u2014");
+  });
+
+  it("formats far-future timestamps instead of treating them as fresh", () => {
+    const future = new Date(Date.now() + 10 * 60 * 1000);
+    expect(relativeTime(future.toISOString())).toBe(future.toLocaleDateString("ru-RU"));
+  });
+
   it("renders short suffixes for fresh timestamps", () => {
     expect(relativeTime(new Date().toISOString())).toBe("только что");
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
@@ -119,6 +128,10 @@ describe("relativeTime", () => {
 });
 
 describe("dayKey", () => {
+  it("returns a neutral marker for malformed timestamps", () => {
+    expect(dayKey("not-a-date")).toBe("\u2014");
+  });
+
   it("returns 'Сегодня' for today", () => {
     expect(dayKey(new Date().toISOString())).toBe("Сегодня");
   });
