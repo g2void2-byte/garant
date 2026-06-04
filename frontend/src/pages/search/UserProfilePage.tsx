@@ -22,7 +22,7 @@ import { api } from "@/api/client";
 import type { ReviewDto, ServiceDto } from "@/api/types";
 import { openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
-import { formatRatingValue, relativeTime } from "@/lib/format";
+import { formatRatingValue, parseNonNegativeIntegerValue, relativeTime } from "@/lib/format";
 import { newDealToPath, normalizeUsernameRef } from "@/lib/usernames";
 
 const PROFILE_REVIEWS_PAGE_SIZE = 50;
@@ -85,10 +85,12 @@ export default function UserProfilePage() {
     }
   };
 
+  const reviewsCount = parseNonNegativeIntegerValue(user?.reviews_count);
   const hasMoreReviews =
     !reviewsReachedEnd &&
     reviewItems.length >= PROFILE_REVIEWS_PAGE_SIZE &&
-    reviewItems.length < (user?.reviews_count ?? 0);
+    reviewsCount !== null &&
+    reviewItems.length < reviewsCount;
 
   useEffect(() => {
     const page = services ?? [];

@@ -3,13 +3,16 @@ import {
   dealsLabel,
   dayKey,
   formatAmount,
+  formatCountValue,
   formatCurrency,
   formatDateTime,
   formatMoney,
   formatRating,
   formatRatingValue,
+  hasPositiveIntegerValue,
   parseDecimal,
   parseDateTimeMs,
+  parseNonNegativeIntegerValue,
   parseRatingValue,
   relativeTime,
 } from "./format";
@@ -64,6 +67,26 @@ describe("formatCurrency", () => {
   });
 });
 
+describe("parseNonNegativeIntegerValue", () => {
+  it("accepts finite non-negative integers and decimal integer strings", () => {
+    expect(parseNonNegativeIntegerValue(0)).toBe(0);
+    expect(parseNonNegativeIntegerValue(42)).toBe(42);
+    expect(parseNonNegativeIntegerValue("42")).toBe(42);
+    expect(formatCountValue("7")).toBe("7");
+    expect(hasPositiveIntegerValue("7")).toBe(true);
+  });
+
+  it("rejects ambiguous, unsafe and non-integer count payloads", () => {
+    expect(parseNonNegativeIntegerValue("1e2")).toBeNull();
+    expect(parseNonNegativeIntegerValue("0x10")).toBeNull();
+    expect(parseNonNegativeIntegerValue("1.0")).toBeNull();
+    expect(parseNonNegativeIntegerValue(-1)).toBeNull();
+    expect(parseNonNegativeIntegerValue(true)).toBeNull();
+    expect(formatCountValue("1e2")).toBe("\u2014");
+    expect(hasPositiveIntegerValue("1e2")).toBe(false);
+  });
+});
+
 describe("formatAmount", () => {
   it("uses per-currency default precision", () => {
     expect(formatAmount("0.123456789", "BTC")).toBe("0.12345679");
@@ -114,6 +137,8 @@ describe("formatRating", () => {
     expect(parseRatingValue("4.75")).toBeCloseTo(4.75);
     expect(formatRatingValue("4.75")).toBe("4.8");
     expect(formatRating("4.5", 1)).toBe("4.5");
+    expect(formatRating("4.5", "1")).toBe("4.5");
+    expect(formatRating(4.5, "1e2")).toBe("\u2014");
     expect(formatRating("0x5", 1)).toBe("\u2014");
     expect(formatRating("1e1", 1)).toBe("\u2014");
     expect(formatRating(6, 1)).toBe("\u2014");
@@ -128,6 +153,13 @@ describe("dealsLabel", () => {
     expect(dealsLabel(11)).toBe("11 сделок");
     expect(dealsLabel(21)).toBe("21 сделка");
     expect(dealsLabel(22)).toBe("22 сделки");
+  });
+
+  it("parses string integer counts without accepting ambiguous notation", () => {
+    expect(dealsLabel("22")).toBe("22 сделки");
+    expect(dealsLabel("1e2")).toBe("\u2014 сделок");
+    expect(dealsLabel("0x10")).toBe("\u2014 сделок");
+    expect(dealsLabel(true)).toBe("\u2014 сделок");
   });
 });
 

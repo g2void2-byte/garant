@@ -1,4 +1,5 @@
 const DECIMAL_STRING_RE = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;
+const NON_NEGATIVE_INTEGER_STRING_RE = /^\d+$/;
 
 export function parseDecimalValue(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
@@ -11,6 +12,27 @@ export function parseDecimalValue(value: string | number | null | undefined): nu
 
 export function parseDecimal(value: string | number | null | undefined): number {
   return parseDecimalValue(value) ?? 0;
+}
+
+export function parseNonNegativeIntegerValue(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  }
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!NON_NEGATIVE_INTEGER_STRING_RE.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+export function formatCountValue(value: unknown, fallback = "\u2014"): string {
+  const parsed = parseNonNegativeIntegerValue(value);
+  return parsed === null ? fallback : String(parsed);
+}
+
+export function hasPositiveIntegerValue(value: unknown): boolean {
+  const parsed = parseNonNegativeIntegerValue(value);
+  return parsed !== null && parsed > 0;
 }
 
 const DEFAULT_DECIMALS: Record<string, number> = {
@@ -95,8 +117,8 @@ export function formatRatingValue(value: string | number | null | undefined): st
   return rating === null ? "\u2014" : rating.toFixed(1);
 }
 
-export function formatRating(rating: string | number | null | undefined, count: number): string {
-  if (!count) return "—";
+export function formatRating(rating: string | number | null | undefined, count: unknown): string {
+  if (!hasPositiveIntegerValue(count)) return "—";
   return formatRatingValue(rating);
 }
 
@@ -119,7 +141,9 @@ export function formatDateTime(
   return date ? date.toLocaleString("ru-RU", options) : "\u2014";
 }
 
-export function dealsLabel(count: number): string {
+export function dealsLabel(value: unknown): string {
+  const count = parseNonNegativeIntegerValue(value);
+  if (count === null) return "\u2014 сделок";
   if (count % 10 === 1 && count % 100 !== 11) return `${count} сделка`;
   if (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14)) return `${count} сделки`;
   return `${count} сделок`;

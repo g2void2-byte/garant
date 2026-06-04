@@ -7,7 +7,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { BadgePrefix } from "@/components/ui/BadgePrefix";
 import { OnlineDot } from "@/components/ui/OnlineDot";
 import { Button } from "@/components/ui/Button";
-import { dealsLabel, formatRatingValue } from "@/lib/format";
+import { dealsLabel, formatRatingValue, hasPositiveIntegerValue } from "@/lib/format";
 import { staggerDelay } from "@/lib/animate";
 import { cn } from "@/lib/cn";
 import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
@@ -270,7 +270,7 @@ export function UserPicker({
                       <div className="flex flex-col items-end shrink-0 gap-0.5">
                         <span className="inline-flex items-center gap-1 text-accent text-[12px] font-semibold">
                           <Star className="size-3" strokeWidth={2.5} />
-                          {u.reviews_count
+                          {hasPositiveIntegerValue(u.reviews_count)
                             ? formatRatingValue(u.rating)
                             : "0.0"}
                         </span>
@@ -303,7 +303,7 @@ function SelectedUserCard({
   onChange,
   onStartDeal,
 }: SelectedUserCardProps) {
-  const ratingLabel = user.reviews_count
+  const ratingLabel = hasPositiveIntegerValue(user.reviews_count)
     ? formatRatingValue(user.rating)
     : "0.0";
   const username = normalizeUsernameRef(user.username);

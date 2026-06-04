@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 84 файлов, 837 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 84 файлов, 850 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -135,6 +135,7 @@
 - M-163: admin system latency/uptime displays now reject malformed runtime numeric payloads instead of throwing or rendering `NaN`.
 - M-164: public currency precision and create-deal commission previews now normalize runtime numeric DTOs before formatting.
 - M-165: public wallet balance gates now parse string money mirrors strictly before showing withdraw/locked states.
+- M-166: public user/profile/service/category counters now use strict integer parsing before display, gates, and pagination decisions.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1849,6 +1850,16 @@ Wallet withdrawal eligibility and locked-balance hints compared runtime DTO mone
 Risk: a malformed balance could appear as withdrawable or locked even though the rendered amount looked like zero/invalid, confusing users and letting them enter a withdrawal path that later fails validation.
 
 Fix: added shared wallet balance parsing helpers that prefer canonical string money mirrors and reject malformed/exponent/hex values before gating UI state. Withdrawal options now require a strictly parsed positive balance and keep the canonical amount string for the “all” button. Wallet landing and per-currency pages now use the same strict locked-balance gate and display the string mirror. Regression coverage pins malformed withdraw balances and malformed locked hints.
+
+### M-166. Public count displays and gates coerced malformed runtime counters
+
+Links: `frontend/src/lib/format.ts`, `frontend/src/components/ui/ToggleTabs.tsx`, `frontend/src/components/domain/CategoryTile.tsx`, `frontend/src/components/domain/ProfileStatsGrid.tsx`, `frontend/src/components/domain/UserCard.tsx`, `frontend/src/components/domain/UserPicker.tsx`, `frontend/src/pages/search/SearchPage.tsx`, `frontend/src/pages/search/CategoriesPage.tsx`, `frontend/src/pages/search/ServiceDetailPage.tsx`, `frontend/src/pages/profile/ProfilePage.tsx`, `frontend/src/pages/search/UserProfilePage.tsx`, regressions `frontend/src/lib/format.test.ts`, `frontend/src/pages/search/CategoriesPage.test.tsx`, `frontend/src/pages/search/SearchPage.test.tsx`, `frontend/src/pages/search/ServiceDetailPage.test.tsx`, `frontend/src/components/domain/UserCard.test.tsx`, `frontend/src/components/domain/ProfileStatsGrid.test.tsx`, `frontend/src/pages/profile/ProfilePage.test.tsx`, `frontend/src/pages/search/UserProfilePage.test.tsx`.
+
+Public user, profile, category, and service pages trusted runtime integer counters directly. Search/category gates compared `deals_count === 0`, count labels passed values into modulo/string rendering, rating badges used raw `reviews_count` truthiness, and load-more buttons compared page lengths against `services_count` / `comments_count` / `reviews_count` with JavaScript coercion. A runtime string like `"0"` could bypass the catalog gate, while `"1e2"` or `"0x10"` could render as a real stat or drive pagination decisions.
+
+Risk: malformed public DTO counters could make restricted search/catalog pages visible to a user with zero completed deals, show bogus trust/activity stats, or expose misleading load-more controls. These fields are not money-moving by themselves, but they are trust and access signals on user-facing discovery/profile surfaces.
+
+Fix: added a shared non-negative safe-integer parser and count formatter. Public gates now treat missing/malformed/zero `deals_count` as restricted for non-admins; count labels and tab badges render a neutral placeholder for malformed counters; rating badges require a valid positive review count; service/category/profile comment/review pagination only trusts strict counters. Regression coverage pins string-zero gates, malformed display counters, and malformed pagination counts.
 
 ## Наблюдения без отдельного finding
 

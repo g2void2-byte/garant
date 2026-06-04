@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -135,6 +135,28 @@ describe("<SearchPage />", () => {
     expect(screen.getByText("$1.5k+")).toBeInTheDocument();
   });
 
+  it("does not coerce malformed row count fields into user metadata", () => {
+    mockState.data = [
+      makeUser({
+        id: 7,
+        username: "runtime-counts",
+        display_name: "Runtime Counts",
+        rating: "4.5" as unknown as number,
+        reviews_count: "1e2" as unknown as number,
+        deals_count: "1e2" as unknown as number,
+      }),
+    ];
+
+    renderPage();
+
+    const row = screen.getByTestId("search-user-runtime-counts");
+    expect(screen.getByText("Runtime Counts")).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+    expect(within(row).queryByText("4.5")).not.toBeInTheDocument();
+    expect(within(row).getByText("0.0")).toBeInTheDocument();
+    expect(within(row).getByText(/— сделок/)).toBeInTheDocument();
+  });
+
   it("does not build a profile navigation row for a user without username", () => {
     mockState.data = [makeUser({ id: 3, username: null, display_name: "No Username" })];
     renderPage();
@@ -207,6 +229,16 @@ describe("<SearchPage />", () => {
     renderPage();
     expect(screen.getByText("Поиск ограничен")).toBeInTheDocument();
     expect(screen.getByText(/В целях безопасности и защиты от спама/)).toBeInTheDocument();
+    expect(screen.queryByText("Alice")).not.toBeInTheDocument();
+  });
+
+  it("keeps the security gate closed for string zero deal counts", () => {
+    meState.data = makeUser({ id: 100, deals_count: "0" as unknown as number, is_admin: false });
+    mockState.data = [
+      makeUser({ id: 1, username: "alice", display_name: "Alice" }),
+    ];
+    renderPage();
+    expect(screen.getByText("Поиск ограничен")).toBeInTheDocument();
     expect(screen.queryByText("Alice")).not.toBeInTheDocument();
   });
 

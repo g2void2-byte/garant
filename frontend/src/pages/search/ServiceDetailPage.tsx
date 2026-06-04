@@ -19,7 +19,7 @@ import {
 } from "@/api/hooks";
 import { api } from "@/api/client";
 import type { ServiceCommentDto, ServiceDetailDto } from "@/api/types";
-import { dealsLabel, formatMoney, formatRatingValue, relativeTime } from "@/lib/format";
+import { dealsLabel, formatCountValue, formatMoney, formatRatingValue, parseNonNegativeIntegerValue, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
@@ -111,6 +111,8 @@ export default function ServiceDetailPage() {
     );
   }
 
+  const commentsCount = parseNonNegativeIntegerValue(service.comments_count);
+
   return (
     <Page showBack>
       <Header title="Услуга" />
@@ -126,7 +128,8 @@ export default function ServiceDetailPage() {
           hasMore={
             !commentsReachedEnd &&
             commentItems.length >= SERVICE_COMMENTS_PAGE_SIZE &&
-            commentItems.length < service.comments_count
+            commentsCount !== null &&
+            commentItems.length < commentsCount
           }
           loadingMore={loadingMoreComments}
           loadMoreError={commentsError}
@@ -253,19 +256,21 @@ function OwnerActions({
 }
 
 function ServiceStatsRow({ service }: { service: ServiceDetailDto }) {
+  const ratingCount = parseNonNegativeIntegerValue(service.rating_count);
+  const commentsCount = parseNonNegativeIntegerValue(service.comments_count);
   const items = [
     {
       label: "Рейтинг",
       value:
         service.rating_avg !== null ? formatRatingValue(service.rating_avg) : "—",
-      hint: service.rating_count
-        ? `${service.rating_count} оценок`
+      hint: ratingCount !== null && ratingCount > 0
+        ? `${ratingCount} оценок`
         : "нет оценок",
     },
     {
       label: "Комментарии",
-      value: String(service.comments_count),
-      hint: service.comments_count ? "за всё время" : "пока пусто",
+      value: formatCountValue(service.comments_count),
+      hint: commentsCount !== null && commentsCount > 0 ? "за всё время" : "пока пусто",
     },
   ];
   return (

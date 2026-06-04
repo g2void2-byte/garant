@@ -34,7 +34,7 @@ import { api } from "@/api/client";
 import type { ReviewDto, ServiceDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 import { confirmDialog } from "@/lib/dialog";
-import { formatRatingValue, relativeTime } from "@/lib/format";
+import { formatRatingValue, parseNonNegativeIntegerValue, relativeTime } from "@/lib/format";
 import { normalizeUsernameRef } from "@/lib/usernames";
 
 const PROFILE_REVIEWS_PAGE_SIZE = 50;
@@ -101,10 +101,12 @@ export default function ProfilePage() {
     }
   };
 
+  const reviewsCount = parseNonNegativeIntegerValue(me?.reviews_count);
   const hasMoreReviews =
     !reviewsReachedEnd &&
     reviewItems.length >= PROFILE_REVIEWS_PAGE_SIZE &&
-    reviewItems.length < (me?.reviews_count ?? 0);
+    reviewsCount !== null &&
+    reviewItems.length < reviewsCount;
 
   useEffect(() => {
     const page = services ?? [];

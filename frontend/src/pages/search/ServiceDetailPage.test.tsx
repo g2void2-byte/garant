@@ -308,6 +308,33 @@ describe("<ServiceDetailPage />", () => {
     });
   });
 
+  it("does not trust malformed service count fields for stats or comment pagination", () => {
+    serviceState.data = makeService({
+      owner: {
+        id: 2,
+        username: "bob",
+        display_name: "Bob",
+        photo_url: null,
+        rating: 4.8,
+        deals_count: "1e2" as unknown as number,
+        good: 18,
+        bad: 2,
+        is_admin: false,
+        is_arbiter: false,
+      },
+      comments_count: "1e2" as unknown as number,
+      rating_count: "0x10" as unknown as number,
+    });
+    commentsState.data = Array.from({ length: 50 }, (_, idx) => makeComment(idx + 1));
+
+    renderAt(7);
+
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Показать еще" })).not.toBeInTheDocument();
+  });
+
   it("renders the rating + comments stat tiles", () => {
     serviceState.data = makeService({ rating_avg: 4.5, rating_count: 10, comments_count: 3 });
     commentsState.data = [];

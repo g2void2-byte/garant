@@ -21,7 +21,7 @@ import { useUI } from "@/stores/ui";
 import { buildUsersSearchParams, useMe, useUsers, type UsersQueryParams } from "@/api/hooks";
 import { api } from "@/api/client";
 import { staggerDelay } from "@/lib/animate";
-import { dealsLabel, formatMoney, formatRatingValue } from "@/lib/format";
+import { dealsLabel, formatMoney, formatRatingValue, hasPositiveIntegerValue, parseNonNegativeIntegerValue } from "@/lib/format";
 import { countryFromCode } from "@/lib/countries";
 import { cn } from "@/lib/cn";
 import type { UserCardDto } from "@/api/types";
@@ -77,7 +77,8 @@ export default function SearchPage() {
     [debouncedQ, filter, filters],
   );
   const { data: me, isLoading: meLoading } = useMe();
-  const isGated = me !== undefined && me.deals_count === 0 && !me.is_admin;
+  const meDealsCount = me ? parseNonNegativeIntegerValue(me.deals_count) : null;
+  const isGated = me !== undefined && !me.is_admin && (meDealsCount === null || meDealsCount === 0);
   const firstPageParams = useMemo(
     () => ({ ...queryParams, limit: USER_SEARCH_PAGE_SIZE, offset: 0 }),
     [queryParams],
@@ -280,7 +281,7 @@ function SearchUserRow({
   onPick: () => void;
 }) {
   const country = countryFromCode(user.country);
-  const ratingLabel = user.reviews_count ? formatRatingValue(user.rating) : "0.0";
+  const ratingLabel = hasPositiveIntegerValue(user.reviews_count) ? formatRatingValue(user.rating) : "0.0";
   const username = normalizeUsernameRef(user.username);
   const displayName = user.display_name?.trim() || username || "—";
   return (

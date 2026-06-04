@@ -267,4 +267,18 @@ describe("<UserProfilePage />", () => {
       searchParams: { user: "alice", limit: "50", offset: "50" },
     });
   });
+
+  it("does not trust malformed public review counters for pagination", async () => {
+    userState.data = makeUser({ username: "alice", reviews_count: "1e2" as unknown as number });
+    servicesState.data = [];
+    reviewsState.data = Array.from({ length: 50 }, (_, idx) => makeReview(idx + 1));
+
+    const user = userEvent.setup();
+    renderAt("alice");
+    await user.click(screen.getByRole("button", { name: /Отзывы/i }));
+
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Показать еще" })).not.toBeInTheDocument();
+    expect(apiGetMock).not.toHaveBeenCalled();
+  });
 });

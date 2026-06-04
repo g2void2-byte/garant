@@ -10,6 +10,7 @@ import { buildServicesSearchParams, useCategories, useServices, useMe } from "@/
 import { Button } from "@/components/ui/Button";
 import { api } from "@/api/client";
 import type { ServiceDto } from "@/api/types";
+import { formatCountValue, parseNonNegativeIntegerValue } from "@/lib/format";
 import { MOCK_CATEGORIES, MOCK_SERVICES } from "./mockData";
 import { SearchGateOverlay } from "./SearchGateOverlay";
 
@@ -18,7 +19,8 @@ const CATEGORY_SERVICES_PAGE_SIZE = 50;
 export default function CategoriesPage() {
   const { slug } = useParams<{ slug?: string }>();
   const { data: me, isLoading: meLoading } = useMe();
-  const isGated = me !== undefined && me.deals_count === 0 && !me.is_admin;
+  const meDealsCount = me ? parseNonNegativeIntegerValue(me.deals_count) : null;
+  const isGated = me !== undefined && !me.is_admin && (meDealsCount === null || meDealsCount === 0);
   const { data: categories, isLoading } = useCategories({ enabled: me !== undefined && !isGated });
   const firstServicesParams = useMemo(
     () => ({ category: slug, limit: CATEGORY_SERVICES_PAGE_SIZE, offset: 0 }),
@@ -33,6 +35,10 @@ export default function CategoriesPage() {
   const [servicesReachedEnd, setServicesReachedEnd] = useState(false);
   const [loadingMoreServices, setLoadingMoreServices] = useState(false);
   const [servicesError, setServicesError] = useState<string | null>(null);
+  const currentCategoryServicesCount = parseNonNegativeIntegerValue(currentCategory?.services_count);
+  const currentCategoryServicesCountLabel = currentCategory
+    ? formatCountValue(currentCategory.services_count)
+    : formatCountValue(serviceItems.length);
 
   useEffect(() => {
     const page = services ?? [];
@@ -68,14 +74,15 @@ export default function CategoriesPage() {
     !!currentCategory &&
     !servicesReachedEnd &&
     serviceItems.length >= CATEGORY_SERVICES_PAGE_SIZE &&
-    serviceItems.length < currentCategory.services_count;
+    currentCategoryServicesCount !== null &&
+    serviceItems.length < currentCategoryServicesCount;
 
   const showSkeleton = meLoading || (!me && !isGated) || isLoading || (slug ? servicesLoading : false);
 
   if (slug) {
     return (
       <Page showBack>
-        <Header title={currentCategory?.name ?? "Категория"} subtitle={`Услуг: ${currentCategory?.services_count ?? serviceItems.length}`} />
+        <Header title={currentCategory?.name ?? "Категория"} subtitle={`Услуг: ${currentCategoryServicesCountLabel}`} />
         <div className="px-4 space-y-2">
           {showSkeleton ? (
             Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-24" />)

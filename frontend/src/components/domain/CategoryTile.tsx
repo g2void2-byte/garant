@@ -20,6 +20,7 @@ import {
 import { Link } from "react-router-dom";
 import type { CategoryDto } from "@/api/types";
 import { cn } from "@/lib/cn";
+import { formatCountValue } from "@/lib/format";
 import { staggerDelay } from "@/lib/animate";
 
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -56,7 +57,7 @@ export function CategoryTile({ category, index = 0 }: { category: CategoryDto; i
       >
         <div>
           <div className="font-semibold text-sm leading-tight line-clamp-2">{category.name}</div>
-          <div className="mt-1 text-[11px] text-text-muted">Всего: {category.services_count}</div>
+          <div className="mt-1 text-[11px] text-text-muted">Всего: {formatCountValue(category.services_count)}</div>
         </div>
         <div className="self-end size-10 rounded-full bg-panel-2 grid place-items-center text-accent">
           <IconCmp className="size-5" />

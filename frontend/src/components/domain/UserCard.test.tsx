@@ -65,4 +65,16 @@ describe("<UserCard />", () => {
     expect(screen.getByText("$1.5k+")).toBeInTheDocument();
     expect(screen.getByText("4.5")).toBeInTheDocument();
   });
+
+  it("does not coerce malformed count fields into profile metadata", () => {
+    renderCard({
+      deals_count: "1e2" as unknown as number,
+      rating: "4.5" as unknown as number,
+      reviews_count: "1e2" as unknown as number,
+    });
+
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+    expect(screen.queryByText("4.5")).not.toBeInTheDocument();
+    expect(screen.getByText(/— сделок/)).toBeInTheDocument();
+  });
 });
