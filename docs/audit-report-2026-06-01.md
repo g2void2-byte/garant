@@ -158,6 +158,7 @@
 - M-186: admin deposit/withdrawal money actions now require strict positive runtime amounts instead of acting on rows displayed as neutral.
 - M-187: admin deal force-release/refund/split actions now require a strict positive runtime deal amount before opening money-moving sheets.
 - M-188: admin deal pending approval rows now use strict runtime money formatting and block approval of malformed money requests.
+- M-189: paid PIN-reset paywall now validates runtime price/balance/charged amounts before display or balance-payment entry.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2102,6 +2103,16 @@ The pending approval panel on admin deal detail rendered `amount` and `amount_us
 Risk: a second admin could approve a money-moving request without a strictly parsed principal on the screen. That weakens the two-admin approval UX: the reviewer is meant to approve an exact amount, not a raw malformed DTO string.
 
 Fix: approval rows now render native amounts with the strict admin amount formatter and USD estimates with the strict USD formatter. Pending approval `OK` is disabled unless the native approval amount is a strict positive decimal; `Reject` remains available so malformed approval requests can be closed. The regression covers neutral rendering plus the OK/Reject enabled split.
+
+### M-189. Paid PIN reset paywall trusted raw runtime money
+
+Links: `frontend/src/components/PinResetPaywallModal.tsx`, shared formatter `frontend/src/lib/format.ts`, regression in `frontend/src/components/PinResetPaywallModal.test.tsx`, OpenAPI contract `frontend/src/api/openapi.generated.ts`.
+
+OpenAPI exposes PIN reset `price`, `user_balance`, and paid `charged` as decimal strings, but the paywall component typed the values as numbers and rendered them directly. It also enabled "pay from balance" from the server `can_afford` flag alone. A malformed runtime payload such as `"1e2"` / `"0x10"` could therefore appear in the paywall or success toast as a credible amount, and a bad `can_afford: true` could leave the balance-payment entry active.
+
+Risk: the paid PIN reset flow can debit a wallet balance, so the user must see validated price and balance data before clicking. Raw malformed DTO strings or an unchecked affordability flag make the payment surface look trustworthy when the frontend has not actually parsed the money fields.
+
+Fix: the paywall now accepts string/number runtime money, formats price, balance, and charged values through the strict currency formatter, and enables balance payment only when price and balance parse as non-negative decimals and the parsed balance covers the parsed price. Malformed price data renders a neutral state and leaves the admin-contact path available. Regressions cover malformed price/balance display, disabled payment entry, and malformed charged amounts in the success toast.
 
 ## Наблюдения без отдельного finding
 

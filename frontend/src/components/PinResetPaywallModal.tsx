@@ -11,18 +11,19 @@ import { cn } from "@/lib/cn";
 import { usePresence } from "@/lib/animate";
 import { haptic, openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
+import { formatCurrencyStrict, parseDecimalValue } from "@/lib/format";
 
 interface PinResetPriceDto {
-  price: number;
+  price: string | number;
   currency_code: string;
-  user_balance: number;
+  user_balance: string | number;
   can_afford: boolean;
 }
 
 interface PinResetPaidDto {
   delivered: boolean;
   expires_at: string;
-  charged: number;
+  charged: string | number;
   currency_code: string;
 }
 
@@ -79,6 +80,28 @@ export function PinResetPaywallModal({
     mutationFn: () => api.post("api/pin/reset/paid").json(),
   });
 
+  const currencyCode = price.data?.currency_code?.trim() || "USD";
+  const priceValue = parseDecimalValue(price.data?.price);
+  const balanceValue = parseDecimalValue(price.data?.user_balance);
+  const hasValidPriceData =
+    price.data != null &&
+    priceValue !== null &&
+    priceValue >= 0 &&
+    balanceValue !== null &&
+    balanceValue >= 0;
+  const priceText =
+    price.data != null
+      ? formatCurrencyStrict(price.data.price, currencyCode)
+      : "\u2014";
+  const balanceText =
+    price.data != null
+      ? formatCurrencyStrict(price.data.user_balance, currencyCode)
+      : "\u2014";
+  const canAfford =
+    hasValidPriceData &&
+    !!price.data?.can_afford &&
+    balanceValue >= priceValue;
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -89,6 +112,7 @@ export function PinResetPaywallModal({
   }, [open, onClose]);
 
   async function handlePay() {
+    if (!canAfford) return;
     try {
       const res = await pay.mutateAsync();
       haptic("success");
@@ -98,7 +122,7 @@ export function PinResetPaywallModal({
       void qc.invalidateQueries({ queryKey: qk.me() });
       toast.show({
         kind: "success",
-        title: `Списано ${res.charged} ${res.currency_code}`,
+        title: `Списано ${formatCurrencyStrict(res.charged, res.currency_code)}`,
         body: res.delivered
           ? "Код отправлен в Telegram"
           : "Код выписан, но Telegram-сообщение не доставлено",
@@ -128,16 +152,6 @@ export function PinResetPaywallModal({
   }
 
   if (!mounted) return null;
-
-  const priceText =
-    price.data != null
-      ? `${price.data.price} ${price.data.currency_code}`
-      : "—";
-  const balanceText =
-    price.data != null
-      ? `${price.data.user_balance} ${price.data.currency_code}`
-      : "—";
-  const canAfford = !!price.data?.can_afford;
 
   const body = (
     <>
@@ -218,7 +232,13 @@ export function PinResetPaywallModal({
             </div>
           </div>
 
-          {!canAfford && price.data != null && (
+          {price.data != null && !hasValidPriceData && (
+            <p className="mt-2 text-[12px] text-red-400">
+              Не удалось проверить стоимость восстановления. Попробуйте позже или напишите администратору.
+            </p>
+          )}
+
+          {!canAfford && hasValidPriceData && (
             <p className="mt-2 text-[12px] text-red-400">
               Недостаточно средств для оплаты с баланса. Пополните счёт или
               напишите администратору.
