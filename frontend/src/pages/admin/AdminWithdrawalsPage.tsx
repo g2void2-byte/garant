@@ -12,7 +12,7 @@ import {
 } from "@/api/admin/hooks";
 import { formatDateTime } from "@/lib/format";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminUsername, getAdminTotalPages, parseAdminCount } from "./format";
+import { formatAdminAmount, formatAdminUsername, getAdminTotalPages, hasPositiveAdminDecimal, parseAdminCount } from "./format";
 
 const STATUSES = ["pending", "approved", "rejected", "sent"] as const;
 type Status = (typeof STATUSES)[number];
@@ -129,31 +129,33 @@ export default function AdminWithdrawalsPage() {
               )}
               {status === "pending" && (
                 <div className="flex gap-2 pt-1">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={async () => {
-                      try {
-                        await decide.mutateAsync({
-                          id: w.id,
-                          body: { action: "approve" },
-                        });
-                        toast.show({
-                          kind: "success",
-                          title: "Одобрено",
-                          body: "Если включён авто-режим, отправлено через CryptoBot",
-                        });
-                      } catch (e) {
-                        toast.show({
-                          kind: "error",
-                          title: "Ошибка",
-                          body: (e as Error).message,
-                        });
-                      }
-                    }}
-                  >
-                    <Check size={14} className="mr-1" /> Одобрить
-                  </Button>
+                  {hasPositiveAdminDecimal(w.amount) && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await decide.mutateAsync({
+                            id: w.id,
+                            body: { action: "approve" },
+                          });
+                          toast.show({
+                            kind: "success",
+                            title: "Одобрено",
+                            body: "Если включён авто-режим, отправлено через CryptoBot",
+                          });
+                        } catch (e) {
+                          toast.show({
+                            kind: "error",
+                            title: "Ошибка",
+                            body: (e as Error).message,
+                          });
+                        }
+                      }}
+                    >
+                      <Check size={14} className="mr-1" /> Одобрить
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     size="sm"
@@ -185,7 +187,7 @@ export default function AdminWithdrawalsPage() {
                   </Button>
                 </div>
               )}
-              {status === "approved" && (
+              {status === "approved" && hasPositiveAdminDecimal(w.amount) && (
                 <Button
                   type="button"
                   size="sm"

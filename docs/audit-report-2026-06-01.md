@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 88 файлов, 919 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 88 файлов, 921 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -155,6 +155,7 @@
 - M-183: wallet locked hints and admin balance visibility now use strict positive-balance parsing instead of zero-coercing totals.
 - M-184: create-deal balance defaults, hints, and Max previews now use canonical wallet amount strings instead of malformed runtime balance values.
 - M-185: wallet deposit payment entry and history rows now require strict positive runtime amounts instead of opening pay links after zero-coercion.
+- M-186: admin deposit/withdrawal money actions now require strict positive runtime amounts instead of acting on rows displayed as neutral.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2069,6 +2070,16 @@ The deposit status modals were already hardened, but the wallet deposit pages st
 Risk: a corrupted invoice or history payload could reach the payment-entry surface after the UI had enough information to classify the amount as invalid. Users could be sent to an upstream provider or see a credible zero-value operation instead of a neutral invalid-data state.
 
 Fix: added a strict currency formatter for runtime money values that preserves canonical decimal strings but renders malformed/negative values as a neutral dash. Wallet deposit, per-currency deposit, and trust-deposit submit paths now require a strict positive created amount before opening `pay_url`; wallet history renders malformed operation amounts neutrally and hides pay links unless the amount is valid and positive. Regressions cover malformed create responses and malformed history rows.
+
+### M-186. Admin finance actions stayed enabled on rows with invalid amounts
+
+Links: `frontend/src/pages/admin/AdminDepositsPage.tsx`, `frontend/src/pages/admin/AdminWithdrawalsPage.tsx`, shared admin parser `frontend/src/pages/admin/format.ts`, regressions in the adjacent tests.
+
+Admin deposit and withdrawal queues already rendered malformed amounts such as `"1e3"`/`"1e1"` as a neutral dash, but the action gates still depended only on row status. A pending deposit with an invalid amount could still expose `pay_url` and "mark paid"; a paid deposit could still expose refund; a pending withdrawal could still be approved; and an approved withdrawal could still be marked sent.
+
+Risk: admin operators could trigger money-moving mutations on the same rows the UI had already classified as invalid money data. That weakens the invariant that display and action gating agree before payment, credit, refund, or payout decisions.
+
+Fix: admin deposit `pay_url`, mark-paid, refund, withdrawal approve, and withdrawal mark-sent actions now require a strict positive runtime amount via the shared admin decimal parser. Withdrawal reject remains available so an operator can safely close a malformed pending request. Regressions cover malformed deposit mark/refund/pay-url gates and malformed withdrawal approve/mark-sent gates.
 
 ## Наблюдения без отдельного finding
 

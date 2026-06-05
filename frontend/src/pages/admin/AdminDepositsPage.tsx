@@ -20,7 +20,7 @@ import {
 import { formatDateTime } from "@/lib/format";
 import { isSafeExternalLink, openPaymentLink } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminCount, formatAdminUsername, getAdminTotalPages } from "./format";
+import { formatAdminAmount, formatAdminCount, formatAdminUsername, getAdminTotalPages, hasPositiveAdminDecimal } from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "all
 // statuses"; the legacy ``"any"`` string is gone.
@@ -103,7 +103,7 @@ export default function AdminDepositsPage() {
                 <StatusBadge status={d.status} />
               </div>
               <div className="mt-2 flex gap-2">
-                {d.status === "pending" && (
+                {d.status === "pending" && hasPositiveAdminDecimal(d.amount) && (
                   <Button
                     type="button"
                     size="sm"
@@ -123,7 +123,7 @@ export default function AdminDepositsPage() {
                     <Check size={14} className="mr-1" /> Зачислить
                   </Button>
                 )}
-                {d.status === "paid" && (
+                {d.status === "paid" && hasPositiveAdminDecimal(d.amount) && (
                   <Button
                     type="button"
                     size="sm"
@@ -144,7 +144,7 @@ export default function AdminDepositsPage() {
                     <RefreshCcw size={14} className="mr-1" /> Возврат
                   </Button>
                 )}
-                {d.pay_url && isSafeExternalLink(d.pay_url) && (
+                {hasPositiveAdminDecimal(d.amount) && d.pay_url && isSafeExternalLink(d.pay_url) && (
                   <button
                     type="button"
                     onClick={() => openPaymentLink(d.pay_url!)}

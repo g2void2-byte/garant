@@ -175,6 +175,25 @@ describe("<AdminDepositsPage />", () => {
     renderPage();
     expect(screen.getByText(/\u2014 USDT/)).toBeInTheDocument();
     expect(screen.queryByText(/0\.00 USDT/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /pay_url/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u0417\u0430\u0447\u0438\u0441\u043b\u0438\u0442\u044c/,
+    })).not.toBeInTheDocument();
+    expect(openPaymentLinkSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not expose refund actions for paid deposits with malformed amounts", () => {
+    mockState.list = {
+      items: [makeDeposit({ amount: "1e3", status: "paid" })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText(/\u2014 USDT/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u0412\u043e\u0437\u0432\u0440\u0430\u0442/,
+    })).not.toBeInTheDocument();
   });
 
   it("does not render unsafe pay_url values as links or openers", () => {

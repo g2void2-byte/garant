@@ -192,6 +192,12 @@ describe("<AdminWithdrawalsPage />", () => {
     renderPage();
     expect(screen.getByText(/\u2014 USDT/)).toBeInTheDocument();
     expect(screen.queryByText(/0\.00000000 USDT/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u041e\u0434\u043e\u0431\u0440\u0438\u0442\u044c/,
+    })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: /\u041e\u0442\u043a\u043b\u043e\u043d\u0438\u0442\u044c/,
+    })).toBeInTheDocument();
   });
 
   it("approve action calls mutate with action='approve' and toasts success", async () => {
@@ -297,6 +303,24 @@ describe("<AdminWithdrawalsPage />", () => {
         title: "Отмечено как отправлено",
       }),
     );
+  });
+
+  it("does not expose mark-sent for approved withdrawals with malformed amounts", async () => {
+    mockState.list = {
+      items: [makeItem({ amount: "1e1", status: "approved" })],
+      counters: {},
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", {
+      name: /\u041e\u0434\u043e\u0431\u0440\u0435\u043d\u043d\u044b\u0435/,
+    }));
+
+    expect(screen.getByText(/\u2014 USDT/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u041e\u0442\u043c\u0435\u0447\u0435\u043d\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e/,
+    })).not.toBeInTheDocument();
   });
 
   it("renders the admin_note when present", () => {
