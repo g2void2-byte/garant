@@ -213,6 +213,31 @@ describe("<WalletCurrencyPage />", () => {
     expect(screen.getByText(/100 USDT/)).toBeInTheDocument();
   });
 
+  it("normalizes route-matched currency DTO codes before deposit display and submit", async () => {
+    mockState.currencies = [makeCurrency({ code: " usdt " })];
+    mockState.createDeposit.mutateAsync.mockResolvedValue({
+      pay_url: "",
+      currency: makeCurrency({ code: " usdt " }),
+      amount: 20,
+    });
+    const user = userEvent.setup();
+    renderPage("USDT");
+
+    expect(screen.getByText(/100 USDT/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(" usdt ");
+
+    const amount = document.querySelector('input[type="number"]') as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: "20" } });
+    await user.click(screen.getByRole("button", { name: /CryptoBot/ }));
+
+    await waitFor(() => {
+      expect(mockState.createDeposit.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "USDT",
+        amount: "20",
+      });
+    });
+  });
+
   it("renders malformed available balance strings as neutral", () => {
     const malformed = makeBalance(100);
     malformed.amount = "1e2" as unknown as number;

@@ -199,11 +199,11 @@ export default function WalletCurrencyPage() {
         <div className="bg-panel border border-border rounded-card p-4">
           <div className="text-sm text-text-muted">Доступно</div>
           <div className="mt-1 text-3xl font-bold text-accent">
-            {formatWalletBalanceCurrency(balance, "amount", currency.code, currency.decimals)}
+            {formatWalletBalanceCurrency(balance, "amount", upper, currency.decimals)}
           </div>
           {hasPositiveWalletBalance(balance, "locked") && (
             <div className="text-xs text-text-muted mt-1">
-              в заявках: {formatWalletBalanceCurrency(balance, "locked", currency.code, currency.decimals)}
+              в заявках: {formatWalletBalanceCurrency(balance, "locked", upper, currency.decimals)}
             </div>
           )}
         </div>
@@ -218,11 +218,11 @@ export default function WalletCurrencyPage() {
         />
 
         {tab === "deposit" && (
-          <DepositForm currencyCode={currency.code} minDeposit={currency.min_deposit} decimals={currency.decimals} />
+          <DepositForm currencyCode={upper} minDeposit={currency.min_deposit} decimals={currency.decimals} />
         )}
         {tab === "history" && (
           <HistoryList
-            currencyCode={currency.code}
+            currencyCode={upper}
             decimals={currency.decimals}
             depositsLoading={deposits.isLoading || withdrawals.isLoading}
             deposits={depositItems}

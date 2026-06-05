@@ -178,6 +178,7 @@
 - M-206: admin wallet adjustment forms now choose mutation currencies from normalized/catalog-backed codes instead of raw balance DTO labels.
 - M-207: admin wallet currency selectors now normalize catalog row codes before adjustment and USD-rate mutations.
 - M-208: create-deal fiat currency rows and funded-balance defaults now normalize runtime codes before display and submit.
+- M-209: wallet currency detail pages now use route-normalized codes for balance display, history rows, and deposit submit.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2322,6 +2323,16 @@ The create-deal page filtered the currency catalog to fiat rows but did not norm
 Risk: create-deal is a money-locking workflow. A non-canonical fiat code in the picker or balance DTO can desynchronize the visible currency, balance hint, commission preview, and the create-deal payload.
 
 Fix: create-deal fiat rows now go through `normalizeCurrencyCodeRows`, funded-balance defaults normalize the balance code, active balance lookup compares normalized codes, and balance/commission previews receive the normalized display code. Regressions cover malformed catalog rows and a funded balance default that submits canonical `USD`.
+
+### M-209. Wallet currency detail reused raw matched DTO codes
+
+Links: `frontend/src/pages/wallet/WalletCurrencyPage.tsx`, regressions in `frontend/src/pages/wallet/WalletCurrencyPage.test.tsx`.
+
+`WalletCurrencyPage` looked up the route currency with `normalizeCurrencyCode`, but after finding the matching currency DTO it passed `currency.code` directly into balance display, the deposit form, and history row rendering. A route like `/wallet/USDT` could therefore match a runtime DTO code `" usdt "` and then display or submit that non-canonical value.
+
+Risk: the per-currency wallet page is a direct deposit entry point. Reusing a raw matched DTO code can make the page appear to support a canonical route while sending a different `currency_code` in the deposit mutation.
+
+Fix: after route normalization, the page now uses the canonical route code for balance display, deposit form props, and history formatting. Regressions cover a route-matched currency DTO with `" usdt "` and assert both display and deposit submit use `USDT`.
 
 ## Наблюдения без отдельного finding
 
