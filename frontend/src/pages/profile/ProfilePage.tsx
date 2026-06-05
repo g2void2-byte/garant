@@ -40,6 +40,12 @@ import { normalizeUsernameRef } from "@/lib/usernames";
 const PROFILE_REVIEWS_PAGE_SIZE = 50;
 const PROFILE_SERVICES_PAGE_SIZE = 50;
 
+function getOwnServiceToggleStatus(status: string): "active" | "paused" | null {
+  if (status === "active") return "paused";
+  if (status === "paused" || status === "draft") return "active";
+  return null;
+}
+
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { data: me, isLoading } = useMe();
@@ -224,53 +230,56 @@ export default function ProfilePage() {
             <EmptyState title="Услуги отсутствуют" description="Нажмите «Добавить услугу», чтобы добавить первую" />
           ) : (
             <>
-              {serviceItems.map((s, i) => (
-              <ServiceCard
-                key={s.id}
-                service={s}
-                index={i}
-                rightSlot={
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    {s.status !== "banned" && (
-                      <button
-                        type="button"
-                        className="size-8 grid place-items-center rounded-full bg-panel-2 text-text-muted active:scale-95"
-                        aria-label={s.status === "active" ? "Поставить на паузу" : "Сделать активной"}
-                        onClick={() => {
-                          haptic("light");
-                          updateService.mutate({
-                            id: s.id,
-                            body: { status: s.status === "active" ? "paused" : "active" },
-                          });
-                        }}
-                      >
-                        {s.status === "active" ? (
-                          <Pause className="size-4" />
-                        ) : (
-                          <Play className="size-4" />
+              {serviceItems.map((s, i) => {
+                const nextStatus = getOwnServiceToggleStatus(s.status);
+                return (
+                  <ServiceCard
+                    key={s.id}
+                    service={s}
+                    index={i}
+                    rightSlot={
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        {nextStatus && (
+                          <button
+                            type="button"
+                            className="size-8 grid place-items-center rounded-full bg-panel-2 text-text-muted active:scale-95"
+                            aria-label={s.status === "active" ? "Поставить на паузу" : "Сделать активной"}
+                            onClick={() => {
+                              haptic("light");
+                              updateService.mutate({
+                                id: s.id,
+                                body: { status: nextStatus },
+                              });
+                            }}
+                          >
+                            {s.status === "active" ? (
+                              <Pause className="size-4" />
+                            ) : (
+                              <Play className="size-4" />
+                            )}
+                          </button>
                         )}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="size-8 grid place-items-center rounded-full bg-panel-2 text-danger active:scale-95"
-                      aria-label="Удалить"
-                      onClick={async () => {
-                        // Audit L-15 — ``confirmDialog`` uses Telegram’s
-                        // native ``showConfirm`` when available and falls
-                        // back to ``window.confirm`` outside Telegram.
-                        if (await confirmDialog(`Удалить услугу «${s.title}»?`)) {
-                          haptic("warning");
-                          deleteService.mutate(s.id);
-                        }
-                      }}
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                }
-              />
-              ))}
+                        <button
+                          type="button"
+                          className="size-8 grid place-items-center rounded-full bg-panel-2 text-danger active:scale-95"
+                          aria-label="Удалить"
+                          onClick={async () => {
+                            // Audit L-15 — ``confirmDialog`` uses Telegram’s
+                            // native ``showConfirm`` when available and falls
+                            // back to ``window.confirm`` outside Telegram.
+                            if (await confirmDialog(`Удалить услугу «${s.title}»?`)) {
+                              haptic("warning");
+                              deleteService.mutate(s.id);
+                            }
+                          }}
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
+                    }
+                  />
+                );
+              })}
               {hasMoreServices && (
                 <Button onClick={loadMoreServices} disabled={loadingMoreServices} className="w-full">
                   {loadingMoreServices ? "Загружаю..." : "Показать еще"}

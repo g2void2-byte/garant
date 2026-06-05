@@ -187,6 +187,7 @@
 - M-215: admin deposit status badges now hide unknown runtime values, and withdrawal actions require the row's explicit status.
 - M-216: admin deal approval rows now neutralize unknown runtime action/status labels.
 - M-217: admin user service rows now neutralize unknown runtime statuses and avoid silent status rewrites.
+- M-218: own-service profile toggles now ignore unknown runtime statuses instead of activating them.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2421,6 +2422,16 @@ Admin user service rows displayed `s.status` directly. The edit sheet also norma
 Risk: this admin screen edits service records on behalf of users. A drifted or corrupted status should not be shown as a supported state, and an unrelated edit should not silently move the service into `active`.
 
 Fix: service rows now render status through a known-status formatter, with unknown values shown as `Статус неизвестен`. The edit sheet tracks whether the status select was touched and only includes `status` in the mutation body after an explicit status change. Regressions cover neutral display and editing price on a service with an unknown runtime status without submitting a normalized default status.
+
+### M-218. Own-service profile toggle treated unknown runtime statuses as inactive
+
+Links: `frontend/src/pages/profile/ProfilePage.tsx`, regressions in `frontend/src/pages/profile/ProfilePage.test.tsx`.
+
+The profile page rendered a pause/activate control for every own service whose status was not exactly `banned`. The mutation body used `s.status === "active" ? "paused" : "active"`, so a runtime status like `provider_reconciled` was presented as "make active" and clicking it submitted `status: "active"`.
+
+Risk: this is a user-facing service ownership control. Unsupported status drift should not be silently converted into an activation request, especially for services that may be in a moderation or corrupted state outside the known client contract.
+
+Fix: the toggle now derives a next status only for explicit known states: `active -> paused` and `paused`/`draft -> active`. Unknown or malformed statuses render no toggle, while the delete control remains available. Regressions cover the normal active-to-paused path and the unknown-status no-toggle path.
 
 ## Наблюдения без отдельного finding
 

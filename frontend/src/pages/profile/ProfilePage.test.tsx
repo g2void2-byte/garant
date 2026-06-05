@@ -216,6 +216,39 @@ describe("<ProfilePage />", () => {
     expect(servicesState.lastParams).toEqual({ owner: "me", limit: 50, offset: 0 });
   });
 
+  it("pauses an active own service with an explicit paused status mutation", async () => {
+    meState.data = makeUser({ username: "me" });
+    servicesState.data = [makeService(1, { status: "active" })];
+    reviewsState.data = [];
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(screen.getByRole("button", {
+      name: "\u041f\u043e\u0441\u0442\u0430\u0432\u0438\u0442\u044c \u043d\u0430 \u043f\u0430\u0443\u0437\u0443",
+    }));
+
+    expect(updateMutate).toHaveBeenCalledWith({
+      id: 1,
+      body: { status: "paused" },
+    });
+  });
+
+  it("does not expose an activation toggle for own services with unknown runtime status", () => {
+    meState.data = makeUser({ username: "me" });
+    servicesState.data = [makeService(1, { status: "provider_reconciled" })];
+    reviewsState.data = [];
+
+    renderPage();
+
+    expect(screen.queryByRole("button", {
+      name: "\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u0430\u043a\u0442\u0438\u0432\u043d\u043e\u0439",
+    })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: "\u041f\u043e\u0441\u0442\u0430\u0432\u0438\u0442\u044c \u043d\u0430 \u043f\u0430\u0443\u0437\u0443",
+    })).not.toBeInTheDocument();
+    expect(updateMutate).not.toHaveBeenCalled();
+  });
+
   it("loads more own services with the backend offset", async () => {
     meState.data = makeUser({ username: "me" });
     servicesState.data = Array.from({ length: 50 }, (_, idx) => makeService(idx + 1));
