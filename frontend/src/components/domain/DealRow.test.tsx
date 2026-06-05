@@ -103,6 +103,19 @@ describe("<DealRow />", () => {
     expect(screen.getByText("Продажа")).toBeInTheDocument();
   });
 
+  it("renders unknown runtime roles as neutral deal rows", () => {
+    renderRow({ role: "auditor", buyer: "alice", seller: "bob" });
+
+    expect(screen.getByText("Контрагент: профиль недоступен")).toBeInTheDocument();
+    expect(screen.getByText("Сделка")).toBeInTheDocument();
+    expect(screen.queryByText("Покупка")).not.toBeInTheDocument();
+    expect(screen.queryByText("Продажа")).not.toBeInTheDocument();
+    const profileLink = screen
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href")?.startsWith("/users/"));
+    expect(profileLink).toBeUndefined();
+  });
+
   it("renders the amount with currency code", () => {
     renderRow({ amount: 250, currency_code: "USDT" });
     expect(screen.getByText("250")).toBeInTheDocument();

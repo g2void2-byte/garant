@@ -237,6 +237,23 @@ describe("<DealDetailPage />", () => {
     expect(reviewsCall.username).toBeUndefined();
   });
 
+  it("does not expose participant cancellation actions for unknown runtime roles", () => {
+    dealState.data = makeDeal({
+      role: "auditor",
+      status: "pending_cancellation",
+      cancellation_initiator: "buyer",
+      cancellation_reason: "cancel requested",
+    });
+    renderAt(42);
+
+    expect(screen.getByText("Контрагент")).toBeInTheDocument();
+    expect(screen.getByText("Контрагент недоступен")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Согласиться/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Арбитраж/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("@alice")).not.toBeInTheDocument();
+    expect(screen.queryByText("@bob")).not.toBeInTheDocument();
+  });
+
   it("shows the 'confirm execution' CTA for buyer on an in-progress deal", () => {
     dealState.data = makeDeal({ status: "in_progress", role: "buyer" });
     renderAt(42);

@@ -182,6 +182,7 @@
 - M-210: wallet deposit success toasts now normalize response currency labels before showing payment instructions.
 - M-211: wallet history and deal surfaces now hide unknown runtime statuses behind neutral labels.
 - M-212: wallet/deal invoice provider labels now use explicit known-provider mapping instead of defaulting unknown values to CryptoBot.
+- M-213: deal list/detail role handling now treats unknown runtime roles as neutral and blocks participant-only cancellation actions.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2366,6 +2367,16 @@ Wallet history badges, wallet deposit status modals, deal invoice modals, and de
 Risk: these labels sit next to invoice amounts and pay actions. Misstating an unknown upstream provider as CryptoBot makes payment review less trustworthy and can contradict the actual pay URL/provider stored by the backend.
 
 Fix: provider display now goes through a shared exact formatter: `cryptobot` maps to `CryptoBot`, `crystalpay` maps to `Crystalpay`, and unknown or malformed runtime values render `Провайдер неизвестен`. Wallet history also avoids embedding unknown provider values in its test-id. Regressions cover the helper, wallet history, deposit status modal, deal invoice modal, and deal detail invoice metadata.
+
+### M-213. Deal role fallback treated unknown runtime roles as seller-side rows
+
+Links: `frontend/src/components/domain/DealRow.tsx`, `frontend/src/pages/deals/DealDetailPage.tsx`, regressions in the adjacent deal tests.
+
+Deal list cards used `deal.role === "buyer" ? ... : ...` fallbacks for counterparty labels, avatar source, and the buy/sell chip. Any unknown runtime role therefore rendered as the seller-side view (`Покупатель`, `Продажа`) instead of a neutral deal row. Deal detail already avoided picking a counterparty for unknown roles, but still labeled the missing counterparty as `Покупатель`, and its pending-cancellation branch could expose participant-only accept/debate actions because `cancellation_initiator !== deal.role` evaluated true.
+
+Risk: role is the boundary that determines which side the current user is on and which actions are safe to show. Treating unknown role drift as a seller-side row can mislead users and, on pending cancellation, expose controls that should only exist for a verified buyer/seller participant.
+
+Fix: deal rows now explicitly distinguish buyer, seller, and unknown roles. Unknown roles render `Контрагент`/`Сделка`, do not pick buyer/seller avatars or profile links, and detail cancellation affordances require a known participant role before rendering. Regressions cover neutral deal rows and pending-cancellation detail with an unknown role.
 
 ## Наблюдения без отдельного finding
 

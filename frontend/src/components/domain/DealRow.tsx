@@ -54,12 +54,26 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
   // Item 21 — show the counterparty (i.e. the other side of the deal)
   // avatar + a "Профиль" deep-link. The seller's row in the buyer's
   // list and vice-versa.
-  const rawCounterpartyUsername = deal.role === "buyer" ? deal.seller : deal.buyer;
+  const isBuyerRole = deal.role === "buyer";
+  const isSellerRole = deal.role === "seller";
+  const rawCounterpartyUsername = isBuyerRole
+    ? deal.seller
+    : isSellerRole
+      ? deal.buyer
+      : null;
   const counterpartyUsername = normalizeUsernameRef(rawCounterpartyUsername);
   const counterpartyPath = userProfilePath(counterpartyUsername);
-  const counterpartyPhotoUrl =
-    deal.role === "buyer" ? deal.seller_photo_url : deal.buyer_photo_url;
-  const counterpartyLabel = deal.role === "buyer" ? "Продавец" : "Покупатель";
+  const counterpartyPhotoUrl = isBuyerRole
+    ? deal.seller_photo_url
+    : isSellerRole
+      ? deal.buyer_photo_url
+      : null;
+  const counterpartyLabel = isBuyerRole
+    ? "Продавец"
+    : isSellerRole
+      ? "Покупатель"
+      : "Контрагент";
+  const dealKindLabel = isBuyerRole ? "Покупка" : isSellerRole ? "Продажа" : "Сделка";
   const counterpartyName = counterpartyUsername || "Контрагент";
   const counterpartyText = counterpartyUsername
     ? `${counterpartyLabel}: @${counterpartyUsername}`
@@ -137,7 +151,7 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
               )}
             </div>
             <div className="mt-1 inline-flex items-center text-text-muted text-xs">
-              {deal.role === "buyer" ? "Покупка" : "Продажа"} <ChevronRight className="size-3" />
+              {dealKindLabel} <ChevronRight className="size-3" />
             </div>
           </div>
         </div>

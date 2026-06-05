@@ -168,15 +168,22 @@ export default function DealDetailPage() {
   const amount = deal.amount;
   const currency = normalizeCurrencyCode(deal.currency_code) ?? "USD";
   const commissionAmount = parseDecimalValue(deal.commission_amount);
-  const counterpartyLabel = deal.role === "buyer" ? "Продавец" : "Покупатель";
+  const isBuyerRole = deal.role === "buyer";
+  const isSellerRole = deal.role === "seller";
+  const isParticipant = isBuyerRole || isSellerRole;
+  const counterpartyLabel = isBuyerRole
+    ? "Продавец"
+    : isSellerRole
+      ? "Покупатель"
+      : "Контрагент";
   const counterpartyText = otherUser ? `@${otherUser}` : "Контрагент недоступен";
-  const isParticipant = deal.role === "buyer" || deal.role === "seller";
   const isAdmin = !!me && (me.prefix === "admin" || me.prefix === "arbiter");
   const cancelByOther =
+    isParticipant &&
     deal.cancellation_initiator &&
     deal.cancellation_initiator !== deal.role &&
     deal.cancellation_initiator !== "other";
-  const cancelByMe = deal.cancellation_initiator === deal.role;
+  const cancelByMe = isParticipant && deal.cancellation_initiator === deal.role;
   const alreadyReviewed = !!existingReviews?.some(
     (r) => r.deal_id === deal.id && me && r.author_username === me.username,
   );
