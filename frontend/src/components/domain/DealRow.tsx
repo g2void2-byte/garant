@@ -6,6 +6,7 @@ import { formatAmount, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { staggerDelay } from "@/lib/animate";
 import { normalizeCurrencyCode } from "@/lib/currencyCodes";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string; icon: string }> = {
@@ -80,7 +81,10 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
     : `${counterpartyLabel}: профиль недоступен`;
   const currencyCode = normalizeCurrencyCode(deal.currency_code);
   const amountCurrencyCode = currencyCode ?? "USDT";
-  const openDeal = () => navigate(`/deals/${deal.id}`);
+  const dealId = parsePositiveIntValue(deal.id);
+  const openDeal = () => {
+    if (dealId !== undefined) navigate(`/deals/${dealId}`);
+  };
   const onDealKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -94,11 +98,17 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
       style={staggerDelay(index, 25, 250)}
     >
       <div
-        role="link"
-        tabIndex={0}
-        onClick={openDeal}
-        onKeyDown={onDealKeyDown}
-        className="block bg-panel border border-border rounded-card p-3 active:scale-[.99] transition-transform cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
+        role={dealId !== undefined ? "link" : undefined}
+        tabIndex={dealId !== undefined ? 0 : undefined}
+        onClick={dealId !== undefined ? openDeal : undefined}
+        onKeyDown={dealId !== undefined ? onDealKeyDown : undefined}
+        aria-disabled={dealId === undefined ? true : undefined}
+        className={cn(
+          "block bg-panel border border-border rounded-card p-3 transition-transform",
+          dealId !== undefined
+            ? "active:scale-[.99] cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
+            : "cursor-default",
+        )}
       >
         <div className="flex items-start gap-3">
           <Avatar
@@ -113,7 +123,7 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
                 <span>{status.icon}</span>
                 <span>{status.text}</span>
               </span>
-              <span className="text-[11px] uppercase tracking-wide text-text-muted">#{deal.id}</span>
+              <span className="text-[11px] uppercase tracking-wide text-text-muted">#{dealId ?? "\u2014"}</span>
             </div>
             <div className="mt-2 font-semibold line-clamp-1">{deal.description}</div>
             <div className="mt-1 flex items-center gap-2 text-xs text-text-muted">

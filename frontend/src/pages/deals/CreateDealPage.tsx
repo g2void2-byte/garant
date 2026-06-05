@@ -25,6 +25,7 @@ import { haptic } from "@/lib/tg";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { parsePositiveDecimalInput } from "@/lib/formNumbers";
 import { normalizeCurrencyCode, normalizeCurrencyCodeRows } from "@/lib/currencyCodes";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 import { normalizeUsernameRef } from "@/lib/usernames";
 import {
   formatWalletBalanceCurrency,
@@ -261,6 +262,13 @@ export default function CreateDealPage() {
         normalizeCurrencyCode(created.deal.currency_code) ??
         "USD"
       : "USD";
+  const createdDealId = created ? parsePositiveIntValue(created.deal.id) : undefined;
+  const createdInvoiceDepositId =
+    created && invoiceRequiresPayment(created.invoice)
+      ? parsePositiveIntValue(created.invoice.deposit_id)
+      : undefined;
+  const canOpenCreatedDeal = createdDealId !== undefined;
+  const canOpenCreatedInvoice = canOpenCreatedDeal && createdInvoiceDepositId !== undefined;
 
   function validate(): boolean {
     const amount = sum.trim();
@@ -307,7 +315,10 @@ export default function CreateDealPage() {
         });
       } else {
         toast.show({ kind: "success", title: "Инвойс создан" });
-        setInvoiceModalOpen(true);
+        setInvoiceModalOpen(
+          parsePositiveIntValue(deal.deal.id) !== undefined &&
+          parsePositiveIntValue(deal.invoice.deposit_id) !== undefined,
+        );
       }
     } catch (e: unknown) {
       haptic("error");
@@ -513,7 +524,7 @@ export default function CreateDealPage() {
               >
                 <div>
                   <div className="text-sm font-semibold text-success">
-                    Сделка #{created.deal.id} создана
+                    Сделка #{createdDealId ?? "\u2014"} создана
                   </div>
                   <div className="text-xs text-text-muted">
                     Сумма и комиссия списаны с баланса. Сделка ждёт подтверждения продавцом.
@@ -521,7 +532,10 @@ export default function CreateDealPage() {
                 </div>
                 <Button
                   type="button"
-                  onClick={() => navigate(`/deals/${created.deal.id}`)}
+                  disabled={!canOpenCreatedDeal}
+                  onClick={() => {
+                    if (createdDealId !== undefined) navigate(`/deals/${createdDealId}`);
+                  }}
                 >
                   К сделке
                 </Button>
@@ -539,7 +553,7 @@ export default function CreateDealPage() {
               data-testid="topup-invoice-preview"
             >
               <div>
-                <div className="text-sm font-semibold text-accent">Инвойс #{created.deal.id} ждёт оплаты</div>
+                <div className="text-sm font-semibold text-accent">Инвойс #{createdDealId ?? "\u2014"} ждёт оплаты</div>
                 <div className="text-xs text-text-muted">
                   Когда платёж пройдёт, сделка откроется автоматически.
                 </div>
@@ -552,6 +566,7 @@ export default function CreateDealPage() {
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   type="button"
+                  disabled={!canOpenCreatedInvoice}
                   onClick={() => setInvoiceModalOpen(true)}
                 >
                   Открыть оплату
@@ -559,7 +574,10 @@ export default function CreateDealPage() {
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => navigate(`/deals/${created.deal.id}`)}
+                  disabled={!canOpenCreatedDeal}
+                  onClick={() => {
+                    if (createdDealId !== undefined) navigate(`/deals/${createdDealId}`);
+                  }}
                 >
                   К сделке
                 </Button>
@@ -588,12 +606,14 @@ export default function CreateDealPage() {
       {created &&
         invoiceModalOpen &&
         invoiceRequiresPayment(created.invoice) &&
+        createdDealId !== undefined &&
+        createdInvoiceDepositId !== undefined &&
         created.invoice.pay_url && (
         <DealInvoiceModal
           open={invoiceModalOpen}
           onClose={() => setInvoiceModalOpen(false)}
-          dealId={created.deal.id}
-          depositId={created.invoice.deposit_id}
+          dealId={createdDealId}
+          depositId={createdInvoiceDepositId}
           payUrl={created.invoice.pay_url}
           amount={created.invoice.total}
           currencyCode={createdInvoiceCurrencyCode}

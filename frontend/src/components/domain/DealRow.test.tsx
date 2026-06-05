@@ -74,6 +74,31 @@ describe("<DealRow />", () => {
     expect(screen.getByTestId("path").textContent).toBe("/deals/17");
   });
 
+  it("uses canonical deal routes for decimal-string runtime ids", async () => {
+    const user = userEvent.setup();
+    renderRowWithLocation({ id: "17" as unknown as number });
+
+    const detailLink = screen
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href") === null);
+
+    expect(screen.getByText("#17")).toBeInTheDocument();
+    expect(detailLink).toBeDefined();
+    await user.click(detailLink!);
+    expect(screen.getByTestId("path").textContent).toBe("/deals/17");
+  });
+
+  it("does not build deal routes from malformed runtime ids", () => {
+    renderRowWithLocation({ id: "0x11" as unknown as number });
+
+    expect(screen.getByText("#\u2014")).toBeInTheDocument();
+    expect(screen.queryByText(/0x11/)).not.toBeInTheDocument();
+    const rowLinks = screen
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("href") === null);
+    expect(rowLinks).toHaveLength(0);
+  });
+
   it("renders the in-progress status label", () => {
     renderRow();
     expect(screen.getByText("В работе")).toBeInTheDocument();

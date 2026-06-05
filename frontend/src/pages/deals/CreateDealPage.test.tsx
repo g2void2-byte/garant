@@ -387,6 +387,30 @@ describe("<CreateDealPage />", () => {
     expect(screen.getAllByRole("button", { name: /Открыть оплату/i })[0]).toBeInTheDocument();
   });
 
+  it("does not build created-deal actions from malformed runtime ids", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(makeTopupResponse({
+      id: "0x4d" as unknown as number,
+      topup_deposit_id: "0x1f5" as unknown as number,
+      topup_invoice: {
+        ...makeInvoice(),
+        deposit_id: "0x1f5" as unknown as number,
+      },
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
+    await user.type(screen.getByLabelText(/Сумма \(USD\)/), "100.25");
+    await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
+    await enterPin(user);
+
+    const preview = await screen.findByTestId("topup-invoice-preview");
+    expect(preview).toHaveTextContent("#\u2014");
+    expect(preview).not.toHaveTextContent("0x4d");
+    expect(screen.getByRole("button", { name: /Открыть оплату/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /К сделке/i })).toBeDisabled();
+    expect(screen.queryByTestId("deal-detail")).not.toBeInTheDocument();
+  });
+
   it("does not render malformed invoice row amounts from the create response", async () => {
     mockState.createMutation.mutateAsync.mockResolvedValue(makeTopupResponse({
       id: 78,

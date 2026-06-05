@@ -191,6 +191,7 @@
 - M-219: shared service cards now show unknown runtime statuses as neutral badges instead of active-looking rows.
 - M-220: user prefix badges now neutralize unknown runtime prefixes instead of hiding or rendering empty roles.
 - M-221: public profile/review/comment metadata now validates runtime ratings and ids before display/linking.
+- M-222: public deal rows and create-success actions now validate runtime deal/deposit ids before linking.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2465,6 +2466,16 @@ Service detail comment rows rendered `comment.rating` directly, so malformed pay
 Risk: ratings and ids are compact trust signals in public profile/service views. Raw malformed values can look legitimate, and unsafe deal ids can create broken or misleading navigation targets.
 
 Fix: service comments now display ratings through the shared strict rating formatter, review rows only render deal links after strict positive-id parsing, and profile headers render Telegram ids only after the same boundary. Regressions cover malformed comment ratings, malformed/canonical runtime deal ids, and malformed/canonical profile Telegram ids.
+
+### M-222. Public deal links trusted malformed runtime ids
+
+Links: `frontend/src/components/domain/DealRow.tsx`, `frontend/src/pages/deals/CreateDealPage.tsx`, regressions in the adjacent tests.
+
+Public deal rows rendered `deal.id` directly and used it to navigate to `/deals/{id}`. The create-deal success UI did the same with `created.deal.id`, and passed raw `created.invoice.deposit_id` into the invoice modal. Runtime payloads like `"0x11"` therefore produced visible raw ids, broken deal routes, or modal queries keyed by malformed identifiers.
+
+Risk: deal ids drive navigation and payment polling. A malformed response id should not create a clickable route or payment modal state that looks operational while pointing at a non-contract resource.
+
+Fix: deal rows now parse ids through the shared positive-int boundary before rendering or enabling row navigation. Create-success cards show a neutral `#—` for malformed ids, disable deal/payment actions until both deal and deposit ids are canonical, and pass only parsed ids into `DealInvoiceModal`. Regressions cover malformed and decimal-string runtime ids.
 
 ## Наблюдения без отдельного finding
 
