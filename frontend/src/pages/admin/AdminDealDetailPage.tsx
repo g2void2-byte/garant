@@ -56,24 +56,11 @@ import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 import {
   formatAdminAmount,
   formatAdminCurrencyCode,
+  formatAdminDealStatus,
   formatAdminUsd,
   formatAdminUsername,
   hasPositiveAdminDecimal,
 } from "./format";
-
-const STATUS_LABEL: Record<string, string> = {
-  cancelled: "Отменена",
-  pending_confirmation: "Подтверждение",
-  pending_payment: "Ожидание оплаты",
-  pending_topup: "Ожидание инвойса",
-  in_progress: "В работе",
-  completed: "Завершена",
-  arbitration: "Арбитраж",
-  resolved_for_buyer: "В пользу покупателя",
-  resolved_for_seller: "В пользу продавца",
-  pending_cancellation: "Запрошена отмена",
-  cancelled_for_inactivity: "Отменена по неактивности",
-};
 
 const EVENT_KIND: Record<string, string> = {
   created: "Создана",
@@ -136,7 +123,7 @@ export default function AdminDealDetailPage() {
     <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title={deal ? `Сделка #${deal.id}` : "Сделка"}
-        subtitle={deal ? STATUS_LABEL[deal.status] ?? deal.status : undefined}
+        subtitle={deal ? formatAdminDealStatus(deal.status) : undefined}
       />
       {isLoading || !deal ? (
         <div className="px-4 space-y-3">
@@ -179,7 +166,7 @@ function StatusBanner({ deal }: { deal: AdminDealDetailDto }) {
       <div className="text-base font-semibold flex items-center gap-2">
         {isArb && <Gavel size={16} className="text-danger" />}
         {hasCancel && <AlertTriangle size={16} className="text-warning" />}
-        {STATUS_LABEL[deal.status] ?? deal.status}
+        {formatAdminDealStatus(deal.status)}
       </div>
       {deal.cancellation_reason && (
         <div className="mt-2 text-xs text-warning">Причина отмены: {deal.cancellation_reason}</div>

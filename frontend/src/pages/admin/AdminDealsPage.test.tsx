@@ -153,6 +153,19 @@ describe("<AdminDealsPage />", () => {
     expect(screen.queryByText(/\.\.\/USDT/)).not.toBeInTheDocument();
   });
 
+  it("renders unknown runtime statuses as neutral labels", () => {
+    mockState.list = {
+      items: [makeDeal({ status: "provider_reconciled" })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+
+    expect(screen.getByText("Статус неизвестен")).toBeInTheDocument();
+    expect(screen.queryByText(/provider_reconciled/)).not.toBeInTheDocument();
+  });
+
   it("does not coerce malformed totals into admin pagination", () => {
     mockState.list = {
       items: [makeDeal()],

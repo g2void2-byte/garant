@@ -4,6 +4,7 @@ import {
   formatAdminAmount,
   formatAdminCount,
   formatAdminCurrencyCode,
+  formatAdminDealStatus,
   formatAdminId,
   formatAdminRating,
   formatAdminUsd,
@@ -40,6 +41,12 @@ describe("admin format helpers", () => {
     expect(formatAdminCurrencyCode("USDT1")).toBe("USDT1");
     expect(formatAdminCurrencyCode("../USD")).toBe("\u2014");
     expect(formatAdminCurrencyCode(null)).toBe("\u2014");
+  });
+
+  it("formats admin deal statuses without leaking unknown runtime values", () => {
+    expect(formatAdminDealStatus("in_progress")).toBe("В работе");
+    expect(formatAdminDealStatus("provider_reconciled")).toBe("Статус неизвестен");
+    expect(formatAdminDealStatus(null)).toBe("Статус неизвестен");
   });
 
   it("picks admin mutation currencies from normalized known codes", () => {

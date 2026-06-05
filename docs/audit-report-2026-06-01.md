@@ -183,6 +183,7 @@
 - M-211: wallet history and deal surfaces now hide unknown runtime statuses behind neutral labels.
 - M-212: wallet/deal invoice provider labels now use explicit known-provider mapping instead of defaulting unknown values to CryptoBot.
 - M-213: deal list/detail role handling now treats unknown runtime roles as neutral and blocks participant-only cancellation actions.
+- M-214: admin deal list/detail status labels now share a neutral fallback for unknown runtime statuses.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2377,6 +2378,16 @@ Deal list cards used `deal.role === "buyer" ? ... : ...` fallbacks for counterpa
 Risk: role is the boundary that determines which side the current user is on and which actions are safe to show. Treating unknown role drift as a seller-side row can mislead users and, on pending cancellation, expose controls that should only exist for a verified buyer/seller participant.
 
 Fix: deal rows now explicitly distinguish buyer, seller, and unknown roles. Unknown roles render `Контрагент`/`Сделка`, do not pick buyer/seller avatars or profile links, and detail cancellation affordances require a known participant role before rendering. Regressions cover neutral deal rows and pending-cancellation detail with an unknown role.
+
+### M-214. Admin deal status labels leaked unknown runtime statuses
+
+Links: `frontend/src/pages/admin/format.ts`, `frontend/src/pages/admin/AdminDealsPage.tsx`, `frontend/src/pages/admin/AdminDealDetailPage.tsx`, regressions in the adjacent admin formatter/list/detail tests.
+
+Admin deal list rows and admin deal detail headers/banners had duplicate status maps with raw fallback rendering. An unknown runtime status like `provider_reconciled` therefore appeared directly in operator-facing deal review surfaces.
+
+Risk: these are admin triage and money-operation surfaces. Raw unknown statuses can look like valid operational states and make it harder to distinguish supported workflow states from DTO or backend contract drift.
+
+Fix: admin deal status labels now use a shared formatter. Known contract statuses keep the existing localized labels; unknown or non-string runtime values render `Статус неизвестен`. Regressions cover the helper plus admin deal list and detail rendering.
 
 ## Наблюдения без отдельного finding
 

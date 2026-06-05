@@ -283,6 +283,14 @@ describe("<AdminDealDetailPage />", () => {
     expect(screen.getAllByText("В работе").length).toBeGreaterThan(0);
   });
 
+  it("renders unknown runtime statuses as neutral labels", () => {
+    mockState.deal = makeDeal({ status: "provider_reconciled" });
+    renderPage();
+
+    expect(screen.getAllByText("Статус неизвестен").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/provider_reconciled/)).not.toBeInTheDocument();
+  });
+
   it("renders balance snapshot for buyer + seller cards", () => {
     mockState.deal = makeDeal();
     renderPage();

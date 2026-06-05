@@ -11,24 +11,18 @@ import { useAdminDeals } from "@/api/admin/hooks";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 import type { AdminDealListItemDto, AdminListDealsQuery } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminCount, formatAdminCurrencyCode, formatAdminUsername, getAdminTotalPages } from "./format";
+import {
+  ADMIN_DEAL_STATUS_LABELS,
+  formatAdminAmount,
+  formatAdminCount,
+  formatAdminCurrencyCode,
+  formatAdminDealStatus,
+  formatAdminUsername,
+  getAdminTotalPages,
+} from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "all statuses";
 // the legacy ``"any"`` string is gone from both UI state and the URL.
-const STATUS_LABEL: Record<string, string> = {
-  cancelled: "Отменена",
-  pending_confirmation: "Подтверждение",
-  pending_payment: "Ожидание оплаты",
-  pending_topup: "Ожидание инвойса",
-  in_progress: "В работе",
-  completed: "Завершена",
-  arbitration: "Арбитраж",
-  resolved_for_buyer: "В пользу покупателя",
-  resolved_for_seller: "В пользу продавца",
-  pending_cancellation: "Запрошена отмена",
-  cancelled_for_inactivity: "Отменена по неактивности",
-};
-
 const FILTERABLE_STATUS_VALUES = [
   "cancelled",
   "pending_confirmation",
@@ -44,7 +38,10 @@ const FILTERABLE_STATUS_VALUES = [
 
 const STATUSES: Array<{ value: string | null; label: string }> = [
   { value: null, label: "Все" },
-  ...FILTERABLE_STATUS_VALUES.map((value) => ({ value, label: STATUS_LABEL[value] })),
+  ...FILTERABLE_STATUS_VALUES.map((value) => ({
+    value,
+    label: ADMIN_DEAL_STATUS_LABELS[value],
+  })),
 ];
 
 const FILTERABLE_STATUS_SET = new Set<string>(FILTERABLE_STATUS_VALUES);
@@ -450,7 +447,7 @@ function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen: () => v
             {currencyCode}
           </span>
           <span>·</span>
-          <span>{STATUS_LABEL[deal.status] ?? deal.status}</span>
+          <span>{formatAdminDealStatus(deal.status)}</span>
           {deal.has_arbitration && (
             <>
               <span>·</span>
