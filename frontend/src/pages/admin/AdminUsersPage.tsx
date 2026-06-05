@@ -15,7 +15,16 @@ import type {
 } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
-import { formatAdminCount, formatAdminId, formatAdminRating, formatAdminUsd, formatAdminUsername, getAdminTotalPages, shouldShowAdminPagination } from "./format";
+import {
+  formatAdminCount,
+  formatAdminId,
+  formatAdminRating,
+  formatAdminUsd,
+  formatAdminUsername,
+  getAdminTotalPages,
+  parseAdminId,
+  shouldShowAdminPagination,
+} from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "no filter"
 // (replaces the string ``"any"``); the value sent to the API is
@@ -148,13 +157,19 @@ export default function AdminUsersPage() {
                 Никого не найдено
               </p>
             )
-            : data?.items.map((u) => (
-                <UserRow
-                  key={u.id}
-                  user={u}
-                  onClick={() => navigate(`/admin/users/${u.id}`)}
-                />
-              ))}
+            : data?.items.map((u) => {
+                const userId = parseAdminId(u.id);
+                return (
+                  <UserRow
+                    key={u.id}
+                    user={u}
+                    disabled={userId === null}
+                    onClick={() => {
+                      if (userId !== null) navigate(`/admin/users/${userId}`);
+                    }}
+                  />
+                );
+              })}
       </div>
 
       {data && shouldShowAdminPagination(data.total, data.page_size) && (
@@ -219,12 +234,21 @@ function FilterRow<T extends string>({
   );
 }
 
-function UserRow({ user, onClick }: { user: AdminUserListItemDto; onClick: () => void }) {
+function UserRow({
+  user,
+  onClick,
+  disabled = false,
+}: {
+  user: AdminUserListItemDto;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full flex items-center gap-3 bg-panel rounded-card p-3 text-left active:scale-[0.98] transition"
+      disabled={disabled}
+      className="w-full flex items-center gap-3 bg-panel rounded-card p-3 text-left active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100"
     >
       <Avatar name={user.display_name} src={user.photo_url} size={40} />
       <div className="flex-1 min-w-0">

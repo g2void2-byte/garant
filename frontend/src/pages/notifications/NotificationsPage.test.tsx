@@ -262,6 +262,18 @@ describe("<NotificationsPage />", () => {
     );
   });
 
+  it("does not navigate or mark read for malformed runtime notification ids", async () => {
+    mockState.list = [makeNotification({ id: "0x63" as unknown as number })];
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByText(/#42/));
+
+    expect(screen.getByTestId("path").textContent).toBe("/notifications");
+    expect(mockState.markRead.mutate).not.toHaveBeenCalled();
+    expect(screen.queryByText(/0x63/)).not.toBeInTheDocument();
+  });
+
   it("DM toggles dispatch updateMe with the matching key", async () => {
     mockState.list = [];
     const user = userEvent.setup();

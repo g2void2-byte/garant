@@ -194,6 +194,7 @@
 - M-222: public deal rows and create-success actions now validate runtime deal/deposit ids before linking.
 - M-223: admin deal queues now validate runtime deal ids before opening details or claiming arbitration.
 - M-224: admin finance queues now validate runtime deposit/withdrawal ids before money mutations.
+- M-225: user and notification list rows now validate runtime ids before route/read actions.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2498,6 +2499,16 @@ Admin deposit rows rendered `d.id` directly and sent it unchanged to mark-paid/r
 Risk: these queues move funds or change withdrawal/deposit state. A malformed runtime id should never be accepted as the target of a finance mutation, even when the amount and status look valid.
 
 Fix: deposit and withdrawal rows now format ids through `formatAdminId`, show `#—` for malformed ids, and only render mark-paid/refund/approve/reject/mark-sent actions when the row id parses as a positive integer. Regressions cover malformed deposit ids and both pending/approved withdrawal id paths.
+
+### M-225. List rows trusted malformed runtime ids before route/read actions
+
+Links: `frontend/src/pages/admin/AdminUsersPage.tsx`, `frontend/src/components/domain/NotificationRow.tsx`, regressions in `AdminUsersPage.test.tsx` and `NotificationsPage.test.tsx`.
+
+Admin user rows built `/admin/users/${u.id}` directly from the runtime list payload. Notification rows did the same for `/notifications/${item.id}` and also passed `item.id` unchanged to the swipe mark-read callback. Runtime values like `"0x63"` could therefore produce bogus detail routes or send a malformed notification id to the read mutation.
+
+Risk: these are high-frequency list surfaces. A malformed id should make the row inert, not become an application route segment or mutation target.
+
+Fix: admin user rows now parse ids before navigation and disable malformed rows. Notification rows now parse ids before click/key navigation and swipe read, expose malformed rows as disabled, and never render the raw malformed id. Regressions cover both route paths.
 
 ## Наблюдения без отдельного finding
 

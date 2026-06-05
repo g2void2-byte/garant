@@ -227,6 +227,23 @@ describe("<AdminUsersPage />", () => {
     expect(screen.getByTestId("path").textContent).toBe("/admin/users/99");
   });
 
+  it("does not navigate from rows with malformed runtime user ids", async () => {
+    mockState.list = {
+      items: [makeUser({ id: "0x63" as unknown as number })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    const row = screen.getByText("Alice Smith").closest("button");
+    expect(row).toBeDisabled();
+    await user.click(row!);
+
+    expect(screen.getByTestId("path").textContent).toBe("/admin/users");
+  });
+
   it("typing a search and pressing Enter triggers a query refetch with trimmed q", async () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
     renderPage();
