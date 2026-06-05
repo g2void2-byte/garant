@@ -942,7 +942,7 @@ async def _split_locked(
     session: AsyncSession,
     deal: Deal,
     currency: Currency,
-    buyer_percent: float,
+    buyer_percent: Decimal,
 ) -> tuple[Decimal, Decimal, Decimal]:
     """Split the principal between buyer and seller; commission is kept.
 
@@ -954,7 +954,7 @@ async def _split_locked(
     decimals = currency.decimals
     amt = quantize_money(Decimal(str(deal.amount or 0)), decimals)
     locked = amt
-    buyer_share = quantize_money(amt * Decimal(str(buyer_percent)) / Decimal(100), decimals)
+    buyer_share = quantize_money(amt * buyer_percent / Decimal(100), decimals)
     seller_share = amt - buyer_share
 
     # Lock both rows in the same order as ``services_deals._release_to``.
@@ -1240,7 +1240,7 @@ async def split_deal(
 
     before_status = deal.status.value
     locked, buyer_share, seller_share = await _split_locked(
-        session, deal, currency, float(body.buyer_percent)
+        session, deal, currency, body.buyer_percent
     )
     deal.status = (
         DealStatus.resolved_for_buyer

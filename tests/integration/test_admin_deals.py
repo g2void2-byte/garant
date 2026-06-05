@@ -31,6 +31,7 @@ from backend.app.models import (
     DealStatus,
     User,
     UserBalance,
+    WalletLedgerEntry,
 )
 from backend.app.time_utils import utcnow
 from tests.helpers import (
@@ -342,6 +343,48 @@ async def test_admin_split_deal(client):
     # 60% to buyer, 40% to seller; commission (5) retained by platform
     assert Decimal(detail["buyer"]["amount"]) >= Decimal("60")
     assert Decimal(detail["seller"]["amount"]) == Decimal("40")
+
+
+async def test_admin_split_preserves_decimal_percent_in_ledger(client):
+    deal_id, *_ = await _make_deal(client)
+    admin_init = await _make_admin(client)
+    resp = await client.post(
+        f"/api/admin/deals/{deal_id}/split",
+        json={"buyer_percent": "33.30", "reason": "decimal split"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+
+    async with async_session() as session:
+        entries = (
+            await session.execute(
+                select(WalletLedgerEntry)
+                .where(
+                    WalletLedgerEntry.source_type == "deal",
+                    WalletLedgerEntry.source_id == deal_id,
+                    WalletLedgerEntry.event_type.in_(
+                        ("admin_deal.split.buyer", "admin_deal.split.seller")
+                    ),
+                )
+                .order_by(WalletLedgerEntry.event_type.asc())
+            )
+        ).scalars().all()
+
+    assert {entry.event_type for entry in entries} == {
+        "admin_deal.split.buyer",
+        "admin_deal.split.seller",
+    }
+    by_type = {entry.event_type: entry for entry in entries}
+    assert by_type["admin_deal.split.buyer"].meta == {"buyer_percent": "33.30"}
+    assert by_type["admin_deal.split.seller"].meta == {"buyer_percent": "33.30"}
+    assert Decimal(by_type["admin_deal.split.buyer"].amount_delta) == Decimal("33.30")
+    assert Decimal(by_type["admin_deal.split.seller"].amount_delta) == Decimal("66.70")
+
+    [audit] = await _audit_rows("deal.split")
+    assert audit.payload is not None
+    assert audit.payload["buyer_percent"] == "33.30"
+    assert audit.payload["buyer_share"] == "33.30"
+    assert audit.payload["seller_share"] == "66.70"
 
 
 async def test_admin_split_percent_out_of_range(client):

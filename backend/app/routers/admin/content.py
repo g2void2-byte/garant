@@ -71,6 +71,12 @@ router = APIRouter(
 # old ``session.get`` lookup — one extra round-trip there is cheap.
 
 
+def _audit_decimal(value: object | None) -> str | None:
+    if value is None:
+        return None
+    return str(Decimal(str(value)))
+
+
 async def _users_by_id(session: AsyncSession, ids: set[int]) -> dict[int, User]:
     if not ids:
         return {}
@@ -228,17 +234,16 @@ async def update_service(
     # Audit 3.7 — compare ``Decimal`` values directly. The previous
     # ``float(body.price) != float(service.price)`` could collapse
     # last-satoshi differences for amounts > 1e15, surfacing a
-    # false-positive "no change" or a spurious change. The audit-log
-    # ``before`` / ``after`` dicts still serialise as float to match the
-    # wire format used elsewhere (``MoneyDecimal`` → float), but the
-    # *change-detection* now happens on the lossless Decimal value.
+    # false-positive "no change" or a spurious change. Keep the audit
+    # payload Decimal-canonical too; JSON numbers would reintroduce a
+    # lossy IEEE-754 hop in the forensic trail.
     if body.price is not None and body.price != service.price:
-        before["price"] = float(service.price)
-        after["price"] = float(body.price)
+        before["price"] = _audit_decimal(service.price)
+        after["price"] = _audit_decimal(body.price)
         service.price = body.price
     if body.deposit is not None and body.deposit != service.deposit:
-        before["deposit"] = float(service.deposit)
-        after["deposit"] = float(body.deposit)
+        before["deposit"] = _audit_decimal(service.deposit)
+        after["deposit"] = _audit_decimal(body.deposit)
         service.deposit = body.deposit
     if body.views is not None and body.views != service.views:
         before["views"] = service.views
@@ -250,17 +255,14 @@ async def update_service(
         service.deals_count = body.deals_count
     if body.clear_rating:
         if service.rating_manual is not None:
-            before["rating_manual"] = float(service.rating_manual)
+            before["rating_manual"] = _audit_decimal(service.rating_manual)
             after["rating_manual"] = None
             service.rating_manual = None
     elif body.rating_manual is not None:
-        # Audit 3.7 — Decimal-vs-Decimal compare; only convert to
-        # float for the audit payload (which is the wire format).
+        # Audit 3.7 — Decimal-vs-Decimal compare and payload.
         if service.rating_manual != body.rating_manual:
-            before["rating_manual"] = (
-                float(service.rating_manual) if service.rating_manual is not None else None
-            )
-            after["rating_manual"] = float(body.rating_manual)
+            before["rating_manual"] = _audit_decimal(service.rating_manual)
+            after["rating_manual"] = _audit_decimal(body.rating_manual)
             service.rating_manual = body.rating_manual
     if body.status is not None:
         try:
@@ -343,7 +345,9 @@ async def delete_service(
         "owner_id": service.owner_id,
         "title": service.title,
         "description": service.description,
-        "price": float(service.price),
+        "price": _audit_decimal(service.price),
+        "deposit": _audit_decimal(service.deposit),
+        "rating_manual": _audit_decimal(service.rating_manual),
         "status": service.status.value,
     }
     await session.execute(

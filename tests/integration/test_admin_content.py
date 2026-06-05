@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlalchemy import select
 
 from backend.app.db import async_session
@@ -35,7 +37,14 @@ async def _bootstrap_user(client, tg_id: int, username: str) -> int:
     return resp.json()["id"]
 
 
-async def _create_service(owner_id: int, *, title: str = "S") -> int:
+async def _create_service(
+    owner_id: int,
+    *,
+    title: str = "S",
+    price: Decimal | int | str = 10,
+    deposit: Decimal | int | str = 0,
+    rating_manual: Decimal | None = None,
+) -> int:
     async with async_session() as session:
         cat = (await session.execute(select(Category))).scalars().first()
         assert cat is not None
@@ -44,7 +53,9 @@ async def _create_service(owner_id: int, *, title: str = "S") -> int:
             category_id=cat.id,
             title=title,
             description="desc",
-            price=10,
+            price=price,
+            deposit=deposit,
+            rating_manual=rating_manual,
         )
         session.add(service)
         await session.commit()
@@ -96,10 +107,10 @@ async def test_update_service_changes_fields_and_writes_audit(client):
         f"/api/admin/services/{sid}",
         json={
             "title": "Updated",
-            "price": 99.5,
-            "deposit": 5,
+            "price": "0.12345678",
+            "deposit": "5.00000001",
             "deals_count": 7,
-            "rating_manual": 4.5,
+            "rating_manual": "4.5",
             "status": "paused",
         },
         headers=with_totp(auth_headers(admin_init)),
@@ -107,8 +118,8 @@ async def test_update_service_changes_fields_and_writes_audit(client):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["title"] == "Updated"
-    assert body["price"] == 99.5
-    assert body["deposit"] == 5.0
+    assert Decimal(str(body["price"])) == Decimal("0.12345678")
+    assert Decimal(str(body["deposit"])) == Decimal("5.00000001")
     assert body["deals_count"] == 7
     assert body["rating_manual"] == 4.5
     assert body["status"] == "paused"
@@ -121,6 +132,11 @@ async def test_update_service_changes_fields_and_writes_audit(client):
             ).scalars()
         )
     assert len(rows) == 1
+    payload = rows[0].payload
+    assert payload is not None
+    assert payload["after"]["price"] == "0.12345678"
+    assert payload["after"]["deposit"] == "5.00000001"
+    assert payload["after"]["rating_manual"] == "4.5"
 
 
 async def test_update_service_validates_rating_range(client):
@@ -159,7 +175,12 @@ async def test_update_service_no_change_no_audit_row(client):
 
 async def test_delete_service(client):
     owner_id = await _bootstrap_user(client, 100, "owner")
-    sid = await _create_service(owner_id)
+    sid = await _create_service(
+        owner_id,
+        price=Decimal("0.12345678"),
+        deposit=Decimal("5.00000001"),
+        rating_manual=Decimal("4.5"),
+    )
     admin_init = await _make_admin(client)
     resp = await client.post(
         f"/api/admin/services/{sid}/delete",
@@ -168,6 +189,16 @@ async def test_delete_service(client):
     assert resp.status_code == 200
     async with async_session() as session:
         assert await session.get(Service, sid) is None
+        audit = (
+            await session.execute(
+                select(AdminAuditLog).where(AdminAuditLog.action == "service.delete")
+            )
+        ).scalar_one()
+    assert audit.payload is not None
+    assert audit.payload["price"] == "0.12345678"
+    assert audit.payload["deposit"] == "5.00000001"
+    assert isinstance(audit.payload["rating_manual"], str)
+    assert Decimal(audit.payload["rating_manual"]) == Decimal("4.5")
 
 
 # ── Reviews ────────────────────────────────────────────────────────────────

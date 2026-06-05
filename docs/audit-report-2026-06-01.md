@@ -163,6 +163,8 @@
 - M-191: remaining admin Decimal submit paths now preserve validated decimal strings across settings, currency limits, user stats/trust deposits, per-user balance adjustments, and service edits.
 - M-192: user service creation now preserves validated Decimal price strings instead of rounded JavaScript numbers.
 - M-193: admin deal amount filters now preserve Decimal query strings instead of rounded JavaScript numbers.
+- M-194: admin deal split ledger rows now preserve the exact Decimal percent string instead of normalizing it through float.
+- M-195: admin service edit/delete audit payloads now preserve Decimal money fields as strings and keep delete-time deposit context.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2157,6 +2159,26 @@ The admin deal list accepted `min_amount`/`max_amount` URL and sheet filters as 
 Risk: an admin searching for exact high-precision deal amounts could receive a broader or narrower result set than requested. Reversed-range validation also depended on rounded numbers, so two adjacent decimal strings could be misclassified after coercion.
 
 Fix: admin deal filters now keep validated decimal filters as trimmed strings, and range validation compares normalized decimal strings directly instead of using `Number`. The local DTO was widened to match OpenAPI, and regressions assert exact high-precision URL filters plus exact reversed-range rejection.
+
+### M-194. Admin split ledger normalized Decimal percent through float
+
+Links: `backend/app/routers/admin/deals.py`, Decimal request schema `backend/app/schemas.py`, regression `tests/integration/test_admin_deals.py`.
+
+The admin deal split endpoint validated `buyer_percent` as `Decimal`, but then converted it to `float` before calculating the split and writing wallet ledger metadata. The calculation used `Decimal(str(...))`, so common two-decimal shares usually avoided binary artifacts, but canonical operator input such as `"33.30"` was still stored in ledger meta as `"33.3"` while the approval payload and admin audit payload kept `"33.30"`.
+
+Risk: the wallet ledger is the forensic trail for money movement. Losing the canonical decimal text makes ledger rows disagree with the approval/audit trail for the same operation, which weakens reconciliation and makes exact operator intent harder to prove after the fact.
+
+Fix: `_split_locked` now accepts the validated `Decimal` directly and uses it for both share calculation and ledger metadata. A regression posts a `"33.30"` split and asserts exact buyer/seller ledger deltas, ledger meta, and audit payload values.
+
+### M-195. Admin service audit payloads rounded Decimal money fields
+
+Links: `backend/app/routers/admin/content.py`, Decimal request schema `backend/app/schemas.py`, regressions `tests/integration/test_admin_content.py`.
+
+The admin service editor compared `price`, `deposit`, and `rating_manual` as `Decimal`, but wrote the audit `before`/`after` payload through `float(...)`. The service delete audit snapshot also cast `price` to float and omitted `deposit`, even though the deleted row is no longer available for later reconciliation.
+
+Risk: admin service edits and deletes are part of the permanent audit trail. JSON numbers can round precise money fields, and deleting a service without a deposit snapshot removes useful monetary context from the only remaining forensic record.
+
+Fix: admin content audit payloads now store Decimal fields as canonical strings. Service delete snapshots also include `deposit` and `rating_manual`. Regressions cover precise edit payloads plus delete snapshots after the service row is gone.
 
 ## Наблюдения без отдельного finding
 
