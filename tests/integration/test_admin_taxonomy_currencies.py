@@ -125,8 +125,8 @@ async def test_currency_update_writes_audit_payload_with_before(client):
             "code": "JET3",
             "name": "Jeton 3",
             "decimals": 4,
-            "min_deposit": 0.3,
-            "min_withdraw": 0.4,
+            "min_deposit": "0.12345678",
+            "min_withdraw": "5.00000001",
             "is_active": True,
         },
         headers=with_totp(auth_headers(admin_init)),
@@ -136,7 +136,7 @@ async def test_currency_update_writes_audit_payload_with_before(client):
     # Update (changes name + min_deposit).
     resp = await client.put(
         "/api/admin/currencies",
-        json={"code": "JET3", "name": "Jeton III", "min_deposit": 0.9},
+        json={"code": "JET3", "name": "Jeton III", "min_deposit": "0.87654321"},
         headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
@@ -161,11 +161,15 @@ async def test_currency_update_writes_audit_payload_with_before(client):
     create_payload = next(r.payload for r in logs if r.action == "currency.create")
     update_payload = next(r.payload for r in logs if r.action == "currency.update")
     assert create_payload["before"] is None
+    assert create_payload["after"]["min_deposit"] == "0.12345678"
+    assert create_payload["after"]["min_withdraw"] == "5.00000001"
     assert update_payload["before"] is not None
     assert update_payload["before"]["name"] == "Jeton 3"
-    assert update_payload["before"]["min_deposit"] == 0.3
+    assert update_payload["before"]["min_deposit"] == "0.12345678"
+    assert update_payload["before"]["min_withdraw"] == "5.00000001"
     assert update_payload["after"]["name"] == "Jeton III"
-    assert update_payload["after"]["min_deposit"] == 0.9
+    assert update_payload["after"]["min_deposit"] == "0.87654321"
+    assert update_payload["after"]["min_withdraw"] == "5.00000001"
 
 
 async def test_currency_update_requires_admin(client):
@@ -224,7 +228,17 @@ async def test_currency_delete_removes_unreferenced_row(client):
 
     resp = await client.put(
         "/api/admin/currencies",
-        json={"code": "DEL1", "name": "Doomed", "decimals": 8},
+        json={
+            "code": "DEL1",
+            "name": "Doomed",
+            "network": "TON",
+            "icon_url": "https://example.test/del1.svg",
+            "decimals": 8,
+            "min_deposit": "0.12345678",
+            "min_withdraw": "5.00000001",
+            "address_regex": "^DEL[0-9]+$",
+            "kind": "crypto",
+        },
         headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
@@ -256,7 +270,14 @@ async def test_currency_delete_removes_unreferenced_row(client):
             .all()
         )
     assert len(logs) == 1
-    assert logs[0].payload["code"] == "DEL1"
+    payload = logs[0].payload
+    assert payload["code"] == "DEL1"
+    assert payload["network"] == "TON"
+    assert payload["icon_url"] == "https://example.test/del1.svg"
+    assert payload["min_deposit"] == "0.12345678"
+    assert payload["min_withdraw"] == "5.00000001"
+    assert payload["address_regex"] == "^DEL[0-9]+$"
+    assert payload["kind"] == "crypto"
 
 
 async def test_currency_delete_missing_returns_404(client):

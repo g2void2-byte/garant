@@ -164,6 +164,22 @@ def _cur_to_out(c: Currency) -> AdminCurrencyOut:
     )
 
 
+def _currency_audit_snapshot(c: Currency) -> dict:
+    return {
+        "code": c.code,
+        "name": c.name,
+        "network": c.network,
+        "icon_url": c.icon_url,
+        "decimals": c.decimals,
+        "min_deposit": str(Decimal(str(c.min_deposit))),
+        "min_withdraw": str(Decimal(str(c.min_withdraw))),
+        "is_active": bool(c.is_active),
+        "sort_order": c.sort_order,
+        "address_regex": c.address_regex or "",
+        "kind": c.kind or "crypto",
+    }
+
+
 @router.get("/currencies", response_model=list[AdminCurrencyOut])
 async def list_currencies_admin(_admin: AdminUser, session: SessionDep):
     rows = (
@@ -209,18 +225,7 @@ async def upsert_currency(
         await session.flush()
         action = "currency.create"
     else:
-        before = {
-            "name": existing.name,
-            "network": existing.network,
-            "icon_url": existing.icon_url,
-            "decimals": existing.decimals,
-            "min_deposit": float(existing.min_deposit),
-            "min_withdraw": float(existing.min_withdraw),
-            "is_active": bool(existing.is_active),
-            "sort_order": existing.sort_order,
-            "address_regex": existing.address_regex or "",
-            "kind": existing.kind or "crypto",
-        }
+        before = _currency_audit_snapshot(existing)
         if body.name is not None:
             existing.name = body.name
         if body.network is not None:
@@ -251,7 +256,7 @@ async def upsert_currency(
         target_id=existing.id,
         payload=state_change_payload(
             before=before,
-            after=_cur_to_out(existing).model_dump(),
+            after=_currency_audit_snapshot(existing),
             extra={"code": existing.code},
         ),
         request=request,
@@ -318,14 +323,7 @@ async def delete_currency(
             },
         )
 
-    payload = {
-        "code": c.code,
-        "name": c.name,
-        "network": c.network,
-        "decimals": c.decimals,
-        "is_active": bool(c.is_active),
-        "sort_order": c.sort_order,
-    }
+    payload = _currency_audit_snapshot(c)
     await session.delete(c)
     await log_admin_action(
         session,

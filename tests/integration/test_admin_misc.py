@@ -10,6 +10,7 @@ and at least one edge-case assertion.
 from __future__ import annotations
 
 from datetime import timedelta
+from decimal import Decimal
 
 from sqlalchemy import event, select
 
@@ -60,18 +61,27 @@ async def test_settings_patch_persists_and_audits(client):
     admin_init, _ = await _make_admin(client, tg=1)
     resp = await client.patch(
         "/api/admin/settings",
-        json={"deal_commission_percent": 7.5, "auto_withdraw_enabled": True},
+        json={
+            "deal_commission_percent": 7.5,
+            "auto_withdraw_enabled": True,
+            "pin_reset_price_usd": "0.12345678",
+            "faq_stats_total_usd": "123456789.12345678",
+        },
         headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["deal_commission_percent"] == 7.5
     assert resp.json()["auto_withdraw_enabled"] is True
+    assert Decimal(str(resp.json()["pin_reset_price_usd"])) == Decimal("0.12345678")
+    assert Decimal(str(resp.json()["faq_stats_total_usd"])) == Decimal("123456789.12345678")
 
     async with async_session() as session:
         s = (
             await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
         ).scalar_one()
         assert float(s.deal_commission_percent) == 7.5
+        assert s.pin_reset_price_usd == Decimal("0.12345678")
+        assert s.faq_stats_total_usd == Decimal("123456789.12345678")
         audits = (
             (
                 await session.execute(
@@ -82,6 +92,10 @@ async def test_settings_patch_persists_and_audits(client):
             .all()
         )
         assert len(audits) == 1
+        payload = audits[0].payload
+        assert payload is not None
+        assert payload["after"]["pin_reset_price_usd"] == "0.12345678"
+        assert payload["after"]["faq_stats_total_usd"] == "123456789.12345678"
 
 
 async def test_settings_patch_rbac(client):

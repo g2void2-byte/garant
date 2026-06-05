@@ -165,6 +165,8 @@
 - M-193: admin deal amount filters now preserve Decimal query strings instead of rounded JavaScript numbers.
 - M-194: admin deal split ledger rows now preserve the exact Decimal percent string instead of normalizing it through float.
 - M-195: admin service edit/delete audit payloads now preserve Decimal money fields as strings and keep delete-time deposit context.
+- M-196: admin settings audit payloads now preserve Decimal settings as strings instead of JSON numbers.
+- M-197: admin currency audit payloads now preserve Decimal limits as strings and keep full delete-time currency context.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2179,6 +2181,26 @@ The admin service editor compared `price`, `deposit`, and `rating_manual` as `De
 Risk: admin service edits and deletes are part of the permanent audit trail. JSON numbers can round precise money fields, and deleting a service without a deposit snapshot removes useful monetary context from the only remaining forensic record.
 
 Fix: admin content audit payloads now store Decimal fields as canonical strings. Service delete snapshots also include `deposit` and `rating_manual`. Regressions cover precise edit payloads plus delete snapshots after the service row is gone.
+
+### M-196. Admin settings audit payloads rounded Decimal settings
+
+Links: `backend/app/routers/admin/settings.py`, Decimal request schema `backend/app/schemas.py`, regression `tests/integration/test_admin_misc.py`.
+
+The settings editor already compared Decimal fields without using `float`, but its `settings.update` audit payload converted changed Decimal values through `float(...)`. This affected money-like settings such as `pin_reset_price_usd` and `faq_stats_total_usd`, where the database column is `Numeric(28, 8)` and the request schema accepts Decimal input.
+
+Risk: settings changes are operationally important and the audit trail is the durable record of who changed fee/price/stat values. JSON numbers can round the exact Decimal value that was stored, making later reconciliation compare against a lossy audit value.
+
+Fix: Decimal settings now write canonical strings to the audit `before`/`after` payload while preserving Decimal comparison and the existing API response shape. The regression updates precise PIN-reset and FAQ total values and asserts exact audit strings.
+
+### M-197. Admin currency audit payloads rounded limits and omitted delete context
+
+Links: `backend/app/routers/admin/taxonomy.py`, Decimal request schema `backend/app/schemas.py`, regressions `tests/integration/test_admin_taxonomy_currencies.py`.
+
+The currency upsert endpoint wrote `min_deposit` and `min_withdraw` audit values through two lossy paths: the update `before` snapshot used `float(...)`, and the update `after` snapshot came from `AdminCurrencyOut.model_dump()`, whose `MoneyDecimal` serializer also emits floats. The delete snapshot omitted limit, icon, regex, and kind fields entirely.
+
+Risk: currency limits control deposit/withdrawal validation and are reference data that may be deleted after operational cleanup. Rounding the update audit payload or deleting a row without the full snapshot weakens the only durable record of the exact limits and validation policy that existed at the time.
+
+Fix: currency audit snapshots now use a dedicated helper that stores Decimal limits as strings and includes the full relevant currency context. Regressions cover precise create/update audit payloads plus a delete snapshot after the currency row is gone.
 
 ## Наблюдения без отдельного finding
 
