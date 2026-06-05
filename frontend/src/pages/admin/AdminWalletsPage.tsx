@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Minus, Plus, Search, Wallet } from "lucide-react";
 import { Page } from "@/components/layout/Page";
@@ -27,6 +27,7 @@ import {
   parsePositiveDecimalInput,
   parseSignedNonZeroDecimalInput,
 } from "@/lib/formNumbers";
+import { normalizeCurrencyCodeRows } from "@/lib/currencyCodes";
 import { formatAdminAmount, formatAdminCount, formatAdminCurrencyCode, formatAdminUsd, formatAdminUsername, getAdminTotalPages, hasVisibleAdminBalance, parseAdminDecimal, pickAdminMutationCurrency, shouldShowAdminPagination } from "./format";
 
 const PAGE_SIZE = 50;
@@ -265,8 +266,16 @@ function RatesForm({ onClose }: { onClose: () => void }) {
   const { data: rates } = useAdminCurrencyRates();
   const upsert = useAdminUpsertCurrencyRate();
   const toast = useToast();
+  const allCurrencies = useMemo(() => normalizeCurrencyCodeRows(currencies ?? []), [currencies]);
   const [currency, setCurrency] = useState("USDT");
-  const current = (rates ?? []).find((r: AdminCurrencyRateDto) => r.currency_code === currency);
+  useEffect(() => {
+    setCurrency((current) =>
+      pickAdminMutationCurrency(current, allCurrencies, allCurrencies[0]?.code ?? "USDT"),
+    );
+  }, [allCurrencies]);
+  const current = (rates ?? []).find(
+    (r: AdminCurrencyRateDto) => formatAdminCurrencyCode(r.currency_code) === currency,
+  );
   const [rate, setRate] = useState<string | null>(null);
   const [source, setSource] = useState("manual");
   const value = rate ?? (current ? String(current.usd_rate) : "");
@@ -279,14 +288,16 @@ function RatesForm({ onClose }: { onClose: () => void }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-1.5">
-        {(currencies ?? []).map((c) => (
+        {allCurrencies.map((c) => (
           <button
             key={c.id}
             type="button"
             onClick={() => {
               setCurrency(c.code);
               setRate(null);
-              setSource((rates ?? []).find((r) => r.currency_code === c.code)?.source ?? "manual");
+              setSource(
+                (rates ?? []).find((r) => formatAdminCurrencyCode(r.currency_code) === c.code)?.source ?? "manual",
+              );
             }}
             className={`rounded-button px-3 py-1.5 text-sm transition ${
               c.code === currency ? "bg-accent text-accent-fg font-medium" : "bg-panel-2 text-text-muted"
@@ -352,12 +363,12 @@ function AdjustForm({
   const [reason, setReason] = useState("");
   const toast = useToast();
   const adjust = useAdminAdjustBalance(target.user_id);
-  const allCurrencies = currencies ?? [];
+  const allCurrencies = useMemo(() => normalizeCurrencyCodeRows(currencies ?? []), [currencies]);
   useEffect(() => {
     setCurrency((current) =>
-      pickAdminMutationCurrency(current, currencies ?? [], preferredCurrency),
+      pickAdminMutationCurrency(current, allCurrencies, preferredCurrency),
     );
-  }, [currencies, preferredCurrency]);
+  }, [allCurrencies, preferredCurrency]);
   const amountValue = amount.trim();
   const parsedAmount = parseSignedNonZeroDecimalInput(amount);
   const amountError = amountValue && parsedAmount === null

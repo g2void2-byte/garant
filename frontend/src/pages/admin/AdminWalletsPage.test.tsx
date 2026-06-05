@@ -360,6 +360,34 @@ describe("<AdminWalletsPage />", () => {
     );
   });
 
+  it("normalizes catalog currency chips before adjust mutations", async () => {
+    mockState.currencies = [
+      mockState.currencies[0],
+      { ...mockState.currencies[1], code: " ton " },
+    ];
+    mockState.list = {
+      items: [makeUserBalance()],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    mockState.adjust.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByText("Alice"));
+    await user.click(await screen.findByRole("button", { name: "TON" }));
+    const amountInput = await screen.findByPlaceholderText(/напр\. -25/);
+    fireEvent.change(amountInput, { target: { value: "5" } });
+    await user.click(screen.getByRole("button", { name: /Применить/ }));
+
+    await waitFor(() =>
+      expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ currency_code: "TON", amount: "5" }),
+      ),
+    );
+  });
+
   it("renders missing wallet username as a non-handle label", () => {
     mockState.list = {
       items: [{ ...makeUserBalance(), username: null }],
@@ -615,6 +643,29 @@ describe("<AdminWalletsPage />", () => {
       expect(mockState.upsertRate.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USDT",
         usd_rate: "0.123456789123456789",
+        source: "manual",
+      }),
+    );
+  });
+
+  it("normalizes catalog currency codes before USD-rate upserts", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.currencies = [
+      { ...mockState.currencies[0], code: " usdt " },
+    ];
+    mockState.upsertRate.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "USD" }));
+    const rateInput = await screen.findByLabelText("USD rate for USDT");
+    fireEvent.change(rateInput, { target: { value: "1.2345" } });
+    await user.click(screen.getByRole("button", { name: "Save rate" }));
+
+    await waitFor(() =>
+      expect(mockState.upsertRate.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "USDT",
+        usd_rate: "1.2345",
         source: "manual",
       }),
     );

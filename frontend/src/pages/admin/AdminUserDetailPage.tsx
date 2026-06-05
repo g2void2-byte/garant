@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Ban,
@@ -47,6 +47,7 @@ import {
   parseNonNegativeIntInput,
   parsePositiveDecimalInput,
 } from "@/lib/formNumbers";
+import { normalizeCurrencyCodeRows } from "@/lib/currencyCodes";
 import { haptic } from "@/lib/tg";
 import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
@@ -648,12 +649,12 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
   );
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
-  const allCurrencies = currencies ?? [];
+  const allCurrencies = useMemo(() => normalizeCurrencyCodeRows(currencies ?? []), [currencies]);
   useEffect(() => {
     setCurrency((current) =>
-      pickAdminMutationCurrency(current, currencies ?? [], fallback),
+      pickAdminMutationCurrency(current, allCurrencies, fallback),
     );
-  }, [currencies, fallback]);
+  }, [allCurrencies, fallback]);
   const amountValue = normalizeDecimalInput(amount);
   const parsedAmount = amountValue ? parsePositiveDecimalInput(amountValue) : null;
   const amountError = amountValue && parsedAmount === null

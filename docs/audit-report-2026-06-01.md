@@ -176,6 +176,7 @@
 - M-204: admin deposit and withdrawal queues now normalize runtime currency labels before rendering money rows.
 - M-205: remaining admin deal, wallet, and per-user balance money rows now normalize runtime currency labels before display.
 - M-206: admin wallet adjustment forms now choose mutation currencies from normalized/catalog-backed codes instead of raw balance DTO labels.
+- M-207: admin wallet currency selectors now normalize catalog row codes before adjustment and USD-rate mutations.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2300,6 +2301,16 @@ The wallet adjustment sheets selected their initial mutation currency from the f
 Risk: these forms perform manual credit/debit operations. Sending a currency value that differs from the visible catalog-backed chip can fail the operation or make operator intent ambiguous during money correction workflows.
 
 Fix: admin adjustment forms now initialize and reconcile the selected mutation currency through a shared helper that normalizes the preferred balance code and validates it against loaded admin currency rows. If the current selection is malformed or absent from the catalog, the form falls back to a valid known code. Regressions cover the helper, the admin wallets sheet, and the per-user balance form.
+
+### M-207. Admin wallet currency selectors trusted raw catalog codes
+
+Links: `frontend/src/pages/admin/AdminWalletsPage.tsx`, `frontend/src/pages/admin/AdminUserDetailPage.tsx`, regressions in `frontend/src/pages/admin/AdminWalletsPage.test.tsx` and `frontend/src/pages/admin/AdminUserDetailPage.numbers.test.tsx`.
+
+M-206 normalized the selected adjustment currency, but the selector buttons still rendered and stored `c.code` directly from admin currency DTO rows. The admin wallets USD-rate form had the same path: a catalog row like `" usdt "` could render as a selector and submit `currency_code: " usdt "` to the rate upsert mutation.
+
+Risk: manual wallet adjustments and exchange-rate edits are money-operation controls. If the displayed selector and submitted currency diverge because a catalog DTO is non-canonical, the operator can perform an action that does not match the visible normalized currency intent.
+
+Fix: the affected admin wallet/user selectors now use `normalizeCurrencyCodeRows` before rendering options, storing selection state, matching current rates, or submitting mutations. Malformed catalog rows are dropped and canonicalizable rows submit uppercase codes. Regressions cover adjustment chip clicks and USD-rate upserts with non-canonical catalog DTO codes.
 
 ## Наблюдения без отдельного finding
 

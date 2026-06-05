@@ -341,6 +341,30 @@ describe("<AdminUserDetailPage /> numeric forms", () => {
     });
   });
 
+  it("normalizes per-user catalog currency chips before submitting", async () => {
+    mockState.currencies = [
+      makeCurrency(),
+      makeCurrency({ id: 2, code: " ton ", name: "TON" }),
+    ];
+    mockState.adjustBalance.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "TON" }));
+    fireEvent.change(screen.getByPlaceholderText("25.5"), {
+      target: { value: "5" },
+    });
+    await user.click(screen.getByRole("button", { name: /Зачислить/i }));
+
+    await waitFor(() => {
+      expect(mockState.adjustBalance.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "TON",
+        amount: "5",
+        reason: undefined,
+      });
+    });
+  });
+
   it("submits plain per-user balance adjustment amounts", async () => {
     mockState.adjustBalance.mutateAsync.mockResolvedValue({});
     const user = userEvent.setup();
