@@ -48,6 +48,40 @@ beforeEach(() => {
 });
 
 describe("<PinResetPaywallModal />", () => {
+  it("normalizes reset price currency codes before display", async () => {
+    apiGetSpy.mockReturnValue({
+      json: async () => ({
+        price: "3.5",
+        currency_code: " usd ",
+        user_balance: "10",
+        can_afford: true,
+      }),
+    });
+
+    renderModal();
+
+    expect(await screen.findByText("3.5 USD")).toBeInTheDocument();
+    expect(screen.getByText("10 USD")).toBeInTheDocument();
+    expect(screen.queryByText(/ usd /)).not.toBeInTheDocument();
+  });
+
+  it("does not render malformed reset price currency codes", async () => {
+    apiGetSpy.mockReturnValue({
+      json: async () => ({
+        price: "3.5",
+        currency_code: "../USD",
+        user_balance: "10",
+        can_afford: true,
+      }),
+    });
+
+    renderModal();
+
+    expect(await screen.findByText("3.5 USD")).toBeInTheDocument();
+    expect(screen.getByText("10 USD")).toBeInTheDocument();
+    expect(screen.queryByText(/\.\.\/USD/)).not.toBeInTheDocument();
+  });
+
   it("renders malformed reset price payloads neutrally and disables balance payment", async () => {
     apiGetSpy.mockReturnValue({
       json: async () => ({
@@ -113,5 +147,43 @@ describe("<PinResetPaywallModal />", () => {
       expect.objectContaining({ title: expect.stringContaining("1e2") }),
     );
     expect(onPaid).toHaveBeenCalled();
+  });
+
+  it("normalizes paid currency codes in the success toast", async () => {
+    apiGetSpy.mockReturnValue({
+      json: async () => ({
+        price: "3.5",
+        currency_code: "USD",
+        user_balance: "10",
+        can_afford: true,
+      }),
+    });
+    apiPostSpy.mockReturnValue({
+      json: async () => ({
+        delivered: true,
+        expires_at: "2026-01-01T00:00:00Z",
+        charged: "3.5",
+        currency_code: "../USD",
+      }),
+    });
+
+    const user = userEvent.setup();
+    renderModal();
+
+    const payButton = await screen.findByRole("button", { name: /Оплатить с баланса/i });
+    await waitFor(() => expect(payButton).toBeEnabled());
+    await user.click(payButton);
+
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "success",
+          title: expect.stringContaining("3.5 USD"),
+        }),
+      ),
+    );
+    expect(toastSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ title: expect.stringContaining("../USD") }),
+    );
   });
 });

@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { usePresence } from "@/lib/animate";
 import { haptic, openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { formatCurrencyStrict, parseDecimalValue } from "@/lib/format";
 
 interface PinResetPriceDto {
@@ -80,7 +81,7 @@ export function PinResetPaywallModal({
     mutationFn: () => api.post("api/pin/reset/paid").json(),
   });
 
-  const currencyCode = price.data?.currency_code?.trim() || "USD";
+  const currencyCode = normalizeCurrencyCode(price.data?.currency_code) ?? "USD";
   const priceValue = parseDecimalValue(price.data?.price);
   const balanceValue = parseDecimalValue(price.data?.user_balance);
   const hasValidPriceData =
@@ -120,9 +121,10 @@ export function PinResetPaywallModal({
       // user sees the deduction the next time they open the wallet.
       void qc.invalidateQueries({ queryKey: qk.wallet.all() });
       void qc.invalidateQueries({ queryKey: qk.me() });
+      const paidCurrencyCode = normalizeCurrencyCode(res.currency_code) ?? currencyCode;
       toast.show({
         kind: "success",
-        title: `Списано ${formatCurrencyStrict(res.charged, res.currency_code)}`,
+        title: `Списано ${formatCurrencyStrict(res.charged, paidCurrencyCode)}`,
         body: res.delivered
           ? "Код отправлен в Telegram"
           : "Код выписан, но Telegram-сообщение не доставлено",

@@ -172,6 +172,7 @@
 - M-200: admin taxonomy currency-limit rows and system alert counters now render malformed runtime numbers as neutral values.
 - M-201: create-deal insufficient-funds errors now validate runtime money fields and currency codes before showing balance hints.
 - M-202: deal and payment invoice money surfaces now normalize runtime currency codes before rendering labels.
+- M-203: paid PIN-reset paywall now normalizes runtime currency codes before rendering price/balance and paid toasts.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2256,6 +2257,16 @@ Several user-facing money surfaces already rejected malformed runtime amounts, b
 Risk: these screens are payment decision surfaces. Rendering a raw runtime currency label next to a valid or neutralized amount can make a corrupted DTO look like a different wallet/currency and weakens the user's ability to verify what they are paying.
 
 Fix: deal rows, deal detail invoice rows, create-deal invoice previews, and both deal/deposit payment modals now pass currency codes through the shared contract normalizer before rendering. Invalid codes fall back to a neutral known display code instead of leaking raw DTO strings, and lowercase/trimmed contract codes normalize to uppercase. Regressions cover malformed and normalized currency labels across the affected surfaces.
+
+### M-203. PIN-reset paywall trusted runtime currency labels
+
+Links: `frontend/src/components/PinResetPaywallModal.tsx`, shared normalizer `frontend/src/lib/currencyCodes.ts`, regression `frontend/src/components/PinResetPaywallModal.test.tsx`.
+
+The paid PIN-reset paywall already rendered malformed runtime price, balance, and charged amounts neutrally, but it only trimmed `currency_code` before appending it to those values. A malformed price payload or paid response could therefore render a raw label such as `"../USD"` next to the reset price, user balance, or "charged" success toast.
+
+Risk: the PIN-reset modal is a money-moving confirmation path. Even when the amount is valid, a raw runtime currency label can misstate which balance is being debited and make a corrupted DTO look like a legitimate charge.
+
+Fix: the price payload currency and paid-result currency now pass through the shared currency-code normalizer before display, falling back to `USD` for malformed values. Regressions cover normalized lowercase/trimmed price currency codes, malformed price currency codes, and malformed paid-result currency codes in the success toast.
 
 ## Наблюдения без отдельного finding
 
