@@ -96,8 +96,10 @@ export function formatAmount(
   });
 }
 
-export function formatMoney(value: number | string | null | undefined): string {
-  const n = parseDecimal(value);
+export function formatMoney(value: number | string | null | undefined, fallback = "\u2014"): string {
+  const parsed = parseDecimalValue(value);
+  if (parsed === null || parsed < 0) return fallback;
+  const n = parsed;
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 10_000) return `$${(n / 1000).toFixed(1)}k`;
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k+`;

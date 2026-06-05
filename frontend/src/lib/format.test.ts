@@ -112,15 +112,18 @@ describe("formatMoney", () => {
     expect(formatMoney(2_500_000)).toBe("$2.5M");
   });
 
-  it("returns $0 for non-finite values", () => {
-    expect(formatMoney(Number.NaN)).toBe("$0");
+  it("returns a neutral fallback for malformed or negative values", () => {
+    expect(formatMoney(Number.NaN)).toBe("\u2014");
+    expect(formatMoney(-1)).toBe("\u2014");
+    expect(formatMoney("-1")).toBe("\u2014");
+    expect(formatMoney("oops", "n/a")).toBe("n/a");
   });
 
   it("parses string money values without accepting ambiguous notation", () => {
     expect(formatMoney("250.50")).toBe("$250.50");
     expect(formatMoney("1500")).toBe("$1.5k+");
-    expect(formatMoney("1e3")).toBe("$0");
-    expect(formatMoney("0x10")).toBe("$0");
+    expect(formatMoney("1e3")).toBe("\u2014");
+    expect(formatMoney("0x10")).toBe("\u2014");
   });
 });
 

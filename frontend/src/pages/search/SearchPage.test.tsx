@@ -135,6 +135,24 @@ describe("<SearchPage />", () => {
     expect(screen.getByText("$1.5k+")).toBeInTheDocument();
   });
 
+  it("does not coerce malformed user deposit values in result rows", () => {
+    mockState.data = [
+      makeUser({
+        id: 8,
+        username: "runtime-money",
+        display_name: "Runtime Money",
+        deposit: "0x10" as unknown as number,
+      }),
+    ];
+
+    renderPage();
+
+    const row = screen.getByTestId("search-user-runtime-money");
+    expect(within(row).getByText("\u2014")).toBeInTheDocument();
+    expect(within(row).queryByText("$0")).not.toBeInTheDocument();
+    expect(within(row).queryByText(/0x10/)).not.toBeInTheDocument();
+  });
+
   it("does not coerce malformed row count fields into user metadata", () => {
     mockState.data = [
       makeUser({

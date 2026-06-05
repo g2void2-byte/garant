@@ -38,6 +38,7 @@ function renderPage() {
 beforeEach(() => {
   mockState.data = undefined;
   mockState.isLoading = false;
+  mockState.me = undefined;
 });
 
 describe("<WalletPage />", () => {
@@ -260,5 +261,15 @@ describe("<WalletPage />", () => {
     expect(
       screen.getByRole("button", { name: /Управление депозитом/ }),
     ).toBeInTheDocument();
+  });
+
+  it("renders malformed trust-deposit balances as neutral", () => {
+    mockState.data = [];
+    mockState.me = { deposit: "1e2" as unknown as number };
+    renderPage();
+
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText("$0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
   });
 });

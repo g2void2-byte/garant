@@ -66,6 +66,14 @@ describe("<UserCard />", () => {
     expect(screen.getByText("4.5")).toBeInTheDocument();
   });
 
+  it("renders malformed money payloads as a neutral value", () => {
+    renderCard({ deposit: "0x10" as unknown as number });
+
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText("$0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+  });
+
   it("does not coerce malformed count fields into profile metadata", () => {
     renderCard({
       deals_count: "1e2" as unknown as number,

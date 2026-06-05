@@ -43,7 +43,8 @@ describe("<ServiceCard />", () => {
     renderCard({ price: "1500" as unknown as number });
     expect(screen.getByText("$1.5k+")).toBeInTheDocument();
     renderCard({ price: "1e3" as unknown as number });
-    expect(screen.getByText("$0")).toBeInTheDocument();
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText("$0")).not.toBeInTheDocument();
   });
 
   it("renders a fallback when the service owner username is missing", () => {

@@ -201,6 +201,17 @@ describe("<ServiceDetailPage />", () => {
     expect(screen.getAllByText("4.5").length).toBeGreaterThan(0);
   });
 
+  it("does not coerce malformed service price payloads", () => {
+    serviceState.data = makeService({ price: "1e3" as unknown as number });
+    commentsState.data = [];
+
+    renderAt(7);
+
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText("$0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e3/)).not.toBeInTheDocument();
+  });
+
   it("hides 'Сделка/Написать' when viewing one's own service", () => {
     meState.data = makeUser({ username: "bob" });
     serviceState.data = makeService();

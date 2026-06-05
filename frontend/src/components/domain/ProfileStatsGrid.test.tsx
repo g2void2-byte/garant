@@ -102,4 +102,20 @@ describe("<ProfileStatsGrid />", () => {
     expect(screen.queryByText("4.5 (1e2)")).not.toBeInTheDocument();
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(4);
   });
+
+  it("renders neutral values for malformed public money stats", () => {
+    render(
+      <ProfileStatsGrid
+        user={makeUser({
+          deposit: "1e2" as unknown as number,
+          deals_sum: "0x10" as unknown as number,
+          rating: 4.5,
+        })}
+      />,
+    );
+
+    expect(screen.queryByText("$0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2|0x10/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("\u2014").length).toBeGreaterThanOrEqual(2);
+  });
 });

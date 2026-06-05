@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 87 файлов, 892 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 87 файлов, 897 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -149,6 +149,7 @@
 - M-177: admin audit/user identity labels now reject malformed runtime ids and counts before rendering operational identifiers.
 - M-178: deal topup payment actions now require a strict positive invoice total before opening the provider link.
 - M-179: deal and wallet payment modals now require strict positive invoice amounts before auto-opening or clicking provider payment links.
+- M-180: public money summaries now render malformed/negative runtime amounts as neutral values instead of `$0`.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2003,6 +2004,16 @@ M-178 hardened the deal-detail card, but the reusable deal-invoice modal and wal
 Risk: a corrupt invoice amount could reach the last payment-entry surface. Even if the backend/provider ultimately enforces the real invoice, the frontend would present a provider link after showing an amount it should have treated as invalid.
 
 Fix: both payment modals now parse invoice amounts with the strict decimal parser, render a neutral dash for malformed/negative values, and require a valid positive amount before auto-opening or clicking the provider payment link. Regressions pin malformed deal topup and wallet deposit modal amounts.
+
+### M-180. Public money summaries masked malformed runtime amounts as `$0`
+
+Links: `frontend/src/lib/format.ts`, public surfaces `frontend/src/components/domain/UserCard.tsx`, `frontend/src/components/domain/ProfileStatsGrid.tsx`, `frontend/src/components/domain/ServiceCard.tsx`, `frontend/src/pages/search/SearchPage.tsx`, `frontend/src/pages/search/ServiceDetailPage.tsx`, `frontend/src/pages/wallet/WalletPage.tsx`, regressions in the adjacent tests.
+
+The shared `formatMoney()` helper still used the legacy zero-coercing decimal parser. Runtime values like `"1e3"`, `"0x10"`, `NaN`, or negative numbers therefore rendered as credible `$0` or signed public money values in user cards, profile stats, service cards/details, search rows, and the wallet trust-deposit summary.
+
+Risk: public trust and price surfaces could silently understate corrupt values instead of flagging them as invalid. That is especially misleading for service price, trust deposit, and total-deals money summaries because `$0` looks like a valid business value.
+
+Fix: `formatMoney()` now uses the strict decimal parser and returns a neutral fallback for malformed or negative values while preserving canonical decimal-string amounts. Regressions cover the shared helper and the affected user/profile/service/search/wallet surfaces.
 
 ## Наблюдения без отдельного finding
 
