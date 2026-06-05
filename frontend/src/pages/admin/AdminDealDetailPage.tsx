@@ -53,7 +53,12 @@ import { api } from "@/api/client";
 import { haptic } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
-import { formatAdminAmount, formatAdminUsd, formatAdminUsername } from "./format";
+import {
+  formatAdminAmount,
+  formatAdminUsd,
+  formatAdminUsername,
+  hasPositiveAdminDecimal,
+} from "./format";
 
 const STATUS_LABEL: Record<string, string> = {
   cancelled: "Отменена",
@@ -280,6 +285,7 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
   const splitBuyerPctError = parsedSplitBuyerPct === null
     ? "Введите число 0..100 без экспоненты"
     : undefined;
+  const hasActionableMoneyAmount = hasPositiveAdminDecimal(deal.amount);
 
   const actionName = (action: "release" | "refund" | "split") => ({
     release: "deal.force_release",
@@ -297,6 +303,13 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
     try {
       if ((action === "release" || action === "refund" || action === "split") && approvalIdError) {
         toast.show({ kind: "error", title: "Неверный Approval ID" });
+        return;
+      }
+      if (
+        (action === "release" || action === "refund" || action === "split") &&
+        !hasActionableMoneyAmount
+      ) {
+        toast.show({ kind: "error", title: "Некорректная сумма сделки" });
         return;
       }
       if (action === "release") {
@@ -389,21 +402,21 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
       label: "Принудительное завершение",
       icon: Check,
       variant: "primary" as const,
-      disabled: terminal,
+      disabled: terminal || !hasActionableMoneyAmount,
     },
     {
       key: "refund" as const,
       label: "Возврат покупателю",
       icon: Undo2,
       variant: "secondary" as const,
-      disabled: terminal,
+      disabled: terminal || !hasActionableMoneyAmount,
     },
     {
       key: "split" as const,
       label: "Сплит-выплата",
       icon: Split,
       variant: "secondary" as const,
-      disabled: terminal,
+      disabled: terminal || !hasActionableMoneyAmount,
     },
     {
       key: "arbitration" as const,

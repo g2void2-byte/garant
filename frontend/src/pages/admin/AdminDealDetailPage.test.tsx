@@ -353,6 +353,28 @@ describe("<AdminDealDetailPage />", () => {
     ).toBeInTheDocument();
   });
 
+  it("disables money-moving admin actions when the deal amount is malformed", () => {
+    mockState.deal = makeDeal({ amount: "1e3" as unknown as string });
+    renderPage();
+
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Принудительное завершение/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Возврат покупателю/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Сплит-выплата/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Открыть арбитраж/i }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /Удалить сделку/i }),
+    ).toBeEnabled();
+  });
+
   it("looks up an assigned arbiter through a first-page exact search", async () => {
     mockState.deal = makeDeal({ status: "arbitration" });
     mockState.assign.mutateAsync.mockResolvedValue({});

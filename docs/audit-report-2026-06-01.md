@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 88 файлов, 921 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 88 файлов, 922 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -156,6 +156,7 @@
 - M-184: create-deal balance defaults, hints, and Max previews now use canonical wallet amount strings instead of malformed runtime balance values.
 - M-185: wallet deposit payment entry and history rows now require strict positive runtime amounts instead of opening pay links after zero-coercion.
 - M-186: admin deposit/withdrawal money actions now require strict positive runtime amounts instead of acting on rows displayed as neutral.
+- M-187: admin deal force-release/refund/split actions now require a strict positive runtime deal amount before opening money-moving sheets.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2080,6 +2081,16 @@ Admin deposit and withdrawal queues already rendered malformed amounts such as `
 Risk: admin operators could trigger money-moving mutations on the same rows the UI had already classified as invalid money data. That weakens the invariant that display and action gating agree before payment, credit, refund, or payout decisions.
 
 Fix: admin deposit `pay_url`, mark-paid, refund, withdrawal approve, and withdrawal mark-sent actions now require a strict positive runtime amount via the shared admin decimal parser. Withdrawal reject remains available so an operator can safely close a malformed pending request. Regressions cover malformed deposit mark/refund/pay-url gates and malformed withdrawal approve/mark-sent gates.
+
+### M-187. Admin deal force actions stayed enabled after malformed deal amounts
+
+Links: `frontend/src/pages/admin/AdminDealDetailPage.tsx`, shared admin parser `frontend/src/pages/admin/format.ts`, regression in `frontend/src/pages/admin/AdminDealDetailPage.test.tsx`.
+
+Admin deal detail already rendered malformed deal amounts as a neutral dash via the strict admin formatter, but the force-release, force-refund, and split buttons were gated only by terminal status. A corrupted runtime `deal.amount` such as `"1e3"` could therefore leave money-moving admin sheets available on the same screen that no longer displayed a valid amount.
+
+Risk: an operator could start a release/refund/split flow without a trustworthy displayed principal. Even though the backend owns final accounting, the admin UI should not present irreversible money actions when its own runtime boundary has classified the principal as invalid.
+
+Fix: force-release, force-refund, and split now require `hasPositiveAdminDecimal(deal.amount)` before the buttons open their sheets or the confirm handler sends a mutation. Arbitration, assign, and delete remain available so admins can still investigate or close a malformed deal. The regression covers malformed deal amount display plus the enabled/disabled split between money-moving and non-money actions.
 
 ## Наблюдения без отдельного finding
 
