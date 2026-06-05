@@ -27,6 +27,7 @@ import {
   parseNonNegativeDecimalInput,
   parseNonNegativeIntInput,
 } from "@/lib/formNumbers";
+import { formatAdminAmount } from "./format";
 
 const MAX_CURRENCY_DECIMALS = 8;
 
@@ -250,7 +251,9 @@ function CurrenciesPane() {
                 )}
               </div>
               <div className="text-xs text-text-muted">
-                {c.name} · {c.network} · мин: {c.min_deposit}/{c.min_withdraw}
+                {c.name} · {c.network} · мин:{" "}
+                {formatAdminAmount(c.min_deposit, c.decimals)}/
+                {formatAdminAmount(c.min_withdraw, c.decimals)}
               </div>
             </div>
             <button

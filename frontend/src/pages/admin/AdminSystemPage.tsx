@@ -9,7 +9,7 @@ import { confirmDialog } from "@/lib/dialog";
 import { formatDateTime, parseDecimalValue } from "@/lib/format";
 import { useAdminFlushRedis, useAdminSystemStatus } from "@/api/admin/hooks";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminFixedDecimal } from "./format";
+import { formatAdminCount, formatAdminFixedDecimal } from "./format";
 
 /**
  * `/admin/system` — service-health introspection.
@@ -83,7 +83,7 @@ export default function AdminSystemPage() {
                         }
                       />
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium">{alert.name} · {alert.count}</div>
+                        <div className="font-medium">{alert.name} · {formatAdminCount(alert.count)}</div>
                         <div className="text-xs text-text-muted">{alert.detail}</div>
                       </div>
                     </div>

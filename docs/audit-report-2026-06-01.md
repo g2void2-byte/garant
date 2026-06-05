@@ -169,6 +169,7 @@
 - M-197: admin currency audit payloads now preserve Decimal limits as strings and keep full delete-time currency context.
 - M-198: PIN unlock/reset attempts counters now reject malformed runtime values instead of rendering `NaN`/invalid counts.
 - M-199: admin user wallet/content rows now format malformed runtime balances, counters, and ratings as neutral values instead of raw DTO strings.
+- M-200: admin taxonomy currency-limit rows and system alert counters now render malformed runtime numbers as neutral values.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2223,6 +2224,16 @@ The admin user detail balance section rendered `AdminUserBalanceDto.total` direc
 Risk: these rows are operator-facing evidence while reviewing a user account. Raw malformed balances/counters/ratings can make a corrupted DTO look intentional and can disagree with adjacent strict admin surfaces.
 
 Fix: per-user wallet totals now use the strict admin amount formatter with currency decimals. User content rows use the shared admin count and rating formatters, preserving canonical values while rendering malformed runtime numbers as a neutral dash. Regressions cover malformed wallet totals, invalid currency decimals, service row counters/ratings, review ratings, and comment ratings.
+
+### M-200. Admin taxonomy/system rows still trusted malformed runtime numbers
+
+Links: `frontend/src/pages/admin/AdminTaxonomyPage.tsx`, `frontend/src/pages/admin/AdminSystemPage.tsx`, shared admin formatters `frontend/src/pages/admin/format.ts`, regressions in the adjacent admin page tests.
+
+After the broader admin numeric-display hardening, two operator-facing rows still printed DTO numbers directly: taxonomy currency rows rendered `min_deposit` / `min_withdraw` as raw runtime values, and system operational alerts rendered `alert.count` directly. A malformed payload such as `"1e2"` or `"0x10"` could therefore appear as a credible currency limit or alert count while neighboring admin surfaces already showed neutral values for the same malformed shapes.
+
+Risk: currency limits and operational alerts are decision surfaces for admins. Raw malformed numbers can make a corrupted DTO look like intentional configuration or a real system count, which weakens triage and auditability.
+
+Fix: taxonomy currency limits now use the strict admin amount formatter with each currency's decimals, and operational alert counts use the strict admin count formatter. Regressions cover malformed currency limits and malformed alert counts rendering as neutral dashes without leaking the raw DTO strings.
 
 ## Наблюдения без отдельного finding
 

@@ -137,6 +137,25 @@ describe("<AdminSystemPage />", () => {
     expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
   });
 
+  it("renders malformed operational alert counts as neutral values", () => {
+    mockState.data = makeStatus({
+      alerts: [
+        {
+          name: "usd_rates_missing",
+          severity: "warning",
+          count: "1e2" as unknown as number,
+          detail: "Missing USD rates",
+        },
+      ],
+    });
+
+    const { container } = renderPage();
+
+    expect(screen.getByText("Operational alerts")).toBeInTheDocument();
+    expect(container.textContent).toContain("usd_rates_missing · \u2014");
+    expect(container.textContent).not.toMatch(/1e2/);
+  });
+
   it("renders danger detail when redis is not configured", () => {
     mockState.data = makeStatus({
       redis_ok: false,

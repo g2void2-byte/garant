@@ -168,6 +168,22 @@ describe("<AdminTaxonomyPage />", () => {
     expect(screen.queryByText("Games")).not.toBeInTheDocument();
   });
 
+  it("renders malformed currency limits as neutral values", () => {
+    mockState.categories = [makeCategory()];
+    mockState.currencies = [
+      makeCurrency({
+        min_deposit: "1e2" as unknown as number,
+        min_withdraw: "0x10" as unknown as number,
+      }),
+    ];
+
+    const { container } = renderPage("/admin/taxonomy?tab=currencies");
+
+    expect(screen.getByText("USDT")).toBeInTheDocument();
+    expect(container.textContent).toContain("\u2014/\u2014");
+    expect(container.textContent).not.toMatch(/1e2|0x10/);
+  });
+
   it("shows empty-state copy when categories list is empty", () => {
     mockState.categories = [];
     renderPage();
