@@ -203,6 +203,8 @@
 - M-231: public deal chat now validates message cursor ids before loading older history.
 - M-232: own profile service actions now validate service ids before update/delete mutations.
 - M-233: shared service cards now validate service ids before building detail routes.
+- M-234: admin broadcast history now validates broadcast ids before delete mutations.
+- M-235: admin taxonomy rows now validate category/currency ids before delete mutations.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2597,6 +2599,26 @@ Shared service cards built `/services/${service.id}` directly from runtime paylo
 Risk: service cards are reused across public catalog surfaces. A malformed runtime id should not become a client route segment, even when the rest of the card metadata is still safe to display.
 
 Fix: service cards now parse ids before route construction, normalize string numeric ids, and render malformed-id cards with an inert disabled link target instead of `/services/<raw>`. The regression verifies that malformed ids no longer appear in detail hrefs.
+
+### M-234. Admin broadcast history trusted runtime ids for delete
+
+Links: `frontend/src/pages/admin/AdminBroadcastsPage.tsx`, regression in `AdminBroadcastsPage.test.tsx`.
+
+The admin broadcast history list sent `b.id` directly to `useAdminDeleteBroadcast` after confirmation. A malformed runtime id such as `"0x7"` could therefore reach the admin delete mutation, while numeric string ids were not normalized at the UI boundary.
+
+Risk: broadcast history deletion is an admin mutation that also creates audit side effects and cache invalidations. The row target should be validated before confirmation and mutation dispatch.
+
+Fix: broadcast rows now parse ids with the admin id boundary, pass only the parsed number to delete, and hide delete controls for malformed ids. Regressions cover string id normalization and malformed id suppression.
+
+### M-235. Admin taxonomy rows trusted runtime ids for delete
+
+Links: `frontend/src/pages/admin/AdminTaxonomyPage.tsx`, regression in `AdminTaxonomyPage.test.tsx`.
+
+Admin category and currency rows sent `c.id` directly to their delete mutations. Malformed runtime ids could therefore reach taxonomy delete endpoints after confirmation, while numeric string ids were not normalized locally.
+
+Risk: taxonomy deletes affect public catalog/category and wallet/currency projections. A malformed row id should disable the destructive action instead of relying on backend path parsing.
+
+Fix: category and currency rows now parse ids with `parseAdminId`, use the parsed id for delete mutations, and hide delete controls when ids are malformed. Regressions cover both category and currency string-id normalization and malformed-id suppression.
 
 ## Наблюдения без отдельного finding
 

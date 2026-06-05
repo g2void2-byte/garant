@@ -19,7 +19,7 @@ import {
 } from "@/api/admin/hooks";
 import type { AdminBroadcastCreateBody } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminCount, getAdminTotalPages, shouldShowAdminPagination } from "./format";
+import { formatAdminCount, getAdminTotalPages, parseAdminId, shouldShowAdminPagination } from "./format";
 
 const ROLES: Array<{ value: "" | "admin" | "arbiter" | "vip" | "regular"; label: string }> = [
   { value: "", label: "Все" },
@@ -64,45 +64,50 @@ export default function AdminBroadcastsPage() {
         ) : data?.items.length === 0 ? (
           <p className="text-sm text-text-muted text-center py-12">Рассылок нет</p>
         ) : (
-          data?.items.map((b, _idx) => (
-            <div
-              key={b.id}
-              className="bg-panel rounded-card p-3"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  {b.title && <div className="font-medium truncate">{b.title}</div>}
-                  <div className="text-sm text-text-muted line-clamp-2">{b.body}</div>
-                  <div className="text-[11px] text-text-muted mt-1 flex items-center gap-2">
-                    <Users size={11} /> {formatAdminCount(b.total_recipients)} получателей · доставлено{" "}
-                    {formatAdminCount(b.delivered_count)}
+          data?.items.map((b, _idx) => {
+            const broadcastId = parseAdminId(b.id);
+            return (
+              <div
+                key={b.id}
+                className="bg-panel rounded-card p-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    {b.title && <div className="font-medium truncate">{b.title}</div>}
+                    <div className="text-sm text-text-muted line-clamp-2">{b.body}</div>
+                    <div className="text-[11px] text-text-muted mt-1 flex items-center gap-2">
+                      <Users size={11} /> {formatAdminCount(b.total_recipients)} получателей · доставлено{" "}
+                      {formatAdminCount(b.delivered_count)}
+                    </div>
                   </div>
+                  {broadcastId !== null && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        // Audit L-15 — ``confirmDialog`` prefers Telegram’s native
+                        // ``showConfirm``; falls back to ``window.confirm`` outside Telegram.
+                        if (!(await confirmDialog("Удалить рассылку из истории?"))) return;
+                        try {
+                          await del.mutateAsync(broadcastId);
+                          toast.show({ kind: "info", title: "Удалено" });
+                        } catch (e) {
+                          toast.show({
+                            kind: "error",
+                            title: "Ошибка",
+                            body: (e as Error).message,
+                          });
+                        }
+                      }}
+                      className="text-danger active:scale-90"
+                      aria-label="Удалить"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    // Audit L-15 — ``confirmDialog`` prefers Telegram’s native
-                    // ``showConfirm``; falls back to ``window.confirm`` outside Telegram.
-                    if (!(await confirmDialog("Удалить рассылку из истории?"))) return;
-                    try {
-                      await del.mutateAsync(b.id);
-                      toast.show({ kind: "info", title: "Удалено" });
-                    } catch (e) {
-                      toast.show({
-                        kind: "error",
-                        title: "Ошибка",
-                        body: (e as Error).message,
-                      });
-                    }
-                  }}
-                  className="text-danger active:scale-90"
-                  aria-label="Удалить"
-                >
-                  <Trash2 size={16} />
-                </button>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
       {data && shouldShowAdminPagination(data.total, data.page_size) && (

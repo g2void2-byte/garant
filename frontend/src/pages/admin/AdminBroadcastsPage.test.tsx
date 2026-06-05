@@ -212,6 +212,39 @@ describe("<AdminBroadcastsPage />", () => {
     confirmSpy.mockRestore();
   });
 
+  it("normalizes string broadcast ids before delete mutation", async () => {
+    mockState.list = {
+      items: [makeRow({ id: "7" as unknown as number })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    mockState.del.mutateAsync.mockResolvedValue({});
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByLabelText("Удалить"));
+    await waitFor(() =>
+      expect(mockState.del.mutateAsync).toHaveBeenCalledWith(7),
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it("does not expose delete for malformed broadcast ids", () => {
+    mockState.list = {
+      items: [makeRow({ id: "0x7" as unknown as number })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+
+    renderPage();
+
+    expect(screen.queryByLabelText("Удалить")).not.toBeInTheDocument();
+    expect(mockState.del.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it("delete row aborted by confirm dialog does NOT fire mutation", async () => {
     mockState.list = {
       items: [makeRow()],

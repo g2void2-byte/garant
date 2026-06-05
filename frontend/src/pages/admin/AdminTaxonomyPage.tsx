@@ -27,7 +27,7 @@ import {
   parseNonNegativeDecimalInput,
   parseNonNegativeIntInput,
 } from "@/lib/formNumbers";
-import { formatAdminAmount } from "./format";
+import { formatAdminAmount, parseAdminId } from "./format";
 
 const MAX_CURRENCY_DECIMALS = 8;
 
@@ -103,46 +103,51 @@ function CategoriesPane() {
           Категорий нет
         </p>
       ) : (
-        data?.map((c, _idx) => (
-          <div
-            key={c.id}
-            className="bg-panel rounded-card p-3 flex items-center gap-3"
-          >
-            <div className="text-2xl">{c.icon || "📦"}</div>
-            <div className="flex-1 min-w-0">
-              <div className="font-medium truncate">{c.name}</div>
-              <div className="text-xs text-text-muted">{c.slug}</div>
+        data?.map((c, _idx) => {
+          const categoryId = parseAdminId(c.id);
+          return (
+            <div
+              key={c.id}
+              className="bg-panel rounded-card p-3 flex items-center gap-3"
+            >
+              <div className="text-2xl">{c.icon || "📦"}</div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{c.name}</div>
+                <div className="text-xs text-text-muted">{c.slug}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditing(c)}
+                className="text-text-muted active:scale-90"
+              >
+                <Pencil size={16} />
+              </button>
+              {categoryId !== null && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    // Audit L-15 — ``confirmDialog`` prefers Telegram’s native
+                    // ``showConfirm``; falls back to ``window.confirm`` outside Telegram.
+                    if (!(await confirmDialog(`Удалить категорию ${c.name}?`))) return;
+                    try {
+                      await del.mutateAsync(categoryId);
+                      toast.show({ kind: "info", title: "Удалено" });
+                    } catch (e) {
+                      toast.show({
+                        kind: "error",
+                        title: "Ошибка",
+                        body: (e as Error).message,
+                      });
+                    }
+                  }}
+                  className="text-danger text-xs"
+                >
+                  ×
+                </button>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={() => setEditing(c)}
-              className="text-text-muted active:scale-90"
-            >
-              <Pencil size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                // Audit L-15 — ``confirmDialog`` prefers Telegram’s native
-                // ``showConfirm``; falls back to ``window.confirm`` outside Telegram.
-                if (!(await confirmDialog(`Удалить категорию ${c.name}?`))) return;
-                try {
-                  await del.mutateAsync(c.id);
-                  toast.show({ kind: "info", title: "Удалено" });
-                } catch (e) {
-                  toast.show({
-                    kind: "error",
-                    title: "Ошибка",
-                    body: (e as Error).message,
-                  });
-                }
-              }}
-              className="text-danger text-xs"
-            >
-              ×
-            </button>
-          </div>
-        ))
+          );
+        })
       )}
       <Sheet
         open={editing !== null}
@@ -238,52 +243,57 @@ function CurrenciesPane() {
           Валют нет
         </p>
       ) : (
-        data?.map((c, _idx) => (
-          <div
-            key={c.id}
-            className="bg-panel rounded-card p-3 flex items-center gap-3"
-          >
-            <div className="flex-1">
-              <div className="font-medium">
-                {c.code}
-                {!c.is_active && (
-                  <span className="ml-2 text-[10px] text-warning">off</span>
-                )}
+        data?.map((c, _idx) => {
+          const currencyId = parseAdminId(c.id);
+          return (
+            <div
+              key={c.id}
+              className="bg-panel rounded-card p-3 flex items-center gap-3"
+            >
+              <div className="flex-1">
+                <div className="font-medium">
+                  {c.code}
+                  {!c.is_active && (
+                    <span className="ml-2 text-[10px] text-warning">off</span>
+                  )}
+                </div>
+                <div className="text-xs text-text-muted">
+                  {c.name} · {c.network} · мин:{" "}
+                  {formatAdminAmount(c.min_deposit, c.decimals)}/
+                  {formatAdminAmount(c.min_withdraw, c.decimals)}
+                </div>
               </div>
-              <div className="text-xs text-text-muted">
-                {c.name} · {c.network} · мин:{" "}
-                {formatAdminAmount(c.min_deposit, c.decimals)}/
-                {formatAdminAmount(c.min_withdraw, c.decimals)}
-              </div>
+              <button
+                type="button"
+                onClick={() => setEditing(c)}
+                className="text-text-muted active:scale-90"
+              >
+                <Pencil size={16} />
+              </button>
+              {currencyId !== null && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!(await confirmDialog(`РЈРґР°Р»РёС‚СЊ РІР°Р»СЋС‚Сѓ ${c.code}?`))) return;
+                    try {
+                      await del.mutateAsync(currencyId);
+                      toast.show({ kind: "info", title: "РЈРґР°Р»РµРЅРѕ" });
+                    } catch (e) {
+                      toast.show({
+                        kind: "error",
+                        title: "РћС€РёР±РєР°",
+                        body: (e as Error).message,
+                      });
+                    }
+                  }}
+                  className="text-danger text-xs"
+                >
+                  Г—
+                </button>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={() => setEditing(c)}
-              className="text-text-muted active:scale-90"
-            >
-              <Pencil size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                if (!(await confirmDialog(`РЈРґР°Р»РёС‚СЊ РІР°Р»СЋС‚Сѓ ${c.code}?`))) return;
-                try {
-                  await del.mutateAsync(c.id);
-                  toast.show({ kind: "info", title: "РЈРґР°Р»РµРЅРѕ" });
-                } catch (e) {
-                  toast.show({
-                    kind: "error",
-                    title: "РћС€РёР±РєР°",
-                    body: (e as Error).message,
-                  });
-                }
-              }}
-              className="text-danger text-xs"
-            >
-              Г—
-            </button>
-          </div>
-        ))
+          );
+        })
       )}
       <Sheet
         open={editing !== null}

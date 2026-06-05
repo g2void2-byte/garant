@@ -213,6 +213,29 @@ describe("<AdminTaxonomyPage />", () => {
     confirmSpy.mockRestore();
   });
 
+  it("normalizes string category ids before delete mutation", async () => {
+    mockState.categories = [makeCategory({ id: "7" as unknown as number })];
+    mockState.delCategory.mutateAsync.mockResolvedValue({});
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByText("×"));
+    await waitFor(() =>
+      expect(mockState.delCategory.mutateAsync).toHaveBeenCalledWith(7),
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it("does not expose category delete for malformed runtime ids", () => {
+    mockState.categories = [makeCategory({ id: "0x7" as unknown as number })];
+
+    renderPage();
+
+    expect(screen.queryByText("×")).not.toBeInTheDocument();
+    expect(mockState.delCategory.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it("currency delete with confirm fires mutation and toasts", async () => {
     mockState.categories = [makeCategory()];
     mockState.currencies = [makeCurrency()];
@@ -229,6 +252,31 @@ describe("<AdminTaxonomyPage />", () => {
       expect.objectContaining({ kind: "info", title: "РЈРґР°Р»РµРЅРѕ" }),
     );
     confirmSpy.mockRestore();
+  });
+
+  it("normalizes string currency ids before delete mutation", async () => {
+    mockState.categories = [makeCategory()];
+    mockState.currencies = [makeCurrency({ id: "8" as unknown as number })];
+    mockState.delCurrency.mutateAsync.mockResolvedValue({});
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const user = userEvent.setup();
+    renderPage("/admin/taxonomy?tab=currencies");
+
+    await user.click(screen.getByText("Г—"));
+    await waitFor(() =>
+      expect(mockState.delCurrency.mutateAsync).toHaveBeenCalledWith(8),
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it("does not expose currency delete for malformed runtime ids", () => {
+    mockState.categories = [makeCategory()];
+    mockState.currencies = [makeCurrency({ id: "0x8" as unknown as number })];
+
+    renderPage("/admin/taxonomy?tab=currencies");
+
+    expect(screen.queryByText("Г—")).not.toBeInTheDocument();
+    expect(mockState.delCurrency.mutateAsync).not.toHaveBeenCalled();
   });
 
   it("category 'Добавить' opens an empty new-category form", async () => {
