@@ -17,8 +17,10 @@ import {
   formatAdminCount,
   formatAdminCurrencyCode,
   formatAdminDealStatus,
+  formatAdminId,
   formatAdminUsername,
   getAdminTotalPages,
+  parseAdminId,
 } from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "all statuses";
@@ -256,7 +258,15 @@ export default function AdminDealsPage() {
               className="animate-fadein"
               style={{ animationDelay: `${Math.min(idx, 8) * 30}ms` }}
             >
-              <DealRow deal={deal} onOpen={() => navigate(`/admin/deals/${deal.id}`)} />
+              {(() => {
+                const dealId = parseAdminId(deal.id);
+                return (
+                  <DealRow
+                    deal={deal}
+                    onOpen={dealId !== null ? () => navigate(`/admin/deals/${dealId}`) : undefined}
+                  />
+                );
+              })()}
             </li>
           ))}
         </ul>
@@ -415,7 +425,7 @@ function ToggleRow({
   );
 }
 
-function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen: () => void }) {
+function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen?: () => void }) {
   const accent =
     deal.status === "arbitration"
       ? "border-danger/40"
@@ -431,11 +441,12 @@ function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen: () => v
     <button
       type="button"
       onClick={onOpen}
-      className={`w-full text-left bg-panel rounded-card p-3 flex items-center gap-3 border ${accent} hover:bg-panel-2 transition-colors active:scale-[0.98]`}
+      disabled={!onOpen}
+      className={`w-full text-left bg-panel rounded-card p-3 flex items-center gap-3 border ${accent} hover:bg-panel-2 transition-colors active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100`}
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 text-sm font-semibold">
-          <span>#{deal.id}</span>
+          <span>#{formatAdminId(deal.id)}</span>
           <span className="text-text-muted">·</span>
           <span className="text-text-muted truncate">
             {formatAdminUsername(deal.buyer_username)} → {formatAdminUsername(deal.seller_username)}

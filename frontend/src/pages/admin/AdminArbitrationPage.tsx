@@ -11,7 +11,15 @@ import { useAdminArbitration, useAdminClaimArbitration } from "@/api/admin/hooks
 import type { AdminDealListItemDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminCurrencyCode, formatAdminUsername, getAdminTotalPages, parseAdminCount } from "./format";
+import {
+  formatAdminAmount,
+  formatAdminCurrencyCode,
+  formatAdminId,
+  formatAdminUsername,
+  getAdminTotalPages,
+  parseAdminCount,
+  parseAdminId,
+} from "./format";
 
 type Queue = "new" | "in_progress" | "closed";
 const PAGE_SIZE = 20;
@@ -128,13 +136,18 @@ export default function AdminArbitrationPage() {
             <li
               key={d.id}
             >
-              <ArbRow
-                deal={d}
-                queue={queue}
-                onOpen={() => navigate(`/admin/deals/${d.id}`)}
-                onClaim={() => onClaim(d.id)}
-                claiming={claim.isPending}
-              />
+              {(() => {
+                const dealId = parseAdminId(d.id);
+                return (
+                  <ArbRow
+                    deal={d}
+                    queue={queue}
+                    onOpen={dealId !== null ? () => navigate(`/admin/deals/${dealId}`) : undefined}
+                    onClaim={dealId !== null ? () => onClaim(dealId) : undefined}
+                    claiming={claim.isPending}
+                  />
+                );
+              })()}
             </li>
           ))}
         </ul>
@@ -195,15 +208,20 @@ function ArbRow({
 }: {
   deal: AdminDealListItemDto;
   queue: Queue;
-  onOpen: () => void;
-  onClaim: () => void;
+  onOpen?: () => void;
+  onClaim?: () => void;
   claiming: boolean;
 }) {
   return (
     <div className="bg-panel rounded-card p-3 border border-danger/20">
-      <button type="button" onClick={onOpen} className="w-full text-left">
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={!onOpen}
+        className="w-full text-left disabled:cursor-not-allowed disabled:opacity-60"
+      >
         <div className="flex items-center gap-1.5 text-sm font-semibold">
-          <span>#{deal.id}</span>
+          <span>#{formatAdminId(deal.id)}</span>
           <span className="text-text-muted">·</span>
           <span className="text-text-muted truncate">
             {formatAdminUsername(deal.buyer_username)} ↔ {formatAdminUsername(deal.seller_username)}
@@ -225,8 +243,8 @@ function ArbRow({
           fullWidth
           variant="primary"
           className="mt-3"
-          disabled={claiming}
-          onClick={onClaim}
+          disabled={claiming || !onClaim}
+          onClick={() => onClaim?.()}
         >
           {claiming ? "..." : "Взять в работу"}
         </Button>

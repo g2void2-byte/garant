@@ -192,6 +192,7 @@
 - M-220: user prefix badges now neutralize unknown runtime prefixes instead of hiding or rendering empty roles.
 - M-221: public profile/review/comment metadata now validates runtime ratings and ids before display/linking.
 - M-222: public deal rows and create-success actions now validate runtime deal/deposit ids before linking.
+- M-223: admin deal queues now validate runtime deal ids before opening details or claiming arbitration.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2476,6 +2477,16 @@ Public deal rows rendered `deal.id` directly and used it to navigate to `/deals/
 Risk: deal ids drive navigation and payment polling. A malformed response id should not create a clickable route or payment modal state that looks operational while pointing at a non-contract resource.
 
 Fix: deal rows now parse ids through the shared positive-int boundary before rendering or enabling row navigation. Create-success cards show a neutral `#—` for malformed ids, disable deal/payment actions until both deal and deposit ids are canonical, and pass only parsed ids into `DealInvoiceModal`. Regressions cover malformed and decimal-string runtime ids.
+
+### M-223. Admin deal queues trusted malformed runtime deal ids
+
+Links: `frontend/src/pages/admin/AdminDealsPage.tsx`, `frontend/src/pages/admin/AdminArbitrationPage.tsx`, regressions in the adjacent tests.
+
+The admin deals list and arbitration queue rendered `deal.id` directly and used it to build `/admin/deals/{id}` links. The arbitration queue also passed raw ids into the claim mutation. Runtime ids like `"0x7"` could therefore show as operational ids, build broken admin routes, or send malformed mutation ids.
+
+Risk: these queues are operational admin surfaces. A malformed id should block navigation and claim actions rather than creating a plausible-looking control that cannot target a valid deal.
+
+Fix: both queues now format ids through the admin id boundary, show `#—` for malformed ids, and disable row open/claim actions unless the id parses as a positive integer. Regressions cover malformed admin deal-list rows and arbitration rows.
 
 ## Наблюдения без отдельного finding
 

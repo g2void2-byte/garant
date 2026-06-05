@@ -312,6 +312,23 @@ describe("<AdminDealsPage />", () => {
     );
   });
 
+  it("does not navigate admin deal rows with malformed runtime ids", async () => {
+    mockState.list = {
+      items: [makeDeal({ id: "0x3e7" as unknown as number })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    const idText = screen.getByText("#\u2014");
+    expect(idText.closest("button")).toBeDisabled();
+    expect(screen.queryByText(/0x3e7/)).not.toBeInTheDocument();
+    await user.click(idText);
+    expect(screen.getByTestId("path").textContent).toBe("/admin/deals");
+  });
+
   it("pagination prev disabled on page 1, next advances page", async () => {
     mockState.list = {
       items: [makeDeal()],

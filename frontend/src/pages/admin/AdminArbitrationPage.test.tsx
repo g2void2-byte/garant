@@ -326,6 +326,31 @@ describe("<AdminArbitrationPage />", () => {
     expect(screen.getByTestId("path").textContent).toBe("/admin/deals/7");
   });
 
+  it("does not open or claim arbitration rows with malformed runtime ids", async () => {
+    mockState.list = {
+      items: [makeItem({ id: "0x7" as unknown as number })],
+      counters: { new: 1, in_progress: 0, closed: 0 },
+      queue: "new",
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    const idText = screen.getByText("#\u2014");
+    expect(idText.closest("button")).toBeDisabled();
+    expect(screen.queryByText(/0x7/)).not.toBeInTheDocument();
+    const claimButton = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent?.includes("Взять") || button.textContent?.includes("Р’Р·"));
+    expect(claimButton).toBeDefined();
+    expect(claimButton).toBeDisabled();
+
+    await user.click(idText);
+    await user.click(claimButton!);
+
+    expect(screen.getByTestId("path").textContent).toBe("/admin/arbitration");
+    expect(mockState.claimMutation.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it("'in_progress' tab empty state reads 'Нет активных дел'", async () => {
     mockState.list = {
       items: [],
