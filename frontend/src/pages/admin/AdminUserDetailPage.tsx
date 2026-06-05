@@ -41,7 +41,7 @@ import {
 } from "@/api/admin/hooks";
 import { useMe } from "@/api/hooks";
 import type { AdminUserDetailDto } from "@/api/types";
-import { formatDateTime, parseDecimal } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 import {
   parseNonNegativeDecimalInput,
   parseNonNegativeIntInput,
@@ -51,7 +51,7 @@ import { haptic } from "@/lib/tg";
 import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
-import { formatAdminCount, formatAdminId, formatAdminRating, formatAdminUsd, formatAdminUsername } from "./format";
+import { formatAdminCount, formatAdminId, formatAdminRating, formatAdminUsd, formatAdminUsername, hasVisibleAdminBalance } from "./format";
 
 /**
  * Continental admin user detail screen.
@@ -646,7 +646,7 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
   const adjust = useAdminAdjustBalance(user.id);
   const toast = useToast();
   const fallback =
-    balances?.find((b) => parseDecimal(b.total) > 0)?.currency_code ?? "USDT";
+    balances?.find(hasVisibleAdminBalance)?.currency_code ?? "USDT";
   const [currency, setCurrency] = useState<string>(fallback);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");

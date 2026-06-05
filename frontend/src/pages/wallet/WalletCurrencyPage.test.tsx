@@ -222,7 +222,7 @@ describe("<WalletCurrencyPage />", () => {
     renderPage("USDT");
 
     expect(screen.getByText("\u2014 USDT")).toBeInTheDocument();
-    expect(screen.queryByText(/0 USDT/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^0 USDT$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
   });
 
@@ -230,6 +230,17 @@ describe("<WalletCurrencyPage />", () => {
     mockState.balances = [makeBalance(50, 25)];
     renderPage("USDT");
     expect(screen.getByText(/в заявках:/)).toBeInTheDocument();
+  });
+
+  it("renders locked hints from numeric fallback when the string mirror is blank", () => {
+    const balance = makeBalance(50, 25);
+    balance.locked_str = "";
+    mockState.balances = [balance];
+
+    renderPage("USDT");
+
+    expect(screen.getByText(/25 USDT/)).toBeInTheDocument();
+    expect(screen.queryByText(/^0 USDT$/)).not.toBeInTheDocument();
   });
 
   it("does not show the locked hint for malformed runtime locked values", () => {

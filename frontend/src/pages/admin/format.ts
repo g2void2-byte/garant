@@ -24,6 +24,25 @@ export function formatAdminAmount(
   return formatAdminFixedDecimal(value, decimals);
 }
 
+export function parseAdminDecimal(value: string | number | null | undefined): number | null {
+  return parseDecimalValue(value);
+}
+
+export function hasPositiveAdminDecimal(value: string | number | null | undefined): boolean {
+  const parsed = parseAdminDecimal(value);
+  return parsed !== null && parsed > 0;
+}
+
+export function hasVisibleAdminBalance(balance: {
+  amount: string | number | null | undefined;
+  locked: string | number | null | undefined;
+  total: string | number | null | undefined;
+}): boolean {
+  const total = parseAdminDecimal(balance.total);
+  if (total !== null) return total > 0;
+  return hasPositiveAdminDecimal(balance.amount) || hasPositiveAdminDecimal(balance.locked);
+}
+
 export function formatAdminUsd(value: string | number | null | undefined): string {
   const fixed = formatAdminFixedDecimal(value, 2);
   return fixed === DASH ? DASH : `$${fixed}`;

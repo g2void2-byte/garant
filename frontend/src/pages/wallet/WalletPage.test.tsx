@@ -246,6 +246,35 @@ describe("<WalletPage />", () => {
     expect(screen.getByText(/в заявках/)).toBeInTheDocument();
   });
 
+  it("renders locked hints from numeric fallback when the string mirror is blank", () => {
+    mockState.data = [
+      {
+        currency: {
+          id: 2,
+          code: "USD",
+          name: "US Dollar",
+          network: "",
+          icon_url: "",
+          decimals: 2,
+          min_deposit: 1,
+          min_withdraw: 1,
+          kind: "fiat",
+        },
+        amount: 0.5,
+        locked: 0.1,
+        total: 0.6,
+        updated_at: null,
+        amount_str: "0.5",
+        locked_str: "",
+        total_str: "0.6",
+      },
+    ];
+    renderPage();
+
+    expect(screen.getByText(/\+0\.1 USD/)).toBeInTheDocument();
+    expect(screen.queryByText(/\+0 USD/)).not.toBeInTheDocument();
+  });
+
   it("does not render the locked hint for malformed runtime locked values", () => {
     mockState.data = [
       {

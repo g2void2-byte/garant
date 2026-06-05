@@ -91,7 +91,6 @@ export default function WalletCurrencyPage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
 
   const [tab, setTab] = useState<Tab>("deposit");
-  const lockedAmount = balance?.locked_str ?? balance?.locked ?? 0;
 
   useEffect(() => {
     const page = deposits.data ?? [];
@@ -198,7 +197,7 @@ export default function WalletCurrencyPage() {
           </div>
           {hasPositiveWalletBalance(balance, "locked") && (
             <div className="text-xs text-text-muted mt-1">
-              в заявках: {formatCurrency(lockedAmount, currency.code, currency.decimals)}
+              в заявках: {formatWalletBalanceCurrency(balance, "locked", currency.code, currency.decimals)}
             </div>
           )}
         </div>

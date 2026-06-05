@@ -16,7 +16,7 @@ import {
   useAdminUpsertCurrencyRate,
   useAdminWallets,
 } from "@/api/admin/hooks";
-import { formatDateTime, parseDecimal } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 import type {
   AdminCurrencyRateDto,
   AdminUserBalanceDto,
@@ -27,7 +27,7 @@ import {
   parsePositiveDecimalInput,
   parseSignedNonZeroDecimalInput,
 } from "@/lib/formNumbers";
-import { formatAdminAmount, formatAdminCount, formatAdminUsd, formatAdminUsername, getAdminTotalPages, shouldShowAdminPagination } from "./format";
+import { formatAdminAmount, formatAdminCount, formatAdminUsd, formatAdminUsername, getAdminTotalPages, hasVisibleAdminBalance, parseAdminDecimal, shouldShowAdminPagination } from "./format";
 
 const PAGE_SIZE = 50;
 
@@ -126,7 +126,7 @@ export default function AdminWalletsPage() {
                 // at all *and* what to put in it — otherwise users with
                 // all-zero balances would see an empty grid container
                 // that looks like a broken layout.
-                const nonZero = it.balances.filter((b) => parseDecimal(b.total) > 0);
+                const nonZero = it.balances.filter(hasVisibleAdminBalance);
                 if (nonZero.length === 0) {
                   return (
                     <div className="mt-2 text-xs text-text-muted italic">
@@ -137,7 +137,7 @@ export default function AdminWalletsPage() {
                 return (
                   <div className="mt-3 grid grid-cols-2 gap-1.5">
                     {nonZero.slice(0, 4).map((b) => {
-                      const locked = parseDecimal(b.locked);
+                      const locked = parseAdminDecimal(b.locked);
                       return (
                         <div
                           key={b.currency_id}
@@ -146,7 +146,7 @@ export default function AdminWalletsPage() {
                           <div className="text-text-muted">{b.currency_code}</div>
                           <div className="font-mono">
                             {formatAdminAmount(b.amount, b.decimals)}
-                            {locked > 0 && (
+                            {locked !== null && locked > 0 && (
                               <span className="text-warning ml-1">
                                 (+{formatAdminAmount(b.locked, b.decimals)} лок.)
                               </span>
@@ -226,7 +226,7 @@ function Pagination({
 }
 
 function BalanceOverview({ target }: { target: AdminWalletListItemDto }) {
-  const nonZero = target.balances.filter((b) => parseDecimal(b.total) > 0);
+  const nonZero = target.balances.filter(hasVisibleAdminBalance);
   return (
     <div className="mb-4 rounded-card border border-border bg-panel p-3">
       <div className="text-xs uppercase tracking-wide text-text-muted">Balances</div>
@@ -244,13 +244,13 @@ function BalanceOverview({ target }: { target: AdminWalletListItemDto }) {
 }
 
 function BalancePill({ balance }: { balance: AdminUserBalanceDto }) {
-  const locked = parseDecimal(balance.locked);
+  const locked = parseAdminDecimal(balance.locked);
   return (
     <div className="text-xs bg-panel-2 rounded-button px-2 py-1.5">
       <div className="text-text-muted">{balance.currency_code}</div>
       <div className="font-mono">
         {formatAdminAmount(balance.amount, balance.decimals)}
-        {locked > 0 && (
+        {locked !== null && locked > 0 && (
           <span className="text-warning ml-1">
             (+{formatAdminAmount(balance.locked, balance.decimals)} lock)
           </span>
@@ -340,7 +340,7 @@ function AdjustForm({
 }) {
   const { data: currencies } = useAdminCurrencies();
   const [currency, setCurrency] = useState(
-    target.balances.find((b) => parseDecimal(b.total) > 0)?.currency_code ?? "USDT",
+    target.balances.find(hasVisibleAdminBalance)?.currency_code ?? "USDT",
   );
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");

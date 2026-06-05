@@ -12,7 +12,6 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { normalizeCurrencyCode, walletCurrencyPath } from "@/lib/currencyCodes";
 import { formatMoney } from "@/lib/format";
-import { formatCurrency } from "@/lib/format";
 import {
   formatWalletBalanceCurrency,
   hasPositiveWalletBalance,
@@ -175,7 +174,7 @@ function WalletBalanceRow({ balance }: { balance: WalletBalanceDto }) {
         </div>
         {hasPositiveWalletBalance(balance, "locked") && (
           <div className="text-xs text-text-muted">
-            +{formatCurrency(balance.locked_str, code, currency.decimals)} в заявках
+            +{formatWalletBalanceCurrency(balance, "locked", code, currency.decimals)} в заявках
           </div>
         )}
       </div>

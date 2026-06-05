@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 88 файлов, 906 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 88 файлов, 911 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -152,6 +152,7 @@
 - M-180: public money summaries now render malformed/negative runtime amounts as neutral values instead of `$0`.
 - M-181: deal list/detail amount displays now reject malformed/negative runtime totals instead of showing zero.
 - M-182: wallet balance displays now reject malformed/negative runtime balance strings instead of showing zero.
+- M-183: wallet locked hints and admin balance visibility now use strict positive-balance parsing instead of zero-coercing totals.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2036,6 +2037,16 @@ The wallet DTO already exposes canonical `amount_str`/`locked_str` mirrors, but 
 Risk: a corrupted available balance looked like a legitimate empty wallet instead of invalid data. That is especially misleading on withdrawal/top-up entry points because the user can interpret `0 CODE` as a real account state rather than a DTO/runtime validation failure.
 
 Fix: wallet balance display now uses a strict formatter built on the existing `walletAmounts` parser. Missing balance rows still render as `0 CODE`, while malformed or negative runtime balance fields render as a neutral dash with the currency code. Regressions cover the shared helper and the three affected user-facing balance surfaces.
+
+### M-183. Wallet/admin balance gates still mixed strict display with zero-coercing visibility
+
+Links: `frontend/src/lib/walletAmounts.ts`, `frontend/src/pages/wallet/WalletPage.tsx`, `frontend/src/pages/wallet/WalletCurrencyPage.tsx`, `frontend/src/pages/admin/format.ts`, `frontend/src/pages/admin/AdminWalletsPage.tsx`, `frontend/src/pages/admin/AdminUserDetailPage.tsx`, regressions in the adjacent wallet/admin tests.
+
+After M-182, the primary wallet balances were strict, but locked-hint rendering still formatted `locked_str` directly. A positive numeric `locked` fallback with a blank string mirror could pass the visibility gate and then render as `+0 CODE`. Admin wallet grids had the inverse issue: they used strict display formatting, but filtered/defaulted balances through legacy `parseDecimal(total)`, so malformed totals such as `"1e2"` could hide a valid `amount`/`locked` balance or choose the wrong default currency in an adjustment sheet.
+
+Risk: users could see a misleading zero locked amount, while admins could miss a real balance row or apply a manual adjustment against the wrong default currency after DTO drift in `total`.
+
+Fix: wallet locked hints now reuse the same strict wallet-balance formatter as available balances. Admin balance visibility/default selection now uses strict decimal parsing and falls back to valid positive `amount`/`locked` fields when `total` is malformed instead of collapsing the row to zero. Regressions cover blank locked string mirrors, malformed admin totals, and adjustment default currency selection.
 
 ## Наблюдения без отдельного finding
 

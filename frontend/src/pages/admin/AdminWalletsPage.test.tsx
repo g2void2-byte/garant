@@ -250,6 +250,57 @@ describe("<AdminWalletsPage />", () => {
     expect(screen.getByText("Alice")).toBeInTheDocument();
   });
 
+  it("keeps balances visible when total is malformed but amount is valid", () => {
+    const base = makeUserBalance();
+    mockState.list = {
+      items: [
+        {
+          ...base,
+          balances: [{ ...base.balances[0], amount: "25", locked: "0", total: "1e2" }],
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+
+    expect(screen.getByText("USDT")).toBeInTheDocument();
+    expect(screen.getByText(/25\.00/)).toBeInTheDocument();
+    expect(screen.queryByText("Р‘Р°Р»Р°РЅСЃРѕРІ РЅРµС‚")).not.toBeInTheDocument();
+  });
+
+  it("uses malformed-total visible balances as the default adjust currency", async () => {
+    const base = makeUserBalance();
+    mockState.list = {
+      items: [
+        {
+          ...base,
+          balances: [
+            { ...base.balances[1], currency_code: "TON", amount: "2", locked: "0", total: "1e2" },
+          ],
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    mockState.adjust.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByText("Alice"));
+    const amountInput = await screen.findByPlaceholderText(/напр\. -25/);
+    fireEvent.change(amountInput, { target: { value: "5" } });
+    await user.click(screen.getByRole("button", { name: /Применить/ }));
+
+    await waitFor(() =>
+      expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ currency_code: "TON", amount: 5 }),
+      ),
+    );
+  });
+
   it("renders missing wallet username as a non-handle label", () => {
     mockState.list = {
       items: [{ ...makeUserBalance(), username: null }],

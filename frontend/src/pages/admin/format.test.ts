@@ -9,6 +9,8 @@ import {
   formatAdminUsdSuffix,
   formatAdminUsername,
   getAdminTotalPages,
+  hasVisibleAdminBalance,
+  parseAdminDecimal,
   shouldShowAdminPagination,
 } from "./format";
 
@@ -23,10 +25,19 @@ describe("admin format helpers", () => {
   it("formats decimal-string admin money values without accepting ambiguous notation", () => {
     expect(formatAdminAmount("12.3456", 4)).toBe("12.3456");
     expect(formatAdminAmount("1e3", 4)).toBe("\u2014");
+    expect(parseAdminDecimal("12.5")).toBe(12.5);
+    expect(parseAdminDecimal("1e3")).toBeNull();
     expect(formatAdminUsd("1500.5")).toBe("$1500.50");
     expect(formatAdminUsdSuffix("1500.5")).toBe("1500.50 $");
     expect(formatAdminUsd("1e3")).toBe("\u2014");
     expect(formatAdminUsdSuffix("0x10")).toBe("\u2014");
+  });
+
+  it("keeps admin balances visible when malformed totals have valid money fields", () => {
+    expect(hasVisibleAdminBalance({ amount: "0", locked: "0", total: "0" })).toBe(false);
+    expect(hasVisibleAdminBalance({ amount: "25", locked: "0", total: "1e2" })).toBe(true);
+    expect(hasVisibleAdminBalance({ amount: "0", locked: "5", total: "0x10" })).toBe(true);
+    expect(hasVisibleAdminBalance({ amount: "1e2", locked: "0", total: "0x10" })).toBe(false);
   });
 
   it("formats string ratings and rejects malformed or out-of-range values", () => {
