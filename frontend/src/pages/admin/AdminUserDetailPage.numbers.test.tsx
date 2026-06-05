@@ -149,6 +149,31 @@ describe("<AdminUserDetailPage /> numeric forms", () => {
     );
   });
 
+  it("submits deals_sum_override as an exact decimal string", async () => {
+    mockState.setStats.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    const inputs = screen.getAllByRole("spinbutton");
+    fireEvent.change(inputs[5], {
+      target: { value: "123456789.123456789123456789" },
+    });
+    const saveStats = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent === "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0443");
+    expect(saveStats).toBeDefined();
+    await user.click(saveStats!);
+
+    await waitFor(() =>
+      expect(mockState.setStats.mutateAsync).toHaveBeenCalledWith({
+        userId: 5,
+        body: expect.objectContaining({
+          deals_sum_override: "123456789.123456789123456789",
+        }),
+      }),
+    );
+  });
+
   it("blocks exponent trust deposit values", async () => {
     const user = userEvent.setup();
     renderPage();
@@ -161,6 +186,31 @@ describe("<AdminUserDetailPage /> numeric forms", () => {
     expect(mockState.setTrustDeposit.mutateAsync).not.toHaveBeenCalled();
     expect(toastSpy).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "error", title: "Введите неотрицательное число" }),
+    );
+  });
+
+  it("submits trust deposit as an exact decimal string", async () => {
+    mockState.setTrustDeposit.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    fireEvent.change(screen.getAllByRole("spinbutton")[8], {
+      target: { value: "0.123456789123456789" },
+    });
+    const saveTrust = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent === "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0442\u0440\u0430\u0441\u0442\u043e\u0432\u044b\u0439 \u0434\u0435\u043f\u043e\u0437\u0438\u0442");
+    expect(saveTrust).toBeDefined();
+    await user.click(saveTrust!);
+
+    await waitFor(() =>
+      expect(mockState.setTrustDeposit.mutateAsync).toHaveBeenCalledWith({
+        userId: 5,
+        body: {
+          amount: "0.123456789123456789",
+          reason: null,
+        },
+      }),
     );
   });
 
@@ -189,7 +239,30 @@ describe("<AdminUserDetailPage /> numeric forms", () => {
     await waitFor(() => {
       expect(mockState.adjustBalance.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USDT",
-        amount: 0.5,
+        amount: ".5",
+        reason: undefined,
+      });
+    });
+  });
+
+  it("submits precise per-user balance debits as signed strings", async () => {
+    mockState.adjustBalance.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    fireEvent.change(screen.getByPlaceholderText("25.5"), {
+      target: { value: "0.123456789123456789" },
+    });
+    const debit = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent?.includes("\u0421\u043f\u0438\u0441\u0430\u0442\u044c"));
+    expect(debit).toBeDefined();
+    await user.click(debit!);
+
+    await waitFor(() => {
+      expect(mockState.adjustBalance.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "USDT",
+        amount: "-0.123456789123456789",
         reason: undefined,
       });
     });

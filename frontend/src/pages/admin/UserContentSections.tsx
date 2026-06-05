@@ -53,6 +53,7 @@ import {
 import type {
   AdminCommentItemDto,
   AdminReviewItemDto,
+  AdminServiceUpdateBody,
   AdminServiceItemDto,
   UserCardDto,
 } from "@/api/types";
@@ -66,6 +67,19 @@ interface SectionProps {
 }
 
 const PAGE_SIZE = 20;
+type AdminServiceStatus = NonNullable<AdminServiceUpdateBody["status"]>;
+const ADMIN_SERVICE_STATUSES: AdminServiceStatus[] = [
+  "draft",
+  "active",
+  "paused",
+  "banned",
+];
+
+function normalizeAdminServiceStatus(status: string): AdminServiceStatus {
+  return ADMIN_SERVICE_STATUSES.includes(status as AdminServiceStatus)
+    ? (status as AdminServiceStatus)
+    : "active";
+}
 
 function parseRatingIntInput(raw: string): number | null {
   const parsed = parseNonNegativeIntInput(raw, 5);
@@ -185,7 +199,7 @@ function ServiceEditSheet({
   const [views, setViews] = useState("");
   const [dealsCount, setDealsCount] = useState("");
   const [ratingManual, setRatingManual] = useState("");
-  const [status, setStatus] = useState("active");
+  const [status, setStatus] = useState<AdminServiceStatus>("active");
 
   // Seed inputs when the sheet opens (re-seed each time it (re)opens with
   // a different service).
@@ -198,7 +212,7 @@ function ServiceEditSheet({
     setViews(String(service.views));
     setDealsCount(String(service.deals_count));
     setRatingManual(service.rating_manual !== null ? String(service.rating_manual) : "");
-    setStatus(service.status);
+    setStatus(normalizeAdminServiceStatus(service.status));
   }, [service]);
 
   const reset = () => {
@@ -225,6 +239,9 @@ function ServiceEditSheet({
   const parsedRatingManual = ratingManual.trim()
     ? parseRatingDecimalInput(ratingManual)
     : null;
+  const priceValue = price.trim();
+  const depositValue = deposit.trim();
+  const ratingManualValue = ratingManual.trim();
   const serviceNumberErrors = {
     price: parsedPrice === null ? "Введите число 0 или больше без экспоненты" : undefined,
     deposit: parsedDeposit === null ? "Введите число 0 или больше без экспоненты" : undefined,
@@ -248,17 +265,17 @@ function ServiceEditSheet({
       return;
     }
     try {
-      const body: Record<string, unknown> = {};
+      const body: AdminServiceUpdateBody = {};
       if (title !== service.title) body.title = title;
       if (description !== service.description) body.description = description;
-      if (parsedPrice !== service.price) body.price = parsedPrice;
-      if (parsedDeposit !== service.deposit) body.deposit = parsedDeposit;
+      if (priceValue !== String(service.price)) body.price = priceValue;
+      if (depositValue !== String(service.deposit)) body.deposit = depositValue;
       if (parsedViews !== service.views) body.views = parsedViews;
       if (parsedDealsCount !== service.deals_count) body.deals_count = parsedDealsCount;
       if (!hasRatingManual) {
         if (service.rating_manual !== null) body.clear_rating = true;
-      } else if (parsedRatingManual !== service.rating_manual) {
-        body.rating_manual = parsedRatingManual;
+      } else if (ratingManualValue !== String(service.rating_manual)) {
+        body.rating_manual = ratingManualValue;
       }
       if (status !== service.status) body.status = status;
       if (Object.keys(body).length === 0) {
@@ -337,7 +354,7 @@ function ServiceEditSheet({
             <div className="mb-1 text-[14px] font-medium text-text">Статус</div>
             <select
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) => setStatus(normalizeAdminServiceStatus(e.target.value))}
               className="h-11 w-full px-3 rounded-button bg-panel text-text"
             >
               <option value="draft">draft</option>

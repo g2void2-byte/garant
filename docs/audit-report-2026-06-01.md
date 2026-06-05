@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 89 файлов, 926 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary/lazyWithRetry.
+- `npm run test:run` - успешно: 89 файлов, 931 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary/lazyWithRetry.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -160,6 +160,7 @@
 - M-188: admin deal pending approval rows now use strict runtime money formatting and block approval of malformed money requests.
 - M-189: paid PIN-reset paywall now validates runtime price/balance/charged amounts before display or balance-payment entry.
 - M-190: admin wallet adjustments and USD-rate upserts now send validated decimal strings instead of rounded JavaScript numbers.
+- M-191: remaining admin Decimal submit paths now preserve validated decimal strings across settings, currency limits, user stats/trust deposits, per-user balance adjustments, and service edits.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2124,6 +2125,16 @@ The admin wallet adjustment form and USD-rate form validated plain decimal input
 Risk: manual balance adjustments are direct money-moving operations, and USD rates affect displayed estimates. A value such as `0.123456789123456789` is a valid decimal string but cannot be represented exactly as a JavaScript number, so the request body could differ from what the admin typed.
 
 Fix: both forms still use the strict decimal parser for UI validation and disabled-state gating, but the mutation payload now sends the trimmed decimal string. The local admin wallet DTO was widened to match OpenAPI, and regressions assert exact string payloads for high-precision adjustment and USD-rate inputs.
+
+### M-191. Remaining admin Decimal submit paths still rounded precise inputs
+
+Links: `frontend/src/pages/admin/AdminSettingsPage.tsx`, `frontend/src/pages/admin/AdminTaxonomyPage.tsx`, `frontend/src/pages/admin/AdminUserDetailPage.tsx`, `frontend/src/pages/admin/UserContentSections.tsx`, `frontend/src/pages/admin/AdminWalletsPage.tsx`, DTO type `frontend/src/api/types.ts`, OpenAPI contract `frontend/src/api/openapi.generated.ts`, backend Decimal schemas `backend/app/schemas.py`, regressions in the adjacent admin page tests.
+
+After M-190, the main admin wallet page preserved decimal strings, but several neighboring admin forms still validated plain decimal input and then submitted JavaScript numbers: settings commission/FAQ/PIN reset amounts, currency `min_deposit`/`min_withdraw`, user `deals_sum_override`, trust-deposit totals, the per-user balance adjustment form, and service `price`/`deposit`/`rating_manual`. One wallet shortcut also changed signs through `Math.abs(parsed)`, which could round a precise string before submit.
+
+Risk: these admin controls write money, rates, public profile totals, or fee configuration. A value such as `0.123456789123456789` is accepted by the backend Decimal schemas and OpenAPI already allows string payloads for these fields, but the frontend could silently alter it before the backend parsed it.
+
+Fix: the affected forms still use the strict decimal parsers for validation and disabled-state gating, but submit trimmed or normalized decimal strings for Decimal fields while leaving integer fields numeric. The wallet sign shortcut now preserves the original decimal string while flipping only the sign. Local DTOs were widened to match OpenAPI, and regressions assert exact high-precision string payloads across settings, taxonomy, user detail stats/trust/balance, services, and the wallet shortcut.
 
 ## Наблюдения без отдельного finding
 

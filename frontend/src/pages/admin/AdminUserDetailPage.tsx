@@ -75,10 +75,6 @@ function parseAdminNonNegativeDecimal(raw: string): number | null {
   return parseNonNegativeDecimalInput(normalizeDecimalInput(raw));
 }
 
-function parseAdminPositiveDecimal(raw: string): number | null {
-  return parsePositiveDecimalInput(normalizeDecimalInput(raw));
-}
-
 function parseRatingOverride(raw: string): number | null {
   const parsed = parseAdminNonNegativeDecimal(raw);
   return parsed !== null && parsed <= 5 ? parsed : null;
@@ -511,7 +507,7 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
   ];
 
   const apply = async () => {
-    const body: Record<string, number | null> = {};
+    const body: Record<string, number | string | null> = {};
     for (const f of fields) {
       const raw = draft[f.key];
       if (raw.trim() === "") continue;
@@ -522,7 +518,7 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
         toast.show({ kind: "error", title: `Неверное число: ${f.label}` });
         return;
       }
-      body[f.key] = n;
+      body[f.key] = f.type === "int" ? n : normalizeDecimalInput(raw);
     }
     try {
       await setStats.mutateAsync({ userId: user.id, body });
@@ -577,6 +573,7 @@ function TrustDepositSection({ user }: { user: AdminUserDetailDto }) {
   const [reason, setReason] = useState("");
 
   const apply = async () => {
+    const amountValue = normalizeDecimalInput(amount);
     const n = parseAdminNonNegativeDecimal(amount);
     if (n === null) {
       toast.show({
@@ -588,7 +585,7 @@ function TrustDepositSection({ user }: { user: AdminUserDetailDto }) {
     try {
       await setTrust.mutateAsync({
         userId: user.id,
-        body: { amount: n, reason: reason.trim() || null },
+        body: { amount: amountValue, reason: reason.trim() || null },
       });
       haptic("success");
       toast.show({
@@ -651,8 +648,9 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const allCurrencies = currencies ?? [];
-  const parsedAmount = amount.trim() ? parseAdminPositiveDecimal(amount) : null;
-  const amountError = amount.trim() && parsedAmount === null
+  const amountValue = normalizeDecimalInput(amount);
+  const parsedAmount = amountValue ? parsePositiveDecimalInput(amountValue) : null;
+  const amountError = amountValue && parsedAmount === null
     ? "Введите положительное число без экспоненты"
     : undefined;
 
@@ -668,13 +666,13 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
     try {
       await adjust.mutateAsync({
         currency_code: currency,
-        amount: sign * parsedAmount,
+        amount: sign > 0 ? amountValue : `-${amountValue}`,
         reason: reason.trim() || undefined,
       });
       toast.show({
         kind: "success",
         title: "Готово",
-        body: `${currency} ${sign > 0 ? "+" : "-"}${parsedAmount} применено`,
+        body: `${currency} ${sign > 0 ? "+" : "-"}${amountValue} применено`,
       });
       setAmount("");
       setReason("");

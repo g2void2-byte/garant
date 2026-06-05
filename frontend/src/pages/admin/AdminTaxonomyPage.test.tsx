@@ -277,7 +277,7 @@ describe("<AdminTaxonomyPage />", () => {
     expect(mockState.upsertCurrency.mutateAsync).not.toHaveBeenCalled();
   });
 
-  it("currency save sends parsed decimal values", async () => {
+  it("currency save sends decimal limits as exact strings", async () => {
     mockState.categories = [];
     mockState.currencies = [];
     mockState.upsertCurrency.mutateAsync.mockResolvedValue({});
@@ -290,8 +290,8 @@ describe("<AdminTaxonomyPage />", () => {
     fireEvent.change(inputs[1], { target: { value: " Bitcoin " } });
     fireEvent.change(inputs[2], { target: { value: " mainnet " } });
     fireEvent.change(inputs[3], { target: { value: "8" } });
-    fireEvent.change(inputs[4], { target: { value: ".5" } });
-    fireEvent.change(inputs[5], { target: { value: "0" } });
+    fireEvent.change(inputs[4], { target: { value: "0.123456789123456789" } });
+    fireEvent.change(inputs[5], { target: { value: ".987654321987654321" } });
 
     await user.click(screen.getByRole("button", { name: "Сохранить" }));
 
@@ -301,8 +301,8 @@ describe("<AdminTaxonomyPage />", () => {
         name: "Bitcoin",
         network: "mainnet",
         decimals: 8,
-        min_deposit: 0.5,
-        min_withdraw: 0,
+        min_deposit: "0.123456789123456789",
+        min_withdraw: ".987654321987654321",
         is_active: true,
       }),
     );

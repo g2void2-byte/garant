@@ -119,7 +119,7 @@ describe("<AdminSettingsPage />", () => {
     expect(save).toBeDisabled();
   });
 
-  it("changing a number field enables save and sends only the diff", async () => {
+  it("changing a decimal field sends the exact string diff", async () => {
     mockState.data = makeSettings();
     mockState.update.mutateAsync.mockImplementation(async (patch) => ({
       ...makeSettings(),
@@ -128,18 +128,49 @@ describe("<AdminSettingsPage />", () => {
     const user = userEvent.setup();
     renderPage();
     const dealInput = screen.getByDisplayValue("2") as HTMLInputElement;
-    fireEvent.change(dealInput, { target: { value: "3" } });
+    fireEvent.change(dealInput, { target: { value: "0.123456789123456789" } });
 
     const save = screen.getByRole("button", { name: /^Сохранить(\s\(\d+\))?$/ });
     await waitFor(() => expect(save).not.toBeDisabled());
     await user.click(save);
     await waitFor(() =>
       expect(mockState.update.mutateAsync).toHaveBeenCalledWith({
-        deal_commission_percent: 3,
+        deal_commission_percent: "0.123456789123456789",
       }),
     );
     expect(toastSpy).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "success", title: "Сохранено" }),
+    );
+  });
+
+  it("saves the FAQ stats total as the exact decimal string", async () => {
+    mockState.data = makeSettings({
+      faq_stats_users: 1,
+      faq_stats_deals: 2,
+      faq_stats_total_usd: 0,
+    });
+    mockState.update.mutateAsync.mockImplementation(async (patch) => ({
+      ...makeSettings(),
+      ...(patch as object),
+    }));
+    const user = userEvent.setup();
+    renderPage();
+
+    fireEvent.change(screen.getByDisplayValue("0"), {
+      target: { value: "123456789.123456789123456789" },
+    });
+    const faqSave = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent?.includes("FAQ"));
+    expect(faqSave).toBeDefined();
+    await user.click(faqSave!);
+
+    await waitFor(() =>
+      expect(mockState.update.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          faq_stats_total_usd: "123456789.123456789123456789",
+        }),
+      ),
     );
   });
 

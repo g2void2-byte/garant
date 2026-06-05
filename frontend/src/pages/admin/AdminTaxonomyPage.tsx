@@ -317,6 +317,8 @@ function CurrencyForm({
   const parsedDecimals = parseNonNegativeIntInput(decimals, MAX_CURRENCY_DECIMALS);
   const parsedMinDeposit = parseNonNegativeDecimalInput(minDeposit);
   const parsedMinWithdraw = parseNonNegativeDecimalInput(minWithdraw);
+  const minDepositValue = minDeposit.trim();
+  const minWithdrawValue = minWithdraw.trim();
   const decimalsError = decimals.trim() && parsedDecimals === null
     ? `Введите целое число 0..${MAX_CURRENCY_DECIMALS}`
     : undefined;
@@ -405,8 +407,8 @@ function CurrencyForm({
               name: name.trim() || undefined,
               network: network.trim() || undefined,
               decimals: parsedDecimals,
-              min_deposit: parsedMinDeposit,
-              min_withdraw: parsedMinWithdraw,
+              min_deposit: minDepositValue,
+              min_withdraw: minWithdrawValue,
               is_active: isActive,
             });
             toast.show({ kind: "success", title: "Сохранено" });

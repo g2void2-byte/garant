@@ -332,6 +332,10 @@ function RatesForm({ onClose }: { onClose: () => void }) {
   );
 }
 
+function unsignedSignedDecimalInput(raw: string): string {
+  return raw.trim().replace(/^[+-]/, "");
+}
+
 function AdjustForm({
   target,
   onClose,
@@ -413,7 +417,8 @@ function AdjustForm({
           onClick={() =>
             setAmount((v) => {
               const parsed = parseSignedNonZeroDecimalInput(v);
-              return parsed === null ? "" : `-${Math.abs(parsed)}`;
+              const unsigned = unsignedSignedDecimalInput(v);
+              return parsed === null || !unsigned ? "" : `-${unsigned}`;
             })
           }
           className="flex-1"
@@ -426,7 +431,8 @@ function AdjustForm({
           onClick={() =>
             setAmount((v) => {
               const parsed = parseSignedNonZeroDecimalInput(v);
-              return parsed === null ? "" : `${Math.abs(parsed)}`;
+              const unsigned = unsignedSignedDecimalInput(v);
+              return parsed === null || !unsigned ? "" : unsigned;
             })
           }
           className="flex-1"

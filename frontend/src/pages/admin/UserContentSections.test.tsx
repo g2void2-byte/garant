@@ -289,6 +289,43 @@ describe("<ServicesSection />", () => {
 
     expect(screen.getByText("15.25 $")).toBeInTheDocument();
   });
+
+  it("submits service decimal fields as exact strings", async () => {
+    const user = userEvent.setup();
+    mockState.services = [makeService()];
+    const { container } = renderServicesSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+
+    const inputs = await screen.findAllByRole("spinbutton");
+    fireEvent.change(inputs[0], {
+      target: { value: "0.123456789123456789" },
+    });
+    fireEvent.change(inputs[1], {
+      target: { value: "0.987654321987654321" },
+    });
+    fireEvent.change(inputs[4], {
+      target: { value: "4.123456789123456789" },
+    });
+    const save = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent === "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c");
+    expect(save).toBeDefined();
+    await user.click(save!);
+
+    await waitFor(() =>
+      expect(mockState.updateService.mutateAsync).toHaveBeenCalledWith({
+        serviceId: 21,
+        body: {
+          price: "0.123456789123456789",
+          deposit: "0.987654321987654321",
+          rating_manual: "4.123456789123456789",
+        },
+      }),
+    );
+  });
 });
 
 describe("<CommentsSection />", () => {

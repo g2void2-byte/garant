@@ -441,7 +441,7 @@ describe("<AdminWalletsPage />", () => {
     );
   });
 
-  it("'Списать' shortcut flips a positive amount to negative", async () => {
+  it("'Списать' shortcut flips a positive amount to negative without rounding", async () => {
     mockState.list = {
       items: [makeUserBalance()],
       total: 1,
@@ -454,9 +454,9 @@ describe("<AdminWalletsPage />", () => {
     const amountInput = (await screen.findByPlaceholderText(
       /напр\. -25/,
     )) as HTMLInputElement;
-    fireEvent.change(amountInput, { target: { value: "10" } });
+    fireEvent.change(amountInput, { target: { value: "0.123456789123456789" } });
     await user.click(screen.getByRole("button", { name: /Списать/ }));
-    await waitFor(() => expect(amountInput.value).toBe("-10"));
+    await waitFor(() => expect(amountInput.value).toBe("-0.123456789123456789"));
   });
 
   it("currency chip click switches the active currency for the mutation", async () => {

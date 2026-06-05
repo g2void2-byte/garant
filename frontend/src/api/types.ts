@@ -613,11 +613,11 @@ export interface AdminServiceListDto {
 export interface AdminServiceUpdateBody {
   title?: string;
   description?: string;
-  price?: number;
-  deposit?: number;
+  price?: number | string;
+  deposit?: number | string;
   views?: number;
   deals_count?: number;
-  rating_manual?: number | null;
+  rating_manual?: number | string | null;
   clear_rating?: boolean;
   status?: "draft" | "active" | "paused" | "banned";
   ban_reason?: string;
@@ -801,8 +801,8 @@ export interface AdminSettingsDto {
 }
 
 export interface AdminSettingsUpdateBody {
-  deal_commission_percent?: number;
-  vip_commission_percent?: number;
+  deal_commission_percent?: number | string;
+  vip_commission_percent?: number | string;
   inactivity_pending_confirmation_days?: number;
   inactivity_pending_cancellation_days?: number;
   pending_topup_expiry_hours?: number;
@@ -810,11 +810,11 @@ export interface AdminSettingsUpdateBody {
   maintenance_enabled?: boolean;
   maintenance_message?: string;
   auto_withdraw_enabled?: boolean;
-  pin_reset_price_usd?: number;
+  pin_reset_price_usd?: number | string;
   faq_stats_badge_enabled?: boolean;
   faq_stats_users?: number;
   faq_stats_deals?: number;
-  faq_stats_total_usd?: number;
+  faq_stats_total_usd?: number | string;
 }
 
 export interface AdminCategoryDto {
@@ -851,8 +851,8 @@ export interface AdminCurrencyUpsertBody {
   network?: string;
   icon_url?: string;
   decimals?: number;
-  min_deposit?: number;
-  min_withdraw?: number;
+  min_deposit?: number | string;
+  min_withdraw?: number | string;
   is_active?: boolean;
   sort_order?: number;
   address_regex?: string;
