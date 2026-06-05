@@ -70,6 +70,13 @@ describe("<ServiceCard />", () => {
     expect(link).toHaveAttribute("href", "/services/42");
   });
 
+  it("does not build detail links from malformed runtime ids", () => {
+    renderCard({ id: "0x2a" as unknown as number });
+    const link = screen.getByRole("link");
+    expect(link).toHaveAttribute("aria-disabled", "true");
+    expect(link.getAttribute("href")).not.toContain("/services/0x2a");
+  });
+
   it("renders a status badge when the service is paused", () => {
     renderCard({ status: "paused" });
     expect(screen.getByText("На паузе")).toBeInTheDocument();

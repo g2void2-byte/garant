@@ -15,8 +15,11 @@ import { haptic } from "@/lib/tg";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { safeMediaUrl } from "@/lib/mediaLinks";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 
 const MAX_ATTACHMENTS = 10;
+const INVALID_DEAL_MESSAGE_CURSOR_ERROR =
+  "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 ID \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f";
 
 interface DealChatPanelProps {
   dealId: number;
@@ -73,8 +76,16 @@ export function DealChatPanel({ dealId }: DealChatPanelProps) {
     const el = scrollRef.current;
     prevScrollHeightRef.current = el ? el.scrollHeight : null;
     stickToBottomRef.current = false;
+    const beforeId = parsePositiveIntValue(oldest.id);
+    if (beforeId === undefined) {
+      stickToBottomRef.current = true;
+      prevScrollHeightRef.current = null;
+      setReachedOldest(true);
+      toast.show({ kind: "error", title: INVALID_DEAL_MESSAGE_CURSOR_ERROR });
+      return;
+    }
     try {
-      const page = await loadOlder.mutateAsync({ beforeId: oldest.id });
+      const page = await loadOlder.mutateAsync({ beforeId });
       if (page.length < DEAL_MESSAGE_PAGE_SIZE) {
         setReachedOldest(true);
       }

@@ -42,10 +42,10 @@ export default function NotificationDetailPage() {
   const markRead = useMarkNotificationRead();
 
   useEffect(() => {
-    if (data && !data.is_read) {
-      markRead.mutate(data.id);
+    if (data && !data.is_read && numericId !== undefined) {
+      markRead.mutate(numericId);
     }
-  }, [data, markRead]);
+  }, [data, markRead, numericId]);
 
   const dealRef = useMemo(() => {
     if (!data) return null;

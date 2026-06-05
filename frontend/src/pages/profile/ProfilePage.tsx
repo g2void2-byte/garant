@@ -35,6 +35,7 @@ import type { ReviewDto, ServiceDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 import { confirmDialog } from "@/lib/dialog";
 import { formatRatingValue, parseNonNegativeIntegerValue, relativeTime } from "@/lib/format";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 import { normalizeUsernameRef } from "@/lib/usernames";
 
 const PROFILE_REVIEWS_PAGE_SIZE = 50;
@@ -232,6 +233,7 @@ export default function ProfilePage() {
             <>
               {serviceItems.map((s, i) => {
                 const nextStatus = getOwnServiceToggleStatus(s.status);
+                const serviceId = parsePositiveIntValue(s.id);
                 return (
                   <ServiceCard
                     key={s.id}
@@ -239,7 +241,7 @@ export default function ProfilePage() {
                     index={i}
                     rightSlot={
                       <div className="flex flex-col items-end gap-1 shrink-0">
-                        {nextStatus && (
+                        {nextStatus && serviceId !== undefined && (
                           <button
                             type="button"
                             className="size-8 grid place-items-center rounded-full bg-panel-2 text-text-muted active:scale-95"
@@ -247,7 +249,7 @@ export default function ProfilePage() {
                             onClick={() => {
                               haptic("light");
                               updateService.mutate({
-                                id: s.id,
+                                id: serviceId,
                                 body: { status: nextStatus },
                               });
                             }}
@@ -259,22 +261,24 @@ export default function ProfilePage() {
                             )}
                           </button>
                         )}
-                        <button
-                          type="button"
-                          className="size-8 grid place-items-center rounded-full bg-panel-2 text-danger active:scale-95"
-                          aria-label="Удалить"
-                          onClick={async () => {
-                            // Audit L-15 — ``confirmDialog`` uses Telegram’s
-                            // native ``showConfirm`` when available and falls
-                            // back to ``window.confirm`` outside Telegram.
-                            if (await confirmDialog(`Удалить услугу «${s.title}»?`)) {
-                              haptic("warning");
-                              deleteService.mutate(s.id);
-                            }
-                          }}
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
+                        {serviceId !== undefined && (
+                          <button
+                            type="button"
+                            className="size-8 grid place-items-center rounded-full bg-panel-2 text-danger active:scale-95"
+                            aria-label="Удалить"
+                            onClick={async () => {
+                              // Audit L-15 — ``confirmDialog`` uses Telegram’s
+                              // native ``showConfirm`` when available and falls
+                              // back to ``window.confirm`` outside Telegram.
+                              if (await confirmDialog(`Удалить услугу «${s.title}»?`)) {
+                                haptic("warning");
+                                deleteService.mutate(serviceId);
+                              }
+                            }}
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        )}
                       </div>
                     }
                   />

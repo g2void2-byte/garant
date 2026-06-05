@@ -5,6 +5,7 @@ import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { staggerDelay } from "@/lib/animate";
 import { normalizeUsernameRef } from "@/lib/usernames";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 
 const STATUS_BADGE: Record<string, { text: string; cls: string }> = {
   draft: { text: "Черновик", cls: "bg-panel-2 text-text-muted" },
@@ -34,17 +35,27 @@ export function ServiceCard({
   rightSlot?: React.ReactNode;
 }) {
   const badge = getServiceStatusBadge(service.status);
+  const serviceId = parsePositiveIntValue(service.id);
   const ownerUsername = normalizeUsernameRef(service.owner_username);
   const ownerLabel = ownerUsername
     ? `@${ownerUsername}`
     : "Владелец недоступен";
+  const serviceRoute = serviceId !== undefined ? `/services/${serviceId}` : "#";
   return (
     <div
       className="bg-panel border border-border rounded-card p-3 animate-fadein"
       style={staggerDelay(index)}
     >
       <div className="flex items-start gap-3">
-        <Link to={`/services/${service.id}`} className="flex-1 min-w-0">
+        <Link
+          to={serviceRoute}
+          aria-disabled={serviceId === undefined}
+          onClick={serviceId === undefined ? (event) => event.preventDefault() : undefined}
+          className={cn(
+            "flex-1 min-w-0",
+            serviceId === undefined && "cursor-not-allowed opacity-70",
+          )}
+        >
           <div className="flex items-center gap-2">
             <div className="text-[11px] uppercase tracking-wide text-text-muted">
               {service.category.name}

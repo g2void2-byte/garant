@@ -63,6 +63,7 @@ vi.mock("@/lib/tg", () => ({
   openTelegramLink: vi.fn(),
   openExternalLink: vi.fn(),
   getTelegramUser: () => undefined,
+  tg: undefined,
 }));
 
 import ProfilePage from "./ProfilePage";
@@ -231,6 +232,55 @@ describe("<ProfilePage />", () => {
       id: 1,
       body: { status: "paused" },
     });
+  });
+
+  it("normalizes string own service ids before updating status", async () => {
+    meState.data = makeUser({ username: "me" });
+    servicesState.data = [
+      makeService(1, { id: "7" as unknown as number, status: "active" }),
+    ];
+    reviewsState.data = [];
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Поставить на паузу" }));
+
+    expect(updateMutate).toHaveBeenCalledWith({
+      id: 7,
+      body: { status: "paused" },
+    });
+  });
+
+  it("normalizes string own service ids before deleting", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    try {
+      meState.data = makeUser({ username: "me" });
+      servicesState.data = [makeService(1, { id: "7" as unknown as number })];
+      reviewsState.data = [];
+      const user = userEvent.setup();
+
+      renderPage();
+      await user.click(screen.getByRole("button", { name: "Удалить" }));
+
+      await waitFor(() => expect(deleteMutate).toHaveBeenCalledWith(7));
+    } finally {
+      confirmSpy.mockRestore();
+    }
+  });
+
+  it("does not expose own service actions for malformed runtime ids", () => {
+    meState.data = makeUser({ username: "me" });
+    servicesState.data = [
+      makeService(1, { id: "0x7" as unknown as number, status: "active" }),
+    ];
+    reviewsState.data = [];
+
+    renderPage();
+
+    expect(screen.queryByRole("button", { name: "Поставить на паузу" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Удалить" })).not.toBeInTheDocument();
+    expect(updateMutate).not.toHaveBeenCalled();
+    expect(deleteMutate).not.toHaveBeenCalled();
   });
 
   it("does not expose an activation toggle for own services with unknown runtime status", () => {

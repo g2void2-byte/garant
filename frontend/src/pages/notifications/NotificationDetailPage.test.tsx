@@ -80,6 +80,12 @@ describe("<NotificationDetailPage />", () => {
     await waitFor(() => expect(mockState.markRead.mutate).toHaveBeenCalledWith(42));
   });
 
+  it("uses the canonical route id when marking the loaded notification as read", async () => {
+    mockState.data = makeNotification({ id: "0x2" as unknown as number });
+    renderAt(42);
+    await waitFor(() => expect(mockState.markRead.mutate).toHaveBeenCalledWith(42));
+  });
+
   it("does not build deal links from ambiguous payload or body ids", () => {
     mockState.data = makeNotification({
       payload: { deal_id: "0x2" },

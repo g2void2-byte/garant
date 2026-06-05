@@ -199,6 +199,10 @@
 - M-227: admin deal detail now uses canonical route ids and validates nested action ids.
 - M-228: admin user content edit sheets now validate service/review/comment/user ids before mutations.
 - M-229: admin user detail now uses the canonical route user id for all user-scoped admin actions.
+- M-230: notification detail now marks read with the canonical route id instead of the runtime payload id.
+- M-231: public deal chat now validates message cursor ids before loading older history.
+- M-232: own profile service actions now validate service ids before update/delete mutations.
+- M-233: shared service cards now validate service ids before building detail routes.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2553,6 +2557,46 @@ The admin user detail page parsed `/admin/users/:id` before loading data, but th
 Risk: this page is a privileged user administration surface. Once the route id is validated, follow-up actions should stay bound to that route target and not re-derive the target user from an untrusted response field.
 
 Fix: the page now passes the canonical route `userId` through every user-scoped section and hook, and computes self-action disabling from parsed `me.id` versus that route id. Regressions cover malformed payload ids for content sections, moderation, self-disable, rating, stats, trust deposit, and wallet hooks.
+
+### M-230. Notification detail reused payload ids after route validation
+
+Links: `frontend/src/pages/notifications/NotificationDetailPage.tsx`, regression in `NotificationDetailPage.test.tsx`.
+
+The notification detail page parsed `/notifications/:id` before loading the record, but the unread auto-mark effect sent `data.id` from the response to `useMarkNotificationRead`. A malformed or inconsistent runtime payload id could therefore retarget the read mutation after the route id had already been canonicalized.
+
+Risk: notification detail is opened from direct links as well as list rows, and the mutation updates local notification counters optimistically. The loaded row should not be allowed to replace the validated route target.
+
+Fix: the auto-mark effect now requires the parsed route id and sends that canonical id to the read mutation. The regression covers an unread detail payload with a malformed runtime `id` and verifies that `/notifications/42` still marks notification `42`.
+
+### M-231. Public deal chat trusted runtime message ids for cursors
+
+Links: `frontend/src/pages/deals/DealChatPanel.tsx`, regression in `DealChatPanel.test.tsx`.
+
+The public deal chat history loader used the first rendered message's `id` as `beforeId` without a runtime id boundary. A malformed message id such as `"0x64"` could therefore be sent to the cursor mutation, and a numeric string id would not be normalized before the API call.
+
+Risk: chat history pagination is user-facing and keyed by message ids. Malformed cursors should stop pagination locally instead of sending ambiguous ids to the backend or anchoring scroll state around an invalid cursor.
+
+Fix: the load-older action now parses the oldest message id with the shared positive-id parser, sends only the parsed number, and marks history as exhausted with an error toast when the cursor is malformed. Regressions cover normalized string cursors and malformed cursor suppression.
+
+### M-232. Own profile service actions trusted runtime service ids
+
+Links: `frontend/src/pages/profile/ProfilePage.tsx`, regression in `ProfilePage.test.tsx`.
+
+The own-profile services tab sent `s.id` directly to `useUpdateService` for pause/activate and to `useDeleteService` after confirmation. A malformed runtime id such as `"0x7"` could therefore reach user-owned service mutations, while string numeric ids were not normalized at the UI boundary.
+
+Risk: update/delete are state-changing actions on user content. The profile page should validate the row target before exposing those controls, rather than relying on the backend to reject malformed path ids.
+
+Fix: profile service rows now parse `s.id` once, use the parsed id for update/delete mutations, and hide mutation controls for malformed ids. Regressions cover string id normalization for status update/delete and malformed id action suppression.
+
+### M-233. Shared service cards trusted runtime ids for routes
+
+Links: `frontend/src/components/domain/ServiceCard.tsx`, regression in `ServiceCard.test.tsx`.
+
+Shared service cards built `/services/${service.id}` directly from runtime payloads. Malformed ids such as `"0x2a"` could therefore become visible detail links on profile, category, search, and related-service surfaces.
+
+Risk: service cards are reused across public catalog surfaces. A malformed runtime id should not become a client route segment, even when the rest of the card metadata is still safe to display.
+
+Fix: service cards now parse ids before route construction, normalize string numeric ids, and render malformed-id cards with an inert disabled link target instead of `/services/<raw>`. The regression verifies that malformed ids no longer appear in detail hrefs.
 
 ## Наблюдения без отдельного finding
 
