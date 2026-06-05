@@ -213,6 +213,19 @@ describe("<WalletCurrencyPage />", () => {
     expect(screen.getByText(/100 USDT/)).toBeInTheDocument();
   });
 
+  it("renders malformed available balance strings as neutral", () => {
+    const malformed = makeBalance(100);
+    malformed.amount = "1e2" as unknown as number;
+    malformed.amount_str = "1e2";
+    mockState.balances = [malformed];
+
+    renderPage("USDT");
+
+    expect(screen.getByText("\u2014 USDT")).toBeInTheDocument();
+    expect(screen.queryByText(/0 USDT/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it("shows the 'locked' hint when balance has reserves", () => {
     mockState.balances = [makeBalance(50, 25)];
     renderPage("USDT");

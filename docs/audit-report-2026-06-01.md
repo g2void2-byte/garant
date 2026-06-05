@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 87 файлов, 900 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 88 файлов, 906 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -151,6 +151,7 @@
 - M-179: deal and wallet payment modals now require strict positive invoice amounts before auto-opening or clicking provider payment links.
 - M-180: public money summaries now render malformed/negative runtime amounts as neutral values instead of `$0`.
 - M-181: deal list/detail amount displays now reject malformed/negative runtime totals instead of showing zero.
+- M-182: wallet balance displays now reject malformed/negative runtime balance strings instead of showing zero.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2025,6 +2026,16 @@ After M-180, the deal-specific `formatAmount()` helper still used the legacy zer
 Risk: a corrupted escrow amount could look like a legitimate zero-value deal rather than invalid data. This is misleading in the primary money view for deal participants and can hide the same kind of DTO drift already hardened in invoice and public-money surfaces.
 
 Fix: `formatAmount()` now uses the strict decimal parser and returns a neutral fallback for malformed or negative values while preserving canonical decimal-string amounts and currency precision. Regressions pin malformed deal list and deal detail totals.
+
+### M-182. Wallet balance displays coerced malformed runtime balances to zero
+
+Links: `frontend/src/lib/walletAmounts.ts`, `frontend/src/pages/wallet/WalletPage.tsx`, `frontend/src/pages/wallet/WalletCurrencyPage.tsx`, `frontend/src/components/domain/ProfileFiatBalanceCard.tsx`, regressions `frontend/src/lib/walletAmounts.test.ts`, `frontend/src/pages/wallet/WalletPage.test.tsx`, `frontend/src/pages/wallet/WalletCurrencyPage.test.tsx`, `frontend/src/components/domain/ProfileFiatBalanceCard.test.tsx`.
+
+The wallet DTO already exposes canonical `amount_str`/`locked_str` mirrors, but the user-facing balance displays still passed those runtime strings through the legacy zero-coercing `formatCurrency()` helper. Values such as `"1e2"`, `"0x10"`, `NaN`, or negative strings could therefore render as credible `0 USD`/`0 USDT` balances on the wallet list, per-currency balance header, and profile fiat-balance card.
+
+Risk: a corrupted available balance looked like a legitimate empty wallet instead of invalid data. That is especially misleading on withdrawal/top-up entry points because the user can interpret `0 CODE` as a real account state rather than a DTO/runtime validation failure.
+
+Fix: wallet balance display now uses a strict formatter built on the existing `walletAmounts` parser. Missing balance rows still render as `0 CODE`, while malformed or negative runtime balance fields render as a neutral dash with the currency code. Regressions cover the shared helper and the three affected user-facing balance surfaces.
 
 ## Наблюдения без отдельного finding
 

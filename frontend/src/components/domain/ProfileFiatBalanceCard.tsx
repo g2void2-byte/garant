@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import type { UserCardDto } from "@/api/types";
 import { useWalletBalances } from "@/api/hooks";
 import { normalizeCurrencyCode, walletActionPath } from "@/lib/currencyCodes";
-import { formatCurrency } from "@/lib/format";
+import { formatWalletBalanceCurrency } from "@/lib/walletAmounts";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 /**
@@ -29,7 +29,6 @@ export function ProfileFiatBalanceCard({ user }: { user: UserCardDto }) {
   const code = normalizeCurrencyCode(user.display_currency_code) ?? "USD";
   const balance = data?.find((b) => normalizeCurrencyCode(b.currency.code) === code);
   const decimals = balance?.currency.decimals ?? 2;
-  const amount = balance?.amount_str ?? "0";
 
   return (
     <section className="bg-panel border border-border rounded-card p-4 space-y-3">
@@ -42,7 +41,7 @@ export function ProfileFiatBalanceCard({ user }: { user: UserCardDto }) {
           <Skeleton className="h-8 w-32 rounded-button" />
         ) : (
           <div className="text-3xl font-bold text-accent tabular-nums">
-            {formatCurrency(amount, code, decimals)}
+            {formatWalletBalanceCurrency(balance, "amount", code, decimals)}
           </div>
         )}
       </div>

@@ -82,6 +82,36 @@ describe("<WalletPage />", () => {
     expect(screen.getByText(/123\.46 USD/)).toBeInTheDocument();
   });
 
+  it("renders malformed available balance strings as neutral", () => {
+    mockState.data = [
+      {
+        currency: {
+          id: 1,
+          code: "USD",
+          name: "US Dollar",
+          network: "",
+          icon_url: "",
+          decimals: 2,
+          min_deposit: 1,
+          min_withdraw: 1,
+          kind: "fiat",
+        },
+        amount: "1e2" as unknown as number,
+        locked: 0,
+        total: 100,
+        updated_at: null,
+        amount_str: "1e2",
+        locked_str: "0",
+        total_str: "100",
+      },
+    ];
+    renderPage();
+
+    expect(screen.getByText("\u2014 USD")).toBeInTheDocument();
+    expect(screen.queryByText(/0 USD/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it("wraps each balance row in a Link to /wallet/<code>", () => {
     mockState.data = [
       {

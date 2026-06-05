@@ -98,4 +98,17 @@ describe("<ProfileFiatBalanceCard />", () => {
     await user.click(screen.getAllByRole("button")[1]);
     expect(screen.getByTestId("location").textContent).toBe("/wallet/withdraw?currency=UAH");
   });
+
+  it("renders malformed preferred fiat balances as neutral", () => {
+    const malformed = makeBalance("USD");
+    malformed.amount = "1e2" as unknown as number;
+    malformed.amount_str = "1e2";
+    mockState.balances = [malformed];
+
+    renderCard(makeUser({ display_currency_code: "USD" }));
+
+    expect(screen.getByText("\u2014 USD")).toBeInTheDocument();
+    expect(screen.queryByText(/0 USD/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
 });

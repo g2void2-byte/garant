@@ -1,5 +1,5 @@
 import type { WalletBalanceDto } from "@/api/types";
-import { parseDecimalValue } from "@/lib/format";
+import { formatCurrency, parseDecimalValue } from "@/lib/format";
 
 type WalletBalanceDecimalField = "amount" | "locked" | "total";
 
@@ -36,4 +36,18 @@ export function hasPositiveWalletBalance(
 ): boolean {
   const parsed = parseWalletBalanceDecimal(balance, field);
   return parsed !== null && parsed > 0;
+}
+
+export function formatWalletBalanceCurrency(
+  balance: WalletBalanceDto | null | undefined,
+  field: WalletBalanceDecimalField,
+  code: string,
+  decimals?: number,
+  fallback = "\u2014",
+): string {
+  if (!balance) return formatCurrency(0, code, decimals);
+  const raw = walletBalanceDecimalInput(balance, field);
+  const parsed = raw === null ? null : parseDecimalValue(raw);
+  if (parsed === null || parsed < 0) return `${fallback} ${code}`;
+  return formatCurrency(raw, code, decimals);
 }

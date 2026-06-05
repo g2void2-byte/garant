@@ -20,7 +20,10 @@ import { ToggleTabs } from "@/components/ui/ToggleTabs";
 import { useToast } from "@/components/ui/Toast";
 import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { formatCurrency, parseDateTimeMs, relativeTime } from "@/lib/format";
-import { hasPositiveWalletBalance } from "@/lib/walletAmounts";
+import {
+  formatWalletBalanceCurrency,
+  hasPositiveWalletBalance,
+} from "@/lib/walletAmounts";
 import { haptic, openPaymentLink } from "@/lib/tg";
 
 type Tab = "deposit" | "history";
@@ -88,7 +91,6 @@ export default function WalletCurrencyPage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
 
   const [tab, setTab] = useState<Tab>("deposit");
-  const balanceAmount = balance?.amount_str ?? balance?.amount ?? 0;
   const lockedAmount = balance?.locked_str ?? balance?.locked ?? 0;
 
   useEffect(() => {
@@ -192,7 +194,7 @@ export default function WalletCurrencyPage() {
         <div className="bg-panel border border-border rounded-card p-4">
           <div className="text-sm text-text-muted">Доступно</div>
           <div className="mt-1 text-3xl font-bold text-accent">
-            {formatCurrency(balanceAmount, currency.code, currency.decimals)}
+            {formatWalletBalanceCurrency(balance, "amount", currency.code, currency.decimals)}
           </div>
           {hasPositiveWalletBalance(balance, "locked") && (
             <div className="text-xs text-text-muted mt-1">
