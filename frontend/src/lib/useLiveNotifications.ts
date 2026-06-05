@@ -164,7 +164,7 @@ export function useLiveNotifications() {
           { queryKey: qk.notifications.all() },
           (prev) => {
             if (!prev) return prev;
-            if (prev.some((n) => n.id === notif.id)) return prev;
+            if (prev.some((n) => hasSameRuntimePositiveId(n.id, notif.id))) return prev;
             return [notif, ...prev];
           },
         );

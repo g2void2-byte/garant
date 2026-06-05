@@ -20,6 +20,7 @@ import { api } from "@/api/client";
 import type { NotificationDto, NotificationType } from "@/api/types";
 import { dayKey, parseDateTimeMs, parseNonNegativeIntegerValue } from "@/lib/format";
 import { haptic } from "@/lib/tg";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 
 type CounterTab = "all" | NotificationType;
 
@@ -33,6 +34,15 @@ const TABS: { value: CounterTab; label: string }[] = [
 const NOTIFICATIONS_PAGE_SIZE = 50;
 const NOTIFICATIONS_LOAD_MORE_ERROR =
   "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0435\u0449\u0435 \u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0439";
+
+function hasSameRuntimePositiveId(left: unknown, right: unknown): boolean {
+  const parsedLeft = parsePositiveIntValue(left);
+  const parsedRight = parsePositiveIntValue(right);
+  if (parsedLeft !== undefined && parsedRight !== undefined) {
+    return parsedLeft === parsedRight;
+  }
+  return left === right;
+}
 
 export default function NotificationsPage() {
   const [tab, setTab] = useState<CounterTab>("all");
@@ -55,7 +65,9 @@ export default function NotificationsPage() {
   const hasUnread = unreadCount !== null && unreadCount > 0;
 
   const markNotificationRead = (id: number) => {
-    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+    setItems((prev) =>
+      prev.map((n) => (hasSameRuntimePositiveId(n.id, id) ? { ...n, is_read: true } : n)),
+    );
     markRead.mutate(id);
   };
 
@@ -74,10 +86,10 @@ export default function NotificationsPage() {
   const loadMoreNotifications = async () => {
     const last = items.at(-1);
     if (!last || loadingMore || reachedEnd) return;
+    const beforeId = parsePositiveIntValue(last.id);
     if (
       parseDateTimeMs(last.created_at) === null ||
-      !Number.isSafeInteger(last.id) ||
-      last.id <= 0
+      beforeId === undefined
     ) {
       setReachedEnd(true);
       setLoadMoreError(NOTIFICATIONS_LOAD_MORE_ERROR);
@@ -92,11 +104,19 @@ export default function NotificationsPage() {
             type,
             limit: NOTIFICATIONS_PAGE_SIZE,
             before_created_at: last.created_at,
-            before_id: last.id,
+            before_id: beforeId,
           }),
         })
         .json<NotificationDto[]>();
-      setItems((prev) => [...prev, ...page]);
+      setItems((prev) => {
+        const next = [...prev];
+        for (const item of page) {
+          if (!next.some((existing) => hasSameRuntimePositiveId(existing.id, item.id))) {
+            next.push(item);
+          }
+        }
+        return next;
+      });
       if (page.length < NOTIFICATIONS_PAGE_SIZE) {
         setReachedEnd(true);
       }

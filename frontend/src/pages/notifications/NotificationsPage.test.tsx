@@ -227,6 +227,54 @@ describe("<NotificationsPage />", () => {
     expect(await screen.findByText("Older notification")).toBeInTheDocument();
   });
 
+  it("normalizes numeric-string ids before loading older notifications", async () => {
+    const user = userEvent.setup();
+    mockState.list = Array.from({ length: 50 }, (_, idx) =>
+      makeNotification({
+        id: (idx === 49 ? "51" : 100 - idx) as unknown as number,
+        title: `Notification ${idx}`,
+        created_at: `2026-01-01T00:${String(59 - idx).padStart(2, "0")}:00Z`,
+      }),
+    );
+    apiMock.get.mockReturnValue({
+      json: async () => [makeNotification({ id: 49, title: "Older notification" })],
+    });
+
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Показать еще" }));
+
+    expect(apiMock.get).toHaveBeenCalledWith("api/notifications", {
+      searchParams: {
+        limit: "50",
+        before_created_at: "2026-01-01T00:10:00Z",
+        before_id: "51",
+      },
+    });
+  });
+
+  it("de-dupes loaded notification pages by normalized ids", async () => {
+    const user = userEvent.setup();
+    mockState.list = Array.from({ length: 50 }, (_, idx) =>
+      makeNotification({
+        id: 100 - idx,
+        title: `Notification ${idx}`,
+        created_at: `2026-01-01T00:${String(59 - idx).padStart(2, "0")}:00Z`,
+      }),
+    );
+    apiMock.get.mockReturnValue({
+      json: async () => [
+        makeNotification({ id: "51" as unknown as number, title: "Duplicate notification" }),
+        makeNotification({ id: 50, title: "Older unique notification" }),
+      ],
+    });
+
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Показать еще" }));
+
+    expect(await screen.findByText("Older unique notification")).toBeInTheDocument();
+    expect(screen.queryByText("Duplicate notification")).not.toBeInTheDocument();
+  });
+
   it("does not send load-more when the keyset cursor is malformed", async () => {
     const user = userEvent.setup();
     const loadMoreName = /\u041f\u043e\u043a\u0430\u0437\u0430\u0442\u044c \u0435\u0449\u0435/;

@@ -178,6 +178,21 @@ describe("useLiveNotifications", () => {
     expect(qc.getQueryData(["deal", 99, "messages"])).toEqual([first]);
   });
 
+  it("de-dupes notification events against cached numeric-string ids", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const first = makeNotification({ id: "7" as unknown as number, title: "cached" });
+    qc.setQueryData(["notifications", { limit: 50 }], [first]);
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "notification",
+      data: makeNotification({ id: 7, title: "duplicate" }),
+    });
+
+    expect(qc.getQueryData(["notifications", { limit: 50 }])).toEqual([first]);
+  });
+
   it("ignores malformed deal_message frames instead of poisoning message caches", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const first = makeDealMessage({ id: 1, deal_id: 42, text: "hi" });

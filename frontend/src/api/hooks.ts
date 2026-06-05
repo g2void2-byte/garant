@@ -738,7 +738,7 @@ export function useMarkNotificationRead() {
       );
       const { flippedByType, flippedTotal } = applyReadToCaches(
         qc,
-        (n) => n.id === id,
+        (n) => hasSameRuntimePositiveId(n.id, id),
       );
       applyCountersDelta(qc, flippedByType, flippedTotal);
       return { listsSnapshot, countersSnapshot };
@@ -797,10 +797,11 @@ export function applyServerNotificationRead(
   qc: ReturnType<typeof useQueryClient>,
   payload: { ids?: number[]; all?: boolean },
 ): void {
-  const idSet = new Set(payload.ids ?? []);
+  const ids = payload.ids ?? [];
   const predicate = payload.all
     ? () => true
-    : (n: NotificationDto) => idSet.has(n.id);
+    : (n: NotificationDto) =>
+        ids.some((id) => hasSameRuntimePositiveId(n.id, id));
   const { flippedByType, flippedTotal } = applyReadToCaches(qc, predicate);
   applyCountersDelta(qc, flippedByType, flippedTotal);
 }

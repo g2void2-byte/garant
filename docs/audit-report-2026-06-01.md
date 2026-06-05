@@ -207,6 +207,7 @@
 - M-235: admin taxonomy rows now validate category/currency ids before delete mutations.
 - M-236: public deal detail now keeps deal-scoped flows bound to the canonical route id.
 - M-237: deal message cache merges now normalize runtime ids before de-duping.
+- M-238: notification cache/read/load-more paths now normalize runtime ids.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2641,6 +2642,16 @@ The deal-message cache merge paths compared message ids with raw `===`: loading 
 Risk: chat pagination and reconnect replay are normal user flows. Duplicate message rows make the thread look inconsistent and can also shift the oldest-message cursor/scroll anchor around a duplicate row.
 
 Fix: message cache merge paths now compare ids through the shared positive-id parser, while preserving raw equality as a fallback for malformed values. Regressions cover numeric-string cached ids against number ids in history pagination, send echo, and live WebSocket replay.
+
+### M-238. Notification cache and load-more paths trusted raw runtime ids
+
+Links: `frontend/src/api/hooks.ts`, `frontend/src/lib/useLiveNotifications.ts`, `frontend/src/pages/notifications/NotificationsPage.tsx`, regressions in `hooks.test.tsx`, `useLiveNotifications.test.tsx`, and `NotificationsPage.test.tsx`.
+
+Notification rows already validated ids before navigation/read actions, but the surrounding cache and list state still compared raw `n.id` values. A REST cache row with `id: "7"` would not be marked read by optimistic `useMarkNotificationRead(7)` or by a `notification.read` WebSocket event. A live `notification` event with `id: 7` could also duplicate the cached row, and the `/notifications` load-more cursor rejected numeric string ids even though row actions normalized them.
+
+Risk: notifications are a high-frequency user-facing feed. Raw-id drift makes unread badges and row pips stale, creates duplicate notifications on reconnect/replay, and can strand pagination at a valid-but-string cursor.
+
+Fix: notification cache read predicates, live notification de-dupe, local page read state, and load-more cursor/page merge now compare ids through the shared positive-id parser with raw equality fallback for malformed values. Regressions cover optimistic read, server read events, live duplicate events, numeric-string load-more cursors, and loaded-page de-dupe.
 
 ## Наблюдения без отдельного finding
 

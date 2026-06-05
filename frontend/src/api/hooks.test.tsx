@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import type { DealMessageDto } from "./types";
+import type { DealMessageDto, NotificationCountersDto, NotificationDto } from "./types";
 
 const apiState = vi.hoisted(() => ({
   getResponse: undefined as unknown,
@@ -30,10 +30,12 @@ vi.mock("./client", () => ({
 
 import {
   buildWalletHistorySearchParams,
+  applyServerNotificationRead,
   useCreateReview,
   useDealAction,
   useDeleteService,
   useLoadOlderDealMessages,
+  useMarkNotificationRead,
   useSendDealMessage,
   useUpdateMe,
   useUpdateService,
@@ -86,6 +88,32 @@ function makeDealMessage(overrides: Partial<DealMessageDto> = {}): DealMessageDt
     text: "hi",
     attachments: [],
     created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeNotification(overrides: Partial<NotificationDto> = {}): NotificationDto {
+  return {
+    id: 1,
+    type: "deals",
+    title: "New deal",
+    body: "Body",
+    payload: {},
+    is_read: false,
+    created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeCounters(
+  overrides: Partial<NotificationCountersDto> = {},
+): NotificationCountersDto {
+  return {
+    all: 1,
+    deals: 1,
+    deposits: 0,
+    system: 0,
+    unread: 1,
     ...overrides,
   };
 }
@@ -222,6 +250,42 @@ describe("deal message cache merges", () => {
     await result.current.mutateAsync({ text: "echo", attachments: [] });
 
     expect(qc.getQueryData(["deal", 42, "messages"])).toEqual([cached]);
+  });
+});
+
+describe("notification cache reads", () => {
+  it("optimistically marks cached numeric-string notification ids as read", async () => {
+    const { qc, wrapper } = makeHarness();
+    const cached = makeNotification({ id: "7" as unknown as number });
+    qc.setQueryData(["notifications", { limit: 50 }], [cached]);
+    qc.setQueryData(["notifications", "counters"], makeCounters());
+    apiState.postResponse = { ok: true };
+
+    const { result } = renderHook(() => useMarkNotificationRead(), { wrapper });
+    await result.current.mutateAsync(7);
+
+    expect(qc.getQueryData(["notifications", { limit: 50 }])).toEqual([
+      { ...cached, is_read: true },
+    ]);
+    expect(qc.getQueryData(["notifications", "counters"])).toEqual(
+      makeCounters({ deals: 0, unread: 0 }),
+    );
+  });
+
+  it("applies server read events to cached numeric-string notification ids", () => {
+    const { qc } = makeHarness();
+    const cached = makeNotification({ id: "7" as unknown as number });
+    qc.setQueryData(["notifications", { limit: 50 }], [cached]);
+    qc.setQueryData(["notifications", "counters"], makeCounters());
+
+    applyServerNotificationRead(qc, { ids: [7] });
+
+    expect(qc.getQueryData(["notifications", { limit: 50 }])).toEqual([
+      { ...cached, is_read: true },
+    ]);
+    expect(qc.getQueryData(["notifications", "counters"])).toEqual(
+      makeCounters({ deals: 0, unread: 0 }),
+    );
   });
 });
 
