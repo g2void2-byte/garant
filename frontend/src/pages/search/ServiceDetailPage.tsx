@@ -23,7 +23,7 @@ import { dealsLabel, formatCountValue, formatMoney, formatRatingValue, parseNonN
 import { cn } from "@/lib/cn";
 import { openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
-import { parsePositiveIntRouteParam } from "@/lib/routeParams";
+import { parsePositiveIntRouteParam, parsePositiveIntValue } from "@/lib/routeParams";
 import { safeMediaUrl } from "@/lib/mediaLinks";
 import { createDealPath, normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
 
@@ -457,6 +457,7 @@ function CommentRow({
   };
   const authorPath = userProfilePath(comment.author_username);
   const ratingLabel = comment.rating !== null ? formatRatingValue(comment.rating) : null;
+  const commentId = parsePositiveIntValue(comment.id);
   return (
     <Card className="p-3">
       <div className="flex items-start gap-3">
@@ -489,10 +490,10 @@ function CommentRow({
             </div>
           )}
         </div>
-        {canDelete && (
+        {canDelete && commentId !== undefined && (
           <button
             type="button"
-            onClick={() => del.mutate(comment.id)}
+            onClick={() => del.mutate(commentId)}
             disabled={del.isPending}
             className="text-text-muted hover:text-danger p-1 -mr-1"
             aria-label="Удалить"

@@ -20,6 +20,11 @@ const commentsState = vi.hoisted(() => ({
 }));
 const meState = vi.hoisted(() => ({ data: undefined as UserCardDto | undefined }));
 const apiGetMock = vi.hoisted(() => vi.fn());
+const deleteCommentState = vi.hoisted(() => ({
+  mutate: vi.fn() as ReturnType<typeof vi.fn>,
+  mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
+  isPending: false,
+}));
 
 vi.mock("@/api/client", () => ({
   api: { get: apiGetMock },
@@ -46,11 +51,7 @@ vi.mock("@/api/hooks", () => ({
     mutateAsync: vi.fn(),
     isPending: false,
   }),
-  useDeleteServiceComment: () => ({
-    mutate: vi.fn(),
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
+  useDeleteServiceComment: () => deleteCommentState,
 }));
 
 vi.mock("@/lib/tg", () => ({
@@ -160,6 +161,9 @@ beforeEach(() => {
   commentsState.data = undefined;
   commentsState.lastParams = undefined;
   meState.data = makeUser();
+  deleteCommentState.mutate.mockReset();
+  deleteCommentState.mutateAsync.mockReset();
+  deleteCommentState.isPending = false;
 });
 
 describe("<ServiceDetailPage />", () => {
@@ -305,6 +309,35 @@ describe("<ServiceDetailPage />", () => {
 
     expect(screen.getByText("\u2014")).toBeInTheDocument();
     expect(screen.queryByText("1e1")).not.toBeInTheDocument();
+  });
+
+  it("deletes comments with parsed positive ids", () => {
+    meState.data = makeUser({ username: "bob" });
+    serviceState.data = makeService();
+    commentsState.data = [makeComment(5, { author_id: 99 })];
+    renderAt(7);
+
+    screen.getByLabelText("\u0423\u0434\u0430\u043b\u0438\u0442\u044c").click();
+
+    expect(deleteCommentState.mutate).toHaveBeenCalledWith(5);
+  });
+
+  it("does not expose comment delete for malformed runtime comment ids", () => {
+    meState.data = makeUser({ username: "bob" });
+    serviceState.data = makeService();
+    commentsState.data = [
+      makeComment("0x5" as unknown as number, {
+        author_id: 99,
+        author_username: "commenter",
+        author_display_name: "Commenter",
+        text: "Malformed id comment",
+      }),
+    ];
+    renderAt(7);
+
+    expect(screen.queryByLabelText("\u0423\u0434\u0430\u043b\u0438\u0442\u044c")).not.toBeInTheDocument();
+    expect(deleteCommentState.mutate).not.toHaveBeenCalled();
+    expect(screen.queryByText(/0x5/)).not.toBeInTheDocument();
   });
 
   it("requests the first comments page", () => {

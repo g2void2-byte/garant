@@ -195,6 +195,7 @@
 - M-223: admin deal queues now validate runtime deal ids before opening details or claiming arbitration.
 - M-224: admin finance queues now validate runtime deposit/withdrawal ids before money mutations.
 - M-225: user and notification list rows now validate runtime ids before route/read actions.
+- M-226: public service comment delete now validates runtime comment ids before mutation.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2509,6 +2510,16 @@ Admin user rows built `/admin/users/${u.id}` directly from the runtime list payl
 Risk: these are high-frequency list surfaces. A malformed id should make the row inert, not become an application route segment or mutation target.
 
 Fix: admin user rows now parse ids before navigation and disable malformed rows. Notification rows now parse ids before click/key navigation and swipe read, expose malformed rows as disabled, and never render the raw malformed id. Regressions cover both route paths.
+
+### M-226. Public service comments trusted malformed runtime ids before delete
+
+Links: `frontend/src/pages/search/ServiceDetailPage.tsx`, regression in `ServiceDetailPage.test.tsx`.
+
+`CommentRow` rendered the delete action whenever the viewer was allowed to delete, then sent `comment.id` directly to `useDeleteServiceComment`. A malformed runtime id such as `"0x5"` could therefore be passed to the public comment delete mutation.
+
+Risk: delete is a destructive user-facing action. Authorization checks are not a substitute for validating the target id at the UI mutation boundary.
+
+Fix: comment rows now parse runtime comment ids with the shared positive-id parser, render delete only for valid positive ids, and call the mutation with the parsed number. Regressions cover both normal delete and malformed-id suppression.
 
 ## Наблюдения без отдельного finding
 
