@@ -175,6 +175,7 @@
 - M-203: paid PIN-reset paywall now normalizes runtime currency codes before rendering price/balance and paid toasts.
 - M-204: admin deposit and withdrawal queues now normalize runtime currency labels before rendering money rows.
 - M-205: remaining admin deal, wallet, and per-user balance money rows now normalize runtime currency labels before display.
+- M-206: admin wallet adjustment forms now choose mutation currencies from normalized/catalog-backed codes instead of raw balance DTO labels.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2289,6 +2290,16 @@ After M-204, several adjacent operator-facing money rows still formatted amounts
 Risk: these are admin review and money-operation surfaces. Raw labels next to sanitized amounts can make corrupted deal or wallet DTOs look like valid currency rows, weakening manual triage and approval decisions.
 
 Fix: the remaining admin deal/wallet/user balance money rows now use the shared admin currency-code formatter. Canonicalizable labels are normalized to uppercase, while malformed labels render as a neutral dash. Regressions cover the deal list, arbitration queue, deal-detail snapshots and approvals, wallet balance rows/sheet, and per-user wallet rows.
+
+### M-206. Admin wallet adjustments trusted runtime currency labels for mutations
+
+Links: `frontend/src/pages/admin/AdminWalletsPage.tsx`, `frontend/src/pages/admin/AdminUserDetailPage.tsx`, shared admin formatter `frontend/src/pages/admin/format.ts`, regressions in `frontend/src/pages/admin/format.test.ts`, `frontend/src/pages/admin/AdminWalletsPage.test.tsx`, and `frontend/src/pages/admin/AdminUserDetailPage.numbers.test.tsx`.
+
+The wallet adjustment sheets selected their initial mutation currency from the first visible balance row. After M-205 the UI label was normalized for display, but the mutation state could still retain the raw DTO value. A balance code like `" ton "` could therefore show as a normal-looking `TON` row while submitting `currency_code: " ton "` to the admin adjust endpoint.
+
+Risk: these forms perform manual credit/debit operations. Sending a currency value that differs from the visible catalog-backed chip can fail the operation or make operator intent ambiguous during money correction workflows.
+
+Fix: admin adjustment forms now initialize and reconcile the selected mutation currency through a shared helper that normalizes the preferred balance code and validates it against loaded admin currency rows. If the current selection is malformed or absent from the catalog, the form falls back to a valid known code. Regressions cover the helper, the admin wallets sheet, and the per-user balance form.
 
 ## Наблюдения без отдельного finding
 

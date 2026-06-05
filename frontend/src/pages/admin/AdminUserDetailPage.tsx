@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Ban,
@@ -51,7 +51,7 @@ import { haptic } from "@/lib/tg";
 import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
-import { formatAdminAmount, formatAdminCount, formatAdminCurrencyCode, formatAdminId, formatAdminRating, formatAdminUsd, formatAdminUsername, hasVisibleAdminBalance } from "./format";
+import { formatAdminAmount, formatAdminCount, formatAdminCurrencyCode, formatAdminId, formatAdminRating, formatAdminUsd, formatAdminUsername, hasVisibleAdminBalance, pickAdminMutationCurrency } from "./format";
 
 /**
  * Continental admin user detail screen.
@@ -642,12 +642,18 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
   const { data: currencies } = useAdminCurrencies();
   const adjust = useAdminAdjustBalance(user.id);
   const toast = useToast();
-  const fallback =
-    balances?.find(hasVisibleAdminBalance)?.currency_code ?? "USDT";
-  const [currency, setCurrency] = useState<string>(fallback);
+  const fallback = balances?.find(hasVisibleAdminBalance)?.currency_code ?? "USDT";
+  const [currency, setCurrency] = useState<string>(() =>
+    pickAdminMutationCurrency(fallback, []),
+  );
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const allCurrencies = currencies ?? [];
+  useEffect(() => {
+    setCurrency((current) =>
+      pickAdminMutationCurrency(current, currencies ?? [], fallback),
+    );
+  }, [currencies, fallback]);
   const amountValue = normalizeDecimalInput(amount);
   const parsedAmount = amountValue ? parsePositiveDecimalInput(amountValue) : null;
   const amountError = amountValue && parsedAmount === null

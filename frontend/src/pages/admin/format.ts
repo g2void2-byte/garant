@@ -29,6 +29,22 @@ export function formatAdminCurrencyCode(value: unknown): string {
   return normalizeCurrencyCode(value) ?? DASH;
 }
 
+export function pickAdminMutationCurrency(
+  preferred: unknown,
+  currencies: readonly { code: unknown }[],
+  fallback: unknown = "USDT",
+): string {
+  const knownCodes = currencies
+    .map((currency) => normalizeCurrencyCode(currency.code))
+    .filter((code): code is string => code !== null);
+  const known = new Set(knownCodes);
+  const preferredCode = normalizeCurrencyCode(preferred);
+  if (preferredCode && (known.size === 0 || known.has(preferredCode))) return preferredCode;
+  const fallbackCode = normalizeCurrencyCode(fallback);
+  if (fallbackCode && (known.size === 0 || known.has(fallbackCode))) return fallbackCode;
+  return knownCodes[0] ?? "USDT";
+}
+
 export function parseAdminDecimal(value: string | number | null | undefined): number | null {
   return parseDecimalValue(value);
 }

@@ -12,6 +12,7 @@ import {
   getAdminTotalPages,
   hasVisibleAdminBalance,
   parseAdminDecimal,
+  pickAdminMutationCurrency,
   shouldShowAdminPagination,
 } from "./format";
 
@@ -39,6 +40,14 @@ describe("admin format helpers", () => {
     expect(formatAdminCurrencyCode("USDT1")).toBe("USDT1");
     expect(formatAdminCurrencyCode("../USD")).toBe("\u2014");
     expect(formatAdminCurrencyCode(null)).toBe("\u2014");
+  });
+
+  it("picks admin mutation currencies from normalized known codes", () => {
+    const currencies = [{ code: "USDT" }, { code: "TON" }];
+    expect(pickAdminMutationCurrency(" ton ", currencies)).toBe("TON");
+    expect(pickAdminMutationCurrency("../TON", currencies)).toBe("USDT");
+    expect(pickAdminMutationCurrency("USDC", currencies, " ton ")).toBe("TON");
+    expect(pickAdminMutationCurrency("../TON", [])).toBe("USDT");
   });
 
   it("keeps admin balances visible when malformed totals have valid money fields", () => {

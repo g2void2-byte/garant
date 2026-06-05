@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Minus, Plus, Search, Wallet } from "lucide-react";
 import { Page } from "@/components/layout/Page";
@@ -27,7 +27,7 @@ import {
   parsePositiveDecimalInput,
   parseSignedNonZeroDecimalInput,
 } from "@/lib/formNumbers";
-import { formatAdminAmount, formatAdminCount, formatAdminCurrencyCode, formatAdminUsd, formatAdminUsername, getAdminTotalPages, hasVisibleAdminBalance, parseAdminDecimal, shouldShowAdminPagination } from "./format";
+import { formatAdminAmount, formatAdminCount, formatAdminCurrencyCode, formatAdminUsd, formatAdminUsername, getAdminTotalPages, hasVisibleAdminBalance, parseAdminDecimal, pickAdminMutationCurrency, shouldShowAdminPagination } from "./format";
 
 const PAGE_SIZE = 50;
 
@@ -344,14 +344,20 @@ function AdjustForm({
   onClose: () => void;
 }) {
   const { data: currencies } = useAdminCurrencies();
-  const [currency, setCurrency] = useState(
-    target.balances.find(hasVisibleAdminBalance)?.currency_code ?? "USDT",
+  const preferredCurrency = target.balances.find(hasVisibleAdminBalance)?.currency_code ?? "USDT";
+  const [currency, setCurrency] = useState(() =>
+    pickAdminMutationCurrency(preferredCurrency, []),
   );
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const toast = useToast();
   const adjust = useAdminAdjustBalance(target.user_id);
   const allCurrencies = currencies ?? [];
+  useEffect(() => {
+    setCurrency((current) =>
+      pickAdminMutationCurrency(current, currencies ?? [], preferredCurrency),
+    );
+  }, [currencies, preferredCurrency]);
   const amountValue = amount.trim();
   const parsedAmount = parseSignedNonZeroDecimalInput(amount);
   const amountError = amountValue && parsedAmount === null

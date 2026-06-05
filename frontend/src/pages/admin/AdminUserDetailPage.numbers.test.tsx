@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AdminUserBalanceDto, AdminUserDetailDto } from "@/api/types";
+import type { AdminCurrencyDto, AdminUserBalanceDto, AdminUserDetailDto } from "@/api/types";
 
 const mockState = vi.hoisted(() => ({
   user: undefined as AdminUserDetailDto | undefined,
@@ -12,6 +12,7 @@ const mockState = vi.hoisted(() => ({
   setTrustDeposit: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   adjustBalance: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   walletBalances: [] as AdminUserBalanceDto[],
+  currencies: [] as AdminCurrencyDto[],
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
@@ -27,7 +28,7 @@ vi.mock("@/api/admin/hooks", () => ({
   useAdminSetStats: () => mockState.setStats,
   useAdminSetTrustDeposit: () => mockState.setTrustDeposit,
   useAdminUserWallet: () => ({ data: mockState.walletBalances }),
-  useAdminCurrencies: () => ({ data: [] }),
+  useAdminCurrencies: () => ({ data: mockState.currencies }),
   useAdminAdjustBalance: () => mockState.adjustBalance,
 }));
 
@@ -118,6 +119,24 @@ function makeWalletBalance(overrides: Partial<AdminUserBalanceDto> = {}): AdminU
   };
 }
 
+function makeCurrency(overrides: Partial<AdminCurrencyDto> = {}): AdminCurrencyDto {
+  return {
+    id: 1,
+    code: "USDT",
+    name: "Tether",
+    network: "TRC20",
+    icon_url: "",
+    decimals: 2,
+    min_deposit: 5,
+    min_withdraw: 10,
+    is_active: true,
+    sort_order: 0,
+    address_regex: "",
+    kind: "crypto",
+    ...overrides,
+  };
+}
+
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -138,6 +157,7 @@ beforeEach(() => {
   mockState.setTrustDeposit = { mutateAsync: vi.fn(), isPending: false };
   mockState.adjustBalance = { mutateAsync: vi.fn(), isPending: false };
   mockState.walletBalances = [];
+  mockState.currencies = [];
   toastSpy.mockReset();
 });
 
@@ -289,6 +309,36 @@ describe("<AdminUserDetailPage /> numeric forms", () => {
     expect(container.textContent).toContain("\u2014");
     expect(container.textContent).not.toMatch(/ usdt /);
     expect(container.textContent).not.toMatch(/\.\.\/TON/);
+  });
+
+  it("normalizes the default per-user balance adjustment currency before submitting", async () => {
+    mockState.walletBalances = [
+      makeWalletBalance({
+        currency_id: 2,
+        currency_code: " ton ",
+        total: "10.00",
+      }),
+    ];
+    mockState.currencies = [
+      makeCurrency(),
+      makeCurrency({ id: 2, code: "TON", name: "TON" }),
+    ];
+    mockState.adjustBalance.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    fireEvent.change(screen.getByPlaceholderText("25.5"), {
+      target: { value: "5" },
+    });
+    await user.click(screen.getByRole("button", { name: /Зачислить/i }));
+
+    await waitFor(() => {
+      expect(mockState.adjustBalance.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "TON",
+        amount: "5",
+        reason: undefined,
+      });
+    });
   });
 
   it("submits plain per-user balance adjustment amounts", async () => {

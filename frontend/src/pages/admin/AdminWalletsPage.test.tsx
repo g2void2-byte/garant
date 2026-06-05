@@ -329,6 +329,37 @@ describe("<AdminWalletsPage />", () => {
     );
   });
 
+  it("normalizes the default adjust currency before submitting", async () => {
+    const base = makeUserBalance();
+    mockState.list = {
+      items: [
+        {
+          ...base,
+          balances: [
+            { ...base.balances[1], currency_code: " ton ", amount: "2", locked: "0", total: "2" },
+          ],
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    mockState.adjust.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByText("Alice"));
+    const amountInput = await screen.findByPlaceholderText(/напр\. -25/);
+    fireEvent.change(amountInput, { target: { value: "5" } });
+    await user.click(screen.getByRole("button", { name: /Применить/ }));
+
+    await waitFor(() =>
+      expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ currency_code: "TON", amount: "5" }),
+      ),
+    );
+  });
+
   it("renders missing wallet username as a non-handle label", () => {
     mockState.list = {
       items: [{ ...makeUserBalance(), username: null }],
