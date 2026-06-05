@@ -32,11 +32,13 @@ import { confirmDialog } from "@/lib/dialog";
 import { UserPicker } from "@/components/domain/UserPicker";
 import {
   formatAdminCount,
+  formatAdminId,
   formatAdminRating,
   formatAdminServiceStatus,
   formatAdminUsdSuffix,
   formatAdminUsername,
   getAdminTotalPages,
+  parseAdminId,
   parseAdminCount,
   shouldShowAdminPagination,
 } from "./format";
@@ -244,6 +246,7 @@ function ServiceEditSheet({
   const parsedRatingManual = ratingManual.trim()
     ? parseRatingDecimalInput(ratingManual)
     : null;
+  const serviceId = service ? parseAdminId(service.id) : null;
   const priceValue = price.trim();
   const depositValue = deposit.trim();
   const ratingManualValue = ratingManual.trim();
@@ -259,6 +262,10 @@ function ServiceEditSheet({
 
   const save = async () => {
     if (!service) return;
+    if (serviceId === null) {
+      toast.show({ kind: "error", title: "Неверный ID услуги" });
+      return;
+    }
     if (
       parsedPrice === null ||
       parsedDeposit === null ||
@@ -288,7 +295,7 @@ function ServiceEditSheet({
         close();
         return;
       }
-      await update.mutateAsync({ serviceId: service.id, body });
+      await update.mutateAsync({ serviceId, body });
       toast.show({ kind: "success", title: "Услуга обновлена" });
       close();
     } catch (e: unknown) {
@@ -298,10 +305,14 @@ function ServiceEditSheet({
 
   const onDelete = async () => {
     if (!service) return;
+    if (serviceId === null) {
+      toast.show({ kind: "error", title: "Неверный ID услуги" });
+      return;
+    }
     // Audit L-15 — ``confirmDialog`` prefers ``Telegram.WebApp.showConfirm``.
     if (!(await confirmDialog("Удалить услугу?"))) return;
     try {
-      await del.mutateAsync(service.id);
+      await del.mutateAsync(serviceId);
       toast.show({ kind: "success", title: "Услуга удалена" });
       close();
     } catch (e: unknown) {
@@ -373,7 +384,7 @@ function ServiceEditSheet({
           </label>
         </div>
         <div className="flex gap-2 pt-2">
-          <Button variant="danger" onClick={onDelete} disabled={del.isPending}>
+          <Button variant="danger" onClick={onDelete} disabled={serviceId === null || del.isPending}>
             <Trash2 size={14} />
           </Button>
           <Button variant="secondary" fullWidth onClick={close}>
@@ -384,6 +395,7 @@ function ServiceEditSheet({
             onClick={save}
             disabled={
               update.isPending ||
+              serviceId === null ||
               parsedPrice === null ||
               parsedDeposit === null ||
               parsedViews === null ||
@@ -530,6 +542,7 @@ function ReviewCreateSheet({
   };
 
   const parsedRating = parseRatingIntInput(rating);
+  const authorId = author ? parseAdminId(author.id) : null;
   const ratingError = parsedRating === null ? "Введите целый рейтинг 1..5" : undefined;
 
   const submit = async () => {
@@ -541,9 +554,13 @@ function ReviewCreateSheet({
       toast.show({ kind: "error", title: "Выберите автора" });
       return;
     }
+    if (authorId === null) {
+      toast.show({ kind: "error", title: "Неверный ID автора" });
+      return;
+    }
     try {
       await create.mutateAsync({
-        author_id: author.id,
+        author_id: authorId,
         target_id: userId,
         rating: parsedRating,
         text,
@@ -620,16 +637,21 @@ function ReviewEditSheet({
   };
 
   const parsedRating = parseRatingIntInput(rating);
+  const reviewId = review ? parseAdminId(review.id) : null;
   const ratingError = parsedRating === null ? "Введите целый рейтинг 1..5" : undefined;
 
   const save = async () => {
     if (!review) return;
+    if (reviewId === null) {
+      toast.show({ kind: "error", title: "Неверный ID отзыва" });
+      return;
+    }
     if (parsedRating === null) {
       toast.show({ kind: "error", title: "Рейтинг 1..5" });
       return;
     }
     try {
-      await update.mutateAsync({ reviewId: review.id, body: { rating: parsedRating, text } });
+      await update.mutateAsync({ reviewId, body: { rating: parsedRating, text } });
       toast.show({ kind: "success", title: "Отзыв обновлён" });
       close();
     } catch (e: unknown) {
@@ -639,10 +661,14 @@ function ReviewEditSheet({
 
   const onDelete = async () => {
     if (!review) return;
+    if (reviewId === null) {
+      toast.show({ kind: "error", title: "Неверный ID отзыва" });
+      return;
+    }
     // Audit L-15 — ``confirmDialog`` prefers ``Telegram.WebApp.showConfirm``.
     if (!(await confirmDialog("Удалить отзыв?"))) return;
     try {
-      await del.mutateAsync(review.id);
+      await del.mutateAsync(reviewId);
       toast.show({ kind: "success", title: "Отзыв удалён" });
       close();
     } catch (e: unknown) {
@@ -663,13 +689,13 @@ function ReviewEditSheet({
         />
         <Textarea label="Текст" value={text} onChange={(e) => setText(e.target.value)} />
         <div className="flex gap-2 pt-2">
-          <Button variant="danger" onClick={onDelete} disabled={del.isPending}>
+          <Button variant="danger" onClick={onDelete} disabled={reviewId === null || del.isPending}>
             <Trash2 size={14} />
           </Button>
           <Button variant="secondary" fullWidth onClick={close}>
             Отмена
           </Button>
-          <Button fullWidth onClick={save} disabled={update.isPending}>
+          <Button fullWidth onClick={save} disabled={reviewId === null || update.isPending}>
             Сохранить
           </Button>
         </div>
@@ -688,6 +714,11 @@ export function CommentsSection({ userId }: SectionProps) {
   });
   const [editing, setEditing] = useState<AdminCommentItemDto | null>(null);
   const comments = data?.items ?? [];
+  const commentsForRender = comments.map((comment) => ({
+    ...comment,
+    service_id: formatAdminId(comment.service_id),
+    raw: comment,
+  }));
   const totalCount = parseAdminCount(data?.total);
 
   useEffect(() => {
@@ -716,7 +747,7 @@ export function CommentsSection({ userId }: SectionProps) {
         <p className="text-sm text-text-muted py-2">Юзер не оставлял комментариев.</p>
       ) : (
         <ul className="space-y-2">
-            {comments.map((c, _idx) => (
+            {commentsForRender.map((c, _idx) => (
               <li
                 key={c.id}
                 className="bg-panel-2 rounded-card p-3"
@@ -731,7 +762,7 @@ export function CommentsSection({ userId }: SectionProps) {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setEditing(c)}
+                    onClick={() => setEditing(c.raw)}
                     className="p-1.5 rounded-button bg-panel hover:bg-panel-2 active:scale-95"
                     aria-label="Изменить"
                   >
@@ -783,10 +814,15 @@ function CommentEditSheet({
 
   const hasRating = rating.trim() !== "";
   const parsedRating = hasRating ? parseRatingIntInput(rating) : null;
+  const commentId = comment ? parseAdminId(comment.id) : null;
   const ratingError = hasRating && parsedRating === null ? "Введите целый рейтинг 1..5" : undefined;
 
   const save = async () => {
     if (!comment) return;
+    if (commentId === null) {
+      toast.show({ kind: "error", title: "Неверный ID комментария" });
+      return;
+    }
     try {
       const body: Record<string, unknown> = {};
       if (text !== comment.text) body.text = text;
@@ -803,7 +839,7 @@ function CommentEditSheet({
         close();
         return;
       }
-      await update.mutateAsync({ commentId: comment.id, body });
+      await update.mutateAsync({ commentId, body });
       toast.show({ kind: "success", title: "Комментарий обновлён" });
       close();
     } catch (e: unknown) {
@@ -813,10 +849,14 @@ function CommentEditSheet({
 
   const onDelete = async () => {
     if (!comment) return;
+    if (commentId === null) {
+      toast.show({ kind: "error", title: "Неверный ID комментария" });
+      return;
+    }
     // Audit L-15 — ``confirmDialog`` prefers ``Telegram.WebApp.showConfirm``.
     if (!(await confirmDialog("Удалить комментарий?"))) return;
     try {
-      await del.mutateAsync(comment.id);
+      await del.mutateAsync(commentId);
       toast.show({ kind: "success", title: "Комментарий удалён" });
       close();
     } catch (e: unknown) {
@@ -837,13 +877,13 @@ function CommentEditSheet({
           onChange={(e) => setRating(e.target.value)}
         />
         <div className="flex gap-2 pt-2">
-          <Button variant="danger" onClick={onDelete} disabled={del.isPending}>
+          <Button variant="danger" onClick={onDelete} disabled={commentId === null || del.isPending}>
             <Trash2 size={14} />
           </Button>
           <Button variant="secondary" fullWidth onClick={close}>
             Отмена
           </Button>
-          <Button fullWidth onClick={save} disabled={update.isPending}>
+          <Button fullWidth onClick={save} disabled={commentId === null || update.isPending}>
             Сохранить
           </Button>
         </div>

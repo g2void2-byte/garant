@@ -336,6 +336,49 @@ describe("<ServicesSection />", () => {
     );
   });
 
+  it("normalizes string service ids before updating", async () => {
+    const user = userEvent.setup();
+    mockState.services = [makeService({ id: "21" })];
+    const { container } = renderServicesSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+
+    const inputs = await screen.findAllByRole("spinbutton");
+    fireEvent.change(inputs[0], { target: { value: "12.5" } });
+    const save = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent === "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c");
+    expect(save).toBeDefined();
+    await user.click(save!);
+
+    await waitFor(() =>
+      expect(mockState.updateService.mutateAsync).toHaveBeenCalledWith({
+        serviceId: 21,
+        body: { price: "12.5" },
+      }),
+    );
+  });
+
+  it("blocks malformed service ids before updating", async () => {
+    const user = userEvent.setup();
+    mockState.services = [makeService({ id: "0x15" })];
+    const { container } = renderServicesSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+
+    const inputs = await screen.findAllByRole("spinbutton");
+    fireEvent.change(inputs[0], { target: { value: "12.5" } });
+    const save = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent === "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c");
+    expect(save).toBeDisabled();
+    expect(mockState.updateService.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it("submits service decimal fields as exact strings", async () => {
     const user = userEvent.setup();
     mockState.services = [makeService()];
@@ -391,6 +434,24 @@ describe("<CommentsSection />", () => {
 
     expect(container.textContent).toContain("\u2014/5");
     expect(container.textContent).not.toMatch(/0x10/);
+  });
+
+  it("formats malformed comment service ids and blocks malformed comment ids", async () => {
+    const user = userEvent.setup();
+    mockState.comments = [makeComment({ id: "0x0b", service_id: "0x37" })];
+    const { container } = renderCommentsSection(42);
+
+    expect(container.textContent).toContain("#\u2014");
+    expect(container.textContent).not.toMatch(/0x0b|0x37/);
+
+    const edit = container.querySelector("button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+    const textArea = await screen.findByRole("textbox", { name: /^Текст$/ });
+    await user.type(textArea, " updated");
+    const buttons = screen.getAllByRole("button");
+    expect(buttons[buttons.length - 1]).toBeDisabled();
+    expect(mockState.updateComment.mutateAsync).not.toHaveBeenCalled();
   });
 
   it("blocks rating 0 before updating a comment because the backend accepts 1..5", async () => {
@@ -557,6 +618,22 @@ describe("<ReviewsSection /> · Новый отзыв sheet", () => {
     },
   );
 
+  it("blocks malformed picked author ids before creating a review", async () => {
+    const user = userEvent.setup();
+    mockState.users = [makeUser({ id: "0x7" as unknown as number, username: "buyer1" })];
+    renderSection(42);
+
+    await user.click(screen.getByRole("button", { name: /\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043e\u0442\u0437\u044b\u0432/i }));
+    await user.type(screen.getByRole("textbox", { name: /^\u0410\u0432\u0442\u043e\u0440$/ }), "buyer1");
+    await user.click(await screen.findByRole("option", { name: /buyer1/i }));
+    await user.click(screen.getByRole("button", { name: "\u0421\u043e\u0437\u0434\u0430\u0442\u044c" }));
+
+    expect(mockState.createReview.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 ID \u0430\u0432\u0442\u043e\u0440\u0430" }),
+    );
+  });
+
   it("blocks rating 0 before creating a review because the backend accepts 1..5", async () => {
     const user = userEvent.setup();
     mockState.users = [makeUser({ id: 7, username: "buyer1" })];
@@ -632,6 +709,44 @@ describe("<ReviewsSection /> · Новый отзыв sheet", () => {
     expect(toastSpy).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
     );
+  });
+
+  it("normalizes string review ids before updating", async () => {
+    const user = userEvent.setup();
+    mockState.reviews = [makeReview({ id: "7" })];
+    const { container } = renderSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+    const ratingInput = await screen.findByRole("spinbutton", { name: /\u0420\u0435\u0439\u0442\u0438\u043d\u0433 1\.\.5/i });
+    await user.clear(ratingInput);
+    await user.type(ratingInput, "4");
+    const buttons = screen.getAllByRole("button");
+    await user.click(buttons[buttons.length - 1]);
+
+    await waitFor(() =>
+      expect(mockState.updateReview.mutateAsync).toHaveBeenCalledWith({
+        reviewId: 7,
+        body: { rating: 4, text: "ok" },
+      }),
+    );
+  });
+
+  it("blocks malformed review ids before updating", async () => {
+    const user = userEvent.setup();
+    mockState.reviews = [makeReview({ id: "0x7" })];
+    const { container } = renderSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+    const ratingInput = await screen.findByRole("spinbutton", { name: /\u0420\u0435\u0439\u0442\u0438\u043d\u0433 1\.\.5/i });
+    await user.clear(ratingInput);
+    await user.type(ratingInput, "4");
+    const buttons = screen.getAllByRole("button");
+    expect(buttons[buttons.length - 1]).toBeDisabled();
+    expect(mockState.updateReview.mutateAsync).not.toHaveBeenCalled();
   });
 
   it.each(["1.5", "1e0"])(

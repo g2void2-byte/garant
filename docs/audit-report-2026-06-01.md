@@ -197,6 +197,7 @@
 - M-225: user and notification list rows now validate runtime ids before route/read actions.
 - M-226: public service comment delete now validates runtime comment ids before mutation.
 - M-227: admin deal detail now uses canonical route ids and validates nested action ids.
+- M-228: admin user content edit sheets now validate service/review/comment/user ids before mutations.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2531,6 +2532,16 @@ The admin deal detail page loaded the deal by a validated route id, but then reu
 Risk: this is a privileged admin surface with money-moving and destructive actions. Once the route id is validated, later mutation targets and cursors should not be re-derived from unvalidated response fields.
 
 Fix: admin deal actions and chat hooks now use the canonical route id, nested approval/arbiter/message ids are parsed before mutation/cursor use, malformed approval ids disable approval buttons, malformed chat cursors stop pagination, and visible nested ids are formatted through the admin id boundary. Regressions cover malformed payload deal ids, approval ids, arbiter ids, and chat cursor ids.
+
+### M-228. Admin user content sheets trusted runtime ids for edits
+
+Links: `frontend/src/pages/admin/UserContentSections.tsx`, regression in `UserContentSections.test.tsx`.
+
+The admin user content sections validated paging/count/rating values, but edit sheets still reused runtime ids directly: service edit/delete sent `service.id`, review create sent the picked `author.id`, review edit/delete sent `review.id`, and comment edit/delete sent `comment.id`. Comment rows also rendered `service_id` raw. Runtime values like `"0x15"` could therefore appear as plausible content metadata or become admin mutation targets.
+
+Risk: these are admin "act on behalf of user" controls for mutating or deleting user-generated services, reviews, and comments. A malformed response id should block the specific mutation instead of relying on backend rejection or creating misleading row metadata.
+
+Fix: service/review/comment sheets now parse ids through the admin id boundary before mutation use, disable edit/delete actions when row ids are malformed, create-review validates the picked author id, and comment service ids render through `formatAdminId`. Regressions cover normalized string ids, malformed service/review/comment ids, malformed picked author ids, and malformed comment service ids.
 
 ## Наблюдения без отдельного finding
 
