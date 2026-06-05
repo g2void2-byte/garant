@@ -325,6 +325,29 @@ describe("<WalletDepositPage />", () => {
     vi.useRealTimers();
   });
 
+  it("does not open the payment link when the create response amount is malformed", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(
+      makeDeposit({
+        pay_url: "https://t.me/CryptoBot?start=bad-amount",
+        amount: "1e2" as unknown as number,
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    const amount = screen.getByDisplayValue("5") as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: "10" } });
+    await user.click(screen.getByRole("button", {
+      name: /\u041f\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u044c \u0431\u0430\u043b\u0430\u043d\u0441/,
+    }));
+
+    await waitFor(() => {
+      expect(mockState.createMutation.mutateAsync).toHaveBeenCalled();
+    });
+    expect(screen.getByTestId("deposit-status-modal")).toBeInTheDocument();
+    expect(openTelegramLinkSpy).not.toHaveBeenCalled();
+    expect(openExternalLinkSpy).not.toHaveBeenCalled();
+  });
+
   it("error path: surfaces server error via haptic('error')", async () => {
     mockState.createMutation.mutateAsync.mockRejectedValue(new Error("Минимум 5"));
     const user = userEvent.setup();

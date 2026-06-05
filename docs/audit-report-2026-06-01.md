@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 88 файлов, 914 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 88 файлов, 919 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -154,6 +154,7 @@
 - M-182: wallet balance displays now reject malformed/negative runtime balance strings instead of showing zero.
 - M-183: wallet locked hints and admin balance visibility now use strict positive-balance parsing instead of zero-coercing totals.
 - M-184: create-deal balance defaults, hints, and Max previews now use canonical wallet amount strings instead of malformed runtime balance values.
+- M-185: wallet deposit payment entry and history rows now require strict positive runtime amounts instead of opening pay links after zero-coercion.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2058,6 +2059,16 @@ After M-182/M-183, wallet screens and admin balance gates were strict, but the c
 Risk: the primary escrow creation surface could disagree with wallet displays about the same balance. A buyer with a valid canonical balance could be pushed into an unnecessary top-up flow, while the amount preview and `Макс` affordance no longer matched the backend wallet projection.
 
 Fix: create-deal now uses the shared wallet amount parser/formatter for default currency selection, balance hints, full-balance gating, and `Макс` calculation. Regressions cover malformed runtime `amount` with valid `amount_str` for default currency selection, displayed hint text, and balance-funded preview math.
+
+### M-185. Wallet deposit payment entry still opened links after malformed runtime amounts
+
+Links: `frontend/src/lib/format.ts`, `frontend/src/pages/wallet/WalletDepositPage.tsx`, `frontend/src/pages/wallet/WalletCurrencyPage.tsx`, `frontend/src/pages/wallet/WalletTrustDepositPage.tsx`, regressions in the adjacent tests.
+
+The deposit status modals were already hardened, but the wallet deposit pages still opened `dep.pay_url` directly after `createDeposit` succeeded and formatted `dep.amount` with the legacy zero-coercing currency formatter. Per-currency wallet history had the same display issue: malformed deposit/withdrawal amounts such as `"1e2"` or `"0x10"` rendered as signed `0 CODE`, and pending deposit rows could still expose the payment link.
+
+Risk: a corrupted invoice or history payload could reach the payment-entry surface after the UI had enough information to classify the amount as invalid. Users could be sent to an upstream provider or see a credible zero-value operation instead of a neutral invalid-data state.
+
+Fix: added a strict currency formatter for runtime money values that preserves canonical decimal strings but renders malformed/negative values as a neutral dash. Wallet deposit, per-currency deposit, and trust-deposit submit paths now require a strict positive created amount before opening `pay_url`; wallet history renders malformed operation amounts neutrally and hides pay links unless the amount is valid and positive. Regressions cover malformed create responses and malformed history rows.
 
 ## Наблюдения без отдельного finding
 

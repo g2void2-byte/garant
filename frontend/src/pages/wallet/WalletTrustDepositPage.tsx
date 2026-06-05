@@ -17,7 +17,12 @@ import { useToast } from "@/components/ui/Toast";
 import { usePresence } from "@/lib/animate";
 import { cn } from "@/lib/cn";
 import { normalizeCurrencyCodeRows } from "@/lib/currencyCodes";
-import { formatCurrency, formatMoney } from "@/lib/format";
+import {
+  formatCurrency,
+  formatCurrencyStrict,
+  formatMoney,
+  parseDecimalValue,
+} from "@/lib/format";
 import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 
@@ -89,11 +94,14 @@ export default function WalletTrustDepositPage() {
         purpose: "trust",
       });
       haptic("success");
-      if (dep.pay_url) openPaymentLink(dep.pay_url);
+      const depositAmount = parseDecimalValue(dep.amount);
+      if (dep.pay_url && depositAmount !== null && depositAmount > 0) {
+        openPaymentLink(dep.pay_url);
+      }
       toast.show({
         kind: "success",
         title: "Счёт создан",
-        body: `Оплатите ${formatCurrency(dep.amount, dep.currency.code, current.decimals)} в CryptoBot.`,
+        body: `Оплатите ${formatCurrencyStrict(dep.amount, dep.currency.code, current.decimals)} в CryptoBot.`,
       });
     } catch (e: unknown) {
       haptic("error");

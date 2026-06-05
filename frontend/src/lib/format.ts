@@ -83,6 +83,17 @@ export function formatCurrency(
   return `${fixed} ${code}`;
 }
 
+export function formatCurrencyStrict(
+  value: number | string | null | undefined,
+  code: string,
+  decimals?: number,
+  fallback = "\u2014",
+): string {
+  const parsed = parseDecimalValue(value);
+  if (parsed === null || parsed < 0) return `${fallback} ${code}`;
+  return formatCurrency(value, code, decimals);
+}
+
 export function formatAmount(
   value: number | string | null | undefined,
   code: string,

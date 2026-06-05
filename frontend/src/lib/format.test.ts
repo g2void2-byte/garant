@@ -5,6 +5,7 @@ import {
   formatAmount,
   formatCountValue,
   formatCurrency,
+  formatCurrencyStrict,
   formatDateTime,
   formatMoney,
   formatRating,
@@ -64,6 +65,16 @@ describe("formatCurrency", () => {
 
   it("falls back to 0 for malformed input", () => {
     expect(formatCurrency("oops", "USDT")).toBe("0 USDT");
+  });
+});
+
+describe("formatCurrencyStrict", () => {
+  it("renders canonical decimal strings and rejects malformed or negative values", () => {
+    expect(formatCurrencyStrict("10.5", "USDT")).toBe("10.5 USDT");
+    expect(formatCurrencyStrict("1.23456789", "BTC", 4)).toBe("1.2346 BTC");
+    expect(formatCurrencyStrict("1e2", "USDT")).toBe("\u2014 USDT");
+    expect(formatCurrencyStrict("0x10", "USDT")).toBe("\u2014 USDT");
+    expect(formatCurrencyStrict(-1, "USDT", undefined, "n/a")).toBe("n/a USDT");
   });
 });
 

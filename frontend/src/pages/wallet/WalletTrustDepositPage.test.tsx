@@ -123,4 +123,27 @@ describe("<WalletTrustDepositPage />", () => {
     });
     expect(openPaymentLinkSpy).toHaveBeenCalledWith("https://t.me/CryptoBot?start=trust");
   });
+
+  it("does not open the trust deposit pay link when the create response amount is malformed", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(
+      makeDeposit({ amount: "1e2" as unknown as number }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    const amount = screen.getByDisplayValue("5") as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: "10" } });
+    await user.click(screen.getByRole("button", {
+      name: /^\u041f\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u044c$/,
+    }));
+
+    await waitFor(() => {
+      expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "USD",
+        amount: "10",
+        purpose: "trust",
+      });
+    });
+    expect(openPaymentLinkSpy).not.toHaveBeenCalled();
+  });
 });

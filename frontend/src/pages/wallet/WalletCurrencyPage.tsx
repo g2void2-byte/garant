@@ -19,7 +19,13 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ToggleTabs } from "@/components/ui/ToggleTabs";
 import { useToast } from "@/components/ui/Toast";
 import { normalizeCurrencyCode } from "@/lib/currencyCodes";
-import { formatCurrency, parseDateTimeMs, relativeTime } from "@/lib/format";
+import {
+  formatCurrency,
+  formatCurrencyStrict,
+  parseDateTimeMs,
+  parseDecimalValue,
+  relativeTime,
+} from "@/lib/format";
 import {
   formatWalletBalanceCurrency,
   hasPositiveWalletBalance,
@@ -255,11 +261,14 @@ function DepositForm({
     try {
       const dep = await create.mutateAsync({ currency_code: currencyCode, amount: value });
       haptic("success");
-      if (dep.pay_url) openPaymentLink(dep.pay_url);
+      const depositAmount = parseDecimalValue(dep.amount);
+      if (dep.pay_url && depositAmount !== null && depositAmount > 0) {
+        openPaymentLink(dep.pay_url);
+      }
       toast.show({
         kind: "success",
         title: "Счёт создан",
-        body: `Оплатите ${formatCurrency(dep.amount, dep.currency.code, decimals)} в CryptoBot.`,
+        body: `Оплатите ${formatCurrencyStrict(dep.amount, dep.currency.code, decimals)} в CryptoBot.`,
       });
     } catch (e: unknown) {
       haptic("error");
@@ -382,51 +391,58 @@ function HistoryList({
 
   return (
     <div className="space-y-2">
-      {rows.map((r) => (
-        <div
-          key={r.key}
-          data-testid={`wallet-history-row-${r.key}`}
-          className="bg-panel border border-border rounded-card p-3 flex items-center justify-between"
-        >
-          <div className="min-w-0">
-            <div className="font-semibold truncate flex items-center gap-2">
-              <span>{r.title}</span>
-              {r.kind === "deposit" && r.provider && (
-                <span
-                  className="inline-flex items-center rounded-full border border-border bg-bg px-2 py-[1px] text-[10px] font-medium uppercase text-text-muted"
-                  data-testid={`deposit-provider-${r.provider}`}
+      {rows.map((r) => {
+        const parsedAmount = parseDecimalValue(r.amount);
+        const amountText =
+          parsedAmount !== null && parsedAmount >= 0
+            ? `${r.sign === 1 ? "+" : "-"}${formatCurrency(r.amount, currencyCode, decimals)}`
+            : formatCurrencyStrict(r.amount, currencyCode, decimals);
+        const canOpenPayment = !!r.pay_url && parsedAmount !== null && parsedAmount > 0;
+        return (
+          <div
+            key={r.key}
+            data-testid={`wallet-history-row-${r.key}`}
+            className="bg-panel border border-border rounded-card p-3 flex items-center justify-between"
+          >
+            <div className="min-w-0">
+              <div className="font-semibold truncate flex items-center gap-2">
+                <span>{r.title}</span>
+                {r.kind === "deposit" && r.provider && (
+                  <span
+                    className="inline-flex items-center rounded-full border border-border bg-bg px-2 py-[1px] text-[10px] font-medium uppercase text-text-muted"
+                    data-testid={`deposit-provider-${r.provider}`}
+                  >
+                    {r.provider === "crystalpay" ? "Crystalpay" : "CryptoBot"}
+                  </span>
+                )}
+              </div>
+              <div className={`text-xs ${STATUS_TONE[r.status] ?? "text-text-muted"}`}>
+                {r.subtitle}
+              </div>
+              <div className="text-[11px] text-text-muted mt-0.5">
+                {relativeTime(r.created_at)}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className={`font-semibold ${r.sign === 1 ? "text-success" : "text-text"}`}>
+                {amountText}
+              </div>
+              {canOpenPayment && (
+                <Link
+                  to="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    openPaymentLink(r.pay_url!);
+                  }}
+                  className="text-accent text-xs underline"
                 >
-                  {r.provider === "crystalpay" ? "Crystalpay" : "CryptoBot"}
-                </span>
+                  Оплатить
+                </Link>
               )}
             </div>
-            <div className={`text-xs ${STATUS_TONE[r.status] ?? "text-text-muted"}`}>
-              {r.subtitle}
-            </div>
-            <div className="text-[11px] text-text-muted mt-0.5">
-              {relativeTime(r.created_at)}
-            </div>
           </div>
-          <div className="text-right">
-            <div className={`font-semibold ${r.sign === 1 ? "text-success" : "text-text"}`}>
-              {r.sign === 1 ? "+" : "-"}
-              {formatCurrency(r.amount, currencyCode, decimals)}
-            </div>
-            {r.pay_url && (
-              <Link
-                to="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  openPaymentLink(r.pay_url!);
-                }}
-                className="text-accent text-xs underline"
-              >
-                Оплатить
-              </Link>
-            )}
-          </div>
-        </div>
-      ))}
+        );
+      })}
       {hasMore && rows.length >= WALLET_HISTORY_PAGE_SIZE && (
         <Button onClick={onLoadMore} disabled={loadingMore} className="w-full">
           {loadingMore ? "Загружаю..." : "Показать еще"}

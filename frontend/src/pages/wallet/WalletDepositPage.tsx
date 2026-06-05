@@ -18,7 +18,7 @@ import {
   normalizeCurrencyCode,
   normalizeCurrencyCodeRows,
 } from "@/lib/currencyCodes";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatCurrencyStrict, parseDecimalValue } from "@/lib/format";
 import { hasPositiveWalletBalance, walletBalanceDecimalInput } from "@/lib/walletAmounts";
 import { haptic, openPaymentLink } from "@/lib/tg";
 import type { WalletDepositDto } from "@/api/types";
@@ -137,12 +137,15 @@ export default function WalletDepositPage() {
       haptic("success");
       setActiveDeposit(dep);
       setModalOpen(true);
+      const depositAmount = parseDecimalValue(dep.amount);
       toast.show({
         kind: "success",
         title: "Счёт создан",
-        body: `Оплатите ${formatCurrency(dep.amount, dep.currency.code, current.decimals)} в ${PROVIDER_LABELS[provider]}.`,
+        body: `Оплатите ${formatCurrencyStrict(dep.amount, dep.currency.code, current.decimals)} в ${PROVIDER_LABELS[provider]}.`,
       });
-      if (dep.pay_url) openPaymentLink(dep.pay_url);
+      if (dep.pay_url && depositAmount !== null && depositAmount > 0) {
+        openPaymentLink(dep.pay_url);
+      }
     } catch (e: unknown) {
       haptic("error");
       toast.show({

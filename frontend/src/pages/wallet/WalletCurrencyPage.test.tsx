@@ -311,6 +311,27 @@ describe("<WalletCurrencyPage />", () => {
     expect(hapticSpy).toHaveBeenCalledWith("success");
   });
 
+  it("does not open the deposit pay link when the create response amount is malformed", async () => {
+    mockState.createDeposit.mutateAsync.mockResolvedValue({
+      pay_url: "https://t.me/CryptoBot?start=bad-amount",
+      currency: makeCurrency(),
+      amount: "1e2" as unknown as number,
+    });
+    const user = userEvent.setup();
+    renderPage("USDT");
+
+    const amount = document.querySelector('input[type="number"]') as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: "20" } });
+    await user.click(screen.getByRole("button", {
+      name: /\u041f\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u044c \u0447\u0435\u0440\u0435\u0437 CryptoBot/,
+    }));
+
+    await waitFor(() => {
+      expect(mockState.createDeposit.mutateAsync).toHaveBeenCalled();
+    });
+    expect(openTelegramLinkSpy).not.toHaveBeenCalled();
+  });
+
   it("does not render the legacy per-currency withdrawal tab", () => {
     renderPage("USDT");
     expect(screen.queryByRole("button", { name: /Вывести/ })).not.toBeInTheDocument();
@@ -415,6 +436,32 @@ describe("<WalletCurrencyPage />", () => {
     expect(screen.getByText("Зачислено")).toBeInTheDocument();
     expect(screen.getByText("Возврат")).toBeInTheDocument();
     expect(screen.getByText(/Одобрена/)).toBeInTheDocument();
+  });
+
+  it("history tab renders malformed operation amounts as neutral", async () => {
+    mockState.deposits = [
+      makeDeposit(1, {
+        amount: "1e2" as unknown as number,
+        pay_url: "https://t.me/CryptoBot?start=bad-history",
+      }),
+    ];
+    mockState.withdrawals = [
+      makeWithdrawal(2, { amount: "0x10" as unknown as number }),
+    ];
+    const user = userEvent.setup();
+    renderPage("USDT");
+    await user.click(screen.getByRole("button", {
+      name: /\u0418\u0441\u0442\u043e\u0440\u0438\u044f/,
+    }));
+
+    expect(screen.getAllByText("\u2014 USDT")).toHaveLength(2);
+    expect(screen.queryByText(/\+0 USDT/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/-0 USDT/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", {
+      name: /\u041e\u043f\u043b\u0430\u0442\u0438\u0442\u044c/,
+    })).not.toBeInTheDocument();
   });
 
   it("history tab places malformed timestamps after dated rows", async () => {
