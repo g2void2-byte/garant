@@ -127,7 +127,7 @@ export default function AdminWithdrawalsPage() {
                   Комментарий: {w.admin_note}
                 </div>
               )}
-              {status === "pending" && (
+              {w.status === "pending" && (
                 <div className="flex gap-2 pt-1">
                   {hasPositiveAdminDecimal(w.amount) && (
                     <Button
@@ -187,7 +187,7 @@ export default function AdminWithdrawalsPage() {
                   </Button>
                 </div>
               )}
-              {status === "approved" && hasPositiveAdminDecimal(w.amount) && (
+              {w.status === "approved" && hasPositiveAdminDecimal(w.amount) && (
                 <Button
                   type="button"
                   size="sm"

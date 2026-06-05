@@ -4,6 +4,7 @@ import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 const MISSING_USERNAME_LABEL = "username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d";
 const DASH = "\u2014";
 export const UNKNOWN_ADMIN_DEAL_STATUS_LABEL = "Статус неизвестен";
+export const UNKNOWN_ADMIN_FINANCE_STATUS_LABEL = UNKNOWN_ADMIN_DEAL_STATUS_LABEL;
 
 export const ADMIN_DEAL_STATUS_LABELS: Record<string, string> = {
   cancelled: "Отменена",
@@ -17,6 +18,13 @@ export const ADMIN_DEAL_STATUS_LABELS: Record<string, string> = {
   resolved_for_seller: "В пользу продавца",
   pending_cancellation: "Запрошена отмена",
   cancelled_for_inactivity: "Отменена по неактивности",
+};
+
+export const ADMIN_DEPOSIT_STATUS_LABELS: Record<string, string> = {
+  pending: "pending",
+  paid: "paid",
+  refunded: "refunded",
+  expired: "expired",
 };
 
 export function formatAdminUsername(username: string | null | undefined): string {
@@ -48,6 +56,12 @@ export function formatAdminDealStatus(value: unknown): string {
   return typeof value === "string"
     ? ADMIN_DEAL_STATUS_LABELS[value] ?? UNKNOWN_ADMIN_DEAL_STATUS_LABEL
     : UNKNOWN_ADMIN_DEAL_STATUS_LABEL;
+}
+
+export function formatAdminDepositStatus(value: unknown): string {
+  return typeof value === "string"
+    ? ADMIN_DEPOSIT_STATUS_LABELS[value] ?? UNKNOWN_ADMIN_FINANCE_STATUS_LABEL
+    : UNKNOWN_ADMIN_FINANCE_STATUS_LABEL;
 }
 
 export function pickAdminMutationCurrency(

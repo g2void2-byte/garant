@@ -5,6 +5,7 @@ import {
   formatAdminCount,
   formatAdminCurrencyCode,
   formatAdminDealStatus,
+  formatAdminDepositStatus,
   formatAdminId,
   formatAdminRating,
   formatAdminUsd,
@@ -47,6 +48,12 @@ describe("admin format helpers", () => {
     expect(formatAdminDealStatus("in_progress")).toBe("В работе");
     expect(formatAdminDealStatus("provider_reconciled")).toBe("Статус неизвестен");
     expect(formatAdminDealStatus(null)).toBe("Статус неизвестен");
+  });
+
+  it("formats admin deposit statuses without leaking unknown runtime values", () => {
+    expect(formatAdminDepositStatus("pending")).toBe("pending");
+    expect(formatAdminDepositStatus("provider_reconciled")).toBe("Статус неизвестен");
+    expect(formatAdminDepositStatus(null)).toBe("Статус неизвестен");
   });
 
   it("picks admin mutation currencies from normalized known codes", () => {

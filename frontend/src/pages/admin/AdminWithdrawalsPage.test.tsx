@@ -200,6 +200,21 @@ describe("<AdminWithdrawalsPage />", () => {
     })).toBeInTheDocument();
   });
 
+  it("does not expose pending actions when the pending tab contains a non-pending row", () => {
+    mockState.list = {
+      items: [makeItem({ status: "provider_reconciled" })],
+      counters: { pending: 1 },
+    };
+    renderPage();
+
+    expect(screen.queryByRole("button", {
+      name: /\u041e\u0434\u043e\u0431\u0440\u0438\u0442\u044c/,
+    })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u041e\u0442\u043a\u043b\u043e\u043d\u0438\u0442\u044c/,
+    })).not.toBeInTheDocument();
+  });
+
   it("normalizes withdrawal currency labels before display", () => {
     mockState.list = {
       items: [
@@ -334,6 +349,23 @@ describe("<AdminWithdrawalsPage />", () => {
     }));
 
     expect(screen.getByText(/\u2014 USDT/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u041e\u0442\u043c\u0435\u0447\u0435\u043d\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e/,
+    })).not.toBeInTheDocument();
+  });
+
+  it("does not expose mark-sent when the approved tab contains a non-approved row", async () => {
+    mockState.list = {
+      items: [makeItem({ status: "sent" })],
+      counters: {},
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", {
+      name: /\u041e\u0434\u043e\u0431\u0440\u0435\u043d\u043d\u044b\u0435/,
+    }));
+
     expect(screen.queryByRole("button", {
       name: /\u041e\u0442\u043c\u0435\u0447\u0435\u043d\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e/,
     })).not.toBeInTheDocument();

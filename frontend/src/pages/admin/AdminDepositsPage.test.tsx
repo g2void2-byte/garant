@@ -183,6 +183,25 @@ describe("<AdminDepositsPage />", () => {
     expect(screen.queryByText(/\.\.\/USD/)).not.toBeInTheDocument();
   });
 
+  it("renders unknown deposit statuses as a neutral badge label", () => {
+    mockState.list = {
+      items: [makeDeposit({ status: "provider_reconciled" })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+
+    expect(screen.getByText("Статус неизвестен", { selector: "span" })).toBeInTheDocument();
+    expect(screen.queryByText("provider_reconciled")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u0417\u0430\u0447\u0438\u0441\u043b\u0438\u0442\u044c/,
+    })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u0412\u043e\u0437\u0432\u0440\u0430\u0442/,
+    })).not.toBeInTheDocument();
+  });
+
   it("renders malformed deposit amounts as a neutral dash", () => {
     mockState.list = {
       items: [makeDeposit({ amount: "1e3" })],

@@ -184,6 +184,7 @@
 - M-212: wallet/deal invoice provider labels now use explicit known-provider mapping instead of defaulting unknown values to CryptoBot.
 - M-213: deal list/detail role handling now treats unknown runtime roles as neutral and blocks participant-only cancellation actions.
 - M-214: admin deal list/detail status labels now share a neutral fallback for unknown runtime statuses.
+- M-215: admin deposit status badges now hide unknown runtime values, and withdrawal actions require the row's explicit status.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2388,6 +2389,16 @@ Admin deal list rows and admin deal detail headers/banners had duplicate status 
 Risk: these are admin triage and money-operation surfaces. Raw unknown statuses can look like valid operational states and make it harder to distinguish supported workflow states from DTO or backend contract drift.
 
 Fix: admin deal status labels now use a shared formatter. Known contract statuses keep the existing localized labels; unknown or non-string runtime values render `Статус неизвестен`. Regressions cover the helper plus admin deal list and detail rendering.
+
+### M-215. Admin finance queues trusted tab/runtime status drift
+
+Links: `frontend/src/pages/admin/format.ts`, `frontend/src/pages/admin/AdminDepositsPage.tsx`, `frontend/src/pages/admin/AdminWithdrawalsPage.tsx`, regressions in the adjacent admin formatter/deposit/withdrawal tests.
+
+Admin deposit badges rendered `d.status` directly when a row carried an unknown runtime status. The withdrawal queue also rendered approve/reject and mark-sent controls from the selected filter tab (`status`) instead of the row's actual `w.status`, so a stale cache/API response could place a non-pending row under the pending tab and still expose pending withdrawal actions.
+
+Risk: these are manual money-operation queues. Raw unknown deposit statuses can look like supported payment states, and tab-derived withdrawal actions can let an operator act on a row that is not explicitly in the required backend status.
+
+Fix: deposit badges now format statuses through a known-status helper and render `Статус неизвестен` for unknown values. Withdrawal approve/reject and mark-sent controls now require the row's explicit `pending` or `approved` status, independent of the active tab. Regressions cover unknown deposit badges and pending/approved tab drift in the withdrawal queue.
 
 ## Наблюдения без отдельного finding
 

@@ -20,7 +20,15 @@ import {
 import { formatDateTime } from "@/lib/format";
 import { isSafeExternalLink, openPaymentLink } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminCount, formatAdminCurrencyCode, formatAdminUsername, getAdminTotalPages, hasPositiveAdminDecimal } from "./format";
+import {
+  formatAdminAmount,
+  formatAdminCount,
+  formatAdminCurrencyCode,
+  formatAdminDepositStatus,
+  formatAdminUsername,
+  getAdminTotalPages,
+  hasPositiveAdminDecimal,
+} from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "all
 // statuses"; the legacy ``"any"`` string is gone.
@@ -207,6 +215,7 @@ function Pagination({
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const label = formatAdminDepositStatus(status);
   const map: Record<string, string> = {
     pending: "bg-warning/10 text-warning",
     paid: "bg-success/10 text-success",
@@ -219,7 +228,7 @@ function StatusBadge({ status }: { status: string }) {
         map[status] ?? "bg-panel-2 text-text-muted"
       }`}
     >
-      {status}
+      {label}
     </span>
   );
 }
