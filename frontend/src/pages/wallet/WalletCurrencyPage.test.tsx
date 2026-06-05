@@ -106,6 +106,11 @@ vi.mock("@/lib/tg", () => ({
   showBackButton: () => () => {},
 }));
 
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock("@/components/ui/Toast", () => ({
+  useToast: () => ({ show: toastSpy }),
+}));
+
 import WalletCurrencyPage from "./WalletCurrencyPage";
 
 function renderPage(code = "USDT") {
@@ -186,6 +191,7 @@ function makeWithdrawal(id: number, over: Partial<WalletWithdrawalDto> = {}): Wa
 beforeEach(() => {
   hapticSpy.mockClear();
   openTelegramLinkSpy.mockClear();
+  toastSpy.mockClear();
   apiGetMock.mockReset();
   mockState.currenciesLoading = false;
   mockState.balancesLoading = false;
@@ -236,6 +242,16 @@ describe("<WalletCurrencyPage />", () => {
         amount: "20",
       });
     });
+    await waitFor(() => {
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "success",
+          body: expect.stringContaining("20 USDT"),
+        }),
+      );
+    });
+    const successToast = toastSpy.mock.calls.find(([toast]) => toast.kind === "success")?.[0];
+    expect(successToast?.body).not.toContain(" usdt ");
   });
 
   it("renders malformed available balance strings as neutral", () => {

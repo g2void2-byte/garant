@@ -138,10 +138,11 @@ export default function WalletDepositPage() {
       setActiveDeposit(dep);
       setModalOpen(true);
       const depositAmount = parseDecimalValue(dep.amount);
+      const paidCurrencyCode = normalizeCurrencyCode(dep.currency.code) ?? current.code;
       toast.show({
         kind: "success",
         title: "Счёт создан",
-        body: `Оплатите ${formatCurrencyStrict(dep.amount, dep.currency.code, current.decimals)} в ${PROVIDER_LABELS[provider]}.`,
+        body: `Оплатите ${formatCurrencyStrict(dep.amount, paidCurrencyCode, current.decimals)} в ${PROVIDER_LABELS[provider]}.`,
       });
       if (dep.pay_url && depositAmount !== null && depositAmount > 0) {
         openPaymentLink(dep.pay_url);

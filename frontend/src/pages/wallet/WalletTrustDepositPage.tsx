@@ -16,7 +16,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { usePresence } from "@/lib/animate";
 import { cn } from "@/lib/cn";
-import { normalizeCurrencyCodeRows } from "@/lib/currencyCodes";
+import { normalizeCurrencyCode, normalizeCurrencyCodeRows } from "@/lib/currencyCodes";
 import {
   formatCurrency,
   formatCurrencyStrict,
@@ -98,10 +98,11 @@ export default function WalletTrustDepositPage() {
       if (dep.pay_url && depositAmount !== null && depositAmount > 0) {
         openPaymentLink(dep.pay_url);
       }
+      const paidCurrencyCode = normalizeCurrencyCode(dep.currency.code) ?? current.code;
       toast.show({
         kind: "success",
         title: "Счёт создан",
-        body: `Оплатите ${formatCurrencyStrict(dep.amount, dep.currency.code, current.decimals)} в CryptoBot.`,
+        body: `Оплатите ${formatCurrencyStrict(dep.amount, paidCurrencyCode, current.decimals)} в CryptoBot.`,
       });
     } catch (e: unknown) {
       haptic("error");

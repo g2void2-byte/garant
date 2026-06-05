@@ -265,10 +265,11 @@ function DepositForm({
       if (dep.pay_url && depositAmount !== null && depositAmount > 0) {
         openPaymentLink(dep.pay_url);
       }
+      const paidCurrencyCode = normalizeCurrencyCode(dep.currency.code) ?? currencyCode;
       toast.show({
         kind: "success",
         title: "Счёт создан",
-        body: `Оплатите ${formatCurrencyStrict(dep.amount, dep.currency.code, decimals)} в CryptoBot.`,
+        body: `Оплатите ${formatCurrencyStrict(dep.amount, paidCurrencyCode, decimals)} в CryptoBot.`,
       });
     } catch (e: unknown) {
       haptic("error");

@@ -61,6 +61,11 @@ vi.mock("@/lib/tg", () => ({
   showBackButton: () => () => {},
 }));
 
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock("@/components/ui/Toast", () => ({
+  useToast: () => ({ show: toastSpy }),
+}));
+
 const navigateSpy = vi.hoisted(() => vi.fn());
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>(
@@ -136,6 +141,7 @@ beforeEach(() => {
   hapticSpy.mockClear();
   openTelegramLinkSpy.mockClear();
   openExternalLinkSpy.mockClear();
+  toastSpy.mockClear();
   navigateSpy.mockClear();
   mockState.currenciesLoading = false;
   mockState.currencies = [
@@ -289,6 +295,28 @@ describe("<WalletDepositPage />", () => {
     );
     expect(hapticSpy).toHaveBeenCalledWith("success");
     vi.useRealTimers();
+  });
+
+  it("normalizes deposit response currency codes in the success toast", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(
+      makeDeposit({ currency: makeCurrency({ code: " usd " }), amount: 10 }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    const amount = screen.getByDisplayValue("5") as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: "10" } });
+    await user.click(screen.getByRole("button", { name: /Пополнить баланс/ }));
+
+    await waitFor(() => {
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "success",
+          body: expect.stringContaining("10 USD"),
+        }),
+      );
+    });
+    const successToast = toastSpy.mock.calls.find(([toast]) => toast.kind === "success")?.[0];
+    expect(successToast?.body).not.toContain(" usd ");
   });
 
   it("submits provider='crystalpay' and surfaces the Crystalpay invoice via openExternalLink", async () => {

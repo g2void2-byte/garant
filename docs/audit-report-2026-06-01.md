@@ -179,6 +179,7 @@
 - M-207: admin wallet currency selectors now normalize catalog row codes before adjustment and USD-rate mutations.
 - M-208: create-deal fiat currency rows and funded-balance defaults now normalize runtime codes before display and submit.
 - M-209: wallet currency detail pages now use route-normalized codes for balance display, history rows, and deposit submit.
+- M-210: wallet deposit success toasts now normalize response currency labels before showing payment instructions.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2333,6 +2334,16 @@ Links: `frontend/src/pages/wallet/WalletCurrencyPage.tsx`, regressions in `front
 Risk: the per-currency wallet page is a direct deposit entry point. Reusing a raw matched DTO code can make the page appear to support a canonical route while sending a different `currency_code` in the deposit mutation.
 
 Fix: after route normalization, the page now uses the canonical route code for balance display, deposit form props, and history formatting. Regressions cover a route-matched currency DTO with `" usdt "` and assert both display and deposit submit use `USDT`.
+
+### M-210. Wallet deposit success toasts trusted response currency labels
+
+Links: `frontend/src/pages/wallet/WalletDepositPage.tsx`, `frontend/src/pages/wallet/WalletTrustDepositPage.tsx`, `frontend/src/pages/wallet/WalletCurrencyPage.tsx`, regressions in the adjacent wallet page tests.
+
+The wallet deposit, trust-deposit, and per-currency deposit forms submitted normalized currency codes, but their success toast bodies formatted `dep.amount` with `dep.currency.code` from the create-deposit response. A response code like `" usd "` or `" uah "` could therefore leak into payment instructions immediately after a successful invoice creation.
+
+Risk: these toasts are user-facing payment instructions. Showing a non-canonical response label next to an invoice amount can confuse payment review and contradict the normalized currency that was submitted.
+
+Fix: each deposit success path now normalizes the response currency code and falls back to the already selected canonical code if the response label is malformed. Regressions cover wallet deposit, trust deposit, and per-currency deposit toasts with non-canonical response codes.
 
 ## Наблюдения без отдельного finding
 

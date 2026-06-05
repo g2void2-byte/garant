@@ -37,6 +37,11 @@ vi.mock("@/lib/tg", () => ({
   showBackButton: () => () => {},
 }));
 
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock("@/components/ui/Toast", () => ({
+  useToast: () => ({ show: toastSpy }),
+}));
+
 import WalletTrustDepositPage from "./WalletTrustDepositPage";
 
 function renderPage() {
@@ -85,6 +90,7 @@ beforeEach(() => {
   hapticSpy.mockClear();
   openPaymentLinkSpy.mockClear();
   openTelegramLinkSpy.mockClear();
+  toastSpy.mockClear();
   mockState.currenciesLoading = false;
   mockState.currencies = [makeCurrency()];
   mockState.me = { deposit: 0 };
@@ -102,7 +108,7 @@ describe("<WalletTrustDepositPage />", () => {
       makeCurrency({ id: 2, code: " uah ", name: "Hryvnia", min_deposit: 50 }),
     ];
     mockState.createMutation.mutateAsync.mockResolvedValue(
-      makeDeposit({ currency: makeCurrency({ code: "UAH", name: "Hryvnia" }) }),
+      makeDeposit({ currency: makeCurrency({ code: " uah ", name: "Hryvnia" }) }),
     );
     const user = userEvent.setup();
     renderPage();
@@ -121,6 +127,16 @@ describe("<WalletTrustDepositPage />", () => {
         purpose: "trust",
       });
     });
+    await waitFor(() => {
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "success",
+          body: expect.stringContaining("10 UAH"),
+        }),
+      );
+    });
+    const successToast = toastSpy.mock.calls.find(([toast]) => toast.kind === "success")?.[0];
+    expect(successToast?.body).not.toContain(" uah ");
     expect(openPaymentLinkSpy).toHaveBeenCalledWith("https://t.me/CryptoBot?start=trust");
   });
 
