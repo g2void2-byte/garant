@@ -18,7 +18,6 @@ import {
   useWalletBalances,
 } from "@/api/hooks";
 import {
-  formatCurrency,
   parseDecimalValue,
   resolveDisplayDecimals,
 } from "@/lib/format";
@@ -26,6 +25,10 @@ import { haptic } from "@/lib/tg";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { parsePositiveDecimalInput } from "@/lib/formNumbers";
 import { normalizeUsernameRef } from "@/lib/usernames";
+import {
+  formatWalletBalanceCurrency,
+  parseWalletBalanceDecimal,
+} from "@/lib/walletAmounts";
 
 // Item 18 — backend can return a structured ``insufficient_funds``
 // payload on the create-deal 400. The ky ``beforeError`` hook
@@ -171,7 +174,7 @@ export default function CreateDealPage() {
   useEffect(() => {
     if (currencyDefaulted || !balances || balances.length === 0) return;
     const funded = balances.find((b) => {
-      const amount = parseDecimalValue(b.amount);
+      const amount = parseWalletBalanceDecimal(b, "amount");
       return amount !== null && amount > 0;
     });
     if (funded) {
@@ -203,7 +206,7 @@ export default function CreateDealPage() {
   const parsedAmount = useMemo(() => {
     return parsePositiveDecimalInput(sum) ?? 0;
   }, [sum]);
-  const activeBalanceAmount = parseDecimalValue(activeBalance?.amount) ?? 0;
+  const activeBalanceAmount = parseWalletBalanceDecimal(activeBalance, "amount") ?? 0;
   const decimals = resolveDisplayDecimals(
     activeBalance?.currency.code ?? currencyCode,
     activeBalance?.currency.decimals,
@@ -330,8 +333,9 @@ export default function CreateDealPage() {
           >
             <span>
               На балансе:{" "}
-              {formatCurrency(
-                activeBalance.amount,
+              {formatWalletBalanceCurrency(
+                activeBalance,
+                "amount",
                 activeBalance.currency.code,
                 activeBalance.currency.decimals,
               )}

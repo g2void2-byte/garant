@@ -127,6 +127,22 @@ function makeCurrency(over: Partial<CurrencyDto> = {}): CurrencyDto {
   };
 }
 
+function makeBalance(
+  over: Partial<(typeof mockState.balances)[number]> = {},
+): (typeof mockState.balances)[number] {
+  return {
+    currency: makeCurrency(),
+    amount: 100,
+    locked: 0,
+    total: 100,
+    updated_at: null,
+    amount_str: "100.00",
+    locked_str: "0.00",
+    total_str: "100.00",
+    ...over,
+  };
+}
+
 function makeInvoice() {
   return {
     deposit_id: 501,
@@ -413,16 +429,9 @@ describe("<CreateDealPage />", () => {
       auto_withdraw_enabled: false,
     } as unknown as typeof mockState.publicSettings;
     mockState.balances = [
-      {
-        currency: makeCurrency(),
+      makeBalance({
         amount: "100.00" as unknown as number,
-        locked: 0,
-        total: 100,
-        updated_at: null,
-        amount_str: "100.00",
-        locked_str: "0.00",
-        total_str: "100.00",
-      },
+      }),
     ];
     const user = userEvent.setup();
     renderPage();
@@ -434,6 +443,60 @@ describe("<CreateDealPage />", () => {
     expect(preview).toHaveTextContent("10.00 USD");
     expect(preview).toHaveTextContent("0.25 USD");
     expect(preview).toHaveTextContent("10.25 USD");
+  });
+
+  it("defaults the currency from canonical amount_str when runtime amount is malformed", async () => {
+    mockState.balances = [
+      makeBalance({
+        currency: makeCurrency({ id: 2, code: "UAH", name: "Hryvnia" }),
+        amount: "1e2" as unknown as number,
+        amount_str: "25.50",
+        total_str: "25.50",
+      }),
+    ];
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/\(UAH\)/)).toBeInTheDocument();
+    });
+  });
+
+  it("renders the balance hint from canonical amount_str", async () => {
+    mockState.balances = [
+      makeBalance({
+        amount: "1e2" as unknown as number,
+        amount_str: "25.50",
+        total_str: "25.50",
+      }),
+    ];
+
+    renderPage();
+
+    const hint = await screen.findByTestId("deal-balance-hint");
+    expect(hint).toHaveTextContent("25.5 USD");
+    expect(hint).not.toHaveTextContent("0 USD");
+    expect(hint).not.toHaveTextContent("1e2 USD");
+  });
+
+  it("uses canonical amount_str for Max and balance-funded preview", async () => {
+    mockState.balances = [
+      makeBalance({
+        amount: "1e2" as unknown as number,
+        amount_str: "21.00",
+        total_str: "21.00",
+      }),
+    ];
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /\u041c\u0430\u043a\u0441/ }));
+
+    expect(screen.getByLabelText(/\(USD\)/)).toHaveValue(20);
+    const preview = await screen.findByTestId("deal-commission-preview");
+    expect(preview).toHaveTextContent("20.00 USD");
+    expect(preview).toHaveTextContent("1.00 USD");
+    expect(preview).toHaveTextContent("21.00 USD");
   });
 
   it("shows the insufficient-funds alert only for a complete structured error", async () => {

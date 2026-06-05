@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 88 файлов, 911 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 88 файлов, 914 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -153,6 +153,7 @@
 - M-181: deal list/detail amount displays now reject malformed/negative runtime totals instead of showing zero.
 - M-182: wallet balance displays now reject malformed/negative runtime balance strings instead of showing zero.
 - M-183: wallet locked hints and admin balance visibility now use strict positive-balance parsing instead of zero-coercing totals.
+- M-184: create-deal balance defaults, hints, and Max previews now use canonical wallet amount strings instead of malformed runtime balance values.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2047,6 +2048,16 @@ After M-182, the primary wallet balances were strict, but locked-hint rendering 
 Risk: users could see a misleading zero locked amount, while admins could miss a real balance row or apply a manual adjustment against the wrong default currency after DTO drift in `total`.
 
 Fix: wallet locked hints now reuse the same strict wallet-balance formatter as available balances. Admin balance visibility/default selection now uses strict decimal parsing and falls back to valid positive `amount`/`locked` fields when `total` is malformed instead of collapsing the row to zero. Regressions cover blank locked string mirrors, malformed admin totals, and adjustment default currency selection.
+
+### M-184. Create-deal balance previews still trusted malformed runtime wallet amounts
+
+Links: `frontend/src/pages/deals/CreateDealPage.tsx`, shared wallet parser `frontend/src/lib/walletAmounts.ts`, regression `frontend/src/pages/deals/CreateDealPage.test.tsx`.
+
+After M-182/M-183, wallet screens and admin balance gates were strict, but the create-deal form still read `WalletBalanceDto.amount` directly for the funded-currency default, the "На балансе" hint, the balance-funded preview, and the `Макс` button. If the runtime `amount` was malformed such as `"1e2"` while canonical `amount_str` was valid, the deal form could miss a funded fiat row, show `0 USD`, hide `Макс`, or compute the balance-funded preview from the wrong value.
+
+Risk: the primary escrow creation surface could disagree with wallet displays about the same balance. A buyer with a valid canonical balance could be pushed into an unnecessary top-up flow, while the amount preview and `Макс` affordance no longer matched the backend wallet projection.
+
+Fix: create-deal now uses the shared wallet amount parser/formatter for default currency selection, balance hints, full-balance gating, and `Макс` calculation. Regressions cover malformed runtime `amount` with valid `amount_str` for default currency selection, displayed hint text, and balance-funded preview math.
 
 ## Наблюдения без отдельного finding
 
