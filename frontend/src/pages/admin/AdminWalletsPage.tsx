@@ -27,7 +27,7 @@ import {
   parsePositiveDecimalInput,
   parseSignedNonZeroDecimalInput,
 } from "@/lib/formNumbers";
-import { formatAdminAmount, formatAdminCount, formatAdminUsd, formatAdminUsername, getAdminTotalPages, hasVisibleAdminBalance, parseAdminDecimal, shouldShowAdminPagination } from "./format";
+import { formatAdminAmount, formatAdminCount, formatAdminCurrencyCode, formatAdminUsd, formatAdminUsername, getAdminTotalPages, hasVisibleAdminBalance, parseAdminDecimal, shouldShowAdminPagination } from "./format";
 
 const PAGE_SIZE = 50;
 
@@ -143,7 +143,7 @@ export default function AdminWalletsPage() {
                           key={b.currency_id}
                           className="text-xs bg-panel-2 rounded-button px-2 py-1.5"
                         >
-                          <div className="text-text-muted">{b.currency_code}</div>
+                          <div className="text-text-muted">{formatAdminCurrencyCode(b.currency_code)}</div>
                           <div className="font-mono">
                             {formatAdminAmount(b.amount, b.decimals)}
                             {locked !== null && locked > 0 && (
@@ -247,7 +247,7 @@ function BalancePill({ balance }: { balance: AdminUserBalanceDto }) {
   const locked = parseAdminDecimal(balance.locked);
   return (
     <div className="text-xs bg-panel-2 rounded-button px-2 py-1.5">
-      <div className="text-text-muted">{balance.currency_code}</div>
+      <div className="text-text-muted">{formatAdminCurrencyCode(balance.currency_code)}</div>
       <div className="font-mono">
         {formatAdminAmount(balance.amount, balance.decimals)}
         {locked !== null && locked > 0 && (

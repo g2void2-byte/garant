@@ -270,6 +270,27 @@ describe("<AdminUserDetailPage /> numeric forms", () => {
     expect(container.textContent).not.toMatch(/1e2/);
   });
 
+  it("normalizes per-user wallet currency labels before display", () => {
+    mockState.walletBalances = [
+      makeWalletBalance({
+        currency_code: " usdt ",
+        total: "10.00",
+      }),
+      makeWalletBalance({
+        currency_id: 2,
+        currency_code: "../TON",
+        total: "2.00",
+      }),
+    ];
+
+    const { container } = renderPage();
+
+    expect(container.textContent).toContain("USDT");
+    expect(container.textContent).toContain("\u2014");
+    expect(container.textContent).not.toMatch(/ usdt /);
+    expect(container.textContent).not.toMatch(/\.\.\/TON/);
+  });
+
   it("submits plain per-user balance adjustment amounts", async () => {
     mockState.adjustBalance.mutateAsync.mockResolvedValue({});
     const user = userEvent.setup();

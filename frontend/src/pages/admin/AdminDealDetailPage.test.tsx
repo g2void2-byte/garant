@@ -306,6 +306,33 @@ describe("<AdminDealDetailPage />", () => {
     expect(screen.queryByText("0.0000")).not.toBeInTheDocument();
   });
 
+  it("normalizes balance snapshot currency labels before display", () => {
+    mockState.deal = makeDeal({
+      buyer: makeSnap({
+        user_id: 1,
+        username: "buyer",
+        display_name: "Buyer",
+        amount: "12.3456",
+        locked: "1.0000",
+        currency_code: " usd ",
+      }),
+      seller: makeSnap({
+        user_id: 2,
+        username: "seller",
+        display_name: "Seller",
+        amount: "7.0000",
+        locked: "0.5000",
+        currency_code: "../USDT",
+      }),
+    });
+    const { container } = renderPage();
+
+    expect(container.textContent).toContain("12.3456 USD");
+    expect(container.textContent).toContain("7.0000 \u2014");
+    expect(container.textContent).not.toMatch(/ usd /);
+    expect(container.textContent).not.toMatch(/\.\.\/USDT/);
+  });
+
   it("renders missing snapshot and chat usernames as non-handle labels", () => {
     mockState.deal = makeDeal({
       buyer: makeSnap({ user_id: 1, username: null, display_name: "Buyer" }),
@@ -416,6 +443,22 @@ describe("<AdminDealDetailPage />", () => {
     expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "OK" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
+  });
+
+  it("normalizes pending approval currency labels before display", () => {
+    mockState.deal = makeDeal({
+      pending_approvals: [
+        makeApproval({
+          amount: "150.00000000",
+          amount_usd_estimate: "150.00000000",
+          currency_code: "../USDT",
+        }),
+      ],
+    });
+    const { container } = renderPage();
+
+    expect(container.textContent).toContain("150.00000000 \u2014");
+    expect(container.textContent).not.toMatch(/\.\.\/USDT/);
   });
 
   it("looks up an assigned arbiter through a first-page exact search", async () => {

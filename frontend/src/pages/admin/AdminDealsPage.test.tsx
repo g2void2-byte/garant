@@ -135,6 +135,24 @@ describe("<AdminDealsPage />", () => {
     expect(screen.queryByText(/0\.00 USDT/)).not.toBeInTheDocument();
   });
 
+  it("normalizes deal currency labels before display", () => {
+    mockState.list = {
+      items: [
+        makeDeal({ currency_code: " usdt " }),
+        makeDeal({ id: 43, amount: "151.00", currency_code: "../USDT" }),
+      ],
+      total: 2,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+
+    expect(screen.getByText(/150\.00 USDT/)).toBeInTheDocument();
+    expect(screen.getByText(/151\.000000 \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/ usdt /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\.\.\/USDT/)).not.toBeInTheDocument();
+  });
+
   it("does not coerce malformed totals into admin pagination", () => {
     mockState.list = {
       items: [makeDeal()],

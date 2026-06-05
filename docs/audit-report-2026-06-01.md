@@ -174,6 +174,7 @@
 - M-202: deal and payment invoice money surfaces now normalize runtime currency codes before rendering labels.
 - M-203: paid PIN-reset paywall now normalizes runtime currency codes before rendering price/balance and paid toasts.
 - M-204: admin deposit and withdrawal queues now normalize runtime currency labels before rendering money rows.
+- M-205: remaining admin deal, wallet, and per-user balance money rows now normalize runtime currency labels before display.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2278,6 +2279,16 @@ The admin deposit and withdrawal queues used strict admin amount formatting, but
 Risk: these queues drive manual payment decisions: marking deposits paid/refunded and approving withdrawals. Raw currency labels can make corrupted payment DTOs look like legitimate currency rows and weaken operator review.
 
 Fix: both queues now use a shared admin currency-code formatter backed by the contract normalizer. Lowercase/trimmed codes normalize to uppercase; malformed or missing labels render as a neutral dash instead of leaking the raw DTO value. Regressions cover the helper plus deposit and withdrawal queue rows.
+
+### M-205. Admin deal/wallet money rows trusted runtime currency labels
+
+Links: `frontend/src/pages/admin/AdminDealsPage.tsx`, `frontend/src/pages/admin/AdminArbitrationPage.tsx`, `frontend/src/pages/admin/AdminDealDetailPage.tsx`, `frontend/src/pages/admin/AdminWalletsPage.tsx`, `frontend/src/pages/admin/AdminUserDetailPage.tsx`, shared admin formatter `frontend/src/pages/admin/format.ts`, regressions in the adjacent admin page tests.
+
+After M-204, several adjacent operator-facing money rows still formatted amounts strictly but appended raw currency labels: admin deal list rows, arbitration queue rows, deal-detail balance snapshots and pending approvals, wallet balance previews/sheets, and per-user balance rows. Malformed DTO labels such as `"../USDT"` or `" usdt "` could therefore appear beside trusted admin money values.
+
+Risk: these are admin review and money-operation surfaces. Raw labels next to sanitized amounts can make corrupted deal or wallet DTOs look like valid currency rows, weakening manual triage and approval decisions.
+
+Fix: the remaining admin deal/wallet/user balance money rows now use the shared admin currency-code formatter. Canonicalizable labels are normalized to uppercase, while malformed labels render as a neutral dash. Regressions cover the deal list, arbitration queue, deal-detail snapshots and approvals, wallet balance rows/sheet, and per-user wallet rows.
 
 ## Наблюдения без отдельного finding
 

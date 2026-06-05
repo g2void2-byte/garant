@@ -55,6 +55,7 @@ import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 import {
   formatAdminAmount,
+  formatAdminCurrencyCode,
   formatAdminUsd,
   formatAdminUsername,
   hasPositiveAdminDecimal,
@@ -239,6 +240,7 @@ function BalanceSnapshotCard({
 }
 
 function PartyCard({ side, snap }: { side: string; snap: AdminBalanceSnapshotDto }) {
+  const currencyCode = formatAdminCurrencyCode(snap.currency_code);
   return (
     <div className="bg-panel rounded-card p-3">
       <div className="text-[11px] uppercase tracking-wide text-text-muted">{side}</div>
@@ -246,11 +248,11 @@ function PartyCard({ side, snap }: { side: string; snap: AdminBalanceSnapshotDto
       <div className="text-xs text-text-muted truncate">{formatAdminUsername(snap.username)} · id {snap.user_id}</div>
       <div className="mt-2 text-xs text-text-muted">
         Свободно <span className="text-text font-medium">{formatAdminAmount(snap.amount, 4)}</span>{" "}
-        {snap.currency_code ?? "USD"}
+        {currencyCode}
       </div>
       <div className="text-xs text-text-muted">
         В сделке <span className="text-text font-medium">{formatAdminAmount(snap.locked, 4)}</span>{" "}
-        {snap.currency_code ?? "USD"}
+        {currencyCode}
       </div>
     </div>
   );
@@ -460,7 +462,7 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate">#{a.id} · {a.action} · {a.status}</div>
                   <div className="text-text-muted truncate">
-                    {formattedAmount} {a.currency_code ?? ""}
+                    {formattedAmount} {formatAdminCurrencyCode(a.currency_code)}
                     {formattedUsdEstimate ? ` · ~${formattedUsdEstimate}` : ""}
                   </div>
                 </div>

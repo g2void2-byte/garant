@@ -11,7 +11,7 @@ import { useAdminDeals } from "@/api/admin/hooks";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 import type { AdminDealListItemDto, AdminListDealsQuery } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminCount, formatAdminUsername, getAdminTotalPages } from "./format";
+import { formatAdminAmount, formatAdminCount, formatAdminCurrencyCode, formatAdminUsername, getAdminTotalPages } from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "all statuses";
 // the legacy ``"any"`` string is gone from both UI state and the URL.
@@ -427,7 +427,8 @@ function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen: () => v
       : deal.status === "completed" || deal.status === "resolved_for_seller" || deal.status === "resolved_for_buyer"
       ? "border-success/30"
       : "border-border";
-  const amountDecimals = deal.currency_code === "USDT" || deal.currency_code === "USDC" ? 2 : 6;
+  const currencyCode = formatAdminCurrencyCode(deal.currency_code);
+  const amountDecimals = currencyCode === "USDT" || currencyCode === "USDC" ? 2 : 6;
 
   return (
     <button
@@ -446,7 +447,7 @@ function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen: () => v
         <div className="mt-0.5 text-xs text-text-muted flex items-center gap-2 flex-wrap">
           <span className="font-medium text-text">
             {formatAdminAmount(deal.amount, amountDecimals)}{" "}
-            {deal.currency_code ?? "USD"}
+            {currencyCode}
           </span>
           <span>·</span>
           <span>{STATUS_LABEL[deal.status] ?? deal.status}</span>

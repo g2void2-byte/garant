@@ -208,6 +208,34 @@ describe("<AdminWalletsPage />", () => {
     expect(screen.queryByText("TON")).not.toBeInTheDocument();
   });
 
+  it("normalizes wallet balance currency labels before display", async () => {
+    const base = makeUserBalance();
+    mockState.list = {
+      items: [
+        {
+          ...base,
+          balances: [
+            { ...base.balances[0], currency_code: " usdt " },
+            { ...base.balances[1], amount: "2", total: "2", currency_code: "../TON" },
+          ],
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    const user = userEvent.setup();
+    const { container } = renderPage();
+
+    expect(container.textContent).toContain("USDT");
+    expect(container.textContent).toContain("\u2014");
+    expect(container.textContent).not.toMatch(/ usdt /);
+    expect(container.textContent).not.toMatch(/\.\.\/TON/);
+
+    await user.click(screen.getByText("Alice"));
+    expect(container.textContent).not.toMatch(/\.\.\/TON/);
+  });
+
   it("renders malformed wallet amounts as neutral values", () => {
     const base = makeUserBalance();
     mockState.list = {

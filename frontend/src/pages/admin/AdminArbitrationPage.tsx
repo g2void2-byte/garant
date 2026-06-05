@@ -11,7 +11,7 @@ import { useAdminArbitration, useAdminClaimArbitration } from "@/api/admin/hooks
 import type { AdminDealListItemDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminUsername, getAdminTotalPages, parseAdminCount } from "./format";
+import { formatAdminAmount, formatAdminCurrencyCode, formatAdminUsername, getAdminTotalPages, parseAdminCount } from "./format";
 
 type Queue = "new" | "in_progress" | "closed";
 const PAGE_SIZE = 20;
@@ -213,7 +213,7 @@ function ArbRow({
         <div className="mt-0.5 text-xs text-text-muted flex items-center gap-2 flex-wrap">
           <span className="font-medium text-text">
             {formatAdminAmount(deal.amount)}{" "}
-            {deal.currency_code ?? "USD"}
+            {formatAdminCurrencyCode(deal.currency_code)}
           </span>
           <span>·</span>
           <span>Арбитраж</span>

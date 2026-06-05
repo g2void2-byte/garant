@@ -227,6 +227,23 @@ describe("<AdminArbitrationPage />", () => {
     ).toBeInTheDocument();
   });
 
+  it("normalizes arbitration currency labels before display", () => {
+    mockState.list = {
+      items: [
+        makeItem({ currency_code: " usdt " }),
+        makeItem({ id: 8, amount: "148.00", currency_code: "../USDT" }),
+      ],
+      counters: { new: 2, in_progress: 0, closed: 0 },
+      queue: "new",
+    };
+    renderPage();
+
+    expect(screen.getByText(/147\.00 USDT/)).toBeInTheDocument();
+    expect(screen.getByText(/148\.00 \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/ usdt /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\.\.\/USDT/)).not.toBeInTheDocument();
+  });
+
   it("claim happy path fires mutation, toasts success, switches to in_progress", async () => {
     mockState.list = {
       items: [makeItem()],
