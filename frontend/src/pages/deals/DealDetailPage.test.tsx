@@ -274,6 +274,31 @@ describe("<DealDetailPage />", () => {
     expect(screen.queryByText("0x10 USD")).not.toBeInTheDocument();
   });
 
+  it("does not render malformed topup invoice totals as money", () => {
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      commission_paid: false,
+      topup_deposit_id: 501,
+      topup_invoice: {
+        deposit_id: 501,
+        pay_url: "https://pay.example/invoice/501",
+        total: "1e2" as unknown as number,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: "25.00" as unknown as number,
+        currency_code: "USD",
+        provider: "cryptobot",
+        expires_at: null,
+      },
+    });
+    renderAt(42);
+
+    expect(screen.getByText("25.00 USD")).toBeInTheDocument();
+    expect(screen.getByText("— USD")).toBeInTheDocument();
+    expect(screen.queryByText("1e2 USD")).not.toBeInTheDocument();
+  });
+
   it("renders malformed topup invoice expiry as a neutral timestamp", () => {
     dealState.data = makeDeal({
       status: "pending_topup",

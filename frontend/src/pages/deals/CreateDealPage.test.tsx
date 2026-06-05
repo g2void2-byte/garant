@@ -357,6 +357,29 @@ describe("<CreateDealPage />", () => {
     expect(screen.getAllByRole("button", { name: /Открыть оплату/i })[0]).toBeInTheDocument();
   });
 
+  it("does not render malformed invoice row amounts from the create response", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(makeTopupResponse({
+      id: 78,
+      topup_invoice: {
+        ...makeInvoice(),
+        topup_principal: "1e2" as unknown as number,
+        commission: "0x10" as unknown as number,
+      },
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
+    await user.type(screen.getByLabelText(/Сумма \(USD\)/), "100.25");
+    await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
+    await enterPin(user);
+
+    expect(await screen.findByTestId("topup-invoice-preview")).toBeInTheDocument();
+    expect(screen.getByText("105.25 USD")).toBeInTheDocument();
+    expect(screen.getAllByText("— USD")).toHaveLength(2);
+    expect(screen.queryByText("1e2 USD")).not.toBeInTheDocument();
+    expect(screen.queryByText("0x10 USD")).not.toBeInTheDocument();
+  });
+
   it("handles balance-funded deals when the API returns invoice=null", async () => {
     const balanceFunded = {
       deal: makeDeal({

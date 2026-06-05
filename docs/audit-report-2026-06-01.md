@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 86 файлов, 884 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 86 файлов, 886 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -145,6 +145,7 @@
 - M-173: admin displayed totals and broadcast recipient counters now reject malformed runtime counts before subtitles, headers, toasts, and empty-page rewinds.
 - M-174: admin dashboard KPI tiles now reject malformed runtime counters before display and accent-ring decisions.
 - M-175: frontend positive money gates now reject malformed runtime amounts before wallet available-balance hints and deal commission rows.
+- M-176: deal topup invoice amount rows now validate runtime money values before rendering create/detail invoice totals.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1959,6 +1960,16 @@ Several frontend money surfaces already formatted malformed amounts as neutral v
 Risk: users could see balance/commission rows that should have been treated as corrupt input, including misleading zero/neutral displays opened by a positive-looking malformed payload.
 
 Fix: wallet deposit now uses the shared wallet decimal parser and displays the canonical `amount_str` mirror when present. Deal detail parses `commission_amount` with the strict decimal parser before both visibility and formatting. Malformed exponent-like values no longer open either row, while canonical decimal strings still render.
+
+### M-176. Deal topup invoice rows displayed runtime amount fields directly
+
+Links: `frontend/src/pages/deals/CreateDealPage.tsx`, `frontend/src/pages/deals/DealDetailPage.tsx`, shared parser `frontend/src/lib/format.ts`, regressions `frontend/src/pages/deals/CreateDealPage.test.tsx`, `frontend/src/pages/deals/DealDetailPage.test.tsx`.
+
+The create-deal invoice preview and deal-detail topup invoice card rendered invoice money DTO fields by interpolation: `topup_principal`, `commission`, `total`, and the already-paid value once its gate opened. Earlier fixes hardened the paid-total visibility gate, but malformed runtime values such as `"1e2"` or `"0x10"` could still appear as credible invoice money in rows that were already visible.
+
+Risk: a buyer could see a corrupt or ambiguous invoice amount in the same UI that opens the payment flow, making support/debugging harder and potentially encouraging payment against a value the frontend should have treated as invalid input.
+
+Fix: invoice amount rows now parse runtime values with the strict decimal parser and render a neutral `—` amount when the value is malformed or negative. Metadata rows keep their previous raw labels, valid canonical decimal strings still render, and regressions cover create-response invoice rows plus deal-detail pending-topup totals.
 
 ## Наблюдения без отдельного finding
 

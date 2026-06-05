@@ -26,7 +26,7 @@ import {
   useMe,
   useReviews,
 } from "@/api/hooks";
-import { formatAmount, formatDateTime, parseDecimal, parseDecimalValue, relativeTime } from "@/lib/format";
+import { formatAmount, formatDateTime, parseDecimalValue, relativeTime } from "@/lib/format";
 import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
@@ -62,10 +62,18 @@ function TopupInvoiceRow({
   currency?: string;
   strong?: boolean;
 }) {
+  const displayValue = currency
+    ? (() => {
+        const parsedValue = parseDecimalValue(value);
+        if (parsedValue === null || parsedValue < 0) return "—";
+        return typeof value === "string" ? value.trim() : value;
+      })()
+    : value;
+
   return (
     <div className={"flex items-center justify-between " + (strong ? "font-semibold" : "")}>
       <span>{label}</span>
-      <span>{value}{currency ? ` ${currency}` : ""}</span>
+      <span>{displayValue}{currency ? ` ${currency}` : ""}</span>
     </div>
   );
 }
@@ -345,6 +353,7 @@ export default function DealDetailPage() {
           <div className="rounded-card border border-border bg-card/80 p-4 space-y-3">
             {(() => {
               const topupInvoice = deal.topup_invoice;
+              const paidTotal = parseDecimalValue(topupInvoice?.paid_total);
               return (
                 <>
                   <div className="text-sm text-text-muted">
@@ -357,7 +366,7 @@ export default function DealDetailPage() {
                   {topupInvoice && (
                     <div className="space-y-2">
                       <TopupInvoiceRow label="Провайдер" value={topupInvoice.provider === "crystalpay" ? "Crystal Pay" : "CryptoBot"} />
-                      {topupInvoice.paid_total && parseDecimal(topupInvoice.paid_total) > 0 && (
+                      {paidTotal !== null && paidTotal > 0 && (
                         <TopupInvoiceRow label="Уже оплачено" value={topupInvoice.paid_total} currency={topupInvoice.currency_code} />
                       )}
                       <TopupInvoiceRow label="К оплате сейчас" value={topupInvoice.total} currency={topupInvoice.currency_code} strong />

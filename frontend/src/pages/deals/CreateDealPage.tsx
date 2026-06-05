@@ -78,10 +78,18 @@ function InvoiceRow({
   currency: string;
   strong?: boolean;
 }) {
+  const parsedValue = parseDecimalValue(value);
+  const displayValue =
+    parsedValue !== null && parsedValue >= 0
+      ? typeof value === "string"
+        ? value.trim()
+        : value
+      : "—";
+
   return (
     <div className={"flex items-center justify-between " + (strong ? "font-semibold" : "")}>
       <span>{label}</span>
-      <span>{value} {currency}</span>
+      <span>{displayValue} {currency}</span>
     </div>
   );
 }
