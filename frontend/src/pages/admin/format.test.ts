@@ -10,6 +10,7 @@ import {
   formatAdminDepositStatus,
   formatAdminId,
   formatAdminRating,
+  formatAdminServiceStatus,
   formatAdminUsd,
   formatAdminUsdSuffix,
   formatAdminUsername,
@@ -65,6 +66,12 @@ describe("admin format helpers", () => {
     expect(formatAdminApprovalStatus("approved")).toBe("approved");
     expect(formatAdminApprovalStatus("provider_reconciled")).toBe("Статус неизвестен");
     expect(formatAdminApprovalStatus(null)).toBe("Статус неизвестен");
+  });
+
+  it("formats admin service statuses without leaking unknown runtime values", () => {
+    expect(formatAdminServiceStatus("active")).toBe("active");
+    expect(formatAdminServiceStatus("provider_reconciled")).toBe("Статус неизвестен");
+    expect(formatAdminServiceStatus(null)).toBe("Статус неизвестен");
   });
 
   it("picks admin mutation currencies from normalized known codes", () => {

@@ -7,6 +7,7 @@ export const UNKNOWN_ADMIN_DEAL_STATUS_LABEL = "Статус неизвесте�
 export const UNKNOWN_ADMIN_FINANCE_STATUS_LABEL = UNKNOWN_ADMIN_DEAL_STATUS_LABEL;
 export const UNKNOWN_ADMIN_APPROVAL_ACTION_LABEL = "Действие неизвестно";
 export const UNKNOWN_ADMIN_APPROVAL_STATUS_LABEL = UNKNOWN_ADMIN_DEAL_STATUS_LABEL;
+export const UNKNOWN_ADMIN_SERVICE_STATUS_LABEL = UNKNOWN_ADMIN_DEAL_STATUS_LABEL;
 
 export const ADMIN_DEAL_STATUS_LABELS: Record<string, string> = {
   cancelled: "Отменена",
@@ -40,6 +41,13 @@ export const ADMIN_APPROVAL_STATUS_LABELS: Record<string, string> = {
   approved: "approved",
   executed: "executed",
   rejected: "rejected",
+};
+
+export const ADMIN_SERVICE_STATUS_LABELS: Record<string, string> = {
+  draft: "draft",
+  active: "active",
+  paused: "paused",
+  banned: "banned",
 };
 
 export function formatAdminUsername(username: string | null | undefined): string {
@@ -89,6 +97,12 @@ export function formatAdminApprovalStatus(value: unknown): string {
   return typeof value === "string"
     ? ADMIN_APPROVAL_STATUS_LABELS[value] ?? UNKNOWN_ADMIN_APPROVAL_STATUS_LABEL
     : UNKNOWN_ADMIN_APPROVAL_STATUS_LABEL;
+}
+
+export function formatAdminServiceStatus(value: unknown): string {
+  return typeof value === "string"
+    ? ADMIN_SERVICE_STATUS_LABELS[value] ?? UNKNOWN_ADMIN_SERVICE_STATUS_LABEL
+    : UNKNOWN_ADMIN_SERVICE_STATUS_LABEL;
 }
 
 export function pickAdminMutationCurrency(

@@ -304,6 +304,38 @@ describe("<ServicesSection />", () => {
     expect(container.textContent).not.toMatch(/0x10|1e2/);
   });
 
+  it("renders unknown service statuses as neutral labels", () => {
+    mockState.services = [makeService({ status: "provider_reconciled" })];
+
+    const { container } = renderServicesSection(42);
+
+    expect(container.textContent).toContain("Статус неизвестен");
+    expect(container.textContent).not.toContain("provider_reconciled");
+  });
+
+  it("does not submit a normalized default status when editing a service with unknown runtime status", async () => {
+    const user = userEvent.setup();
+    mockState.services = [makeService({ status: "provider_reconciled" })];
+    const { container } = renderServicesSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+
+    const inputs = await screen.findAllByRole("spinbutton");
+    fireEvent.change(inputs[0], { target: { value: "11.25" } });
+    await user.click(screen.getByRole("button", {
+      name: "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c",
+    }));
+
+    await waitFor(() =>
+      expect(mockState.updateService.mutateAsync).toHaveBeenCalledWith({
+        serviceId: 21,
+        body: { price: "11.25" },
+      }),
+    );
+  });
+
   it("submits service decimal fields as exact strings", async () => {
     const user = userEvent.setup();
     mockState.services = [makeService()];

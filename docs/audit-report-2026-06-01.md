@@ -186,6 +186,7 @@
 - M-214: admin deal list/detail status labels now share a neutral fallback for unknown runtime statuses.
 - M-215: admin deposit status badges now hide unknown runtime values, and withdrawal actions require the row's explicit status.
 - M-216: admin deal approval rows now neutralize unknown runtime action/status labels.
+- M-217: admin user service rows now neutralize unknown runtime statuses and avoid silent status rewrites.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2410,6 +2411,16 @@ The admin deal detail approval panel displayed `a.action` and `a.status` directl
 Risk: approval rows are used to review second-admin money operations. Raw unknown action/status labels can make unsupported workflow drift look like a real approval state or requested operation.
 
 Fix: approval rows now format action and status through explicit known-value maps. Supported labels preserve the existing text, while unknown or malformed values render `Действие неизвестно` / `Статус неизвестен`; pending approve/reject buttons still require the exact `pending` status. Regressions cover the helpers and the deal-detail approval row.
+
+### M-217. Admin user service edit silently rewrote unknown runtime statuses
+
+Links: `frontend/src/pages/admin/format.ts`, `frontend/src/pages/admin/UserContentSections.tsx`, regressions in `frontend/src/pages/admin/format.test.ts` and `frontend/src/pages/admin/UserContentSections.test.tsx`.
+
+Admin user service rows displayed `s.status` directly. The edit sheet also normalized unknown runtime statuses to `active` for its select state and compared that normalized value back to the raw DTO value on save. Opening a service with status `provider_reconciled` and changing an unrelated field like price could therefore submit `status: "active"` even though the operator did not explicitly change status.
+
+Risk: this admin screen edits service records on behalf of users. A drifted or corrupted status should not be shown as a supported state, and an unrelated edit should not silently move the service into `active`.
+
+Fix: service rows now render status through a known-status formatter, with unknown values shown as `Статус неизвестен`. The edit sheet tracks whether the status select was touched and only includes `status` in the mutation body after an explicit status change. Regressions cover neutral display and editing price on a service with an unknown runtime status without submitting a normalized default status.
 
 ## Наблюдения без отдельного finding
 

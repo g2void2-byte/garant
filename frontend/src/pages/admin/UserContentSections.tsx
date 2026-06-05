@@ -33,6 +33,7 @@ import { UserPicker } from "@/components/domain/UserPicker";
 import {
   formatAdminCount,
   formatAdminRating,
+  formatAdminServiceStatus,
   formatAdminUsdSuffix,
   formatAdminUsername,
   getAdminTotalPages,
@@ -143,7 +144,7 @@ export function ServicesSection({ userId }: SectionProps) {
                     <div className="mt-1 text-[11px] text-text-muted flex items-center gap-2 flex-wrap">
                       <span>{formatAdminUsdSuffix(s.price)}</span>
                       <span>·</span>
-                      <span>{s.status}</span>
+                      <span>{formatAdminServiceStatus(s.status)}</span>
                       <span>·</span>
                       <span>{formatAdminCount(s.deals_count)} сделок</span>
                       {s.rating_manual !== null && (
@@ -201,6 +202,7 @@ function ServiceEditSheet({
   const [dealsCount, setDealsCount] = useState("");
   const [ratingManual, setRatingManual] = useState("");
   const [status, setStatus] = useState<AdminServiceStatus>("active");
+  const [statusTouched, setStatusTouched] = useState(false);
 
   // Seed inputs when the sheet opens (re-seed each time it (re)opens with
   // a different service).
@@ -214,6 +216,7 @@ function ServiceEditSheet({
     setDealsCount(String(service.deals_count));
     setRatingManual(service.rating_manual !== null ? String(service.rating_manual) : "");
     setStatus(normalizeAdminServiceStatus(service.status));
+    setStatusTouched(false);
   }, [service]);
 
   const reset = () => {
@@ -225,6 +228,7 @@ function ServiceEditSheet({
     setDealsCount("");
     setRatingManual("");
     setStatus("active");
+    setStatusTouched(false);
   };
 
   const close = () => {
@@ -278,7 +282,7 @@ function ServiceEditSheet({
       } else if (ratingManualValue !== String(service.rating_manual)) {
         body.rating_manual = ratingManualValue;
       }
-      if (status !== service.status) body.status = status;
+      if (statusTouched && status !== service.status) body.status = status;
       if (Object.keys(body).length === 0) {
         toast.show({ kind: "info", title: "Нет изменений" });
         close();
@@ -355,7 +359,10 @@ function ServiceEditSheet({
             <div className="mb-1 text-[14px] font-medium text-text">Статус</div>
             <select
               value={status}
-              onChange={(e) => setStatus(normalizeAdminServiceStatus(e.target.value))}
+              onChange={(e) => {
+                setStatus(normalizeAdminServiceStatus(e.target.value));
+                setStatusTouched(true);
+              }}
               className="h-11 w-full px-3 rounded-button bg-panel text-text"
             >
               <option value="draft">draft</option>
