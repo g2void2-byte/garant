@@ -205,6 +205,7 @@
 - M-233: shared service cards now validate service ids before building detail routes.
 - M-234: admin broadcast history now validates broadcast ids before delete mutations.
 - M-235: admin taxonomy rows now validate category/currency ids before delete mutations.
+- M-236: public deal detail now keeps deal-scoped flows bound to the canonical route id.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2619,6 +2620,16 @@ Admin category and currency rows sent `c.id` directly to their delete mutations.
 Risk: taxonomy deletes affect public catalog/category and wallet/currency projections. A malformed row id should disable the destructive action instead of relying on backend path parsing.
 
 Fix: category and currency rows now parse ids with `parseAdminId`, use the parsed id for delete mutations, and hide delete controls when ids are malformed. Regressions cover both category and currency string-id normalization and malformed-id suppression.
+
+### M-236. Public deal detail reused payload ids after route validation
+
+Links: `frontend/src/pages/deals/DealDetailPage.tsx`, regression in `DealDetailPage.test.tsx`.
+
+The public deal detail page parsed `/deals/:id` before loading the record, but then reused `deal.id` from the response for deal-scoped review lookups, review creation, the page header, the invoice modal, and the chat panel. The already-reviewed check also compared `review.deal_id` directly without normalizing runtime values. A malformed or inconsistent payload id such as `"0x4d"` could therefore retarget review/chat/modal flows or hide the review CTA based on an invalid review row after the route id had already been canonicalized.
+
+Risk: deal detail is a user-facing action surface for payments, chat, arbitration lifecycle controls, and post-deal reviews. Once the route id is validated, child flows should stay bound to that target and runtime row ids should not replace it.
+
+Fix: the page now uses the canonical route `dealId` for review query/create payloads, title rendering, chat, and invoice modal wiring. Review row `deal_id` values are parsed with the shared positive-id boundary before the already-reviewed comparison. Regressions cover malformed payload ids, normalized string review ids, malformed review ids, child chat binding, and review submission payloads.
 
 ## Наблюдения без отдельного finding
 

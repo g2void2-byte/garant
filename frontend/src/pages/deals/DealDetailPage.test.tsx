@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { DealDto, ReviewDto, UserCardDto } from "@/api/types";
@@ -24,6 +25,13 @@ const cancelTopupState = vi.hoisted(() => ({
   mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
   isPending: false,
 }));
+const createReviewState = vi.hoisted(() => ({
+  mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
+  isPending: false,
+}));
+const chatState = vi.hoisted(() => ({
+  lastDealId: undefined as number | undefined,
+}));
 
 vi.mock("@/api/hooks", () => ({
   useDeal: (id: number | undefined) => {
@@ -38,7 +46,7 @@ vi.mock("@/api/hooks", () => ({
   },
   useDealAction: () => actionStub(),
   useCancelPendingTopup: () => cancelTopupState,
-  useCreateReview: () => actionStub(),
+  useCreateReview: () => createReviewState,
   useWalletDeposit: () => ({ data: undefined, isLoading: false }),
 }));
 
@@ -51,7 +59,10 @@ vi.mock("@/lib/tg", () => ({
 }));
 
 vi.mock("./DealChatPanel", () => ({
-  DealChatPanel: () => null,
+  DealChatPanel: ({ dealId }: { dealId: number }) => {
+    chatState.lastDealId = dealId;
+    return null;
+  },
 }));
 
 import DealDetailPage from "./DealDetailPage";
@@ -153,6 +164,9 @@ beforeEach(() => {
   reviewsCall.params = undefined;
   cancelTopupState.mutateAsync = vi.fn().mockResolvedValue(makeDeal({ status: "cancelled" }));
   cancelTopupState.isPending = false;
+  createReviewState.mutateAsync = vi.fn().mockResolvedValue(undefined);
+  createReviewState.isPending = false;
+  chatState.lastDealId = undefined;
 });
 
 describe("<DealDetailPage />", () => {
@@ -437,6 +451,24 @@ describe("<DealDetailPage />", () => {
     expect(screen.getByRole("button", { name: /Оставить отзыв/i })).toBeInTheDocument();
   });
 
+  it("uses the validated route id for deal-scoped child flows", () => {
+    dealState.data = makeDeal({
+      id: "0x4d" as unknown as number,
+      buyer: "alice",
+      seller: "bob",
+      role: "buyer",
+      status: "completed",
+    });
+
+    renderAt(77);
+
+    expect(screen.getByRole("heading", { name: /Сделка #77/ })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /0x4d/ })).not.toBeInTheDocument();
+    expect(reviewsCall.username).toBe("bob");
+    expect(reviewsCall.params).toEqual({ deal_id: 77, limit: 1 });
+    expect(chatState.lastDealId).toBe(77);
+  });
+
   it("hides the review CTA when the deal-scoped query returns my review", () => {
     dealState.data = makeDeal({
       id: 77,
@@ -451,6 +483,60 @@ describe("<DealDetailPage />", () => {
 
     expect(screen.queryByRole("button", { name: /Оставить отзыв/i })).not.toBeInTheDocument();
     expect(screen.getByText(/уже оставили отзыв/i)).toBeInTheDocument();
+  });
+
+  it("normalizes review row deal ids before checking already-reviewed state", () => {
+    dealState.data = makeDeal({
+      id: "0x4d" as unknown as number,
+      buyer: "alice",
+      seller: "bob",
+      role: "buyer",
+      status: "completed",
+    });
+    reviewsState.data = [makeReview({ deal_id: "77" as unknown as number, author_username: "alice" })];
+
+    renderAt(77);
+
+    expect(screen.queryByRole("button", { name: /Оставить отзыв/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/уже оставили отзыв/i)).toBeInTheDocument();
+  });
+
+  it("ignores malformed review row deal ids when checking already-reviewed state", () => {
+    dealState.data = makeDeal({
+      id: "0x4d" as unknown as number,
+      buyer: "alice",
+      seller: "bob",
+      role: "buyer",
+      status: "completed",
+    });
+    reviewsState.data = [makeReview({ deal_id: "0x4d" as unknown as number, author_username: "alice" })];
+
+    renderAt(77);
+
+    expect(screen.getByRole("button", { name: /Оставить отзыв/i })).toBeInTheDocument();
+    expect(screen.queryByText(/уже оставили отзыв/i)).not.toBeInTheDocument();
+  });
+
+  it("submits reviews against the validated route id", async () => {
+    const user = userEvent.setup();
+    dealState.data = makeDeal({
+      id: "0x4d" as unknown as number,
+      buyer: "alice",
+      seller: "bob",
+      role: "buyer",
+      status: "completed",
+    });
+
+    renderAt(77);
+    await user.click(screen.getByRole("button", { name: /Оставить отзыв/i }));
+    await user.click(screen.getByRole("button", { name: /Опубликовать отзыв/i }));
+
+    expect(createReviewState.mutateAsync).toHaveBeenCalledWith({
+      target_username: "bob",
+      rating: 5,
+      text: "",
+      deal_id: 77,
+    });
   });
 
   it("renders the arbitration reason when status is arbitration", () => {

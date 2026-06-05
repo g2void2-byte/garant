@@ -32,7 +32,7 @@ import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
-import { parsePositiveIntRouteParam } from "@/lib/routeParams";
+import { parsePositiveIntRouteParam, parsePositiveIntValue } from "@/lib/routeParams";
 import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { formatPaymentProvider } from "@/lib/paymentProviders";
 import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
@@ -124,7 +124,7 @@ export default function DealDetailPage() {
   const otherProfilePath = userProfilePath(otherUser);
   const otherTelegramUrl = buildTelegramUserUrl(otherUser);
   const existingReviewParams: { deal_id?: number; limit: number } = { limit: 1 };
-  if (deal) existingReviewParams.deal_id = deal.id;
+  if (deal && dealId) existingReviewParams.deal_id = dealId;
   const { data: existingReviews } = useReviews(
     otherUser ?? undefined,
     existingReviewParams,
@@ -184,9 +184,11 @@ export default function DealDetailPage() {
     deal.cancellation_initiator !== deal.role &&
     deal.cancellation_initiator !== "other";
   const cancelByMe = isParticipant && deal.cancellation_initiator === deal.role;
-  const alreadyReviewed = !!existingReviews?.some(
-    (r) => r.deal_id === deal.id && me && r.author_username === me.username,
-  );
+  const alreadyReviewed =
+    !!me &&
+    !!existingReviews?.some(
+      (r) => parsePositiveIntValue(r.deal_id) === dealId && r.author_username === me.username,
+    );
 
   const topupInvoiceTotal = parseDecimalValue(deal.topup_invoice?.total);
   const topupInvoiceCurrency =
@@ -295,7 +297,7 @@ export default function DealDetailPage() {
         target_username: otherUser,
         rating,
         text: reviewText,
-        deal_id: deal.id,
+        deal_id: dealId,
       });
       haptic("success");
       toast.show({ kind: "success", title: "Отзыв опубликован" });
@@ -319,7 +321,7 @@ export default function DealDetailPage() {
 
   return (
     <Page showBack>
-      <Header title={`Сделка #${deal.id}`} subtitle={statusInfo.text} />
+      <Header title={`Сделка #${dealId}`} subtitle={statusInfo.text} />
       <div className="px-4 space-y-3">
         <div className="bg-panel border border-border rounded-card p-4 space-y-2">
           <div className="text-sm text-text-muted">
@@ -428,7 +430,7 @@ export default function DealDetailPage() {
           <DealInvoiceModal
             open={invoiceModalOpen}
             onClose={() => setInvoiceModalOpen(false)}
-            dealId={deal.id}
+            dealId={dealId}
             depositId={deal.topup_invoice.deposit_id}
             payUrl={deal.topup_invoice.pay_url}
             amount={deal.topup_invoice.total}
@@ -437,9 +439,9 @@ export default function DealDetailPage() {
             canPay={canOpenInvoice}
             successTitle="Сделка создана"
             successBody="Платёж прошёл. Сейчас откроем сделку."
-            onSuccess={(dealId) => {
+            onSuccess={(paidDealId) => {
               setInvoiceModalOpen(false);
-              navigate(`/deals/${dealId}`, { replace: true });
+              navigate(`/deals/${paidDealId}`, { replace: true });
             }}
           />
         )}
@@ -608,7 +610,7 @@ export default function DealDetailPage() {
           )}
         </div>
 
-        {isParticipant && <DealChatPanel dealId={deal.id} />}
+        {isParticipant && <DealChatPanel dealId={dealId} />}
       </div>
 
       <Sheet
