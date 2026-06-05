@@ -456,6 +456,7 @@ function CommentRow({
     author_username: normalizeUsernameRef(rawComment.author_username),
   };
   const authorPath = userProfilePath(comment.author_username);
+  const ratingLabel = comment.rating !== null ? formatRatingValue(comment.rating) : null;
   return (
     <Card className="p-3">
       <div className="flex items-start gap-3">
@@ -472,10 +473,10 @@ function CommentRow({
             >
               {comment.author_display_name || comment.author_username || "—"}
             </Link>
-            {comment.rating !== null && (
+            {ratingLabel !== null && (
               <span className="inline-flex items-center gap-0.5 text-accent text-xs font-bold">
                 <Star className="size-3 fill-current" />
-                {comment.rating}
+                {ratingLabel}
               </span>
             )}
             <span className="ml-auto text-[11px] text-text-muted">

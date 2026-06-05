@@ -190,6 +190,7 @@
 - M-218: own-service profile toggles now ignore unknown runtime statuses instead of activating them.
 - M-219: shared service cards now show unknown runtime statuses as neutral badges instead of active-looking rows.
 - M-220: user prefix badges now neutralize unknown runtime prefixes instead of hiding or rendering empty roles.
+- M-221: public profile/review/comment metadata now validates runtime ratings and ids before display/linking.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2454,6 +2455,16 @@ Shared user rows delegated role/prefix display to `BadgePrefix`, which returned 
 Risk: prefixes mark privileged or special user roles. Hiding a drifted prefix, or rendering an empty role badge, can make unsupported role data look like a regular user and weaken review of account state across search, user cards, pickers, support rows, and profile headers.
 
 Fix: `BadgePrefix` now accepts runtime strings and falls back to `Роль неизвестна` with muted styling for unknown values. `ProfileHeader` uses the same neutral label/tone instead of an empty accent pill. Regressions cover both shared badges and profile headers.
+
+### M-221. Public review/comment metadata trusted malformed runtime values
+
+Links: `frontend/src/pages/search/ServiceDetailPage.tsx`, `frontend/src/components/domain/ReviewRow.tsx`, `frontend/src/components/domain/ProfileHeader.tsx`, regressions in adjacent component/page tests.
+
+Service detail comment rows rendered `comment.rating` directly, so malformed payloads like `"1e1"` appeared as real-looking ratings. Public review rows also built `/deals/{deal_id}` links directly from runtime `deal_id`, and profile headers rendered `user.user_id` without a positive-integer boundary.
+
+Risk: ratings and ids are compact trust signals in public profile/service views. Raw malformed values can look legitimate, and unsafe deal ids can create broken or misleading navigation targets.
+
+Fix: service comments now display ratings through the shared strict rating formatter, review rows only render deal links after strict positive-id parsing, and profile headers render Telegram ids only after the same boundary. Regressions cover malformed comment ratings, malformed/canonical runtime deal ids, and malformed/canonical profile Telegram ids.
 
 ## Наблюдения без отдельного finding
 

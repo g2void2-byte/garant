@@ -297,6 +297,16 @@ describe("<ServiceDetailPage />", () => {
     expect(unsafeLinks).toHaveLength(0);
   });
 
+  it("renders malformed comment ratings as a neutral dash", () => {
+    serviceState.data = makeService();
+    commentsState.data = [makeComment(1, { rating: "1e1" as unknown as number })];
+
+    renderAt(7);
+
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText("1e1")).not.toBeInTheDocument();
+  });
+
   it("requests the first comments page", () => {
     serviceState.data = makeService();
     commentsState.data = [];

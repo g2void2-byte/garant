@@ -2,6 +2,7 @@ import { Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { ReviewDto } from "@/api/types";
 import { parseRatingValue, relativeTime } from "@/lib/format";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 import { cn } from "@/lib/cn";
 import { staggerDelay } from "@/lib/animate";
 import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
@@ -20,6 +21,7 @@ export function ReviewRow({ review: rawReview, index = 0 }: Props) {
   const stars = rating === null ? 0 : Math.max(0, Math.min(5, Math.round(rating)));
   const authorUsername = normalizeUsernameRef(review.author_username);
   const authorPath = userProfilePath(authorUsername);
+  const dealId = parsePositiveIntValue(review.deal_id);
   const authorLabel = authorUsername
     ? `от @${review.author_username}`
     : "автор недоступен";
@@ -46,12 +48,12 @@ export function ReviewRow({ review: rawReview, index = 0 }: Props) {
         ) : (
           <span className="text-text-muted">{authorLabel}</span>
         )}
-        {review.deal_id != null && (
+        {dealId !== undefined && (
           <Link
-            to={`/deals/${review.deal_id}`}
+            to={`/deals/${dealId}`}
             className="text-text-muted/80 px-1.5 py-0.5 rounded-full bg-panel-2 text-[10px]"
           >
-            сделка #{review.deal_id}
+            сделка #{dealId}
           </Link>
         )}
         <span className="text-text-muted ml-auto text-xs">{relativeTime(review.created_at)}</span>

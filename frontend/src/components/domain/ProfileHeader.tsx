@@ -5,6 +5,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { countryFromCode } from "@/lib/countries";
 import { safeUserImageUrl } from "@/lib/mediaLinks";
 import { getTelegramUser } from "@/lib/tg";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 import { normalizeUsernameRef } from "@/lib/usernames";
 import { cn } from "@/lib/cn";
 
@@ -65,7 +66,8 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
   // is exposed on every ``UserCardDto`` via ``user_id``, so the
   // comparison below is stable across rename races.
   const tgUser = getTelegramUser();
-  const isMe = tgUser?.id === user.user_id;
+  const profileTgUserId = parsePositiveIntValue(user.user_id);
+  const isMe = profileTgUserId !== undefined && tgUser?.id === profileTgUserId;
   const avatarSrc = user.photo_url || (isMe ? tgUser?.photo_url : null);
   const bannerSrc = safeUserImageUrl(user.banner_url);
 
@@ -116,7 +118,7 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
                   <span aria-hidden>{country.flag}</span> {country.name}
                 </div>
               )}
-              <div className="mt-1 text-xs text-text-muted">ID: {user.user_id}</div>
+              <div className="mt-1 text-xs text-text-muted">ID: {profileTgUserId ?? "\u2014"}</div>
             </div>
             <span
               className={cn(
