@@ -290,6 +290,19 @@ describe("<CreateDealPage />", () => {
     expect(screen.getByText(/USD — US Dollar/)).toBeInTheDocument();
   });
 
+  it("normalizes fiat currency rows before rendering the picker", () => {
+    mockState.currencies = [
+      makeCurrency({ id: 1, code: " usd ", name: "US Dollar" }),
+      makeCurrency({ id: 2, code: "../UAH", name: "Broken" }),
+    ];
+
+    renderPage();
+
+    expect(screen.getByText(/USD — US Dollar/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(" usd ");
+    expect(document.body.textContent).not.toContain("../UAH");
+  });
+
   it("hides crypto currencies from the dropdown", () => {
     renderPage();
     // Tether (kind='crypto') is filtered out; only fiat options surface.
@@ -467,6 +480,37 @@ describe("<CreateDealPage />", () => {
     expect(preview).toHaveTextContent("10.00 USD");
     expect(preview).toHaveTextContent("0.25 USD");
     expect(preview).toHaveTextContent("10.25 USD");
+  });
+
+  it("normalizes funded balance currency before create-deal submit", async () => {
+    mockState.currencies = [
+      makeCurrency({ id: 1, code: " usd ", name: "US Dollar" }),
+    ];
+    mockState.balances = [
+      makeBalance({
+        currency: makeCurrency({ id: 1, code: " usd ", name: "US Dollar" }),
+        amount_str: "25.50",
+        total_str: "25.50",
+      }),
+    ];
+    mockState.createMutation.mutateAsync.mockResolvedValue(makeTopupResponse({ id: 90 }));
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Сумма \(USD\)/)).toBeInTheDocument();
+    });
+    const hint = await screen.findByTestId("deal-balance-hint");
+    expect(hint).toHaveTextContent("25.5 USD");
+    expect(hint).not.toHaveTextContent(" usd ");
+
+    await submitDealForm(user);
+
+    await waitFor(() =>
+      expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ currency_code: "USD" }),
+      ),
+    );
   });
 
   it("defaults the currency from canonical amount_str when runtime amount is malformed", async () => {

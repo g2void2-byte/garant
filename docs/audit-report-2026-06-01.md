@@ -177,6 +177,7 @@
 - M-205: remaining admin deal, wallet, and per-user balance money rows now normalize runtime currency labels before display.
 - M-206: admin wallet adjustment forms now choose mutation currencies from normalized/catalog-backed codes instead of raw balance DTO labels.
 - M-207: admin wallet currency selectors now normalize catalog row codes before adjustment and USD-rate mutations.
+- M-208: create-deal fiat currency rows and funded-balance defaults now normalize runtime codes before display and submit.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2311,6 +2312,16 @@ M-206 normalized the selected adjustment currency, but the selector buttons stil
 Risk: manual wallet adjustments and exchange-rate edits are money-operation controls. If the displayed selector and submitted currency diverge because a catalog DTO is non-canonical, the operator can perform an action that does not match the visible normalized currency intent.
 
 Fix: the affected admin wallet/user selectors now use `normalizeCurrencyCodeRows` before rendering options, storing selection state, matching current rates, or submitting mutations. Malformed catalog rows are dropped and canonicalizable rows submit uppercase codes. Regressions cover adjustment chip clicks and USD-rate upserts with non-canonical catalog DTO codes.
+
+### M-208. Create-deal currency picker trusted raw fiat codes
+
+Links: `frontend/src/pages/deals/CreateDealPage.tsx`, regressions in `frontend/src/pages/deals/CreateDealPage.test.tsx`.
+
+The create-deal page filtered the currency catalog to fiat rows but did not normalize row codes before building picker options. It also defaulted `currencyCode` from the first funded balance by assigning `funded.currency.code` directly and matched active balances by raw `b.currency.code === currencyCode`. A runtime row like `" usd "` could therefore break the selected label, hide the balance preview, or submit `currency_code: " usd "` when the funded balance default path ran.
+
+Risk: create-deal is a money-locking workflow. A non-canonical fiat code in the picker or balance DTO can desynchronize the visible currency, balance hint, commission preview, and the create-deal payload.
+
+Fix: create-deal fiat rows now go through `normalizeCurrencyCodeRows`, funded-balance defaults normalize the balance code, active balance lookup compares normalized codes, and balance/commission previews receive the normalized display code. Regressions cover malformed catalog rows and a funded balance default that submits canonical `USD`.
 
 ## Наблюдения без отдельного finding
 

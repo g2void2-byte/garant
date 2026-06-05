@@ -24,7 +24,7 @@ import {
 import { haptic } from "@/lib/tg";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { parsePositiveDecimalInput } from "@/lib/formNumbers";
-import { normalizeCurrencyCode } from "@/lib/currencyCodes";
+import { normalizeCurrencyCode, normalizeCurrencyCodeRows } from "@/lib/currencyCodes";
 import { normalizeUsernameRef } from "@/lib/usernames";
 import {
   formatWalletBalanceCurrency,
@@ -193,15 +193,17 @@ export default function CreateDealPage() {
   // fiat balance — the dropdown therefore surfaces only fiat
   // currencies (UAH/RUB/USD). Crypto rows stay in the DB for the
   // historical ledger but are hidden from the create-deal picker.
+  const fiatCurrencies = useMemo(
+    () => normalizeCurrencyCodeRows((currencies ?? []).filter((c) => c.kind === "fiat")),
+    [currencies],
+  );
   const currencyOptions = useMemo(
     () =>
-      (currencies ?? [])
-        .filter((c) => c.kind === "fiat")
-        .map((c) => ({
-          value: c.code,
-          label: `${c.code} — ${c.name}`,
-        })),
-    [currencies],
+      fiatCurrencies.map((c) => ({
+        value: c.code,
+        label: `${c.code} — ${c.name}`,
+      })),
+    [fiatCurrencies],
   );
 
   // Bug-11a — first-paint default: pick whichever fiat balance is
@@ -211,10 +213,10 @@ export default function CreateDealPage() {
     if (currencyDefaulted || !balances || balances.length === 0) return;
     const funded = balances.find((b) => {
       const amount = parseWalletBalanceDecimal(b, "amount");
-      return amount !== null && amount > 0;
+      return amount !== null && amount > 0 && normalizeCurrencyCode(b.currency.code) !== null;
     });
     if (funded) {
-      setCurrencyCode(funded.currency.code);
+      setCurrencyCode(normalizeCurrencyCode(funded.currency.code) ?? "USD");
     }
     setCurrencyDefaulted(true);
   }, [balances, currencyDefaulted]);
@@ -223,7 +225,7 @@ export default function CreateDealPage() {
   // used to render the "На балансе" + "Итого" preview block. Both can
   // be ``undefined`` while data loads; the JSX below tolerates that.
   const activeBalance = useMemo(
-    () => (balances ?? []).find((b) => b.currency.code === currencyCode),
+    () => (balances ?? []).find((b) => normalizeCurrencyCode(b.currency.code) === currencyCode),
     [balances, currencyCode],
   );
   const commissionPercent = useMemo(() => {
@@ -243,8 +245,10 @@ export default function CreateDealPage() {
     return parsePositiveDecimalInput(sum) ?? 0;
   }, [sum]);
   const activeBalanceAmount = parseWalletBalanceDecimal(activeBalance, "amount") ?? 0;
+  const activeBalanceCurrencyCode =
+    normalizeCurrencyCode(activeBalance?.currency.code) ?? currencyCode;
   const decimals = resolveDisplayDecimals(
-    activeBalance?.currency.code ?? currencyCode,
+    activeBalanceCurrencyCode,
     activeBalance?.currency.decimals,
   );
   const commissionAmount = parsedAmount * (commissionPercent / 100);
@@ -380,7 +384,7 @@ export default function CreateDealPage() {
               {formatWalletBalanceCurrency(
                 activeBalance,
                 "amount",
-                activeBalance.currency.code,
+                activeBalanceCurrencyCode,
                 activeBalance.currency.decimals,
               )}
             </span>
@@ -409,17 +413,17 @@ export default function CreateDealPage() {
             <InvoiceRow
               label="Сумма сделки"
               value={parsedAmount.toFixed(decimals)}
-              currency={activeBalance.currency.code}
+              currency={activeBalanceCurrencyCode}
             />
             <InvoiceRow
               label={`Комиссия (${commissionPercent % 1 ? commissionPercent.toFixed(1) : commissionPercent.toFixed(0)}%)`}
               value={commissionAmount.toFixed(decimals)}
-              currency={activeBalance.currency.code}
+              currency={activeBalanceCurrencyCode}
             />
             <InvoiceRow
               label={balanceCoversFull ? "Итого с баланса" : "Итого"}
               value={totalFromBalance.toFixed(decimals)}
-              currency={activeBalance.currency.code}
+              currency={activeBalanceCurrencyCode}
               strong
             />
             {balanceCoversFull ? (
