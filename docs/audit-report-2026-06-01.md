@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 86 файлов, 890 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 87 файлов, 892 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -148,6 +148,7 @@
 - M-176: deal topup invoice amount rows now validate runtime money values before rendering create/detail invoice totals.
 - M-177: admin audit/user identity labels now reject malformed runtime ids and counts before rendering operational identifiers.
 - M-178: deal topup payment actions now require a strict positive invoice total before opening the provider link.
+- M-179: deal and wallet payment modals now require strict positive invoice amounts before auto-opening or clicking provider payment links.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1992,6 +1993,16 @@ M-176 hardened how pending-topup invoice totals are displayed, but the buyer act
 Risk: the UI could invite payment even after it had already classified the payable amount as invalid. That weakens the money-flow invariant that display, action gating, and modal/payment entry all agree on the same strict invoice total.
 
 Fix: deal detail now parses `topup_invoice.total` with the strict decimal parser before enabling payment actions. The provider link is only shown for buyer-side pending topups with a valid positive total; the cancel action remains available so the user is not trapped behind a corrupt invoice payload.
+
+### M-179. Payment modals auto-opened provider links from malformed invoice amounts
+
+Links: `frontend/src/components/wallet/DealInvoiceModal.tsx`, `frontend/src/components/wallet/DepositStatusModal.tsx`, shared parser `frontend/src/lib/format.ts`, regression `frontend/src/components/wallet/PaymentModals.amounts.test.tsx`.
+
+M-178 hardened the deal-detail card, but the reusable deal-invoice modal and wallet-deposit modal still trusted their `amount` props for payment entry. Runtime values such as `"1e2"` or `"0x10"` were formatted through the legacy zero-coercing money formatter while the modal could still auto-open the upstream provider after its delay or keep a clickable payment CTA.
+
+Risk: a corrupt invoice amount could reach the last payment-entry surface. Even if the backend/provider ultimately enforces the real invoice, the frontend would present a provider link after showing an amount it should have treated as invalid.
+
+Fix: both payment modals now parse invoice amounts with the strict decimal parser, render a neutral dash for malformed/negative values, and require a valid positive amount before auto-opening or clicking the provider payment link. Regressions pin malformed deal topup and wallet deposit modal amounts.
 
 ## Наблюдения без отдельного finding
 

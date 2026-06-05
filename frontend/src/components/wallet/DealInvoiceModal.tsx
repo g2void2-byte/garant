@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { usePresence } from "@/lib/animate";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, parseDecimalValue } from "@/lib/format";
 import { haptic, openPaymentLink } from "@/lib/tg";
 
 interface DealInvoiceModalProps {
@@ -117,16 +117,20 @@ export function DealInvoiceModal({
     : depositStatus === "paid" || (!!dealStatus && dealStatus !== "pending_topup")
       ? "paid"
       : "pending";
+  const isPending = status === "pending";
+  const amountValue = parseDecimalValue(amount);
+  const canOpenProvider =
+    canPay && isPending && !!payUrl && amountValue !== null && amountValue > 0;
 
   // Auto-open the upstream invoice once per modal session.
   const autoOpenedRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!open || !payUrl) return;
+    if (!open || !canOpenProvider) return;
     if (autoOpenedRef.current === depositId) return;
     autoOpenedRef.current = depositId;
     const t = setTimeout(() => openPaymentLink(payUrl), autoOpenDelayMs);
     return () => clearTimeout(t);
-  }, [open, depositId, payUrl, autoOpenDelayMs]);
+  }, [open, depositId, payUrl, canOpenProvider, autoOpenDelayMs]);
 
   useEffect(() => {
     if (!open || status !== "pending") return;
@@ -203,9 +207,12 @@ export function DealInvoiceModal({
 
   if (!mounted) return null;
   const badge = badgeFor(status);
-  const isPending = status === "pending";
   const decimals = depositQuery.data?.currency?.decimals ?? 2;
   const providerLabel = provider === "crystalpay" ? "Crystalpay" : "CryptoBot";
+  const formattedAmount =
+    amountValue !== null && amountValue >= 0
+      ? formatCurrency(amountValue, currencyCode, decimals)
+      : `\u2014 ${currencyCode}`;
 
   const body = (
     <div role="dialog" aria-modal="true" aria-labelledby="deal-invoice-title">
@@ -240,7 +247,7 @@ export function DealInvoiceModal({
                 Оплата сделки #{dealId}
               </h2>
               <p className="text-[12px] text-text-muted">
-                {providerLabel} · {formatCurrency(amount, currencyCode, decimals)}
+                {providerLabel} · {formattedAmount}
               </p>
             </div>
             <button
@@ -297,7 +304,7 @@ export function DealInvoiceModal({
             <div className="rounded-xl border border-border bg-secondary/30 px-3 py-2">
               <div className="text-text-muted">К оплате</div>
               <div className="text-text font-medium">
-                {formatCurrency(amount, currencyCode, decimals)}
+                {formattedAmount}
               </div>
             </div>
             <button
@@ -329,10 +336,12 @@ export function DealInvoiceModal({
               <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
               Проверить
             </button>
-            {canPay && isPending && payUrl ? (
+            {canOpenProvider ? (
               <Button
                 size="md"
-                onClick={() => openPaymentLink(payUrl)}
+                onClick={() => {
+                  if (canOpenProvider) openPaymentLink(payUrl);
+                }}
                 className="!h-11"
               >
                 <ExternalLink className="size-4" />
