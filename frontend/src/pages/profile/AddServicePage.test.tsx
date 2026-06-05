@@ -86,14 +86,14 @@ describe("<AddServicePage />", () => {
     expect(hapticSpy).toHaveBeenCalledWith("error");
   });
 
-  it("submits plain decimal prices as numbers", async () => {
+  it("submits plain decimal prices as exact strings", async () => {
     const user = userEvent.setup();
     renderPage();
 
     await fillRequiredFields(user);
     await user.type(screen.getByLabelText(/Описание/i), "Clean vector logo");
     fireEvent.change(screen.getByLabelText(/Цена \(USDT\)/i), {
-      target: { value: ".5" },
+      target: { value: "0.123456789123456789" },
     });
     await user.click(screen.getByRole("button", { name: /Создать услугу/i }));
 
@@ -104,7 +104,7 @@ describe("<AddServicePage />", () => {
       category_slug: "design",
       title: "Logo design",
       description: "Clean vector logo",
-      price: 0.5,
+      price: "0.123456789123456789",
       photo_urls: [],
     });
     expect(hapticSpy).toHaveBeenCalledWith("success");

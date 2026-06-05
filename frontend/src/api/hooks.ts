@@ -205,7 +205,7 @@ export function useUpdateService() {
       body: Partial<{
         title: string;
         description: string;
-        price: number;
+        price: number | string;
         status: string;
         photo_urls: string[];
       }>;
@@ -225,7 +225,7 @@ export function useCreateService() {
       category_slug: string;
       title: string;
       description: string;
-      price: number;
+      price: number | string;
       photo_urls?: string[];
     }) => api.post("api/services", { json: body }).json<ServiceDto>(),
     onSuccess: () => {

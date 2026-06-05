@@ -161,6 +161,7 @@
 - M-189: paid PIN-reset paywall now validates runtime price/balance/charged amounts before display or balance-payment entry.
 - M-190: admin wallet adjustments and USD-rate upserts now send validated decimal strings instead of rounded JavaScript numbers.
 - M-191: remaining admin Decimal submit paths now preserve validated decimal strings across settings, currency limits, user stats/trust deposits, per-user balance adjustments, and service edits.
+- M-192: user service creation now preserves validated Decimal price strings instead of rounded JavaScript numbers.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2135,6 +2136,16 @@ After M-190, the main admin wallet page preserved decimal strings, but several n
 Risk: these admin controls write money, rates, public profile totals, or fee configuration. A value such as `0.123456789123456789` is accepted by the backend Decimal schemas and OpenAPI already allows string payloads for these fields, but the frontend could silently alter it before the backend parsed it.
 
 Fix: the affected forms still use the strict decimal parsers for validation and disabled-state gating, but submit trimmed or normalized decimal strings for Decimal fields while leaving integer fields numeric. The wallet sign shortcut now preserves the original decimal string while flipping only the sign. Local DTOs were widened to match OpenAPI, and regressions assert exact high-precision string payloads across settings, taxonomy, user detail stats/trust/balance, services, and the wallet shortcut.
+
+### M-192. User service price submit still rounded precise Decimal inputs
+
+Links: `frontend/src/pages/profile/AddServicePage.tsx`, `frontend/src/api/hooks.ts`, OpenAPI contract `frontend/src/api/openapi.generated.ts`, backend Decimal schemas `backend/app/schemas.py`, regression `frontend/src/pages/profile/AddServicePage.test.tsx`.
+
+The admin service editor was covered in M-191, but the owner-facing "add service" form still validated a plain decimal price and submitted the parsed JavaScript `number`. The backend `ServiceCreate.price` and `ServiceUpdate.price` schemas accept `Decimal`, and OpenAPI already allows `number | string` for those request bodies, so the local hook types were also narrower than the generated contract.
+
+Risk: a seller entering a precise service price such as `0.123456789123456789` could have the value rounded by IEEE-754 before the backend parsed it. That makes the stored listing price differ from the user-visible input and from the backend Decimal contract.
+
+Fix: service creation now keeps using the strict decimal parser for validation, but submits the trimmed decimal string (or `"0"` for an empty price). The public service create/update hooks now accept string prices in line with OpenAPI. A regression asserts that high-precision service prices reach `useCreateService` unchanged.
 
 ## Наблюдения без отдельного finding
 

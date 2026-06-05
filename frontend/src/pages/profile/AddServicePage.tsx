@@ -50,8 +50,9 @@ export default function AddServicePage() {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
-  const parsedPrice = price.trim() ? parseNonNegativeDecimalInput(price) : 0;
-  const priceError = price.trim() && parsedPrice === null
+  const priceValue = price.trim();
+  const parsedPrice = priceValue ? parseNonNegativeDecimalInput(priceValue) : 0;
+  const priceError = priceValue && parsedPrice === null
     ? "Введите число 0 или больше без экспоненты"
     : undefined;
 
@@ -109,7 +110,7 @@ export default function AddServicePage() {
         category_slug: slug,
         title,
         description,
-        price: parsedPrice,
+        price: priceValue || "0",
         photo_urls: photoUrls,
       });
       haptic("success");
