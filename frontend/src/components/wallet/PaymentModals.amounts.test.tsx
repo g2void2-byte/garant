@@ -127,6 +127,27 @@ describe("payment modal amount guards", () => {
     expect(screen.queryByText(/\.\.\/USD/)).not.toBeInTheDocument();
   });
 
+  it("renders unknown deal invoice providers as neutral labels", () => {
+    renderWithProviders(
+      <DealInvoiceModal
+        open
+        onClose={vi.fn()}
+        dealId={42}
+        depositId={501}
+        payUrl="https://t.me/CryptoBot?start=deal_501"
+        amount={10}
+        currencyCode="USD"
+        provider="provider_reconciled"
+        onSuccess={vi.fn()}
+        autoOpenDelayMs={1000}
+      />,
+    );
+
+    expect(screen.getByText(/Провайдер неизвестен/)).toBeInTheDocument();
+    expect(screen.queryByText(/provider_reconciled/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^CryptoBot$/)).not.toBeInTheDocument();
+  });
+
   it("does not auto-open or click through malformed deposit invoice amounts", () => {
     const deposit = makeDeposit({ amount: "0x10" as unknown as number });
 
@@ -172,5 +193,22 @@ describe("payment modal amount guards", () => {
 
     expect(screen.getAllByText("10 USD").length).toBeGreaterThan(0);
     expect(screen.queryByText(/\.\.\/USD/)).not.toBeInTheDocument();
+  });
+
+  it("renders unknown deposit status providers as neutral labels", () => {
+    const deposit = makeDeposit({ provider: "provider_reconciled" });
+
+    renderWithProviders(
+      <DepositStatusModal
+        deposit={deposit}
+        open
+        onClose={vi.fn()}
+        autoOpenDelayMs={1000}
+      />,
+    );
+
+    expect(screen.getByText(/Провайдер неизвестен/)).toBeInTheDocument();
+    expect(screen.queryByText(/provider_reconciled/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^CryptoBot$/)).not.toBeInTheDocument();
   });
 });

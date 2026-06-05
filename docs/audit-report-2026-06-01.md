@@ -181,6 +181,7 @@
 - M-209: wallet currency detail pages now use route-normalized codes for balance display, history rows, and deposit submit.
 - M-210: wallet deposit success toasts now normalize response currency labels before showing payment instructions.
 - M-211: wallet history and deal surfaces now hide unknown runtime statuses behind neutral labels.
+- M-212: wallet/deal invoice provider labels now use explicit known-provider mapping instead of defaulting unknown values to CryptoBot.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2355,6 +2356,16 @@ Wallet history rows, deal list cards, and deal detail headers mapped known contr
 Risk: these are decision surfaces. Unknown raw status labels can confuse users about whether a payment, withdrawal, or deal state is actionable, and they weaken the invariant that unsupported runtime contract drift is displayed neutrally.
 
 Fix: unknown wallet-history and deal statuses now render the neutral `Статус неизвестен` label with muted styling instead of leaking the raw DTO value. Deposit pay links remain gated on the explicit `pending` contract status. Regressions cover unknown deposit, withdrawal, deal-row, and deal-detail statuses.
+
+### M-212. Invoice provider labels defaulted unknown runtime providers to CryptoBot
+
+Links: `frontend/src/lib/paymentProviders.ts`, `frontend/src/pages/wallet/WalletCurrencyPage.tsx`, `frontend/src/components/wallet/DepositStatusModal.tsx`, `frontend/src/components/wallet/DealInvoiceModal.tsx`, `frontend/src/pages/deals/DealDetailPage.tsx`, regressions in adjacent wallet/deal/payment modal tests.
+
+Wallet history badges, wallet deposit status modals, deal invoice modals, and deal detail invoice metadata only special-cased `crystalpay`; every other runtime `provider` value rendered as `CryptoBot`. A drifted provider like `provider_reconciled` could therefore be mislabeled as a known payment rail.
+
+Risk: these labels sit next to invoice amounts and pay actions. Misstating an unknown upstream provider as CryptoBot makes payment review less trustworthy and can contradict the actual pay URL/provider stored by the backend.
+
+Fix: provider display now goes through a shared exact formatter: `cryptobot` maps to `CryptoBot`, `crystalpay` maps to `Crystalpay`, and unknown or malformed runtime values render `Провайдер неизвестен`. Wallet history also avoids embedding unknown provider values in its test-id. Regressions cover the helper, wallet history, deposit status modal, deal invoice modal, and deal detail invoice metadata.
 
 ## Наблюдения без отдельного finding
 

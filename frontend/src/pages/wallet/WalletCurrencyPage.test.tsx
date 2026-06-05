@@ -496,6 +496,23 @@ describe("<WalletCurrencyPage />", () => {
     expect(screen.queryByText(/provider_reconciled/)).not.toBeInTheDocument();
   });
 
+  it("history tab renders unknown deposit providers as neutral labels", async () => {
+    mockState.deposits = [
+      makeDeposit(1, { provider: "provider_reconciled" }),
+    ];
+    const user = userEvent.setup();
+    renderPage("USDT");
+    await user.click(screen.getByRole("button", {
+      name: /\u0418\u0441\u0442\u043e\u0440\u0438\u044f/,
+    }));
+
+    expect(screen.getByTestId("deposit-provider-unknown")).toHaveTextContent(
+      "Провайдер неизвестен",
+    );
+    expect(document.body.textContent).not.toContain("provider_reconciled");
+    expect(screen.queryByText("CryptoBot")).not.toBeInTheDocument();
+  });
+
   it("history tab renders malformed operation amounts as neutral", async () => {
     mockState.deposits = [
       makeDeposit(1, {

@@ -18,6 +18,7 @@ import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { usePresence } from "@/lib/animate";
 import { normalizeCurrencyCode } from "@/lib/currencyCodes";
+import { formatPaymentProvider } from "@/lib/paymentProviders";
 import { formatCurrency, parseDecimalValue } from "@/lib/format";
 import { haptic, openPaymentLink } from "@/lib/tg";
 
@@ -213,7 +214,7 @@ export function DealInvoiceModal({
     normalizeCurrencyCode(depositQuery.data?.currency?.code) ??
     normalizeCurrencyCode(currencyCode) ??
     "USD";
-  const providerLabel = provider === "crystalpay" ? "Crystalpay" : "CryptoBot";
+  const providerLabel = formatPaymentProvider(provider);
   const formattedAmount =
     amountValue !== null && amountValue >= 0
       ? formatCurrency(amountValue, displayCurrencyCode, decimals)

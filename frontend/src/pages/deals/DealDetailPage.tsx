@@ -34,6 +34,7 @@ import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 import { normalizeCurrencyCode } from "@/lib/currencyCodes";
+import { formatPaymentProvider } from "@/lib/paymentProviders";
 import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
@@ -377,7 +378,7 @@ export default function DealDetailPage() {
                   </div>
                   {topupInvoice && (
                     <div className="space-y-2">
-                      <TopupInvoiceRow label="Провайдер" value={topupInvoice.provider === "crystalpay" ? "Crystal Pay" : "CryptoBot"} />
+                      <TopupInvoiceRow label="Провайдер" value={formatPaymentProvider(topupInvoice.provider)} />
                       {paidTotal !== null && paidTotal > 0 && (
                         <TopupInvoiceRow label="Уже оплачено" value={topupInvoice.paid_total} currency={topupInvoiceCurrency} />
                       )}

@@ -30,6 +30,7 @@ import {
   formatWalletBalanceCurrency,
   hasPositiveWalletBalance,
 } from "@/lib/walletAmounts";
+import { formatPaymentProvider } from "@/lib/paymentProviders";
 import { haptic, openPaymentLink } from "@/lib/tg";
 
 type Tab = "deposit" | "history";
@@ -407,6 +408,10 @@ function HistoryList({
             ? `${r.sign === 1 ? "+" : "-"}${formatCurrency(r.amount, currencyCode, decimals)}`
             : formatCurrencyStrict(r.amount, currencyCode, decimals);
         const canOpenPayment = !!r.pay_url && parsedAmount !== null && parsedAmount > 0;
+        const providerTestId =
+          r.provider === "cryptobot" || r.provider === "crystalpay"
+            ? r.provider
+            : "unknown";
         return (
           <div
             key={r.key}
@@ -419,9 +424,9 @@ function HistoryList({
                 {r.kind === "deposit" && r.provider && (
                   <span
                     className="inline-flex items-center rounded-full border border-border bg-bg px-2 py-[1px] text-[10px] font-medium uppercase text-text-muted"
-                    data-testid={`deposit-provider-${r.provider}`}
+                    data-testid={`deposit-provider-${providerTestId}`}
                   >
-                    {r.provider === "crystalpay" ? "Crystalpay" : "CryptoBot"}
+                    {formatPaymentProvider(r.provider)}
                   </span>
                 )}
               </div>

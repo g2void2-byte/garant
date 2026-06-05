@@ -18,6 +18,7 @@ import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { usePresence } from "@/lib/animate";
 import { normalizeCurrencyCode } from "@/lib/currencyCodes";
+import { formatPaymentProvider } from "@/lib/paymentProviders";
 import { formatCurrency, parseDecimalValue } from "@/lib/format";
 import { haptic, openPaymentLink } from "@/lib/tg";
 import type { WalletDepositDto } from "@/api/types";
@@ -228,8 +229,7 @@ export function DepositStatusModal({
   const isPending = current.status === "pending";
   const decimals = current.currency.decimals;
   const currencyCode = normalizeCurrencyCode(current.currency.code) ?? "USD";
-  const providerLabel =
-    current.provider === "crystalpay" ? "Crystalpay" : "CryptoBot";
+  const providerLabel = formatPaymentProvider(current.provider);
   const formattedAmount =
     currentAmountValue !== null && currentAmountValue >= 0
       ? formatCurrency(currentAmountValue, currencyCode, decimals)

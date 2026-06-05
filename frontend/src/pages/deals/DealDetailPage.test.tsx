@@ -294,6 +294,31 @@ describe("<DealDetailPage />", () => {
     expect(screen.queryByText("0x10 USD")).not.toBeInTheDocument();
   });
 
+  it("renders unknown topup invoice providers as neutral labels", () => {
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      commission_paid: false,
+      topup_deposit_id: 501,
+      topup_invoice: {
+        deposit_id: 501,
+        pay_url: "https://pay.example/invoice/501",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: 0,
+        currency_code: "USD",
+        provider: "provider_reconciled",
+        expires_at: null,
+      },
+    });
+    renderAt(42);
+
+    expect(screen.getByText("Провайдер неизвестен")).toBeInTheDocument();
+    expect(screen.queryByText(/provider_reconciled/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^CryptoBot$/)).not.toBeInTheDocument();
+  });
+
   it("does not render malformed topup invoice totals as money", () => {
     dealState.data = makeDeal({
       status: "pending_topup",
