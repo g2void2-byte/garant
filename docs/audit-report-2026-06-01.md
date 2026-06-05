@@ -180,6 +180,7 @@
 - M-208: create-deal fiat currency rows and funded-balance defaults now normalize runtime codes before display and submit.
 - M-209: wallet currency detail pages now use route-normalized codes for balance display, history rows, and deposit submit.
 - M-210: wallet deposit success toasts now normalize response currency labels before showing payment instructions.
+- M-211: wallet history and deal surfaces now hide unknown runtime statuses behind neutral labels.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2344,6 +2345,16 @@ The wallet deposit, trust-deposit, and per-currency deposit forms submitted norm
 Risk: these toasts are user-facing payment instructions. Showing a non-canonical response label next to an invoice amount can confuse payment review and contradict the normalized currency that was submitted.
 
 Fix: each deposit success path now normalizes the response currency code and falls back to the already selected canonical code if the response label is malformed. Regressions cover wallet deposit, trust deposit, and per-currency deposit toasts with non-canonical response codes.
+
+### M-211. Wallet/deal status labels trusted unknown runtime statuses
+
+Links: `frontend/src/pages/wallet/WalletCurrencyPage.tsx`, `frontend/src/components/domain/DealRow.tsx`, `frontend/src/pages/deals/DealDetailPage.tsx`, regressions in the adjacent wallet/deal tests.
+
+Wallet history rows, deal list cards, and deal detail headers mapped known contract statuses to localized labels, but fell back to rendering the raw runtime status string when the DTO contained an unknown value. A corrupted or drifted status like `provider_reconciled` could therefore appear as a credible user-facing state on money/deal review screens.
+
+Risk: these are decision surfaces. Unknown raw status labels can confuse users about whether a payment, withdrawal, or deal state is actionable, and they weaken the invariant that unsupported runtime contract drift is displayed neutrally.
+
+Fix: unknown wallet-history and deal statuses now render the neutral `Статус неизвестен` label with muted styling instead of leaking the raw DTO value. Deposit pay links remain gated on the explicit `pending` contract status. Regressions cover unknown deposit, withdrawal, deal-row, and deal-detail statuses.
 
 ## Наблюдения без отдельного finding
 

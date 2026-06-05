@@ -60,6 +60,8 @@ const STATUS_TONE: Record<string, string> = {
   rejected: "text-danger",
 };
 
+const UNKNOWN_HISTORY_STATUS = "Статус неизвестен";
+
 export default function WalletCurrencyPage() {
   const { code = "" } = useParams<{ code: string }>();
   const routeCurrencyCode = normalizeCurrencyCode(code);
@@ -347,30 +349,36 @@ function HistoryList({
   };
 
   const rows: Row[] = [
-    ...deposits.map<Row>((d) => ({
-      key: `d-${d.id}`,
-      kind: "deposit",
-      title: "Пополнение",
-      subtitle: DEPOSIT_STATUS_TEXT[d.status] ?? d.status,
-      amount: d.amount,
-      sign: 1,
-      status: d.status,
-      created_at: d.created_at,
-      pay_url: d.status === "pending" ? d.pay_url : undefined,
-      provider: d.provider,
-    })),
-    ...withdrawals.map<Row>((w) => ({
-      key: `w-${w.id}`,
-      kind: "withdraw",
-      title: "Вывод",
-      subtitle: [WITHDRAW_STATUS_TEXT[w.status] ?? w.status, w.admin_note]
-        .filter(Boolean)
-        .join(" · "),
-      amount: w.amount,
-      sign: -1,
-      status: w.status,
-      created_at: w.created_at,
-    })),
+    ...deposits.map<Row>((d) => {
+      const status = typeof d.status === "string" ? d.status : "";
+      return {
+        key: `d-${d.id}`,
+        kind: "deposit",
+        title: "Пополнение",
+        subtitle: DEPOSIT_STATUS_TEXT[status] ?? UNKNOWN_HISTORY_STATUS,
+        amount: d.amount,
+        sign: 1,
+        status,
+        created_at: d.created_at,
+        pay_url: status === "pending" ? d.pay_url : undefined,
+        provider: d.provider,
+      };
+    }),
+    ...withdrawals.map<Row>((w) => {
+      const status = typeof w.status === "string" ? w.status : "";
+      return {
+        key: `w-${w.id}`,
+        kind: "withdraw",
+        title: "Вывод",
+        subtitle: [WITHDRAW_STATUS_TEXT[status] ?? UNKNOWN_HISTORY_STATUS, w.admin_note]
+          .filter(Boolean)
+          .join(" · "),
+        amount: w.amount,
+        sign: -1,
+        status,
+        created_at: w.created_at,
+      };
+    }),
   ].sort(compareRowsByCreatedAt);
 
   if (depositsLoading) {

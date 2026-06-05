@@ -84,6 +84,13 @@ describe("<DealRow />", () => {
     expect(screen.getByText("Арбитраж")).toBeInTheDocument();
   });
 
+  it("renders unknown runtime statuses as a neutral label", () => {
+    renderRow({ status: "provider_reconciled" });
+
+    expect(screen.getByText("Статус неизвестен")).toBeInTheDocument();
+    expect(screen.queryByText("provider_reconciled")).not.toBeInTheDocument();
+  });
+
   it("shows the seller from the buyer perspective", () => {
     renderRow({ role: "buyer", seller: "bob" });
     expect(screen.getByText("Продавец: @bob")).toBeInTheDocument();

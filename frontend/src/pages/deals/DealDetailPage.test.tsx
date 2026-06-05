@@ -177,6 +177,14 @@ describe("<DealDetailPage />", () => {
     expect(screen.getByText("Комиссия оплачена")).toBeInTheDocument();
   });
 
+  it("renders unknown runtime deal statuses as a neutral label", () => {
+    dealState.data = makeDeal({ status: "provider_reconciled" });
+    renderAt(42);
+
+    expect(screen.getAllByText("Статус неизвестен").length).toBeGreaterThan(0);
+    expect(screen.queryByText("provider_reconciled")).not.toBeInTheDocument();
+  });
+
   it("does not render a commission row from malformed runtime amounts", () => {
     dealState.data = makeDeal({
       commission_amount: "1e2" as unknown as number,

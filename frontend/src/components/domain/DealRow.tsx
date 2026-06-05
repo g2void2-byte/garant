@@ -42,9 +42,15 @@ const STATUS_LABEL: Record<string, { text: string; cls: string; icon: string }> 
   },
 };
 
+const UNKNOWN_DEAL_STATUS = "Статус неизвестен";
+
 export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) {
   const navigate = useNavigate();
-  const status = STATUS_LABEL[deal.status] ?? { text: deal.status, cls: "bg-panel-2 text-text-muted", icon: "•" };
+  const status = STATUS_LABEL[deal.status] ?? {
+    text: UNKNOWN_DEAL_STATUS,
+    cls: "bg-panel-2 text-text-muted",
+    icon: "•",
+  };
   // Item 21 — show the counterparty (i.e. the other side of the deal)
   // avatar + a "Профиль" deep-link. The seller's row in the buyer's
   // list and vice-versa.

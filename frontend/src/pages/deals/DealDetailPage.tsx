@@ -50,6 +50,8 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   cancelled_for_inactivity: { text: "Отменена за неактивность", cls: "text-danger" },
 };
 
+const UNKNOWN_DEAL_STATUS = "Статус неизвестен";
+
 type WinnerSide = "buyer" | "seller";
 
 function TopupInvoiceRow({
@@ -161,7 +163,7 @@ export default function DealDetailPage() {
   }
 
   const statusInfo =
-    STATUS_LABEL[deal.status] ?? { text: deal.status, cls: "text-text-muted" };
+    STATUS_LABEL[deal.status] ?? { text: UNKNOWN_DEAL_STATUS, cls: "text-text-muted" };
   const amount = deal.amount;
   const currency = normalizeCurrencyCode(deal.currency_code) ?? "USD";
   const commissionAmount = parseDecimalValue(deal.commission_amount);

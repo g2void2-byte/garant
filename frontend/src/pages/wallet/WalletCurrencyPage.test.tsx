@@ -479,6 +479,23 @@ describe("<WalletCurrencyPage />", () => {
     expect(screen.getByText(/Одобрена/)).toBeInTheDocument();
   });
 
+  it("history tab renders unknown runtime statuses as neutral labels", async () => {
+    mockState.deposits = [
+      makeDeposit(1, { status: "provider_reconciled" }),
+    ];
+    mockState.withdrawals = [
+      makeWithdrawal(2, { status: "provider_reconciled", admin_note: "" }),
+    ];
+    const user = userEvent.setup();
+    renderPage("USDT");
+    await user.click(screen.getByRole("button", {
+      name: /\u0418\u0441\u0442\u043e\u0440\u0438\u044f/,
+    }));
+
+    expect(screen.getAllByText("Статус неизвестен")).toHaveLength(2);
+    expect(screen.queryByText(/provider_reconciled/)).not.toBeInTheDocument();
+  });
+
   it("history tab renders malformed operation amounts as neutral", async () => {
     mockState.deposits = [
       makeDeposit(1, {
