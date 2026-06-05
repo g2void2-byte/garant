@@ -183,6 +183,25 @@ describe("<AdminUsersPage />", () => {
     expect(screen.getAllByText(/\$1500\.50/).length).toBeGreaterThan(0);
   });
 
+  it("renders malformed user row identifiers and counts as neutral values", () => {
+    mockState.list = {
+      items: [
+        makeUser({
+          tg_user_id: "1e2" as unknown as number,
+          deals_total: "0x10" as unknown as number,
+        }),
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+
+    expect(screen.getByText(/tg \u2014/)).toBeInTheDocument();
+    expect(screen.getByText(/Сделок: \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2|0x10/)).not.toBeInTheDocument();
+  });
+
   it("renders missing usernames as non-handle labels", () => {
     mockState.list = {
       items: [makeUser({ username: null })],

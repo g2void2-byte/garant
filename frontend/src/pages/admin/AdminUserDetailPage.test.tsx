@@ -230,6 +230,18 @@ describe("<AdminUserDetailPage />", () => {
     expect(screen.getByText("Установлен")).toBeInTheDocument();
   });
 
+  it("renders malformed identity identifiers and counters as neutral values", () => {
+    mockState.user = makeUser({
+      tg_user_id: "1e2" as unknown as number,
+      login_count: "0x10" as unknown as number,
+    });
+    renderPage();
+
+    expect(screen.getByText("tg_id: \u2014")).toBeInTheDocument();
+    expect(screen.getAllByText("\u2014").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/1e2|0x10/)).not.toBeInTheDocument();
+  });
+
   it("renders string trust deposit and rating payloads without crashing", () => {
     mockState.user = makeUser({
       trust_deposit_balance: "1500.5" as unknown as number,

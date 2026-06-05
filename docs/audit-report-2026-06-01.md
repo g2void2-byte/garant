@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 86 файлов, 886 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 86 файлов, 890 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -146,6 +146,7 @@
 - M-174: admin dashboard KPI tiles now reject malformed runtime counters before display and accent-ring decisions.
 - M-175: frontend positive money gates now reject malformed runtime amounts before wallet available-balance hints and deal commission rows.
 - M-176: deal topup invoice amount rows now validate runtime money values before rendering create/detail invoice totals.
+- M-177: admin audit/user identity labels now reject malformed runtime ids and counts before rendering operational identifiers.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1970,6 +1971,16 @@ The create-deal invoice preview and deal-detail topup invoice card rendered invo
 Risk: a buyer could see a corrupt or ambiguous invoice amount in the same UI that opens the payment flow, making support/debugging harder and potentially encouraging payment against a value the frontend should have treated as invalid input.
 
 Fix: invoice amount rows now parse runtime values with the strict decimal parser and render a neutral `—` amount when the value is malformed or negative. Metadata rows keep their previous raw labels, valid canonical decimal strings still render, and regressions cover create-response invoice rows plus deal-detail pending-topup totals.
+
+### M-177. Admin identity labels displayed malformed runtime ids and counts directly
+
+Links: `frontend/src/pages/admin/format.ts`, `frontend/src/pages/admin/AdminAuditPage.tsx`, `frontend/src/pages/admin/AdminUsersPage.tsx`, `frontend/src/pages/admin/AdminUserDetailPage.tsx`, regressions in the adjacent tests.
+
+Most admin counters were already strict, but several operational identity labels still interpolated DTO fields directly: audit `actor_id`/`target_id`, admin-user-list `tg_user_id`/`deals_total`, and admin-user-detail `tg_user_id`/`login_count`. Runtime payloads like `"1e2"` or `"0x10"` could therefore appear as credible user IDs or counts in admin audit and identity surfaces.
+
+Risk: these are operator-facing investigation screens. A malformed identifier rendered raw can send an admin to the wrong mental model while tracing audit events, users, bans, freezes, or trust-deposit changes.
+
+Fix: added shared `formatAdminId()` on top of the strict integer parser and routed audit/user identity labels through strict id/count formatters. Malformed or zero identifiers render as a neutral dash, valid numeric strings remain supported, and regressions cover audit actor/target IDs plus admin user list/detail identity counters.
 
 ## Наблюдения без отдельного finding
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatAdminAmount,
   formatAdminCount,
+  formatAdminId,
   formatAdminRating,
   formatAdminUsd,
   formatAdminUsdSuffix,
@@ -43,5 +44,11 @@ describe("admin format helpers", () => {
     expect(getAdminTotalPages(100, "0")).toBe(1);
     expect(shouldShowAdminPagination("100", 20)).toBe(true);
     expect(shouldShowAdminPagination("1e2", 20)).toBe(false);
+  });
+
+  it("formats positive admin identifiers without accepting count sentinels", () => {
+    expect(formatAdminId("42")).toBe("42");
+    expect(formatAdminId(0)).toBe("\u2014");
+    expect(formatAdminId("1e2")).toBe("\u2014");
   });
 });

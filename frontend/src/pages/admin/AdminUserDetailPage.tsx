@@ -51,7 +51,7 @@ import { haptic } from "@/lib/tg";
 import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
-import { formatAdminRating, formatAdminUsd, formatAdminUsername } from "./format";
+import { formatAdminCount, formatAdminId, formatAdminRating, formatAdminUsd, formatAdminUsername } from "./format";
 
 /**
  * Continental admin user detail screen.
@@ -143,7 +143,7 @@ function IdentityCard({ user }: { user: AdminUserDetailDto }) {
             <BadgePrefix prefix={pickPrefix(user)} />
           </div>
           <div className="text-xs text-text-muted">{formatAdminUsername(user.username)}</div>
-          <div className="text-xs text-text-muted">tg_id: {user.tg_user_id}</div>
+          <div className="text-xs text-text-muted">tg_id: {formatAdminId(user.tg_user_id)}</div>
         </div>
       </div>
 
@@ -151,7 +151,7 @@ function IdentityCard({ user }: { user: AdminUserDetailDto }) {
         <Detail label="Создан" value={shortDate(user.created_at)} />
         <Detail label="Последний вход" value={user.last_login_at ? shortDate(user.last_login_at) : "—"} />
         <Detail label="IP" value={user.last_ip ?? "—"} mono />
-        <Detail label="Входов всего" value={String(user.login_count)} />
+        <Detail label="Входов всего" value={formatAdminCount(user.login_count)} />
         <Detail
           label="Трастовый депозит"
           value={formatAdminUsd(user.trust_deposit_balance)}
@@ -594,7 +594,7 @@ function TrustDepositSection({ user }: { user: AdminUserDetailDto }) {
       toast.show({
         kind: "success",
         title: "Трастовый депозит обновлён",
-        body: `${user.username ?? user.tg_user_id} ← $${n.toFixed(2)}`,
+        body: `${user.username ?? formatAdminId(user.tg_user_id)} ← $${n.toFixed(2)}`,
       });
       setReason("");
     } catch (e) {

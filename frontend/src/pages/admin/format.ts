@@ -47,6 +47,16 @@ export function formatAdminCount(value: unknown): string {
   return parsed === null ? DASH : String(parsed);
 }
 
+export function parseAdminId(value: unknown): number | null {
+  const parsed = parseAdminCount(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
+}
+
+export function formatAdminId(value: unknown): string {
+  const parsed = parseAdminId(value);
+  return parsed === null ? DASH : String(parsed);
+}
+
 export function getAdminTotalPages(total: unknown, pageSize: unknown): number {
   const totalCount = parseAdminCount(total);
   const parsedPageSize = parseAdminCount(pageSize);

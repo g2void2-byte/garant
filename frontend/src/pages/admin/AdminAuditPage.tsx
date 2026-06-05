@@ -9,7 +9,7 @@ import { useAdminAuditLog } from "@/api/admin/hooks";
 import type { AdminAuditLogDto } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { formatDateTime } from "@/lib/format";
-import { formatAdminCount, getAdminTotalPages, shouldShowAdminPagination } from "./format";
+import { formatAdminCount, formatAdminId, getAdminTotalPages, shouldShowAdminPagination } from "./format";
 
 function parsePositiveIntFilter(value: string): number | undefined {
   const trimmed = value.trim();
@@ -21,7 +21,7 @@ function parsePositiveIntFilter(value: string): number | undefined {
 function actorLabel(row: AdminAuditLogDto): string {
   const username = row.actor_username?.trim();
   if (username) return `by @${username}`;
-  if (row.actor_id != null) return `by user #${row.actor_id}`;
+  if (row.actor_id != null) return `by user #${formatAdminId(row.actor_id)}`;
   return "by system";
 }
 
@@ -108,7 +108,7 @@ export default function AdminAuditPage() {
                 <span>{actorLabel(row)}</span>
                 {row.target_type && row.target_id != null && (
                   <span>
-                    {" "}· target: {row.target_type}#{row.target_id}
+                    {" "}· target: {row.target_type}#{formatAdminId(row.target_id)}
                   </span>
                 )}
                 {row.ip && <span> · {row.ip}</span>}

@@ -126,6 +126,26 @@ describe("<AdminAuditPage />", () => {
     expect(screen.queryByText(/by @system/)).not.toBeInTheDocument();
   });
 
+  it("renders malformed actor and target ids as neutral identifiers", () => {
+    mockState.list = {
+      items: [
+        makeRow({
+          actor_username: null,
+          actor_id: "1e2" as unknown as number,
+          target_id: "0x10" as unknown as number,
+        }),
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+
+    expect(screen.getByText(/by user #\u2014/)).toBeInTheDocument();
+    expect(screen.getByText(/target: user#\u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2|0x10/)).not.toBeInTheDocument();
+  });
+
   it("renders malformed created_at as a neutral timestamp", () => {
     mockState.list = {
       items: [makeRow({ created_at: "not-a-date" })],
