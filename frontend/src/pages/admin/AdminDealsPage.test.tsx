@@ -167,8 +167,8 @@ describe("<AdminDealsPage />", () => {
     expect(mockState.lastQuery).toEqual({
       status: "in_progress",
       currency: "USDT",
-      min_amount: 10,
-      max_amount: 500,
+      min_amount: "10",
+      max_amount: "500",
       has_arbitration: true,
       has_cancel_request: undefined,
       page: 3,
@@ -197,6 +197,26 @@ describe("<AdminDealsPage />", () => {
   it("drops reversed amount ranges from URL filters before calling useAdminDeals", () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
     renderPage(["/admin/deals?min_amount=500&max_amount=10"]);
+
+    expect(mockState.lastQuery?.min_amount).toBeUndefined();
+    expect(mockState.lastQuery?.max_amount).toBeUndefined();
+  });
+
+  it("preserves high-precision Decimal amount filters from URL params", () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+    renderPage([
+      "/admin/deals?min_amount=0.123456789123456789&max_amount=0.123456789123456790",
+    ]);
+
+    expect(mockState.lastQuery?.min_amount).toBe("0.123456789123456789");
+    expect(mockState.lastQuery?.max_amount).toBe("0.123456789123456790");
+  });
+
+  it("drops high-precision reversed Decimal amount ranges without Number coercion", () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+    renderPage([
+      "/admin/deals?min_amount=0.123456789123456790&max_amount=0.123456789123456789",
+    ]);
 
     expect(mockState.lastQuery?.min_amount).toBeUndefined();
     expect(mockState.lastQuery?.max_amount).toBeUndefined();

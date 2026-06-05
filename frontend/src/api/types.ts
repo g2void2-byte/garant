@@ -560,8 +560,8 @@ export interface AdminListDealsQuery {
   // of the union on the frontend.
   status?: Exclude<DealStatus, "pending_payment">;
   currency?: string;
-  min_amount?: number;
-  max_amount?: number;
+  min_amount?: number | string;
+  max_amount?: number | string;
   has_arbitration?: boolean;
   has_cancel_request?: boolean;
   buyer_id?: number;

@@ -60,17 +60,37 @@ function parsePageParam(value: string | null): number {
   return parsePositiveIntRouteParam(value ?? undefined) ?? 1;
 }
 
-function parseAmountParam(value: string | null): number | undefined {
+function parseAmountParam(value: string | null): string | undefined {
   const trimmed = (value ?? "").trim();
   if (!trimmed || !DECIMAL_PARAM_RE.test(trimmed)) return undefined;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+  return trimmed;
+}
+
+function normalizeDecimalParts(value: string): { integer: string; fraction: string } {
+  const [rawInteger, rawFraction = ""] = value.split(".");
+  return {
+    integer: rawInteger.replace(/^0+/, "") || "0",
+    fraction: rawFraction.replace(/0+$/, ""),
+  };
+}
+
+function compareDecimalStrings(left: string, right: string): number {
+  const a = normalizeDecimalParts(left);
+  const b = normalizeDecimalParts(right);
+  if (a.integer.length !== b.integer.length) return a.integer.length > b.integer.length ? 1 : -1;
+  if (a.integer !== b.integer) return a.integer > b.integer ? 1 : -1;
+
+  const width = Math.max(a.fraction.length, b.fraction.length);
+  const af = a.fraction.padEnd(width, "0");
+  const bf = b.fraction.padEnd(width, "0");
+  if (af === bf) return 0;
+  return af > bf ? 1 : -1;
 }
 
 function parseAmountRange(minRaw: string | null, maxRaw: string | null) {
   const min = parseAmountParam(minRaw);
   const max = parseAmountParam(maxRaw);
-  if (min !== undefined && max !== undefined && min > max) {
+  if (min !== undefined && max !== undefined && compareDecimalStrings(min, max) > 0) {
     return { min_amount: undefined, max_amount: undefined };
   }
   return { min_amount: min, max_amount: max };
@@ -79,7 +99,7 @@ function parseAmountRange(minRaw: string | null, maxRaw: string | null) {
 function amountRangeError(minRaw: string, maxRaw: string): string | null {
   const min = parseAmountParam(minRaw);
   const max = parseAmountParam(maxRaw);
-  return min !== undefined && max !== undefined && min > max
+  return min !== undefined && max !== undefined && compareDecimalStrings(min, max) > 0
     ? "\u041c\u0438\u043d\u0438\u043c\u0430\u043b\u044c\u043d\u0430\u044f \u0441\u0443\u043c\u043c\u0430 \u043d\u0435 \u043c\u043e\u0436\u0435\u0442 \u0431\u044b\u0442\u044c \u0431\u043e\u043b\u044c\u0448\u0435 \u043c\u0430\u043a\u0441\u0438\u043c\u0430\u043b\u044c\u043d\u043e\u0439"
     : null;
 }

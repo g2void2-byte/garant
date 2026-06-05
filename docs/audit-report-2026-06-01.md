@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 89 файлов, 931 тест. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary/lazyWithRetry.
+- `npm run test:run` - успешно: 89 файлов, 933 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary/lazyWithRetry.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -162,6 +162,7 @@
 - M-190: admin wallet adjustments and USD-rate upserts now send validated decimal strings instead of rounded JavaScript numbers.
 - M-191: remaining admin Decimal submit paths now preserve validated decimal strings across settings, currency limits, user stats/trust deposits, per-user balance adjustments, and service edits.
 - M-192: user service creation now preserves validated Decimal price strings instead of rounded JavaScript numbers.
+- M-193: admin deal amount filters now preserve Decimal query strings instead of rounded JavaScript numbers.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2146,6 +2147,16 @@ The admin service editor was covered in M-191, but the owner-facing "add service
 Risk: a seller entering a precise service price such as `0.123456789123456789` could have the value rounded by IEEE-754 before the backend parsed it. That makes the stored listing price differ from the user-visible input and from the backend Decimal contract.
 
 Fix: service creation now keeps using the strict decimal parser for validation, but submits the trimmed decimal string (or `"0"` for an empty price). The public service create/update hooks now accept string prices in line with OpenAPI. A regression asserts that high-precision service prices reach `useCreateService` unchanged.
+
+### M-193. Admin deal amount filters still rounded Decimal query params
+
+Links: `frontend/src/pages/admin/AdminDealsPage.tsx`, DTO type `frontend/src/api/types.ts`, OpenAPI contract `frontend/src/api/openapi.generated.ts`, backend Decimal query params `backend/app/routers/admin/deals.py`, regression `frontend/src/pages/admin/AdminDealsPage.test.tsx`.
+
+The admin deal list accepted `min_amount`/`max_amount` URL and sheet filters as plain decimal strings, but parsed them through JavaScript `Number` before passing them to `useAdminDeals`. The backend query parameters are `Decimal | None`, and the generated OpenAPI contract allows `number | string`, so precise filters such as `0.123456789123456789` were rounded before the backend could compare them.
+
+Risk: an admin searching for exact high-precision deal amounts could receive a broader or narrower result set than requested. Reversed-range validation also depended on rounded numbers, so two adjacent decimal strings could be misclassified after coercion.
+
+Fix: admin deal filters now keep validated decimal filters as trimmed strings, and range validation compares normalized decimal strings directly instead of using `Number`. The local DTO was widened to match OpenAPI, and regressions assert exact high-precision URL filters plus exact reversed-range rejection.
 
 ## Наблюдения без отдельного finding
 
