@@ -6,7 +6,7 @@ import { clearPinToken } from "@/lib/pin";
 import { useToast } from "@/components/ui/Toast";
 import { qk } from "@/api/queryKeys";
 import type { DealMessageDto, MediaDto, NotificationDto } from "@/api/types";
-import { isPositiveSafeInteger } from "@/lib/routeParams";
+import { isPositiveSafeInteger, parsePositiveIntValue } from "@/lib/routeParams";
 import { safeMediaUrl } from "@/lib/mediaLinks";
 import {
   applyServerNotificationRead,
@@ -19,6 +19,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isPositiveSafeIntValue(value: unknown): value is number {
   return typeof value === "number" && isPositiveSafeInteger(value);
+}
+
+function hasSameRuntimePositiveId(left: unknown, right: unknown): boolean {
+  const parsedLeft = parsePositiveIntValue(left);
+  const parsedRight = parsePositiveIntValue(right);
+  if (parsedLeft !== undefined && parsedRight !== undefined) {
+    return parsedLeft === parsedRight;
+  }
+  return left === right;
 }
 
 function isNonNegativeSafeIntValue(value: unknown): value is number {
@@ -104,7 +113,7 @@ export function useLiveNotifications() {
             qk.deal.messages(msg.deal_id),
             (prev) => {
               if (!prev) return [msg];
-              if (prev.some((m) => m.id === msg.id)) return prev;
+              if (prev.some((m) => hasSameRuntimePositiveId(m.id, msg.id))) return prev;
               return [...prev, msg];
             },
           );

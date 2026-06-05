@@ -206,6 +206,7 @@
 - M-234: admin broadcast history now validates broadcast ids before delete mutations.
 - M-235: admin taxonomy rows now validate category/currency ids before delete mutations.
 - M-236: public deal detail now keeps deal-scoped flows bound to the canonical route id.
+- M-237: deal message cache merges now normalize runtime ids before de-duping.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2630,6 +2631,16 @@ The public deal detail page parsed `/deals/:id` before loading the record, but t
 Risk: deal detail is a user-facing action surface for payments, chat, arbitration lifecycle controls, and post-deal reviews. Once the route id is validated, child flows should stay bound to that target and runtime row ids should not replace it.
 
 Fix: the page now uses the canonical route `dealId` for review query/create payloads, title rendering, chat, and invoice modal wiring. Review row `deal_id` values are parsed with the shared positive-id boundary before the already-reviewed comparison. Regressions cover malformed payload ids, normalized string review ids, malformed review ids, child chat binding, and review submission payloads.
+
+### M-237. Deal message cache de-dupe trusted raw runtime ids
+
+Links: `frontend/src/api/hooks.ts`, `frontend/src/lib/useLiveNotifications.ts`, regressions in `hooks.test.tsx` and `useLiveNotifications.test.tsx`.
+
+The deal-message cache merge paths compared message ids with raw `===`: loading older history, appending the POST echo from `useSendDealMessage`, and appending `deal_message` WebSocket frames. If the REST cache contained a numeric string id like `"7"` but a later POST/WS/page replay returned `7`, the same message was appended a second time.
+
+Risk: chat pagination and reconnect replay are normal user flows. Duplicate message rows make the thread look inconsistent and can also shift the oldest-message cursor/scroll anchor around a duplicate row.
+
+Fix: message cache merge paths now compare ids through the shared positive-id parser, while preserving raw equality as a fallback for malformed values. Regressions cover numeric-string cached ids against number ids in history pagination, send echo, and live WebSocket replay.
 
 ## Наблюдения без отдельного finding
 

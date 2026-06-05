@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import type { DealMessageDto } from "./types";
 
 const apiState = vi.hoisted(() => ({
+  getResponse: undefined as unknown,
   postResponse: undefined as unknown,
   patchResponse: undefined as unknown,
   deleteResponse: undefined as unknown,
@@ -11,6 +13,9 @@ const apiState = vi.hoisted(() => ({
 
 vi.mock("./client", () => ({
   api: {
+    get: (..._args: unknown[]) => ({
+      json: async () => apiState.getResponse,
+    }),
     post: (..._args: unknown[]) => ({
       json: async () => apiState.postResponse,
     }),
@@ -28,6 +33,8 @@ import {
   useCreateReview,
   useDealAction,
   useDeleteService,
+  useLoadOlderDealMessages,
+  useSendDealMessage,
   useUpdateMe,
   useUpdateService,
 } from "./hooks";
@@ -67,7 +74,20 @@ function makeHarness() {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   );
-  return { invalidateSpy, wrapper };
+  return { qc, invalidateSpy, wrapper };
+}
+
+function makeDealMessage(overrides: Partial<DealMessageDto> = {}): DealMessageDto {
+  return {
+    id: 1,
+    deal_id: 42,
+    sender_id: 100,
+    sender_username: "alice",
+    text: "hi",
+    attachments: [],
+    created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
 }
 
 function invalidatedKeys(
@@ -173,6 +193,35 @@ describe("useDealAction", () => {
     ] as const) {
       expect(hasKey(keys, expected)).toBe(true);
     }
+  });
+});
+
+describe("deal message cache merges", () => {
+  it("de-dupes loaded history against cached numeric-string message ids", async () => {
+    const { qc, wrapper } = makeHarness();
+    const cached = makeDealMessage({ id: "7" as unknown as number, text: "cached" });
+    const duplicate = makeDealMessage({ id: 7, text: "duplicate" });
+    const older = makeDealMessage({ id: 6, text: "older" });
+    qc.setQueryData(["deal", 42, "messages"], [cached]);
+    apiState.getResponse = [duplicate, older];
+
+    const { result } = renderHook(() => useLoadOlderDealMessages(42), { wrapper });
+    await result.current.mutateAsync({ beforeId: 7 });
+
+    expect(qc.getQueryData(["deal", 42, "messages"])).toEqual([older, cached]);
+  });
+
+  it("de-dupes sent messages against cached numeric-string message ids", async () => {
+    const { qc, wrapper } = makeHarness();
+    const cached = makeDealMessage({ id: "7" as unknown as number, text: "cached" });
+    const echo = makeDealMessage({ id: 7, text: "echo" });
+    qc.setQueryData(["deal", 42, "messages"], [cached]);
+    apiState.postResponse = echo;
+
+    const { result } = renderHook(() => useSendDealMessage(42), { wrapper });
+    await result.current.mutateAsync({ text: "echo", attachments: [] });
+
+    expect(qc.getQueryData(["deal", 42, "messages"])).toEqual([cached]);
   });
 });
 

@@ -3,7 +3,7 @@ import { api } from "./client";
 import { qk } from "./queryKeys";
 import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { parseNonNegativeIntegerValue } from "@/lib/format";
-import { isPositiveSafeInteger } from "@/lib/routeParams";
+import { isPositiveSafeInteger, parsePositiveIntValue } from "@/lib/routeParams";
 import { normalizeUsernameRef, userDetailApiPath } from "@/lib/usernames";
 import type {
   AccountTransferConfirmDto,
@@ -437,6 +437,15 @@ export type DealActionPath =
 // by ``useLiveNotifications`` and ``useSendDealMessage``.
 export const DEAL_MESSAGE_PAGE_SIZE = 50;
 
+function hasSameRuntimePositiveId(left: unknown, right: unknown): boolean {
+  const parsedLeft = parsePositiveIntValue(left);
+  const parsedRight = parsePositiveIntValue(right);
+  if (parsedLeft !== undefined && parsedRight !== undefined) {
+    return parsedLeft === parsedRight;
+  }
+  return left === right;
+}
+
 export function useDealMessages(dealId: number | undefined) {
   return useQuery<DealMessageDto[]>({
     queryKey: qk.deal.messages(dealId),
@@ -467,8 +476,9 @@ export function useLoadOlderDealMessages(dealId: number) {
         qk.deal.messages(dealId),
         (prev) => {
           if (!prev) return page;
-          const seen = new Set(prev.map((m) => m.id));
-          const older = page.filter((m) => !seen.has(m.id));
+          const older = page.filter(
+            (m) => !prev.some((existing) => hasSameRuntimePositiveId(existing.id, m.id)),
+          );
           return [...older, ...prev];
         },
       );
@@ -487,7 +497,7 @@ export function useSendDealMessage(dealId: number) {
         qk.deal.messages(dealId),
         (prev) => {
           if (!prev) return [msg];
-          if (prev.some((m) => m.id === msg.id)) return prev;
+          if (prev.some((m) => hasSameRuntimePositiveId(m.id, msg.id))) return prev;
           return [...prev, msg];
         },
       );

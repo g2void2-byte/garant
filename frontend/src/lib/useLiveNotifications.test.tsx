@@ -146,6 +146,25 @@ describe("useLiveNotifications", () => {
     expect(qc.getQueryData(["deal", 5, "messages"])).toEqual([first]);
   });
 
+  it("de-dupes deal_message replay against cached numeric-string ids", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const first = makeDealMessage({
+      id: "7" as unknown as number,
+      deal_id: 5,
+      text: "hi",
+    });
+    qc.setQueryData(["deal", 5, "messages"], [first]);
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "deal_message",
+      data: makeDealMessage({ id: 7, deal_id: 5, text: "duplicate" }),
+    });
+
+    expect(qc.getQueryData(["deal", 5, "messages"])).toEqual([first]);
+  });
+
   it("seeds the deal thread when no messages were cached yet", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
