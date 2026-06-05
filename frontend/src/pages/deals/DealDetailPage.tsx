@@ -33,6 +33,7 @@ import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
@@ -62,6 +63,7 @@ function TopupInvoiceRow({
   currency?: string;
   strong?: boolean;
 }) {
+  const currencyCode = currency ? normalizeCurrencyCode(currency) ?? "USD" : null;
   const displayValue = currency
     ? (() => {
         const parsedValue = parseDecimalValue(value);
@@ -73,7 +75,7 @@ function TopupInvoiceRow({
   return (
     <div className={"flex items-center justify-between " + (strong ? "font-semibold" : "")}>
       <span>{label}</span>
-      <span>{displayValue}{currency ? ` ${currency}` : ""}</span>
+      <span>{displayValue}{currencyCode ? ` ${currencyCode}` : ""}</span>
     </div>
   );
 }
@@ -161,7 +163,7 @@ export default function DealDetailPage() {
   const statusInfo =
     STATUS_LABEL[deal.status] ?? { text: deal.status, cls: "text-text-muted" };
   const amount = deal.amount;
-  const currency = deal.currency_code ?? "USD";
+  const currency = normalizeCurrencyCode(deal.currency_code) ?? "USD";
   const commissionAmount = parseDecimalValue(deal.commission_amount);
   const counterpartyLabel = deal.role === "buyer" ? "Продавец" : "Покупатель";
   const counterpartyText = otherUser ? `@${otherUser}` : "Контрагент недоступен";
@@ -177,6 +179,8 @@ export default function DealDetailPage() {
   );
 
   const topupInvoiceTotal = parseDecimalValue(deal.topup_invoice?.total);
+  const topupInvoiceCurrency =
+    normalizeCurrencyCode(deal.topup_invoice?.currency_code) ?? currency;
   const canOpenInvoice =
     deal.role === "buyer" &&
     deal.status === "pending_topup" &&
@@ -373,9 +377,9 @@ export default function DealDetailPage() {
                     <div className="space-y-2">
                       <TopupInvoiceRow label="Провайдер" value={topupInvoice.provider === "crystalpay" ? "Crystal Pay" : "CryptoBot"} />
                       {paidTotal !== null && paidTotal > 0 && (
-                        <TopupInvoiceRow label="Уже оплачено" value={topupInvoice.paid_total} currency={topupInvoice.currency_code} />
+                        <TopupInvoiceRow label="Уже оплачено" value={topupInvoice.paid_total} currency={topupInvoiceCurrency} />
                       )}
-                      <TopupInvoiceRow label="К оплате сейчас" value={topupInvoice.total} currency={topupInvoice.currency_code} strong />
+                      <TopupInvoiceRow label="К оплате сейчас" value={topupInvoice.total} currency={topupInvoiceCurrency} strong />
                       {topupInvoice.expires_at && (
                         <TopupInvoiceRow label="Истекает" value={formatDateTime(topupInvoice.expires_at)} />
                       )}
@@ -418,7 +422,7 @@ export default function DealDetailPage() {
             depositId={deal.topup_invoice.deposit_id}
             payUrl={deal.topup_invoice.pay_url}
             amount={deal.topup_invoice.total}
-            currencyCode={deal.topup_invoice.currency_code}
+            currencyCode={topupInvoiceCurrency}
             provider={deal.topup_invoice.provider}
             canPay={canOpenInvoice}
             successTitle="Сделка создана"

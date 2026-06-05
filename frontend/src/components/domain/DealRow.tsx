@@ -5,6 +5,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { formatAmount, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { staggerDelay } from "@/lib/animate";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string; icon: string }> = {
@@ -57,6 +58,8 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
   const counterpartyText = counterpartyUsername
     ? `${counterpartyLabel}: @${counterpartyUsername}`
     : `${counterpartyLabel}: профиль недоступен`;
+  const currencyCode = normalizeCurrencyCode(deal.currency_code);
+  const amountCurrencyCode = currencyCode ?? "USDT";
   const openDeal = () => navigate(`/deals/${deal.id}`);
   const onDealKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -117,10 +120,15 @@ export function DealRow({ deal, index = 0 }: { deal: DealDto; index?: number }) 
           </div>
           <div className="text-right shrink-0">
             <div className="text-accent font-bold">
-              {formatAmount(deal.amount, deal.currency_code ?? "USDT")}{" "}
-              <span className="text-text-muted text-xs font-normal">
-                {deal.currency_code ?? ""}
-              </span>
+              {formatAmount(deal.amount, amountCurrencyCode)}
+              {currencyCode && (
+                <>
+                  {" "}
+                  <span className="text-text-muted text-xs font-normal">
+                    {currencyCode}
+                  </span>
+                </>
+              )}
             </div>
             <div className="mt-1 inline-flex items-center text-text-muted text-xs">
               {deal.role === "buyer" ? "Покупка" : "Продажа"} <ChevronRight className="size-3" />

@@ -171,6 +171,7 @@
 - M-199: admin user wallet/content rows now format malformed runtime balances, counters, and ratings as neutral values instead of raw DTO strings.
 - M-200: admin taxonomy currency-limit rows and system alert counters now render malformed runtime numbers as neutral values.
 - M-201: create-deal insufficient-funds errors now validate runtime money fields and currency codes before showing balance hints.
+- M-202: deal and payment invoice money surfaces now normalize runtime currency codes before rendering labels.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2245,6 +2246,16 @@ The create-deal page parsed the structured `insufficient_funds` error by checkin
 Risk: the insufficient-funds alert is shown exactly when the user is deciding whether to reduce the deal amount or fund the wallet. Invalid money fields or currency labels in that alert can mislead the user about how much is missing or which wallet is involved.
 
 Fix: the structured error parser now accepts only strict non-negative decimal strings and a normalized contract currency code. Malformed `insufficient_funds` payloads fall back to a safe generic balance-check error instead of rendering raw JSON or raw money strings. Regressions cover valid normalized currency codes, malformed money fields, malformed currency codes, and partial structured payloads.
+
+### M-202. Deal and invoice money surfaces trusted runtime currency labels
+
+Links: `frontend/src/components/domain/DealRow.tsx`, `frontend/src/pages/deals/DealDetailPage.tsx`, `frontend/src/pages/deals/CreateDealPage.tsx`, `frontend/src/components/wallet/DealInvoiceModal.tsx`, `frontend/src/components/wallet/DepositStatusModal.tsx`, shared normalizer `frontend/src/lib/currencyCodes.ts`, regressions in the adjacent component/page tests.
+
+Several user-facing money surfaces already rejected malformed runtime amounts, but still appended the raw DTO currency code next to those amounts. A malformed label such as `"../USD"` or `" usd "` could therefore show up in deal rows, pending topup invoice details, create-deal invoice previews, and realtime payment modals even while the numeric value itself was sanitized.
+
+Risk: these screens are payment decision surfaces. Rendering a raw runtime currency label next to a valid or neutralized amount can make a corrupted DTO look like a different wallet/currency and weakens the user's ability to verify what they are paying.
+
+Fix: deal rows, deal detail invoice rows, create-deal invoice previews, and both deal/deposit payment modals now pass currency codes through the shared contract normalizer before rendering. Invalid codes fall back to a neutral known display code instead of leaking raw DTO strings, and lowercase/trimmed contract codes normalize to uppercase. Regressions cover malformed and normalized currency labels across the affected surfaces.
 
 ## Наблюдения без отдельного finding
 

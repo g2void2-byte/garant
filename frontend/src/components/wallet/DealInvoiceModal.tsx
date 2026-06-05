@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { usePresence } from "@/lib/animate";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { formatCurrency, parseDecimalValue } from "@/lib/format";
 import { haptic, openPaymentLink } from "@/lib/tg";
 
@@ -208,11 +209,15 @@ export function DealInvoiceModal({
   if (!mounted) return null;
   const badge = badgeFor(status);
   const decimals = depositQuery.data?.currency?.decimals ?? 2;
+  const displayCurrencyCode =
+    normalizeCurrencyCode(depositQuery.data?.currency?.code) ??
+    normalizeCurrencyCode(currencyCode) ??
+    "USD";
   const providerLabel = provider === "crystalpay" ? "Crystalpay" : "CryptoBot";
   const formattedAmount =
     amountValue !== null && amountValue >= 0
-      ? formatCurrency(amountValue, currencyCode, decimals)
-      : `\u2014 ${currencyCode}`;
+      ? formatCurrency(amountValue, displayCurrencyCode, decimals)
+      : `\u2014 ${displayCurrencyCode}`;
 
   const body = (
     <div role="dialog" aria-modal="true" aria-labelledby="deal-invoice-title">

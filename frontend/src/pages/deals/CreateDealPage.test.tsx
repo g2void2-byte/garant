@@ -368,8 +368,9 @@ describe("<CreateDealPage />", () => {
       );
     });
     expect(hapticSpy).toHaveBeenCalledWith("success");
-    expect(await screen.findByTestId("topup-invoice-preview")).toBeInTheDocument();
-    expect(screen.getByText("105.25 USD")).toBeInTheDocument();
+    const preview = await screen.findByTestId("topup-invoice-preview");
+    expect(preview).toBeInTheDocument();
+    expect(preview).toHaveTextContent("105.25 USD");
     expect(screen.getAllByRole("button", { name: /Открыть оплату/i })[0]).toBeInTheDocument();
   });
 
@@ -389,11 +390,34 @@ describe("<CreateDealPage />", () => {
     await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
     await enterPin(user);
 
-    expect(await screen.findByTestId("topup-invoice-preview")).toBeInTheDocument();
-    expect(screen.getByText("105.25 USD")).toBeInTheDocument();
+    const preview = await screen.findByTestId("topup-invoice-preview");
+    expect(preview).toBeInTheDocument();
+    expect(preview).toHaveTextContent("105.25 USD");
     expect(screen.getAllByText("— USD")).toHaveLength(2);
     expect(screen.queryByText("1e2 USD")).not.toBeInTheDocument();
     expect(screen.queryByText("0x10 USD")).not.toBeInTheDocument();
+  });
+
+  it("normalizes invoice currency codes from the create response", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(makeTopupResponse({
+      id: 79,
+      currency_code: "../USD",
+      topup_invoice: {
+        ...makeInvoice(),
+        currency_code: " usd ",
+      },
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
+    await user.type(screen.getByLabelText(/Сумма \(USD\)/), "100.25");
+    await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
+    await enterPin(user);
+
+    const preview = await screen.findByTestId("topup-invoice-preview");
+    expect(preview).toHaveTextContent("105.25 USD");
+    expect(preview).not.toHaveTextContent("../USD");
+    expect(preview).not.toHaveTextContent(" usd ");
   });
 
   it("handles balance-funded deals when the API returns invoice=null", async () => {

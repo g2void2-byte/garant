@@ -102,6 +102,13 @@ describe("<DealRow />", () => {
     expect(screen.getAllByText("USDT").length).toBeGreaterThan(0);
   });
 
+  it("does not render malformed runtime currency codes", () => {
+    renderRow({ amount: 250, currency_code: "../USD" });
+
+    expect(screen.getByText("250")).toBeInTheDocument();
+    expect(screen.queryByText(/\.\.\/USD/)).not.toBeInTheDocument();
+  });
+
   it("renders malformed deal amounts as neutral instead of zero", () => {
     renderRow({ amount: "1e2" as unknown as number, currency_code: "USDT" });
 

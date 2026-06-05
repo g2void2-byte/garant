@@ -313,6 +313,33 @@ describe("<DealDetailPage />", () => {
     expect(screen.queryByText("1e2 USD")).not.toBeInTheDocument();
   });
 
+  it("normalizes deal and topup invoice currency labels before display", () => {
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      amount: 105,
+      currency_code: " usd ",
+      commission_paid: false,
+      topup_deposit_id: 501,
+      topup_invoice: {
+        deposit_id: 501,
+        pay_url: "https://pay.example/invoice/501",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: 0,
+        currency_code: "../USD",
+        provider: "cryptobot",
+        expires_at: null,
+      },
+    });
+    renderAt(42);
+
+    expect(screen.getAllByText("105 USD").length).toBeGreaterThan(1);
+    expect(screen.queryByText(/\.\.\/USD/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ usd /)).not.toBeInTheDocument();
+  });
+
   it("renders malformed topup invoice expiry as a neutral timestamp", () => {
     dealState.data = makeDeal({
       status: "pending_topup",

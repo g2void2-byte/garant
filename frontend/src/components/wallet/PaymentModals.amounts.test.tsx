@@ -107,6 +107,26 @@ describe("payment modal amount guards", () => {
     expect(openPaymentLinkSpy).not.toHaveBeenCalled();
   });
 
+  it("normalizes deal invoice modal currency codes before rendering amounts", () => {
+    renderWithProviders(
+      <DealInvoiceModal
+        open
+        onClose={vi.fn()}
+        dealId={42}
+        depositId={501}
+        payUrl="https://t.me/CryptoBot?start=deal_501"
+        amount={10}
+        currencyCode="../USD"
+        provider="cryptobot"
+        onSuccess={vi.fn()}
+        autoOpenDelayMs={1000}
+      />,
+    );
+
+    expect(screen.getAllByText("10 USD").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/\.\.\/USD/)).not.toBeInTheDocument();
+  });
+
   it("does not auto-open or click through malformed deposit invoice amounts", () => {
     const deposit = makeDeposit({ amount: "0x10" as unknown as number });
 
@@ -130,5 +150,27 @@ describe("payment modal amount guards", () => {
     if (payButton) fireEvent.click(payButton);
 
     expect(openPaymentLinkSpy).not.toHaveBeenCalled();
+  });
+
+  it("normalizes deposit status modal currency codes before rendering amounts", () => {
+    const base = makeDeposit();
+    const deposit = makeDeposit({
+      currency: {
+        ...base.currency,
+        code: "../USD",
+      },
+    });
+
+    renderWithProviders(
+      <DepositStatusModal
+        deposit={deposit}
+        open
+        onClose={vi.fn()}
+        autoOpenDelayMs={1000}
+      />,
+    );
+
+    expect(screen.getAllByText("10 USD").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/\.\.\/USD/)).not.toBeInTheDocument();
   });
 });

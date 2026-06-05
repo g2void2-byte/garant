@@ -116,6 +116,7 @@ function InvoiceRow({
   currency: string;
   strong?: boolean;
 }) {
+  const currencyCode = normalizeCurrencyCode(currency) ?? "USD";
   const parsedValue = parseDecimalValue(value);
   const displayValue =
     parsedValue !== null && parsedValue >= 0
@@ -127,7 +128,7 @@ function InvoiceRow({
   return (
     <div className={"flex items-center justify-between " + (strong ? "font-semibold" : "")}>
       <span>{label}</span>
-      <span>{displayValue} {currency}</span>
+      <span>{displayValue} {currencyCode}</span>
     </div>
   );
 }
@@ -250,6 +251,12 @@ export default function CreateDealPage() {
   const totalFromBalance = parsedAmount + commissionAmount;
   const balanceCoversFull =
     !!activeBalance && activeBalanceAmount >= totalFromBalance && parsedAmount > 0;
+  const createdInvoiceCurrencyCode =
+    created && invoiceRequiresPayment(created.invoice)
+      ? normalizeCurrencyCode(created.invoice.currency_code) ??
+        normalizeCurrencyCode(created.deal.currency_code) ??
+        "USD"
+      : "USD";
 
   function validate(): boolean {
     const amount = sum.trim();
@@ -534,9 +541,9 @@ export default function CreateDealPage() {
                 </div>
               </div>
               <div className="space-y-1 text-sm">
-                <InvoiceRow label="Недостающая сумма" value={invoice.topup_principal} currency={invoice.currency_code} />
-                <InvoiceRow label="Комиссия" value={invoice.commission} currency={invoice.currency_code} />
-                <InvoiceRow label="Итого" value={invoice.total} currency={invoice.currency_code} strong />
+                <InvoiceRow label="Недостающая сумма" value={invoice.topup_principal} currency={createdInvoiceCurrencyCode} />
+                <InvoiceRow label="Комиссия" value={invoice.commission} currency={createdInvoiceCurrencyCode} />
+                <InvoiceRow label="Итого" value={invoice.total} currency={createdInvoiceCurrencyCode} strong />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <Button
@@ -585,7 +592,7 @@ export default function CreateDealPage() {
           depositId={created.invoice.deposit_id}
           payUrl={created.invoice.pay_url}
           amount={created.invoice.total}
-          currencyCode={created.deal.currency_code ?? "USD"}
+          currencyCode={createdInvoiceCurrencyCode}
           provider={created.deal.payment_provider ?? "cryptobot"}
           canPay={true}
           successTitle="Сделка создана"
