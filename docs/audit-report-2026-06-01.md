@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 88 файлов, 922 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 88 файлов, 923 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -157,6 +157,7 @@
 - M-185: wallet deposit payment entry and history rows now require strict positive runtime amounts instead of opening pay links after zero-coercion.
 - M-186: admin deposit/withdrawal money actions now require strict positive runtime amounts instead of acting on rows displayed as neutral.
 - M-187: admin deal force-release/refund/split actions now require a strict positive runtime deal amount before opening money-moving sheets.
+- M-188: admin deal pending approval rows now use strict runtime money formatting and block approval of malformed money requests.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2091,6 +2092,16 @@ Admin deal detail already rendered malformed deal amounts as a neutral dash via 
 Risk: an operator could start a release/refund/split flow without a trustworthy displayed principal. Even though the backend owns final accounting, the admin UI should not present irreversible money actions when its own runtime boundary has classified the principal as invalid.
 
 Fix: force-release, force-refund, and split now require `hasPositiveAdminDecimal(deal.amount)` before the buttons open their sheets or the confirm handler sends a mutation. Arbitration, assign, and delete remain available so admins can still investigate or close a malformed deal. The regression covers malformed deal amount display plus the enabled/disabled split between money-moving and non-money actions.
+
+### M-188. Admin deal approval rows rendered raw malformed money
+
+Links: `frontend/src/pages/admin/AdminDealDetailPage.tsx`, shared admin parser/formatters `frontend/src/pages/admin/format.ts`, regression in `frontend/src/pages/admin/AdminDealDetailPage.test.tsx`.
+
+The pending approval panel on admin deal detail rendered `amount` and `amount_usd_estimate` directly from the runtime DTO. A corrupted approval payload could therefore show values such as `"1e3"` or `"0x10"` as if they were trustworthy approval amounts, while the adjacent `OK` button remained available.
+
+Risk: a second admin could approve a money-moving request without a strictly parsed principal on the screen. That weakens the two-admin approval UX: the reviewer is meant to approve an exact amount, not a raw malformed DTO string.
+
+Fix: approval rows now render native amounts with the strict admin amount formatter and USD estimates with the strict USD formatter. Pending approval `OK` is disabled unless the native approval amount is a strict positive decimal; `Reject` remains available so malformed approval requests can be closed. The regression covers neutral rendering plus the OK/Reject enabled split.
 
 ## Наблюдения без отдельного finding
 

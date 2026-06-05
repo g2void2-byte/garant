@@ -447,51 +447,64 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
       {approvals.length > 0 && (
         <div className="rounded-card border border-border bg-panel-2 p-3 space-y-2">
           <div className="text-xs uppercase tracking-wide text-text-muted">Approvals</div>
-          {approvals.map((a) => (
-            <div key={a.id} className="flex items-center gap-2 text-xs">
-              <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">#{a.id} · {a.action} · {a.status}</div>
-                <div className="text-text-muted truncate">
-                  {a.amount ?? "?"} {a.currency_code ?? ""}
-                  {a.amount_usd_estimate ? ` · ~$${a.amount_usd_estimate}` : ""}
+          {approvals.map((a) => {
+            const canApproveMoneyApproval = hasPositiveAdminDecimal(a.amount);
+            const formattedAmount = formatAdminAmount(a.amount, 8);
+            const formattedUsdEstimate =
+              a.amount_usd_estimate !== null && a.amount_usd_estimate !== undefined
+                ? formatAdminUsd(a.amount_usd_estimate)
+                : null;
+
+            return (
+              <div key={a.id} className="flex items-center gap-2 text-xs">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate">#{a.id} · {a.action} · {a.status}</div>
+                  <div className="text-text-muted truncate">
+                    {formattedAmount} {a.currency_code ?? ""}
+                    {formattedUsdEstimate ? ` · ~${formattedUsdEstimate}` : ""}
+                  </div>
                 </div>
+                {a.status === "pending" && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={
+                        !canApproveMoneyApproval ||
+                        a.requested_by_id === currentAdminId ||
+                        approve.isPending
+                      }
+                      onClick={async () => {
+                        try {
+                          await approve.mutateAsync(a.id);
+                          toast.show({ kind: "success", title: "Approved" });
+                        } catch (e) {
+                          toast.show({ kind: "error", title: "Error", body: (e as Error).message });
+                        }
+                      }}
+                    >
+                      OK
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={reject.isPending}
+                      onClick={async () => {
+                        try {
+                          await reject.mutateAsync(a.id);
+                          toast.show({ kind: "success", title: "Rejected" });
+                        } catch (e) {
+                          toast.show({ kind: "error", title: "Error", body: (e as Error).message });
+                        }
+                      }}
+                    >
+                      Reject
+                    </Button>
+                  </>
+                )}
               </div>
-              {a.status === "pending" && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={a.requested_by_id === currentAdminId || approve.isPending}
-                    onClick={async () => {
-                      try {
-                        await approve.mutateAsync(a.id);
-                        toast.show({ kind: "success", title: "Approved" });
-                      } catch (e) {
-                        toast.show({ kind: "error", title: "Error", body: (e as Error).message });
-                      }
-                    }}
-                  >
-                    OK
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={reject.isPending}
-                    onClick={async () => {
-                      try {
-                        await reject.mutateAsync(a.id);
-                        toast.show({ kind: "success", title: "Rejected" });
-                      } catch (e) {
-                        toast.show({ kind: "error", title: "Error", body: (e as Error).message });
-                      }
-                    }}
-                  >
-                    Reject
-                  </Button>
-                </>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       <div className="grid grid-cols-2 gap-2">

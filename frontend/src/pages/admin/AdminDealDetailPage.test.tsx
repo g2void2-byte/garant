@@ -191,6 +191,31 @@ function makeMessage(overrides: Partial<MessageDto> = {}): MessageDto {
   };
 }
 
+type AdminApproval = NonNullable<AdminDealDetailDto["pending_approvals"]>[number];
+
+function makeApproval(overrides: Partial<AdminApproval> = {}): AdminApproval {
+  return {
+    id: 77,
+    action: "deal.force_release",
+    target_type: "deal",
+    target_id: 10,
+    status: "pending",
+    requested_by_id: 123,
+    approved_by_id: null,
+    executed_by_id: null,
+    currency_code: "USDT",
+    amount: "150.00000000",
+    amount_usd_estimate: "150.00000000",
+    reason: null,
+    payload: null,
+    created_at: "2026-01-04T00:00:00Z",
+    approved_at: null,
+    executed_at: null,
+    rejected_at: null,
+    ...overrides,
+  };
+}
+
 function getLoadOlderButton(): HTMLElement | undefined {
   return screen
     .getAllByRole("button")
@@ -373,6 +398,24 @@ describe("<AdminDealDetailPage />", () => {
     expect(
       screen.getByRole("button", { name: /Удалить сделку/i }),
     ).toBeEnabled();
+  });
+
+  it("renders malformed pending approval amounts as neutral and blocks approval", () => {
+    mockState.deal = makeDeal({
+      pending_approvals: [
+        makeApproval({
+          amount: "1e3",
+          amount_usd_estimate: "0x10",
+        }),
+      ],
+    });
+    renderPage();
+
+    expect(screen.getByText("\u2014 USDT \u00b7 ~\u2014")).toBeInTheDocument();
+    expect(screen.queryByText(/1e3/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "OK" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
   });
 
   it("looks up an assigned arbiter through a first-page exact search", async () => {
