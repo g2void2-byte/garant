@@ -59,9 +59,11 @@ import {
   formatAdminAmount,
   formatAdminCurrencyCode,
   formatAdminDealStatus,
+  formatAdminId,
   formatAdminUsd,
   formatAdminUsername,
   hasPositiveAdminDecimal,
+  parseAdminId,
 } from "./format";
 
 const EVENT_KIND: Record<string, string> = {
@@ -124,7 +126,7 @@ export default function AdminDealDetailPage() {
   return (
     <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
-        title={deal ? `Сделка #${deal.id}` : "Сделка"}
+        title={deal ? `Сделка #${formatAdminId(deal.id)}` : "Сделка"}
         subtitle={deal ? formatAdminDealStatus(deal.status) : undefined}
       />
       {isLoading || !deal ? (
@@ -144,9 +146,9 @@ export default function AdminDealDetailPage() {
             commissionPaid={deal.commission_paid}
             topupDepositId={deal.topup_deposit_id}
           />
-          {me?.is_admin && <ActionPanel deal={deal} currentAdminId={me.id} />}
+          {me?.is_admin && <ActionPanel deal={deal} dealId={dealId} currentAdminId={me.id} />}
           <EventsTimeline deal={deal} />
-          <MessagesFeed deal={deal} />
+          <MessagesFeed deal={deal} dealId={dealId} />
         </div>
       )}
     </Page>
@@ -219,7 +221,9 @@ function BalanceSnapshotCard({
             <div className="font-semibold">{formatAdminAmount(commission)}</div>
             <div className="text-[11px] text-text-muted">
               {commissionPaid ? "оплачена" : "ожидает оплаты"}
-              {topupDepositId ? ` · депозит #${topupDepositId}` : ""}
+              {topupDepositId !== null && topupDepositId !== undefined
+                ? ` · депозит #${formatAdminId(topupDepositId)}`
+                : ""}
             </div>
           </div>
         </div>
@@ -234,7 +238,7 @@ function PartyCard({ side, snap }: { side: string; snap: AdminBalanceSnapshotDto
     <div className="bg-panel rounded-card p-3">
       <div className="text-[11px] uppercase tracking-wide text-text-muted">{side}</div>
       <div className="mt-1 font-semibold truncate">{snap.display_name}</div>
-      <div className="text-xs text-text-muted truncate">{formatAdminUsername(snap.username)} · id {snap.user_id}</div>
+      <div className="text-xs text-text-muted truncate">{formatAdminUsername(snap.username)} · id {formatAdminId(snap.user_id)}</div>
       <div className="mt-2 text-xs text-text-muted">
         Свободно <span className="text-text font-medium">{formatAdminAmount(snap.amount, 4)}</span>{" "}
         {currencyCode}
@@ -249,7 +253,15 @@ function PartyCard({ side, snap }: { side: string; snap: AdminBalanceSnapshotDto
 
 // ── Actions ───────────────────────────────────────────────────────────────
 
-function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; currentAdminId?: number }) {
+function ActionPanel({
+  deal,
+  dealId,
+  currentAdminId,
+}: {
+  deal: AdminDealDetailDto;
+  dealId: number;
+  currentAdminId?: number;
+}) {
   const navigate = useNavigate();
   const toast = useToast();
   const [sheet, setSheet] = useState<null | "release" | "refund" | "split" | "arbitration" | "assign" | "delete">(null);
@@ -286,7 +298,8 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
 
   const approvedApprovalId = (action: "release" | "refund" | "split") => {
     if (parsedApprovalId !== null) return parsedApprovalId;
-    return approvals.find((a) => a.status === "approved" && a.action === actionName(action))?.id;
+    const approval = approvals.find((a) => a.status === "approved" && a.action === actionName(action));
+    return approval ? parseAdminId(approval.id) ?? undefined : undefined;
   };
 
   const run = async (action: "release" | "refund" | "split" | "arbitration" | "assign" | "delete") => {
@@ -304,9 +317,9 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
         return;
       }
       if (action === "release") {
-        const result = await release.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined, approval_id: approvedApprovalId("release") } });
+        const result = await release.mutateAsync({ dealId, body: { reason: reason || undefined, approval_id: approvedApprovalId("release") } });
         if ("pending_approval" in result && result.pending_approval) {
-          toast.show({ kind: "success", title: "Needs second admin", body: `Approval #${result.pending_approval.id}` });
+          toast.show({ kind: "success", title: "Needs second admin", body: `Approval #${formatAdminId(result.pending_approval.id)}` });
           setSheet(null);
           setReason("");
           setApprovalId("");
@@ -314,9 +327,9 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
         }
         toast.show({ kind: "success", title: "Средства переданы продавцу" });
       } else if (action === "refund") {
-        const result = await refund.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined, approval_id: approvedApprovalId("refund") } });
+        const result = await refund.mutateAsync({ dealId, body: { reason: reason || undefined, approval_id: approvedApprovalId("refund") } });
         if ("pending_approval" in result && result.pending_approval) {
-          toast.show({ kind: "success", title: "Needs second admin", body: `Approval #${result.pending_approval.id}` });
+          toast.show({ kind: "success", title: "Needs second admin", body: `Approval #${formatAdminId(result.pending_approval.id)}` });
           setSheet(null);
           setReason("");
           setApprovalId("");
@@ -329,11 +342,11 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
           return;
         }
         const result = await split.mutateAsync({
-          dealId: deal.id,
+          dealId,
           body: { buyer_percent: parsedSplitBuyerPct, reason: reason || undefined, approval_id: approvedApprovalId("split") },
         });
         if ("pending_approval" in result && result.pending_approval) {
-          toast.show({ kind: "success", title: "Needs second admin", body: `Approval #${result.pending_approval.id}` });
+          toast.show({ kind: "success", title: "Needs second admin", body: `Approval #${formatAdminId(result.pending_approval.id)}` });
           setSheet(null);
           setReason("");
           setApprovalId("");
@@ -341,7 +354,7 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
         }
         toast.show({ kind: "success", title: `Сплит ${parsedSplitBuyerPct}% / ${100 - parsedSplitBuyerPct}%` });
       } else if (action === "arbitration") {
-        await arb.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined } });
+        await arb.mutateAsync({ dealId, body: { reason: reason || undefined } });
         toast.show({ kind: "success", title: "Арбитраж открыт" });
       } else if (action === "assign") {
         if (!arbiterUsername.trim()) {
@@ -369,13 +382,18 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
           toast.show({ kind: "error", title: "Этот юзер не арбитр" });
           return;
         }
+        const arbiterId = parseAdminId(candidate.id);
+        if (arbiterId === null) {
+          toast.show({ kind: "error", title: "Неверный ID арбитра" });
+          return;
+        }
         await assign.mutateAsync({
-          dealId: deal.id,
-          body: { arbiter_id: candidate.id },
+          dealId,
+          body: { arbiter_id: arbiterId },
         });
         toast.show({ kind: "success", title: "Арбитр назначен" });
       } else if (action === "delete") {
-        await del.mutateAsync({ dealId: deal.id, body: { reason: reason || undefined } });
+        await del.mutateAsync({ dealId, body: { reason: reason || undefined } });
         toast.show({ kind: "success", title: "Сделка удалена, средства возвращены" });
         navigate("/admin/deals", { replace: true });
       }
@@ -439,6 +457,8 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
         <div className="rounded-card border border-border bg-panel-2 p-3 space-y-2">
           <div className="text-xs uppercase tracking-wide text-text-muted">Approvals</div>
           {approvals.map((a) => {
+            const approvalId = parseAdminId(a.id);
+            const requestedById = parseAdminId(a.requested_by_id);
             const canApproveMoneyApproval = hasPositiveAdminDecimal(a.amount);
             const actionLabel = formatAdminApprovalAction(a.action);
             const statusLabel = formatAdminApprovalStatus(a.status);
@@ -449,9 +469,9 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
                 : null;
 
             return (
-              <div key={a.id} className="flex items-center gap-2 text-xs">
+              <div key={`${formatAdminId(a.id)}-${a.created_at}`} className="flex items-center gap-2 text-xs">
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">#{a.id} · {actionLabel} · {statusLabel}</div>
+                  <div className="font-medium truncate">#{formatAdminId(a.id)} · {actionLabel} · {statusLabel}</div>
                   <div className="text-text-muted truncate">
                     {formattedAmount} {formatAdminCurrencyCode(a.currency_code)}
                     {formattedUsdEstimate ? ` · ~${formattedUsdEstimate}` : ""}
@@ -463,13 +483,15 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
                       size="sm"
                       variant="secondary"
                       disabled={
+                        approvalId === null ||
                         !canApproveMoneyApproval ||
-                        a.requested_by_id === currentAdminId ||
+                        requestedById === currentAdminId ||
                         approve.isPending
                       }
                       onClick={async () => {
+                        if (approvalId === null) return;
                         try {
-                          await approve.mutateAsync(a.id);
+                          await approve.mutateAsync(approvalId);
                           toast.show({ kind: "success", title: "Approved" });
                         } catch (e) {
                           toast.show({ kind: "error", title: "Error", body: (e as Error).message });
@@ -481,10 +503,11 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={reject.isPending}
+                      disabled={approvalId === null || reject.isPending}
                       onClick={async () => {
+                        if (approvalId === null) return;
                         try {
-                          await reject.mutateAsync(a.id);
+                          await reject.mutateAsync(approvalId);
                           toast.show({ kind: "success", title: "Rejected" });
                         } catch (e) {
                           toast.show({ kind: "error", title: "Error", body: (e as Error).message });
@@ -616,25 +639,31 @@ function EventsTimeline({ deal }: { deal: AdminDealDetailDto }) {
 
 // ── Messages ─────────────────────────────────────────────────────────────
 
-function MessagesFeed({ deal }: { deal: AdminDealDetailDto }) {
+function MessagesFeed({ deal, dealId }: { deal: AdminDealDetailDto; dealId: number }) {
   const toast = useToast();
-  const { data: messages, isLoading } = useDealMessages(deal.id);
-  const loadOlder = useLoadOlderDealMessages(deal.id);
-  const sendMessage = useSendDealMessage(deal.id);
+  const { data: messages, isLoading } = useDealMessages(dealId);
+  const loadOlder = useLoadOlderDealMessages(dealId);
+  const sendMessage = useSendDealMessage(dealId);
   const [text, setText] = useState("");
   const [reachedOldest, setReachedOldest] = useState(false);
 
   useEffect(() => {
     setReachedOldest(false);
-  }, [deal.id]);
+  }, [dealId]);
 
   const items = messages ?? [];
   const canLoadOlder = !reachedOldest && items.length >= DEAL_MESSAGE_PAGE_SIZE;
 
   const onLoadOlder = async () => {
     if (!items.length || loadOlder.isPending) return;
+    const beforeId = parseAdminId(items[0].id);
+    if (beforeId === null) {
+      toast.show({ kind: "error", title: "Неверный ID сообщения" });
+      setReachedOldest(true);
+      return;
+    }
     try {
-      const page = await loadOlder.mutateAsync({ beforeId: items[0].id });
+      const page = await loadOlder.mutateAsync({ beforeId });
       if (page.length < DEAL_MESSAGE_PAGE_SIZE) {
         setReachedOldest(true);
       }
@@ -683,8 +712,9 @@ function MessagesFeed({ deal }: { deal: AdminDealDetailDto }) {
             </li>
           )}
           {items.map((m) => {
-            const isBuyer = m.sender_id === deal.buyer.user_id;
-            const isSeller = m.sender_id === deal.seller.user_id;
+            const senderId = parseAdminId(m.sender_id);
+            const isBuyer = senderId !== null && senderId === parseAdminId(deal.buyer.user_id);
+            const isSeller = senderId !== null && senderId === parseAdminId(deal.seller.user_id);
             const side = isBuyer ? "buyer" : isSeller ? "seller" : "staff";
             return (
               <li

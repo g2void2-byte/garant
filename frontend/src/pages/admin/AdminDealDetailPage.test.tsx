@@ -540,6 +540,46 @@ describe("<AdminDealDetailPage />", () => {
     );
   });
 
+  it("uses the canonical route id for admin mutations when payload deal id is malformed", async () => {
+    mockState.deal = makeDeal({ id: "0x10" as unknown as number });
+    mockState.release.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    const { container } = renderPage("10");
+
+    expect(container.textContent).toContain("#\u2014");
+    expect(container.textContent).not.toContain("0x10");
+
+    const releaseButton = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent?.includes("\u041f\u0440\u0438\u043d\u0443\u0434\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0435"));
+    expect(releaseButton).toBeDefined();
+    await user.click(releaseButton!);
+    const confirmBtns = await screen.findAllByRole("button", {
+      name: /\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044c/i,
+    });
+    await user.click(confirmBtns[confirmBtns.length - 1]);
+
+    await waitFor(() =>
+      expect(mockState.release.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ dealId: 10 }),
+      ),
+    );
+  });
+
+  it("blocks pending approval actions for malformed runtime approval ids", () => {
+    mockState.deal = makeDeal({
+      pending_approvals: [
+        makeApproval({ id: "0x4d" as unknown as number }),
+      ],
+    });
+    const { container } = renderPage();
+
+    expect(container.textContent).toContain("#\u2014");
+    expect(container.textContent).not.toContain("0x4d");
+    expect(screen.getByRole("button", { name: "OK" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
+  });
+
   it("blocks exponent split percent before sending an admin split", async () => {
     mockState.deal = makeDeal();
     const user = userEvent.setup();
@@ -555,6 +595,35 @@ describe("<AdminDealDetailPage />", () => {
     expect(mockState.split.mutateAsync).not.toHaveBeenCalled();
     expect(toastSpy).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "error", title: "Доля покупателя должна быть 0..100" }),
+    );
+  });
+
+  it("blocks malformed arbiter ids returned from admin user search", async () => {
+    mockState.deal = makeDeal({ status: "arbitration" });
+    apiGetSpy.mockReturnValueOnce({
+      json: async () => ({
+        items: [{ id: "0x309", username: "arbiter1", is_arbiter: true }],
+      }),
+    });
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(
+      screen.getByRole("button", { name: /\u041d\u0430\u0437\u043d\u0430\u0447\u0438\u0442\u044c/i }),
+    );
+    await user.type(screen.getByPlaceholderText("@arbiter1"), "@arbiter1");
+    const confirmBtns = await screen.findAllByRole("button", {
+      name: /\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044c/i,
+    });
+    await user.click(confirmBtns[confirmBtns.length - 1]);
+
+    await waitFor(() => expect(apiGetSpy).toHaveBeenCalled());
+    expect(mockState.assign.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "error",
+        title: "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 ID \u0430\u0440\u0431\u0438\u0442\u0440\u0430",
+      }),
     );
   });
 
@@ -604,6 +673,31 @@ describe("<AdminDealDetailPage />", () => {
       expect(mockState.loadOlder.mutateAsync).toHaveBeenCalledWith({ beforeId: 100 }),
     );
     await waitFor(() => expect(getLoadOlderButton()).toBeUndefined());
+  });
+
+  it("does not load older chat messages with malformed runtime cursor ids", async () => {
+    mockState.deal = makeDeal();
+    mockState.messages = Array.from({ length: 50 }, (_, index) =>
+      makeMessage({
+        id: (index === 0 ? "0x64" : 101 + index) as unknown as number,
+        text: `message ${index}`,
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderPage();
+    const loadOlderButton = getLoadOlderButton();
+    expect(loadOlderButton).toBeDefined();
+    await user.click(loadOlderButton!);
+
+    expect(mockState.loadOlder.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "error",
+        title: "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 ID \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f",
+      }),
+    );
+    expect(getLoadOlderButton()).toBeUndefined();
   });
 
   it("sends admin chat messages through the shared message hook", async () => {

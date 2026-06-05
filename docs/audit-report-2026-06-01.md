@@ -196,6 +196,7 @@
 - M-224: admin finance queues now validate runtime deposit/withdrawal ids before money mutations.
 - M-225: user and notification list rows now validate runtime ids before route/read actions.
 - M-226: public service comment delete now validates runtime comment ids before mutation.
+- M-227: admin deal detail now uses canonical route ids and validates nested action ids.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2520,6 +2521,16 @@ Links: `frontend/src/pages/search/ServiceDetailPage.tsx`, regression in `Service
 Risk: delete is a destructive user-facing action. Authorization checks are not a substitute for validating the target id at the UI mutation boundary.
 
 Fix: comment rows now parse runtime comment ids with the shared positive-id parser, render delete only for valid positive ids, and call the mutation with the parsed number. Regressions cover both normal delete and malformed-id suppression.
+
+### M-227. Admin deal detail trusted nested runtime ids for mutations
+
+Links: `frontend/src/pages/admin/AdminDealDetailPage.tsx`, regression in `AdminDealDetailPage.test.tsx`.
+
+The admin deal detail page loaded the deal by a validated route id, but then reused nested runtime ids from the response for follow-up actions: `deal.id` became the target of force-release/refund/split/arbitration/delete, pending approval ids were sent directly to approve/reject or auto approval payloads, arbiter search results sent raw `candidate.id`, and chat history used raw message ids as cursors. The page also displayed several raw nested ids.
+
+Risk: this is a privileged admin surface with money-moving and destructive actions. Once the route id is validated, later mutation targets and cursors should not be re-derived from unvalidated response fields.
+
+Fix: admin deal actions and chat hooks now use the canonical route id, nested approval/arbiter/message ids are parsed before mutation/cursor use, malformed approval ids disable approval buttons, malformed chat cursors stop pagination, and visible nested ids are formatted through the admin id boundary. Regressions cover malformed payload deal ids, approval ids, arbiter ids, and chat cursor ids.
 
 ## Наблюдения без отдельного finding
 
