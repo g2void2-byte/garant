@@ -170,6 +170,7 @@
 - M-198: PIN unlock/reset attempts counters now reject malformed runtime values instead of rendering `NaN`/invalid counts.
 - M-199: admin user wallet/content rows now format malformed runtime balances, counters, and ratings as neutral values instead of raw DTO strings.
 - M-200: admin taxonomy currency-limit rows and system alert counters now render malformed runtime numbers as neutral values.
+- M-201: create-deal insufficient-funds errors now validate runtime money fields and currency codes before showing balance hints.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2234,6 +2235,16 @@ After the broader admin numeric-display hardening, two operator-facing rows stil
 Risk: currency limits and operational alerts are decision surfaces for admins. Raw malformed numbers can make a corrupted DTO look like intentional configuration or a real system count, which weakens triage and auditability.
 
 Fix: taxonomy currency limits now use the strict admin amount formatter with each currency's decimals, and operational alert counts use the strict admin count formatter. Regressions cover malformed currency limits and malformed alert counts rendering as neutral dashes without leaking the raw DTO strings.
+
+### M-201. Create-deal insufficient-funds errors trusted malformed runtime money
+
+Links: `frontend/src/pages/deals/CreateDealPage.tsx`, shared currency-code normalizer `frontend/src/lib/currencyCodes.ts`, regression `frontend/src/pages/deals/CreateDealPage.test.tsx`.
+
+The create-deal page parsed the structured `insufficient_funds` error by checking only that `required`, `balance`, `deficit`, and `currency_code` were strings. It then rendered those values directly in the toast and inline alert. A malformed runtime payload such as `"1e2"` / `"0x10"` or a non-contract currency code could therefore appear as a credible balance hint while the rest of the create-deal money path used strict decimal parsing.
+
+Risk: the insufficient-funds alert is shown exactly when the user is deciding whether to reduce the deal amount or fund the wallet. Invalid money fields or currency labels in that alert can mislead the user about how much is missing or which wallet is involved.
+
+Fix: the structured error parser now accepts only strict non-negative decimal strings and a normalized contract currency code. Malformed `insufficient_funds` payloads fall back to a safe generic balance-check error instead of rendering raw JSON or raw money strings. Regressions cover valid normalized currency codes, malformed money fields, malformed currency codes, and partial structured payloads.
 
 ## Наблюдения без отдельного finding
 

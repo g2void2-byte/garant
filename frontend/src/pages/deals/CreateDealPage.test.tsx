@@ -524,6 +524,77 @@ describe("<CreateDealPage />", () => {
     );
   });
 
+  it("normalizes insufficient-funds currency codes before display", async () => {
+    mockState.createMutation.mutateAsync.mockRejectedValue(
+      new Error(JSON.stringify({
+        code: "insufficient_funds",
+        message: "Not enough balance",
+        required: "10.00",
+        balance: "1.00",
+        deficit: "9.00",
+        currency_code: " usd ",
+      })),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await submitDealForm(user);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("9.00 USD");
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "Не хватает 9.00 USD" }),
+    );
+  });
+
+  it("treats malformed insufficient-funds money as a generic API error", async () => {
+    const payload = {
+      code: "insufficient_funds",
+      message: "Not enough balance",
+      required: "1e2",
+      balance: "0x10",
+      deficit: "9.00",
+      currency_code: "USD",
+    };
+    mockState.createMutation.mutateAsync.mockRejectedValue(new Error(JSON.stringify(payload)));
+    const user = userEvent.setup();
+    renderPage();
+
+    await submitDealForm(user);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "error",
+        title: "Не удалось проверить баланс",
+      }),
+    );
+  });
+
+  it("treats malformed insufficient-funds currency codes as a generic API error", async () => {
+    const payload = {
+      code: "insufficient_funds",
+      message: "Not enough balance",
+      required: "10.00",
+      balance: "1.00",
+      deficit: "9.00",
+      currency_code: "../USD",
+    };
+    mockState.createMutation.mutateAsync.mockRejectedValue(new Error(JSON.stringify(payload)));
+    const user = userEvent.setup();
+    renderPage();
+
+    await submitDealForm(user);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "error",
+        title: "Не удалось проверить баланс",
+      }),
+    );
+  });
+
   it("treats partial insufficient-funds JSON as a generic API error", async () => {
     mockState.createMutation.mutateAsync.mockRejectedValue(
       new Error(JSON.stringify({ code: "insufficient_funds" })),
@@ -540,7 +611,7 @@ describe("<CreateDealPage />", () => {
     expect(toastSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: "error",
-        title: JSON.stringify({ code: "insufficient_funds" }),
+        title: "Не удалось проверить баланс",
       }),
     );
   });

@@ -24,6 +24,7 @@ import {
 import { haptic } from "@/lib/tg";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { parsePositiveDecimalInput } from "@/lib/formNumbers";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { normalizeUsernameRef } from "@/lib/usernames";
 import {
   formatWalletBalanceCurrency,
@@ -58,12 +59,46 @@ function isInsufficientFundsDetail(value: unknown): value is InsufficientFundsDe
   );
 }
 
+function parseInsufficientMoney(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  const parsed = parseDecimalValue(trimmed);
+  return parsed !== null && parsed >= 0 ? trimmed : null;
+}
+
+function isInsufficientFundsPayloadError(err: unknown): boolean {
+  const raw = (err as Error | undefined)?.message;
+  if (!raw) return false;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRecord(parsed) && parsed.code === "insufficient_funds";
+  } catch {
+    return false;
+  }
+}
+
 function parseInsufficientFunds(err: unknown): InsufficientFundsDetail | null {
   const raw = (err as Error | undefined)?.message;
   if (!raw) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (isInsufficientFundsDetail(parsed)) return parsed;
+    if (!isInsufficientFundsDetail(parsed)) return null;
+    const required = parseInsufficientMoney(parsed.required);
+    const balance = parseInsufficientMoney(parsed.balance);
+    const deficit = parseInsufficientMoney(parsed.deficit);
+    const currencyCode =
+      parsed.currency_code === null
+        ? null
+        : normalizeCurrencyCode(parsed.currency_code);
+    if (required === null || balance === null || deficit === null) return null;
+    if (parsed.currency_code !== null && currencyCode === null) return null;
+    return {
+      ...parsed,
+      required,
+      balance,
+      deficit,
+      currency_code: currencyCode,
+    };
   } catch {
     /* not JSON — fall through to generic error path */
   }
@@ -276,7 +311,9 @@ export default function CreateDealPage() {
       }
       toast.show({
         kind: "error",
-        title: (e as Error)?.message || "Не удалось создать сделку",
+        title: isInsufficientFundsPayloadError(e)
+          ? "Не удалось проверить баланс"
+          : (e as Error)?.message || "Не удалось создать сделку",
       });
     } finally {
       // Bug-11c — the PIN modal already self-closes on
