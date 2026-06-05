@@ -167,6 +167,7 @@
 - M-195: admin service edit/delete audit payloads now preserve Decimal money fields as strings and keep delete-time deposit context.
 - M-196: admin settings audit payloads now preserve Decimal settings as strings instead of JSON numbers.
 - M-197: admin currency audit payloads now preserve Decimal limits as strings and keep full delete-time currency context.
+- M-198: PIN unlock/reset attempts counters now reject malformed runtime values instead of rendering `NaN`/invalid counts.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2201,6 +2202,16 @@ The currency upsert endpoint wrote `min_deposit` and `min_withdraw` audit values
 Risk: currency limits control deposit/withdrawal validation and are reference data that may be deleted after operational cleanup. Rounding the update audit payload or deleting a row without the full snapshot weakens the only durable record of the exact limits and validation policy that existed at the time.
 
 Fix: currency audit snapshots now use a dedicated helper that stores Decimal limits as strings and includes the full relevant currency context. Regressions cover precise create/update audit payloads plus a delete snapshot after the currency row is gone.
+
+### M-198. PIN attempts counters trusted malformed runtime values
+
+Links: `frontend/src/pages/pin/PinPage.tsx`, `frontend/src/pages/pin/PinResetPage.tsx`, shared formatter `frontend/src/lib/format.ts`, regressions in the adjacent PIN page tests.
+
+The PIN unlock screen rendered `status.attempts_left` directly, and the standalone PIN reset page rendered any value whose runtime type was `number`. If a stale API/client boundary, corrupted test fixture, or malformed runtime payload supplied `NaN`, `Infinity`, a negative value, or another unsafe number, the lock/recovery UI could show misleading text such as `NaN` attempts left.
+
+Risk: the PIN screens are security UX. Users should not receive impossible or malformed lockout/retry counters while deciding whether to retry, wait, or start account recovery.
+
+Fix: the unlock screen now formats attempts through the shared strict non-negative count formatter, and the reset page only renders the counter after strict safe-integer validation. Regressions cover malformed attempts counters on both PIN surfaces.
 
 ## Наблюдения без отдельного finding
 

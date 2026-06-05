@@ -10,6 +10,7 @@ import { PinPad } from "@/components/ui/PinPad";
 import { useToast } from "@/components/ui/Toast";
 import { Logo } from "@/components/layout/Logo";
 import { PinResetPaywallModal } from "@/components/PinResetPaywallModal";
+import { formatCountValue } from "@/lib/format";
 import { setPinToken } from "@/lib/pin";
 import { haptic } from "@/lib/tg";
 
@@ -216,7 +217,9 @@ export default function PinPage({ status, onUnlocked }: PinPageProps) {
           {locked ? (
             <span className="text-danger">Слишком много попыток. Ждите {lockMessage}.</span>
           ) : (
-            <span className="text-text-muted">Осталось попыток: {status.attempts_left}</span>
+            <span className="text-text-muted">
+              Осталось попыток: {formatCountValue(status.attempts_left)}
+            </span>
           )}
           <button
             type="button"
