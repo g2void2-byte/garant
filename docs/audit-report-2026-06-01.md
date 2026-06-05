@@ -147,6 +147,7 @@
 - M-175: frontend positive money gates now reject malformed runtime amounts before wallet available-balance hints and deal commission rows.
 - M-176: deal topup invoice amount rows now validate runtime money values before rendering create/detail invoice totals.
 - M-177: admin audit/user identity labels now reject malformed runtime ids and counts before rendering operational identifiers.
+- M-178: deal topup payment actions now require a strict positive invoice total before opening the provider link.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -1981,6 +1982,16 @@ Most admin counters were already strict, but several operational identity labels
 Risk: these are operator-facing investigation screens. A malformed identifier rendered raw can send an admin to the wrong mental model while tracing audit events, users, bans, freezes, or trust-deposit changes.
 
 Fix: added shared `formatAdminId()` on top of the strict integer parser and routed audit/user identity labels through strict id/count formatters. Malformed or zero identifiers render as a neutral dash, valid numeric strings remain supported, and regressions cover audit actor/target IDs plus admin user list/detail identity counters.
+
+### M-178. Deal topup payment action stayed enabled after malformed invoice totals
+
+Links: `frontend/src/pages/deals/DealDetailPage.tsx`, shared parser `frontend/src/lib/format.ts`, regression `frontend/src/pages/deals/DealDetailPage.test.tsx`.
+
+M-176 hardened how pending-topup invoice totals are displayed, but the buyer action still rendered `Открыть оплату` whenever a `topup_invoice` object existed. A malformed runtime `total` could therefore show a neutral dash in the invoice row while the same card still opened the upstream provider link.
+
+Risk: the UI could invite payment even after it had already classified the payable amount as invalid. That weakens the money-flow invariant that display, action gating, and modal/payment entry all agree on the same strict invoice total.
+
+Fix: deal detail now parses `topup_invoice.total` with the strict decimal parser before enabling payment actions. The provider link is only shown for buyer-side pending topups with a valid positive total; the cancel action remains available so the user is not trapped behind a corrupt invoice payload.
 
 ## Наблюдения без отдельного finding
 

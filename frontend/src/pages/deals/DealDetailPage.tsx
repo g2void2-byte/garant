@@ -176,7 +176,13 @@ export default function DealDetailPage() {
     (r) => r.deal_id === deal.id && me && r.author_username === me.username,
   );
 
-  const canOpenInvoice = deal.role === "buyer" && deal.status === "pending_topup";
+  const topupInvoiceTotal = parseDecimalValue(deal.topup_invoice?.total);
+  const canOpenInvoice =
+    deal.role === "buyer" &&
+    deal.status === "pending_topup" &&
+    !!deal.topup_invoice &&
+    topupInvoiceTotal !== null &&
+    topupInvoiceTotal > 0;
   const showPaidInvoiceState = deal.status !== "pending_topup" && !!deal.topup_invoice;
 
   const handle = async (
@@ -377,7 +383,9 @@ export default function DealDetailPage() {
                   )}
                   {deal.role === "buyer" && topupInvoice ? (
                     <div className="flex gap-2">
-                      <Button onClick={() => openPaymentLink(topupInvoice.pay_url)}>Открыть оплату</Button>
+                      {canOpenInvoice && (
+                        <Button onClick={() => openPaymentLink(topupInvoice.pay_url)}>Открыть оплату</Button>
+                      )}
                       <Button
                         variant="danger"
                         onClick={cancelPendingTopup}

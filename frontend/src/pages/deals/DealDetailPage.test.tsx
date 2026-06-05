@@ -296,6 +296,8 @@ describe("<DealDetailPage />", () => {
 
     expect(screen.getByText("25.00 USD")).toBeInTheDocument();
     expect(screen.getByText("— USD")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Открыть оплату/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Отменить$/i })).toBeInTheDocument();
     expect(screen.queryByText("1e2 USD")).not.toBeInTheDocument();
   });
 
