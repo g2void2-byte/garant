@@ -79,4 +79,10 @@ describe("<ServiceCard />", () => {
     renderCard({ status: "banned" });
     expect(screen.getByText("Заблокировано")).toBeInTheDocument();
   });
+
+  it("renders unknown runtime statuses as a neutral badge", () => {
+    renderCard({ status: "provider_reconciled" });
+    expect(screen.getByText("Статус неизвестен")).toBeInTheDocument();
+    expect(screen.queryByText("provider_reconciled")).not.toBeInTheDocument();
+  });
 });

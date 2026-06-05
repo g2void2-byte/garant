@@ -188,6 +188,7 @@
 - M-216: admin deal approval rows now neutralize unknown runtime action/status labels.
 - M-217: admin user service rows now neutralize unknown runtime statuses and avoid silent status rewrites.
 - M-218: own-service profile toggles now ignore unknown runtime statuses instead of activating them.
+- M-219: shared service cards now show unknown runtime statuses as neutral badges instead of active-looking rows.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2432,6 +2433,16 @@ The profile page rendered a pause/activate control for every own service whose s
 Risk: this is a user-facing service ownership control. Unsupported status drift should not be silently converted into an activation request, especially for services that may be in a moderation or corrupted state outside the known client contract.
 
 Fix: the toggle now derives a next status only for explicit known states: `active -> paused` and `paused`/`draft -> active`. Unknown or malformed statuses render no toggle, while the delete control remains available. Regressions cover the normal active-to-paused path and the unknown-status no-toggle path.
+
+### M-219. Shared service cards hid unknown runtime statuses as active-looking rows
+
+Links: `frontend/src/components/domain/ServiceCard.tsx`, regression in `frontend/src/components/domain/ServiceCard.test.tsx`.
+
+The shared `ServiceCard` showed badges for `draft`, `paused`, and `banned`, and intentionally showed no badge for `active`. Any unknown runtime status also produced no badge because it missed the map, so a drifted service row like `provider_reconciled` looked the same as an ordinary active service in categories, public profiles, and the own-profile services tab.
+
+Risk: service status controls visibility and moderation state. Hiding unknown status drift behind an active-looking card can mislead users/admins and weaken the invariant added for service edit/toggle surfaces.
+
+Fix: service cards now derive badges through an explicit status helper: `active` still renders no badge, known non-active states keep their previous labels, and unknown or malformed statuses render `Статус неизвестен` with muted styling. Regression coverage pins the unknown-status card behavior.
 
 ## Наблюдения без отдельного finding
 

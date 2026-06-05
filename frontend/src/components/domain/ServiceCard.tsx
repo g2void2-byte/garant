@@ -12,6 +12,18 @@ const STATUS_BADGE: Record<string, { text: string; cls: string }> = {
   banned: { text: "Заблокировано", cls: "bg-danger/15 text-danger" },
 };
 
+const UNKNOWN_SERVICE_STATUS_BADGE = {
+  text: "Статус неизвестен",
+  cls: "bg-panel-2 text-text-muted",
+};
+
+function getServiceStatusBadge(status: unknown): { text: string; cls: string } | null {
+  if (status === "active") return null;
+  return typeof status === "string"
+    ? STATUS_BADGE[status] ?? UNKNOWN_SERVICE_STATUS_BADGE
+    : UNKNOWN_SERVICE_STATUS_BADGE;
+}
+
 export function ServiceCard({
   service,
   index = 0,
@@ -21,7 +33,7 @@ export function ServiceCard({
   index?: number;
   rightSlot?: React.ReactNode;
 }) {
-  const badge = STATUS_BADGE[service.status];
+  const badge = getServiceStatusBadge(service.status);
   const ownerUsername = normalizeUsernameRef(service.owner_username);
   const ownerLabel = ownerUsername
     ? `@${ownerUsername}`
