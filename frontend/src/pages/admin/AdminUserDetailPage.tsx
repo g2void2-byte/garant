@@ -51,7 +51,7 @@ import { haptic } from "@/lib/tg";
 import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
-import { formatAdminCount, formatAdminId, formatAdminRating, formatAdminUsd, formatAdminUsername, hasVisibleAdminBalance } from "./format";
+import { formatAdminAmount, formatAdminCount, formatAdminId, formatAdminRating, formatAdminUsd, formatAdminUsername, hasVisibleAdminBalance } from "./format";
 
 /**
  * Continental admin user detail screen.
@@ -699,7 +699,7 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
               className="flex justify-between bg-panel-2 rounded-button px-3 py-1.5"
             >
               <span className="text-text-muted">{b.currency_code}</span>
-              <span className="font-mono">{b.total}</span>
+              <span className="font-mono">{formatAdminAmount(b.total, b.decimals)}</span>
             </div>
           ))}
         </div>

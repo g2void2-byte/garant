@@ -32,6 +32,7 @@ import { confirmDialog } from "@/lib/dialog";
 import { UserPicker } from "@/components/domain/UserPicker";
 import {
   formatAdminCount,
+  formatAdminRating,
   formatAdminUsdSuffix,
   formatAdminUsername,
   getAdminTotalPages,
@@ -144,12 +145,12 @@ export function ServicesSection({ userId }: SectionProps) {
                       <span>·</span>
                       <span>{s.status}</span>
                       <span>·</span>
-                      <span>{s.deals_count} сделок</span>
+                      <span>{formatAdminCount(s.deals_count)} сделок</span>
                       {s.rating_manual !== null && (
                         <>
                           <span>·</span>
                           <span className="flex items-center gap-0.5">
-                            <Star size={10} className="text-accent" /> {s.rating_manual}
+                            <Star size={10} className="text-accent" /> {formatAdminRating(s.rating_manual)}
                           </span>
                         </>
                       )}
@@ -461,7 +462,7 @@ export function ReviewsSection({ userId }: SectionProps) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] uppercase tracking-wide text-text-muted">
-                      {formatAdminUsername(r.author_username)} → {formatAdminUsername(r.target_username)} · {r.rating}/5
+                      {formatAdminUsername(r.author_username)} → {formatAdminUsername(r.target_username)} · {formatAdminRating(r.rating)}/5
                     </div>
                     <div className="mt-1 text-sm">{r.text}</div>
                   </div>
@@ -717,7 +718,7 @@ export function CommentsSection({ userId }: SectionProps) {
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] uppercase tracking-wide text-text-muted">
                       В услуге #{c.service_id}
-                      {c.rating !== null && ` · ${c.rating}/5`}
+                      {c.rating !== null && ` · ${formatAdminRating(c.rating)}/5`}
                     </div>
                     <div className="mt-1 text-sm">{c.text}</div>
                   </div>

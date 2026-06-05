@@ -168,6 +168,7 @@
 - M-196: admin settings audit payloads now preserve Decimal settings as strings instead of JSON numbers.
 - M-197: admin currency audit payloads now preserve Decimal limits as strings and keep full delete-time currency context.
 - M-198: PIN unlock/reset attempts counters now reject malformed runtime values instead of rendering `NaN`/invalid counts.
+- M-199: admin user wallet/content rows now format malformed runtime balances, counters, and ratings as neutral values instead of raw DTO strings.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2212,6 +2213,16 @@ The PIN unlock screen rendered `status.attempts_left` directly, and the standalo
 Risk: the PIN screens are security UX. Users should not receive impossible or malformed lockout/retry counters while deciding whether to retry, wait, or start account recovery.
 
 Fix: the unlock screen now formats attempts through the shared strict non-negative count formatter, and the reset page only renders the counter after strict safe-integer validation. Regressions cover malformed attempts counters on both PIN surfaces.
+
+### M-199. Admin user wallet/content rows trusted malformed runtime numbers
+
+Links: `frontend/src/pages/admin/AdminUserDetailPage.tsx`, `frontend/src/pages/admin/UserContentSections.tsx`, shared admin formatters `frontend/src/pages/admin/format.ts`, regressions in the adjacent admin page tests.
+
+The admin user detail balance section rendered `AdminUserBalanceDto.total` directly, and the user content rows rendered service `deals_count`, service `rating_manual`, review `rating`, and comment `rating` directly. Other admin list totals and money cells already used strict formatters, so malformed runtime payloads such as `"1e2"` or `"0x10"` could still appear as credible balances, counters, or ratings inside these nested user-detail sections.
+
+Risk: these rows are operator-facing evidence while reviewing a user account. Raw malformed balances/counters/ratings can make a corrupted DTO look intentional and can disagree with adjacent strict admin surfaces.
+
+Fix: per-user wallet totals now use the strict admin amount formatter with currency decimals. User content rows use the shared admin count and rating formatters, preserving canonical values while rendering malformed runtime numbers as a neutral dash. Regressions cover malformed wallet totals, invalid currency decimals, service row counters/ratings, review ratings, and comment ratings.
 
 ## Наблюдения без отдельного finding
 

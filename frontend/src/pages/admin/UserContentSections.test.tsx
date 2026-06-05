@@ -290,6 +290,20 @@ describe("<ServicesSection />", () => {
     expect(screen.getByText("15.25 $")).toBeInTheDocument();
   });
 
+  it("renders malformed service row counters and ratings as neutral values", () => {
+    mockState.services = [
+      makeService({
+        deals_count: "0x10",
+        rating_manual: "1e2",
+      }),
+    ];
+
+    const { container } = renderServicesSection(42);
+
+    expect(container.textContent).toContain("\u2014");
+    expect(container.textContent).not.toMatch(/0x10|1e2/);
+  });
+
   it("submits service decimal fields as exact strings", async () => {
     const user = userEvent.setup();
     mockState.services = [makeService()];
@@ -336,6 +350,15 @@ describe("<CommentsSection />", () => {
 
     expect(screen.getByText(/\(\u2014\)/)).toBeInTheDocument();
     expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+  });
+
+  it("renders malformed comment ratings as a neutral dash", () => {
+    mockState.comments = [makeComment({ rating: "0x10" })];
+
+    const { container } = renderCommentsSection(42);
+
+    expect(container.textContent).toContain("\u2014/5");
+    expect(container.textContent).not.toMatch(/0x10/);
   });
 
   it("blocks rating 0 before updating a comment because the backend accepts 1..5", async () => {
@@ -548,6 +571,15 @@ describe("<ReviewsSection /> · Новый отзыв sheet", () => {
     renderSection(42);
     expect(screen.getAllByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
+  it("renders malformed review ratings as a neutral dash", () => {
+    mockState.reviews = [makeReview({ rating: "1e2" })];
+
+    const { container } = renderSection(42);
+
+    expect(container.textContent).toContain("\u2014/5");
+    expect(container.textContent).not.toMatch(/1e2/);
   });
 
   it("blocks rating 0 before updating a review because the backend accepts 1..5", async () => {
