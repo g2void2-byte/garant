@@ -469,6 +469,25 @@ describe("<AdminDealDetailPage />", () => {
     expect(container.textContent).not.toMatch(/\.\.\/USDT/);
   });
 
+  it("renders unknown pending approval action and status as neutral labels", () => {
+    mockState.deal = makeDeal({
+      pending_approvals: [
+        makeApproval({
+          action: "deal.provider_reconciled",
+          status: "provider_reconciled",
+        }),
+      ],
+    });
+    const { container } = renderPage();
+
+    expect(container.textContent).toContain("Действие неизвестно");
+    expect(container.textContent).toContain("Статус неизвестен");
+    expect(container.textContent).not.toContain("deal.provider_reconciled");
+    expect(container.textContent).not.toContain("provider_reconciled");
+    expect(screen.queryByRole("button", { name: "OK" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();
+  });
+
   it("looks up an assigned arbiter through a first-page exact search", async () => {
     mockState.deal = makeDeal({ status: "arbitration" });
     mockState.assign.mutateAsync.mockResolvedValue({});

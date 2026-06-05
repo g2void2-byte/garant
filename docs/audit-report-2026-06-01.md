@@ -185,6 +185,7 @@
 - M-213: deal list/detail role handling now treats unknown runtime roles as neutral and blocks participant-only cancellation actions.
 - M-214: admin deal list/detail status labels now share a neutral fallback for unknown runtime statuses.
 - M-215: admin deposit status badges now hide unknown runtime values, and withdrawal actions require the row's explicit status.
+- M-216: admin deal approval rows now neutralize unknown runtime action/status labels.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2399,6 +2400,16 @@ Admin deposit badges rendered `d.status` directly when a row carried an unknown 
 Risk: these are manual money-operation queues. Raw unknown deposit statuses can look like supported payment states, and tab-derived withdrawal actions can let an operator act on a row that is not explicitly in the required backend status.
 
 Fix: deposit badges now format statuses through a known-status helper and render `Статус неизвестен` for unknown values. Withdrawal approve/reject and mark-sent controls now require the row's explicit `pending` or `approved` status, independent of the active tab. Regressions cover unknown deposit badges and pending/approved tab drift in the withdrawal queue.
+
+### M-216. Admin deal approval rows leaked unknown runtime action/status labels
+
+Links: `frontend/src/pages/admin/format.ts`, `frontend/src/pages/admin/AdminDealDetailPage.tsx`, regressions in `frontend/src/pages/admin/format.test.ts` and `frontend/src/pages/admin/AdminDealDetailPage.test.tsx`.
+
+The admin deal detail approval panel displayed `a.action` and `a.status` directly in each pending approval row. Known backend values like `deal.force_release` and `pending` were expected, but a drifted DTO could render unknown strings such as `deal.provider_reconciled` or `provider_reconciled` in an operator-facing money approval surface.
+
+Risk: approval rows are used to review second-admin money operations. Raw unknown action/status labels can make unsupported workflow drift look like a real approval state or requested operation.
+
+Fix: approval rows now format action and status through explicit known-value maps. Supported labels preserve the existing text, while unknown or malformed values render `Действие неизвестно` / `Статус неизвестен`; pending approve/reject buttons still require the exact `pending` status. Regressions cover the helpers and the deal-detail approval row.
 
 ## Наблюдения без отдельного finding
 

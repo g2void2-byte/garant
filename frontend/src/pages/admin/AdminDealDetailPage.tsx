@@ -54,6 +54,8 @@ import { haptic } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 import {
+  formatAdminApprovalAction,
+  formatAdminApprovalStatus,
   formatAdminAmount,
   formatAdminCurrencyCode,
   formatAdminDealStatus,
@@ -438,6 +440,8 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
           <div className="text-xs uppercase tracking-wide text-text-muted">Approvals</div>
           {approvals.map((a) => {
             const canApproveMoneyApproval = hasPositiveAdminDecimal(a.amount);
+            const actionLabel = formatAdminApprovalAction(a.action);
+            const statusLabel = formatAdminApprovalStatus(a.status);
             const formattedAmount = formatAdminAmount(a.amount, 8);
             const formattedUsdEstimate =
               a.amount_usd_estimate !== null && a.amount_usd_estimate !== undefined
@@ -447,7 +451,7 @@ function ActionPanel({ deal, currentAdminId }: { deal: AdminDealDetailDto; curre
             return (
               <div key={a.id} className="flex items-center gap-2 text-xs">
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">#{a.id} · {a.action} · {a.status}</div>
+                  <div className="font-medium truncate">#{a.id} · {actionLabel} · {statusLabel}</div>
                   <div className="text-text-muted truncate">
                     {formattedAmount} {formatAdminCurrencyCode(a.currency_code)}
                     {formattedUsdEstimate ? ` · ~${formattedUsdEstimate}` : ""}

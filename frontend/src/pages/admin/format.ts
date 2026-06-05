@@ -5,6 +5,8 @@ const MISSING_USERNAME_LABEL = "username \u043d\u0435 \u0437\u0430\u0434\u0430\u
 const DASH = "\u2014";
 export const UNKNOWN_ADMIN_DEAL_STATUS_LABEL = "Статус неизвестен";
 export const UNKNOWN_ADMIN_FINANCE_STATUS_LABEL = UNKNOWN_ADMIN_DEAL_STATUS_LABEL;
+export const UNKNOWN_ADMIN_APPROVAL_ACTION_LABEL = "Действие неизвестно";
+export const UNKNOWN_ADMIN_APPROVAL_STATUS_LABEL = UNKNOWN_ADMIN_DEAL_STATUS_LABEL;
 
 export const ADMIN_DEAL_STATUS_LABELS: Record<string, string> = {
   cancelled: "Отменена",
@@ -25,6 +27,19 @@ export const ADMIN_DEPOSIT_STATUS_LABELS: Record<string, string> = {
   paid: "paid",
   refunded: "refunded",
   expired: "expired",
+};
+
+export const ADMIN_APPROVAL_ACTION_LABELS: Record<string, string> = {
+  "deal.force_release": "deal.force_release",
+  "deal.force_refund": "deal.force_refund",
+  "deal.split": "deal.split",
+};
+
+export const ADMIN_APPROVAL_STATUS_LABELS: Record<string, string> = {
+  pending: "pending",
+  approved: "approved",
+  executed: "executed",
+  rejected: "rejected",
 };
 
 export function formatAdminUsername(username: string | null | undefined): string {
@@ -62,6 +77,18 @@ export function formatAdminDepositStatus(value: unknown): string {
   return typeof value === "string"
     ? ADMIN_DEPOSIT_STATUS_LABELS[value] ?? UNKNOWN_ADMIN_FINANCE_STATUS_LABEL
     : UNKNOWN_ADMIN_FINANCE_STATUS_LABEL;
+}
+
+export function formatAdminApprovalAction(value: unknown): string {
+  return typeof value === "string"
+    ? ADMIN_APPROVAL_ACTION_LABELS[value] ?? UNKNOWN_ADMIN_APPROVAL_ACTION_LABEL
+    : UNKNOWN_ADMIN_APPROVAL_ACTION_LABEL;
+}
+
+export function formatAdminApprovalStatus(value: unknown): string {
+  return typeof value === "string"
+    ? ADMIN_APPROVAL_STATUS_LABELS[value] ?? UNKNOWN_ADMIN_APPROVAL_STATUS_LABEL
+    : UNKNOWN_ADMIN_APPROVAL_STATUS_LABEL;
 }
 
 export function pickAdminMutationCurrency(

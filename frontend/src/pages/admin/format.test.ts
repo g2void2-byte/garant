@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatAdminApprovalAction,
+  formatAdminApprovalStatus,
   formatAdminAmount,
   formatAdminCount,
   formatAdminCurrencyCode,
@@ -54,6 +56,15 @@ describe("admin format helpers", () => {
     expect(formatAdminDepositStatus("pending")).toBe("pending");
     expect(formatAdminDepositStatus("provider_reconciled")).toBe("Статус неизвестен");
     expect(formatAdminDepositStatus(null)).toBe("Статус неизвестен");
+  });
+
+  it("formats admin approval action/status labels without leaking unknown runtime values", () => {
+    expect(formatAdminApprovalAction("deal.force_release")).toBe("deal.force_release");
+    expect(formatAdminApprovalAction("deal.provider_reconciled")).toBe("Действие неизвестно");
+    expect(formatAdminApprovalAction(null)).toBe("Действие неизвестно");
+    expect(formatAdminApprovalStatus("approved")).toBe("approved");
+    expect(formatAdminApprovalStatus("provider_reconciled")).toBe("Статус неизвестен");
+    expect(formatAdminApprovalStatus(null)).toBe("Статус неизвестен");
   });
 
   it("picks admin mutation currencies from normalized known codes", () => {
