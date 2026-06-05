@@ -198,6 +198,7 @@
 - M-226: public service comment delete now validates runtime comment ids before mutation.
 - M-227: admin deal detail now uses canonical route ids and validates nested action ids.
 - M-228: admin user content edit sheets now validate service/review/comment/user ids before mutations.
+- M-229: admin user detail now uses the canonical route user id for all user-scoped admin actions.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2542,6 +2543,16 @@ The admin user content sections validated paging/count/rating values, but edit s
 Risk: these are admin "act on behalf of user" controls for mutating or deleting user-generated services, reviews, and comments. A malformed response id should block the specific mutation instead of relying on backend rejection or creating misleading row metadata.
 
 Fix: service/review/comment sheets now parse ids through the admin id boundary before mutation use, disable edit/delete actions when row ids are malformed, create-review validates the picked author id, and comment service ids render through `formatAdminId`. Regressions cover normalized string ids, malformed service/review/comment ids, malformed picked author ids, and malformed comment service ids.
+
+### M-229. Admin user detail reused payload user ids after route validation
+
+Links: `frontend/src/pages/admin/AdminUserDetailPage.tsx`, regressions in `AdminUserDetailPage.test.tsx` and `AdminUserDetailPage.numbers.test.tsx`.
+
+The admin user detail page parsed `/admin/users/:id` before loading data, but then used `user.id` from the response for moderation, role, rating, stats, trust-deposit, wallet, and child content-section targets. The self-action disable rule also compared `me.id` against `user.id`. A malformed runtime id such as `"0x5"` could therefore retarget or break privileged user-scoped mutations after the route id had already been canonicalized.
+
+Risk: this page is a privileged user administration surface. Once the route id is validated, follow-up actions should stay bound to that route target and not re-derive the target user from an untrusted response field.
+
+Fix: the page now passes the canonical route `userId` through every user-scoped section and hook, and computes self-action disabling from parsed `me.id` versus that route id. Regressions cover malformed payload ids for content sections, moderation, self-disable, rating, stats, trust deposit, and wallet hooks.
 
 ## Наблюдения без отдельного finding
 

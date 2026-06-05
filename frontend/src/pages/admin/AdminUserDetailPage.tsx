@@ -52,7 +52,7 @@ import { haptic } from "@/lib/tg";
 import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
 import { parsePositiveIntRouteParam } from "@/lib/routeParams";
-import { formatAdminAmount, formatAdminCount, formatAdminCurrencyCode, formatAdminId, formatAdminRating, formatAdminUsd, formatAdminUsername, hasVisibleAdminBalance, pickAdminMutationCurrency } from "./format";
+import { formatAdminAmount, formatAdminCount, formatAdminCurrencyCode, formatAdminId, formatAdminRating, formatAdminUsd, formatAdminUsername, hasVisibleAdminBalance, parseAdminId, pickAdminMutationCurrency } from "./format";
 
 /**
  * Continental admin user detail screen.
@@ -87,6 +87,8 @@ export default function AdminUserDetailPage() {
   const navigate = useNavigate();
   const { data: me } = useMe();
   const { data: user, isLoading } = useAdminUser(userId);
+  const currentAdminId = parseAdminId(me?.id);
+  const isSelf = userId !== undefined && currentAdminId !== null && currentAdminId === userId;
 
   const __guard = useAdminRedirect();
   if (!__guard.shouldRender) return null;
@@ -112,15 +114,15 @@ export default function AdminUserDetailPage() {
       ) : (
         <div className="px-4 space-y-4 pb-8">
           <IdentityCard user={user} />
-          <ModerationSection user={user} isSelf={user.id === me?.id} />
-          <RolesSection user={user} isSelf={user.id === me?.id} />
-          <RatingSection user={user} />
-          <StatsSection user={user} />
-          <TrustDepositSection user={user} />
-          <BalanceSection user={user} />
-          <ServicesSection userId={user.id} />
-          <ReviewsSection userId={user.id} />
-          <CommentsSection userId={user.id} />
+          <ModerationSection user={user} userId={userId} isSelf={isSelf} />
+          <RolesSection user={user} userId={userId} isSelf={isSelf} />
+          <RatingSection user={user} userId={userId} />
+          <StatsSection user={user} userId={userId} />
+          <TrustDepositSection user={user} userId={userId} />
+          <BalanceSection userId={userId} />
+          <ServicesSection userId={userId} />
+          <ReviewsSection userId={userId} />
+          <CommentsSection userId={userId} />
         </div>
       )}
     </Page>
@@ -193,7 +195,7 @@ function shortDate(iso: string) {
 
 // ── Moderation actions ────────────────────────────────────────────────
 
-function ModerationSection({ user, isSelf }: { user: AdminUserDetailDto; isSelf: boolean }) {
+function ModerationSection({ user, userId, isSelf }: { user: AdminUserDetailDto; userId: number; isSelf: boolean }) {
   const toast = useToast();
   const ban = useAdminBanUser();
   const unban = useAdminUnbanUser();
@@ -211,7 +213,7 @@ function ModerationSection({ user, isSelf }: { user: AdminUserDetailDto; isSelf:
     body?: Record<string, unknown>,
   ) => {
     try {
-      await mutateAsync({ userId: user.id, body });
+      await mutateAsync({ userId, body });
       haptic("success");
       toast.show({ kind: "success", title: label });
     } catch (e) {
@@ -306,7 +308,7 @@ function ModerationSection({ user, isSelf }: { user: AdminUserDetailDto; isSelf:
 
 // ── Roles ─────────────────────────────────────────────────────────────
 
-function RolesSection({ user, isSelf }: { user: AdminUserDetailDto; isSelf: boolean }) {
+function RolesSection({ user, userId, isSelf }: { user: AdminUserDetailDto; userId: number; isSelf: boolean }) {
   const toast = useToast();
   const setRole = useAdminSetRole();
   const [isAdmin, setIsAdmin] = useState(user.is_admin);
@@ -319,7 +321,7 @@ function RolesSection({ user, isSelf }: { user: AdminUserDetailDto; isSelf: bool
   const apply = async () => {
     try {
       await setRole.mutateAsync({
-        userId: user.id,
+        userId,
         body: { is_admin: isAdmin, is_arbiter: isArbiter, is_vip: isVip },
       });
       haptic("success");
@@ -395,7 +397,7 @@ function RoleToggle({
 
 // ── Rating ────────────────────────────────────────────────────────────
 
-function RatingSection({ user }: { user: AdminUserDetailDto }) {
+function RatingSection({ user, userId }: { user: AdminUserDetailDto; userId: number }) {
   const toast = useToast();
   const setRating = useAdminSetRating();
   const [draft, setDraft] = useState(
@@ -410,7 +412,7 @@ function RatingSection({ user }: { user: AdminUserDetailDto }) {
     }
     try {
       await setRating.mutateAsync({
-        userId: user.id,
+        userId,
         body: { rating: value },
       });
       haptic("success");
@@ -480,7 +482,7 @@ interface StatsDraft {
   bad: string;
 }
 
-function StatsSection({ user }: { user: AdminUserDetailDto }) {
+function StatsSection({ user, userId }: { user: AdminUserDetailDto; userId: number }) {
   const toast = useToast();
   const setStats = useAdminSetStats();
   const [draft, setDraft] = useState<StatsDraft>({
@@ -522,7 +524,7 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
       body[f.key] = f.type === "int" ? n : normalizeDecimalInput(raw);
     }
     try {
-      await setStats.mutateAsync({ userId: user.id, body });
+      await setStats.mutateAsync({ userId, body });
       haptic("success");
       toast.show({ kind: "success", title: "Статистика сохранена" });
     } catch (e) {
@@ -567,7 +569,7 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
  * its ``deposit`` field. This section is the only path to mutate
  * the column from the admin panel.
  */
-function TrustDepositSection({ user }: { user: AdminUserDetailDto }) {
+function TrustDepositSection({ user, userId }: { user: AdminUserDetailDto; userId: number }) {
   const toast = useToast();
   const setTrust = useAdminSetTrustDeposit();
   const [amount, setAmount] = useState(String(user.trust_deposit_balance));
@@ -585,7 +587,7 @@ function TrustDepositSection({ user }: { user: AdminUserDetailDto }) {
     }
     try {
       await setTrust.mutateAsync({
-        userId: user.id,
+        userId,
         body: { amount: amountValue, reason: reason.trim() || null },
       });
       haptic("success");
@@ -638,10 +640,10 @@ function TrustDepositSection({ user }: { user: AdminUserDetailDto }) {
 
 // ── Balance ─────────────────────────────────────────────────────────
 
-function BalanceSection({ user }: { user: AdminUserDetailDto }) {
-  const { data: balances } = useAdminUserWallet(user.id);
+function BalanceSection({ userId }: { userId: number }) {
+  const { data: balances } = useAdminUserWallet(userId);
   const { data: currencies } = useAdminCurrencies();
-  const adjust = useAdminAdjustBalance(user.id);
+  const adjust = useAdminAdjustBalance(userId);
   const toast = useToast();
   const fallback = balances?.find(hasVisibleAdminBalance)?.currency_code ?? "USDT";
   const [currency, setCurrency] = useState<string>(() =>

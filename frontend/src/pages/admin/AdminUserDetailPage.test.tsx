@@ -23,6 +23,9 @@ const mockState = vi.hoisted(() => ({
     | { id: number }
     | undefined,
   shouldRender: true as boolean,
+  serviceUserId: undefined as number | undefined,
+  reviewUserId: undefined as number | undefined,
+  commentUserId: undefined as number | undefined,
   ban: {
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
@@ -105,9 +108,18 @@ vi.mock("@/lib/tg", () => ({
 }));
 
 vi.mock("./UserContentSections", () => ({
-  ServicesSection: () => <div data-testid="services" />,
-  ReviewsSection: () => <div data-testid="reviews" />,
-  CommentsSection: () => <div data-testid="comments" />,
+  ServicesSection: ({ userId }: { userId: number }) => {
+    mockState.serviceUserId = userId;
+    return <div data-testid="services" />;
+  },
+  ReviewsSection: ({ userId }: { userId: number }) => {
+    mockState.reviewUserId = userId;
+    return <div data-testid="reviews" />;
+  },
+  CommentsSection: ({ userId }: { userId: number }) => {
+    mockState.commentUserId = userId;
+    return <div data-testid="comments" />;
+  },
 }));
 
 import AdminUserDetailPage from "./AdminUserDetailPage";
@@ -175,6 +187,9 @@ beforeEach(() => {
   mockState.loading = false;
   mockState.me = { id: 999 } as { id: number };
   mockState.shouldRender = true;
+  mockState.serviceUserId = undefined;
+  mockState.reviewUserId = undefined;
+  mockState.commentUserId = undefined;
   mockState.ban = { mutateAsync: vi.fn(), isPending: false };
   mockState.unban = { mutateAsync: vi.fn(), isPending: false };
   mockState.freeze = { mutateAsync: vi.fn(), isPending: false };
@@ -207,6 +222,15 @@ describe("<AdminUserDetailPage />", () => {
     mockState.user = makeUser();
     renderPage("5");
     expect(mockState.lastUserId).toBe(5);
+  });
+
+  it("uses the canonical route id for child content sections when payload id is malformed", () => {
+    mockState.user = makeUser({ id: "0x5" as unknown as number });
+    renderPage("5");
+
+    expect(mockState.serviceUserId).toBe(5);
+    expect(mockState.reviewUserId).toBe(5);
+    expect(mockState.commentUserId).toBe(5);
   });
 
   it("renders skeletons while loading", () => {
@@ -289,6 +313,22 @@ describe("<AdminUserDetailPage />", () => {
     );
   });
 
+  it("uses the canonical route id for moderation when payload id is malformed", async () => {
+    mockState.user = makeUser({ id: "0x5" as unknown as number });
+    mockState.ban.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage("5");
+
+    await user.click(screen.getByRole("button", { name: /\u0417\u0430\u0431\u0430\u043d\u0438\u0442\u044c/ }));
+
+    await waitFor(() =>
+      expect(mockState.ban.mutateAsync).toHaveBeenCalledWith({
+        userId: 5,
+        body: { reason: null },
+      }),
+    );
+  });
+
   it("typing a ban reason sends it as the body", async () => {
     mockState.user = makeUser();
     mockState.ban.mutateAsync.mockResolvedValue({});
@@ -324,6 +364,16 @@ describe("<AdminUserDetailPage />", () => {
     expect(
       screen.getByRole("button", { name: /Разлогинить/ }),
     ).toBeDisabled();
+  });
+
+  it("uses the canonical route id for self-disable when payload id is malformed", () => {
+    mockState.user = makeUser({ id: "0x5" as unknown as number });
+    mockState.me = { id: 5 } as { id: number };
+    renderPage("5");
+
+    expect(screen.getByRole("button", { name: /\u0417\u0430\u0431\u0430\u043d\u0438\u0442\u044c/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /\u0417\u0430\u043c\u043e\u0440\u043e\u0437\u0438\u0442\u044c/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /\u0420\u0430\u0437\u043b\u043e\u0433\u0438\u043d\u0438\u0442\u044c/ })).toBeDisabled();
   });
 
   it("'Сбросить PIN' is disabled when has_pin=false", () => {

@@ -11,6 +11,8 @@ const mockState = vi.hoisted(() => ({
   setStats: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   setTrustDeposit: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   adjustBalance: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
+  walletUserId: undefined as number | undefined,
+  adjustUserId: undefined as number | undefined,
   walletBalances: [] as AdminUserBalanceDto[],
   currencies: [] as AdminCurrencyDto[],
 }));
@@ -27,9 +29,15 @@ vi.mock("@/api/admin/hooks", () => ({
   useAdminSetRating: () => mockState.setRating,
   useAdminSetStats: () => mockState.setStats,
   useAdminSetTrustDeposit: () => mockState.setTrustDeposit,
-  useAdminUserWallet: () => ({ data: mockState.walletBalances }),
+  useAdminUserWallet: (userId: number | undefined) => {
+    mockState.walletUserId = userId;
+    return { data: mockState.walletBalances };
+  },
   useAdminCurrencies: () => ({ data: mockState.currencies }),
-  useAdminAdjustBalance: () => mockState.adjustBalance,
+  useAdminAdjustBalance: (userId: number | undefined) => {
+    mockState.adjustUserId = userId;
+    return mockState.adjustBalance;
+  },
 }));
 
 vi.mock("@/api/hooks", () => ({
@@ -156,12 +164,67 @@ beforeEach(() => {
   mockState.setStats = { mutateAsync: vi.fn(), isPending: false };
   mockState.setTrustDeposit = { mutateAsync: vi.fn(), isPending: false };
   mockState.adjustBalance = { mutateAsync: vi.fn(), isPending: false };
+  mockState.walletUserId = undefined;
+  mockState.adjustUserId = undefined;
   mockState.walletBalances = [];
   mockState.currencies = [];
   toastSpy.mockReset();
 });
 
 describe("<AdminUserDetailPage /> numeric forms", () => {
+  it("uses the canonical route id for numeric mutations when payload id is malformed", async () => {
+    mockState.user = makeUser({ id: "0x5" as unknown as number });
+    mockState.setRating.mutateAsync.mockResolvedValue({});
+    mockState.setStats.mutateAsync.mockResolvedValue({});
+    mockState.setTrustDeposit.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    fireEvent.change(screen.getByPlaceholderText(/4\.8/), {
+      target: { value: "4.7" },
+    });
+    await user.click(screen.getByRole("button", { name: "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c" }));
+    await waitFor(() =>
+      expect(mockState.setRating.mutateAsync).toHaveBeenCalledWith({
+        userId: 5,
+        body: { rating: 4.7 },
+      }),
+    );
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: /\u0421\u0434\u0435\u043b\u043e\u043a \u0432\u0441\u0435\u0433\u043e/i }), {
+      target: { value: "11" },
+    });
+    const saveStats = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent === "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0443");
+    expect(saveStats).toBeDefined();
+    await user.click(saveStats!);
+    await waitFor(() =>
+      expect(mockState.setStats.mutateAsync).toHaveBeenCalledWith({
+        userId: 5,
+        body: expect.objectContaining({ deals_total: 11 }),
+      }),
+    );
+
+    fireEvent.change(screen.getAllByRole("spinbutton")[8], {
+      target: { value: "50.25" },
+    });
+    const saveTrust = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent === "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0442\u0440\u0430\u0441\u0442\u043e\u0432\u044b\u0439 \u0434\u0435\u043f\u043e\u0437\u0438\u0442");
+    expect(saveTrust).toBeDefined();
+    await user.click(saveTrust!);
+    await waitFor(() =>
+      expect(mockState.setTrustDeposit.mutateAsync).toHaveBeenCalledWith({
+        userId: 5,
+        body: { amount: "50.25", reason: null },
+      }),
+    );
+
+    expect(mockState.walletUserId).toBe(5);
+    expect(mockState.adjustUserId).toBe(5);
+  });
+
   it.each(["1e0", "5.1"])("blocks ambiguous manual rating %s", async (badRating) => {
     const user = userEvent.setup();
     renderPage();
