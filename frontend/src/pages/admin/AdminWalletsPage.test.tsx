@@ -296,7 +296,7 @@ describe("<AdminWalletsPage />", () => {
 
     await waitFor(() =>
       expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({ currency_code: "TON", amount: 5 }),
+        expect.objectContaining({ currency_code: "TON", amount: "5" }),
       ),
     );
   });
@@ -432,7 +432,7 @@ describe("<AdminWalletsPage />", () => {
     await waitFor(() =>
       expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USDT",
-        amount: 25,
+        amount: "25",
         reason: "refund",
       }),
     );
@@ -476,7 +476,33 @@ describe("<AdminWalletsPage />", () => {
     await user.click(screen.getByRole("button", { name: "Применить" }));
     await waitFor(() =>
       expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({ currency_code: "TON", amount: 5 }),
+        expect.objectContaining({ currency_code: "TON", amount: "5" }),
+      ),
+    );
+  });
+
+  it("sends precise wallet adjustment decimals as strings", async () => {
+    mockState.list = {
+      items: [makeUserBalance()],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    mockState.adjust.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByText("Alice"));
+
+    const amountInput = await screen.findByPlaceholderText(/напр\. -25/);
+    fireEvent.change(amountInput, { target: { value: "0.123456789123456789" } });
+    await user.click(screen.getByRole("button", { name: "Применить" }));
+
+    await waitFor(() =>
+      expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          currency_code: "USDT",
+          amount: "0.123456789123456789",
+        }),
       ),
     );
   });
@@ -515,7 +541,7 @@ describe("<AdminWalletsPage />", () => {
     expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
   });
 
-  it("saves USD rates as canonical decimal numbers", async () => {
+  it("saves USD rates as exact decimal strings", async () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
     mockState.upsertRate.mutateAsync.mockResolvedValue({});
     const user = userEvent.setup();
@@ -523,13 +549,13 @@ describe("<AdminWalletsPage />", () => {
 
     await user.click(screen.getByRole("button", { name: "USD" }));
     const rateInput = await screen.findByLabelText("USD rate for USDT");
-    fireEvent.change(rateInput, { target: { value: "1.25" } });
+    fireEvent.change(rateInput, { target: { value: "0.123456789123456789" } });
     await user.click(screen.getByRole("button", { name: "Save rate" }));
 
     await waitFor(() =>
       expect(mockState.upsertRate.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USDT",
-        usd_rate: 1.25,
+        usd_rate: "0.123456789123456789",
         source: "manual",
       }),
     );

@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 88 файлов, 923 теста. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 89 файлов, 926 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary/lazyWithRetry.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -159,6 +159,7 @@
 - M-187: admin deal force-release/refund/split actions now require a strict positive runtime deal amount before opening money-moving sheets.
 - M-188: admin deal pending approval rows now use strict runtime money formatting and block approval of malformed money requests.
 - M-189: paid PIN-reset paywall now validates runtime price/balance/charged amounts before display or balance-payment entry.
+- M-190: admin wallet adjustments and USD-rate upserts now send validated decimal strings instead of rounded JavaScript numbers.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2113,6 +2114,16 @@ OpenAPI exposes PIN reset `price`, `user_balance`, and paid `charged` as decimal
 Risk: the paid PIN reset flow can debit a wallet balance, so the user must see validated price and balance data before clicking. Raw malformed DTO strings or an unchecked affordability flag make the payment surface look trustworthy when the frontend has not actually parsed the money fields.
 
 Fix: the paywall now accepts string/number runtime money, formats price, balance, and charged values through the strict currency formatter, and enables balance payment only when price and balance parse as non-negative decimals and the parsed balance covers the parsed price. Malformed price data renders a neutral state and leaves the admin-contact path available. Regressions cover malformed price/balance display, disabled payment entry, and malformed charged amounts in the success toast.
+
+### M-190. Admin wallet money forms rounded Decimal inputs before submit
+
+Links: `frontend/src/pages/admin/AdminWalletsPage.tsx`, DTO type `frontend/src/api/types.ts`, OpenAPI contract `frontend/src/api/openapi.generated.ts`, backend Decimal schemas `backend/app/schemas.py`, regression in `frontend/src/pages/admin/AdminWalletsPage.test.tsx`.
+
+The admin wallet adjustment form and USD-rate form validated plain decimal input strings, but then sent the parsed JavaScript `number` to the API. The backend schemas accept `Decimal`, and OpenAPI already allows `number | string` for these payloads, so the frontend was needlessly round-tripping precise admin-entered money/rate values through IEEE-754 before the backend could parse them.
+
+Risk: manual balance adjustments are direct money-moving operations, and USD rates affect displayed estimates. A value such as `0.123456789123456789` is a valid decimal string but cannot be represented exactly as a JavaScript number, so the request body could differ from what the admin typed.
+
+Fix: both forms still use the strict decimal parser for UI validation and disabled-state gating, but the mutation payload now sends the trimmed decimal string. The local admin wallet DTO was widened to match OpenAPI, and regressions assert exact string payloads for high-precision adjustment and USD-rate inputs.
 
 ## Наблюдения без отдельного finding
 

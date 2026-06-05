@@ -270,8 +270,9 @@ function RatesForm({ onClose }: { onClose: () => void }) {
   const [rate, setRate] = useState<string | null>(null);
   const [source, setSource] = useState("manual");
   const value = rate ?? (current ? String(current.usd_rate) : "");
+  const rateValue = value.trim();
   const parsedRate = parsePositiveDecimalInput(value);
-  const rateError = value.trim() && parsedRate === null
+  const rateError = rateValue && parsedRate === null
     ? "Введите положительное число без экспоненты"
     : undefined;
 
@@ -316,7 +317,7 @@ function RatesForm({ onClose }: { onClose: () => void }) {
             return;
           }
           try {
-            await upsert.mutateAsync({ currency_code: currency, usd_rate: parsedRate, source: source.trim() || "manual" });
+            await upsert.mutateAsync({ currency_code: currency, usd_rate: rateValue, source: source.trim() || "manual" });
             toast.show({ kind: "success", title: "USD rate saved" });
             setRate(null);
             onClose();
@@ -347,8 +348,9 @@ function AdjustForm({
   const toast = useToast();
   const adjust = useAdminAdjustBalance(target.user_id);
   const allCurrencies = currencies ?? [];
+  const amountValue = amount.trim();
   const parsedAmount = parseSignedNonZeroDecimalInput(amount);
-  const amountError = amount.trim() && parsedAmount === null
+  const amountError = amountValue && parsedAmount === null
     ? "Введите ненулевую сумму без экспоненты"
     : undefined;
   return (
@@ -443,7 +445,7 @@ function AdjustForm({
           try {
             await adjust.mutateAsync({
               currency_code: currency,
-              amount: parsedAmount,
+              amount: amountValue,
               reason: reason.trim() || undefined,
             });
             toast.show({

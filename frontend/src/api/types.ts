@@ -717,7 +717,7 @@ export interface AdminWalletListDto {
 
 export interface AdminWalletAdjustBody {
   currency_code: string;
-  amount: number;
+  amount: number | string;
   reason?: string;
 }
 
