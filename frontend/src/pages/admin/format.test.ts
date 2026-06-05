@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatAdminAmount,
   formatAdminCount,
+  formatAdminCurrencyCode,
   formatAdminId,
   formatAdminRating,
   formatAdminUsd,
@@ -31,6 +32,13 @@ describe("admin format helpers", () => {
     expect(formatAdminUsdSuffix("1500.5")).toBe("1500.50 $");
     expect(formatAdminUsd("1e3")).toBe("\u2014");
     expect(formatAdminUsdSuffix("0x10")).toBe("\u2014");
+  });
+
+  it("normalizes admin currency labels before display", () => {
+    expect(formatAdminCurrencyCode(" usd ")).toBe("USD");
+    expect(formatAdminCurrencyCode("USDT1")).toBe("USDT1");
+    expect(formatAdminCurrencyCode("../USD")).toBe("\u2014");
+    expect(formatAdminCurrencyCode(null)).toBe("\u2014");
   });
 
   it("keeps admin balances visible when malformed totals have valid money fields", () => {

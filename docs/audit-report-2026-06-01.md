@@ -173,6 +173,7 @@
 - M-201: create-deal insufficient-funds errors now validate runtime money fields and currency codes before showing balance hints.
 - M-202: deal and payment invoice money surfaces now normalize runtime currency codes before rendering labels.
 - M-203: paid PIN-reset paywall now normalizes runtime currency codes before rendering price/balance and paid toasts.
+- M-204: admin deposit and withdrawal queues now normalize runtime currency labels before rendering money rows.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2267,6 +2268,16 @@ The paid PIN-reset paywall already rendered malformed runtime price, balance, an
 Risk: the PIN-reset modal is a money-moving confirmation path. Even when the amount is valid, a raw runtime currency label can misstate which balance is being debited and make a corrupted DTO look like a legitimate charge.
 
 Fix: the price payload currency and paid-result currency now pass through the shared currency-code normalizer before display, falling back to `USD` for malformed values. Regressions cover normalized lowercase/trimmed price currency codes, malformed price currency codes, and malformed paid-result currency codes in the success toast.
+
+### M-204. Admin deposit/withdrawal queues trusted runtime currency labels
+
+Links: `frontend/src/pages/admin/AdminDepositsPage.tsx`, `frontend/src/pages/admin/AdminWithdrawalsPage.tsx`, shared admin formatter `frontend/src/pages/admin/format.ts`, regressions in the adjacent admin page tests.
+
+The admin deposit and withdrawal queues used strict admin amount formatting, but appended the raw `currency_code` from the DTO. A malformed label such as `"../USD"` or `" usdt "` could therefore appear beside an otherwise sanitized money amount in operator payment queues.
+
+Risk: these queues drive manual payment decisions: marking deposits paid/refunded and approving withdrawals. Raw currency labels can make corrupted payment DTOs look like legitimate currency rows and weaken operator review.
+
+Fix: both queues now use a shared admin currency-code formatter backed by the contract normalizer. Lowercase/trimmed codes normalize to uppercase; malformed or missing labels render as a neutral dash instead of leaking the raw DTO value. Regressions cover the helper plus deposit and withdrawal queue rows.
 
 ## Наблюдения без отдельного finding
 

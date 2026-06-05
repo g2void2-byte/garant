@@ -200,6 +200,22 @@ describe("<AdminWithdrawalsPage />", () => {
     })).toBeInTheDocument();
   });
 
+  it("normalizes withdrawal currency labels before display", () => {
+    mockState.list = {
+      items: [
+        makeItem({ currency_code: " usdt " }),
+        makeItem({ id: 2, amount: "13.50000000", currency_code: "../USDT" }),
+      ],
+      counters: { pending: 2 },
+    };
+    renderPage();
+
+    expect(screen.getByText(/12\.50000000 USDT/)).toBeInTheDocument();
+    expect(screen.getByText(/13\.50000000 \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/ usdt /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\.\.\/USDT/)).not.toBeInTheDocument();
+  });
+
   it("approve action calls mutate with action='approve' and toasts success", async () => {
     mockState.list = { items: [makeItem()], counters: {} };
     mockState.decideMutation.mutateAsync.mockResolvedValue({});

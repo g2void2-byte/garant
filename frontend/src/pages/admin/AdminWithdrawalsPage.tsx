@@ -12,7 +12,7 @@ import {
 } from "@/api/admin/hooks";
 import { formatDateTime } from "@/lib/format";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminUsername, getAdminTotalPages, hasPositiveAdminDecimal, parseAdminCount } from "./format";
+import { formatAdminAmount, formatAdminCurrencyCode, formatAdminUsername, getAdminTotalPages, hasPositiveAdminDecimal, parseAdminCount } from "./format";
 
 const STATUSES = ["pending", "approved", "rejected", "sent"] as const;
 type Status = (typeof STATUSES)[number];
@@ -92,7 +92,7 @@ export default function AdminWithdrawalsPage() {
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium">
-                    {formatAdminAmount(w.amount, 8)} {w.currency_code}
+                    {formatAdminAmount(w.amount, 8)} {formatAdminCurrencyCode(w.currency_code)}
                   </div>
                   <div className="text-xs text-text-muted">
                     {formatAdminUsername(w.username)} ({w.display_name}) · #{w.id}

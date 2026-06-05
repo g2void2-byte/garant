@@ -1,4 +1,5 @@
 import { formatRatingValue, parseDecimalValue, parseNonNegativeIntegerValue } from "@/lib/format";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 
 const MISSING_USERNAME_LABEL = "username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d";
 const DASH = "\u2014";
@@ -22,6 +23,10 @@ export function formatAdminAmount(
   decimals = 2,
 ): string {
   return formatAdminFixedDecimal(value, decimals);
+}
+
+export function formatAdminCurrencyCode(value: unknown): string {
+  return normalizeCurrencyCode(value) ?? DASH;
 }
 
 export function parseAdminDecimal(value: string | number | null | undefined): number | null {

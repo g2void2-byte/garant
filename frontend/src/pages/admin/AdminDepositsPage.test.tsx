@@ -165,6 +165,24 @@ describe("<AdminDepositsPage />", () => {
     );
   });
 
+  it("normalizes deposit currency labels before display", () => {
+    mockState.list = {
+      items: [
+        makeDeposit({ currency_code: " usd " }),
+        makeDeposit({ id: 101, amount: "51.0", currency_code: "../USD" }),
+      ],
+      total: 2,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+
+    expect(screen.getByText(/50\.00 USD/)).toBeInTheDocument();
+    expect(screen.getByText(/51\.00 \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/ usd /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\.\.\/USD/)).not.toBeInTheDocument();
+  });
+
   it("renders malformed deposit amounts as a neutral dash", () => {
     mockState.list = {
       items: [makeDeposit({ amount: "1e3" })],
