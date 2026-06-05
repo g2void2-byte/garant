@@ -22,4 +22,10 @@ describe("<BadgePrefix />", () => {
     render(<BadgePrefix prefix="vip" />);
     expect(screen.getByText("VIP")).toBeInTheDocument();
   });
+
+  it("renders unknown runtime prefixes as a neutral label", () => {
+    render(<BadgePrefix prefix="moderator" />);
+    expect(screen.getByText("Роль неизвестна")).toBeInTheDocument();
+    expect(screen.queryByText("moderator")).not.toBeInTheDocument();
+  });
 });

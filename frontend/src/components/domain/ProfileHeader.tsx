@@ -6,6 +6,7 @@ import { countryFromCode } from "@/lib/countries";
 import { safeUserImageUrl } from "@/lib/mediaLinks";
 import { getTelegramUser } from "@/lib/tg";
 import { normalizeUsernameRef } from "@/lib/usernames";
+import { cn } from "@/lib/cn";
 
 // Keep keys in lockstep with ``UserCardDto.prefix`` on the backend
 // (``backend/app/serializers._common_user_fields``). The ``vip`` entry
@@ -16,6 +17,7 @@ const ROLE_LABEL: Record<NonNullable<UserCardDto["prefix"]>, string> = {
   arbiter: "Арбитр",
   vip: "VIP",
 };
+const UNKNOWN_ROLE_LABEL = "Роль неизвестна";
 
 export function ProfileHeader({ user }: { user: UserCardDto }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -37,7 +39,13 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
 
   const username = normalizeUsernameRef(user.username);
   const displayName = user.display_name?.trim() || username || "—";
-  const roleLabel = user.prefix ? ROLE_LABEL[user.prefix] : "Пользователь";
+  const knownRoleLabel = user.prefix ? ROLE_LABEL[user.prefix] : null;
+  const roleLabel = user.prefix
+    ? knownRoleLabel ?? UNKNOWN_ROLE_LABEL
+    : "Пользователь";
+  const roleClassName = user.prefix && !knownRoleLabel
+    ? "bg-panel-2 text-text-muted"
+    : "bg-accent text-accent-fg";
   const country = countryFromCode(user.country);
   // V12-UI — the avatar circle is sourced from the Telegram user's
   // ``photo_url`` (exposed via ``initDataUnsafe`` for the *current*
@@ -110,7 +118,12 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
               )}
               <div className="mt-1 text-xs text-text-muted">ID: {user.user_id}</div>
             </div>
-            <span className="self-start inline-flex items-center px-2.5 py-1 rounded-full bg-accent text-accent-fg text-[11px] font-semibold leading-none shrink-0">
+            <span
+              className={cn(
+                "self-start inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold leading-none shrink-0",
+                roleClassName,
+              )}
+            >
               {roleLabel}
             </span>
           </div>

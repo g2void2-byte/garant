@@ -189,6 +189,7 @@
 - M-217: admin user service rows now neutralize unknown runtime statuses and avoid silent status rewrites.
 - M-218: own-service profile toggles now ignore unknown runtime statuses instead of activating them.
 - M-219: shared service cards now show unknown runtime statuses as neutral badges instead of active-looking rows.
+- M-220: user prefix badges now neutralize unknown runtime prefixes instead of hiding or rendering empty roles.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2443,6 +2444,16 @@ The shared `ServiceCard` showed badges for `draft`, `paused`, and `banned`, and 
 Risk: service status controls visibility and moderation state. Hiding unknown status drift behind an active-looking card can mislead users/admins and weaken the invariant added for service edit/toggle surfaces.
 
 Fix: service cards now derive badges through an explicit status helper: `active` still renders no badge, known non-active states keep their previous labels, and unknown or malformed statuses render `Статус неизвестен` with muted styling. Regression coverage pins the unknown-status card behavior.
+
+### M-220. User prefix badges hid unknown runtime prefixes
+
+Links: `frontend/src/components/ui/BadgePrefix.tsx`, `frontend/src/components/domain/ProfileHeader.tsx`, regressions in the adjacent component tests.
+
+Shared user rows delegated role/prefix display to `BadgePrefix`, which returned `null` for any unknown runtime prefix. `ProfileHeader` had a separate role-label map and rendered `ROLE_LABEL[user.prefix]` directly; an unknown prefix therefore produced an empty accent pill instead of a visible neutral state.
+
+Risk: prefixes mark privileged or special user roles. Hiding a drifted prefix, or rendering an empty role badge, can make unsupported role data look like a regular user and weaken review of account state across search, user cards, pickers, support rows, and profile headers.
+
+Fix: `BadgePrefix` now accepts runtime strings and falls back to `Роль неизвестна` with muted styling for unknown values. `ProfileHeader` uses the same neutral label/tone instead of an empty accent pill. Regressions cover both shared badges and profile headers.
 
 ## Наблюдения без отдельного finding
 

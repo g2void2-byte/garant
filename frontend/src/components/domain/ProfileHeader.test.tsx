@@ -56,6 +56,12 @@ describe("<ProfileHeader />", () => {
     expect(screen.getByText("VIP")).toBeInTheDocument();
   });
 
+  it("renders unknown runtime prefixes as a neutral role label", () => {
+    render(<ProfileHeader user={makeUser({ prefix: "moderator" as UserCardDto["prefix"] })} />);
+    expect(screen.getByText("Роль неизвестна")).toBeInTheDocument();
+    expect(screen.queryByText("moderator")).not.toBeInTheDocument();
+  });
+
   it("renders banner URLs as an image instead of interpolating them into CSS", () => {
     const bannerUrl = "https://cdn.example/a),url(https://evil.example/pixel)";
     const { container } = render(<ProfileHeader user={makeUser({ banner_url: bannerUrl })} />);

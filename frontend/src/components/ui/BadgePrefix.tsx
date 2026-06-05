@@ -1,7 +1,7 @@
 import { cn } from "@/lib/cn";
 
 interface BadgePrefixProps {
-  prefix?: "admin" | "arbiter" | "vip" | null;
+  prefix?: string | null;
   className?: string;
 }
 
@@ -11,10 +11,14 @@ const LABELS: Record<string, { text: string; cls: string }> = {
   vip: { text: "VIP", cls: "bg-accent text-accent-fg" },
 };
 
+const UNKNOWN_PREFIX = {
+  text: "Роль неизвестна",
+  cls: "bg-panel-2 text-text-muted",
+};
+
 export function BadgePrefix({ prefix, className }: BadgePrefixProps) {
   if (!prefix) return null;
-  const conf = LABELS[prefix];
-  if (!conf) return null;
+  const conf = LABELS[prefix] ?? UNKNOWN_PREFIX;
   return (
     <span
       className={cn(
