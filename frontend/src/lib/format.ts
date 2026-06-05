@@ -86,9 +86,11 @@ export function formatCurrency(
 export function formatAmount(
   value: number | string | null | undefined,
   code: string,
+  fallback = "\u2014",
 ): string {
-  const n = parseDecimal(value);
-  if (!Number.isFinite(n)) return "0";
+  const parsed = parseDecimalValue(value);
+  if (parsed === null || parsed < 0) return fallback;
+  const n = parsed;
   const decimals = DEFAULT_DECIMALS[code.toUpperCase()] ?? 2;
   return n.toLocaleString("en-US", {
     minimumFractionDigits: 0,

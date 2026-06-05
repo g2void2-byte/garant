@@ -187,6 +187,18 @@ describe("<DealDetailPage />", () => {
     expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
   });
 
+  it("renders malformed deal totals as a neutral amount", () => {
+    dealState.data = makeDeal({
+      amount: "0x10" as unknown as number,
+      currency_code: "USD",
+    });
+    renderAt(42);
+
+    expect(screen.getByText(/\u2014 USD/)).toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^0 USD$/)).not.toBeInTheDocument();
+  });
+
   it("does not render @null actions when the counterparty username is missing", () => {
     dealState.data = makeDeal({
       id: 42,

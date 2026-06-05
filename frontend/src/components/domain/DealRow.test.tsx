@@ -102,6 +102,15 @@ describe("<DealRow />", () => {
     expect(screen.getAllByText("USDT").length).toBeGreaterThan(0);
   });
 
+  it("renders malformed deal amounts as neutral instead of zero", () => {
+    renderRow({ amount: "1e2" as unknown as number, currency_code: "USDT" });
+
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.getAllByText("USDT").length).toBeGreaterThan(0);
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it("links the 'Профиль' button to the counterparty profile", () => {
     renderRow({ role: "buyer", seller: "bob" });
     const links = screen.getAllByRole("link");

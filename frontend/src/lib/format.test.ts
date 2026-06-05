@@ -96,6 +96,13 @@ describe("formatAmount", () => {
   it("treats unknown codes as 2 decimals", () => {
     expect(formatAmount("1.234", "FOO")).toBe("1.23");
   });
+
+  it("renders malformed or negative runtime amounts as neutral", () => {
+    expect(formatAmount("1e2", "USDT")).toBe("\u2014");
+    expect(formatAmount("0x10", "USDT")).toBe("\u2014");
+    expect(formatAmount(-1, "USDT")).toBe("\u2014");
+    expect(formatAmount("bad", "USDT", "n/a")).toBe("n/a");
+  });
 });
 
 describe("formatMoney", () => {

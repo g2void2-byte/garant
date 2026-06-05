@@ -12,7 +12,7 @@
 
 - `npm run typecheck` - успешно.
 - `npm run lint` - успешно.
-- `npm run test:run` - успешно: 87 файлов, 897 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
+- `npm run test:run` - успешно: 87 файлов, 900 тестов. В выводе есть ожидаемые jsdom-трейсы ErrorBoundary.
 - `npm run build` - успешно.
 - `npm audit --omit=dev --json` - 0 production-уязвимостей.
 - `uv run --frozen ruff check .` - успешно.
@@ -150,6 +150,7 @@
 - M-178: deal topup payment actions now require a strict positive invoice total before opening the provider link.
 - M-179: deal and wallet payment modals now require strict positive invoice amounts before auto-opening or clicking provider payment links.
 - M-180: public money summaries now render malformed/negative runtime amounts as neutral values instead of `$0`.
+- M-181: deal list/detail amount displays now reject malformed/negative runtime totals instead of showing zero.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2014,6 +2015,16 @@ The shared `formatMoney()` helper still used the legacy zero-coercing decimal pa
 Risk: public trust and price surfaces could silently understate corrupt values instead of flagging them as invalid. That is especially misleading for service price, trust deposit, and total-deals money summaries because `$0` looks like a valid business value.
 
 Fix: `formatMoney()` now uses the strict decimal parser and returns a neutral fallback for malformed or negative values while preserving canonical decimal-string amounts. Regressions cover the shared helper and the affected user/profile/service/search/wallet surfaces.
+
+### M-181. Deal amount displays coerced malformed runtime totals to zero
+
+Links: `frontend/src/lib/format.ts`, `frontend/src/components/domain/DealRow.tsx`, `frontend/src/pages/deals/DealDetailPage.tsx`, regressions `frontend/src/lib/format.test.ts`, `frontend/src/components/domain/DealRow.test.tsx`, `frontend/src/pages/deals/DealDetailPage.test.tsx`.
+
+After M-180, the deal-specific `formatAmount()` helper still used the legacy zero-coercing parser. Runtime deal totals such as `"1e2"`, `"0x10"`, `NaN`, or negative values could therefore render as `0 USDT`/`0 USD` in the deal list and detail header.
+
+Risk: a corrupted escrow amount could look like a legitimate zero-value deal rather than invalid data. This is misleading in the primary money view for deal participants and can hide the same kind of DTO drift already hardened in invoice and public-money surfaces.
+
+Fix: `formatAmount()` now uses the strict decimal parser and returns a neutral fallback for malformed or negative values while preserving canonical decimal-string amounts and currency precision. Regressions pin malformed deal list and deal detail totals.
 
 ## Наблюдения без отдельного finding
 
