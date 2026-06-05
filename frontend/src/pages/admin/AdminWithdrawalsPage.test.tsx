@@ -56,6 +56,10 @@ function renderPage() {
   );
 }
 
+function renderedNeutralIds(container: HTMLElement): number {
+  return (container.textContent ?? "").match(/#\s*\u2014/g)?.length ?? 0;
+}
+
 function makeItem(
   overrides: Partial<AdminWithdrawalListDto["items"][number]> = {},
 ): AdminWithdrawalListDto["items"][number] {
@@ -215,6 +219,24 @@ describe("<AdminWithdrawalsPage />", () => {
     })).not.toBeInTheDocument();
   });
 
+  it("does not expose decision actions for malformed runtime withdrawal ids", () => {
+    mockState.list = {
+      items: [makeItem({ id: "0x1" as unknown as number })],
+      counters: { pending: 1 },
+    };
+
+    const { container } = renderPage();
+
+    expect(renderedNeutralIds(container)).toBe(1);
+    expect(screen.queryByText(/0x1/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u041e\u0434\u043e\u0431\u0440\u0438\u0442\u044c/,
+    })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u041e\u0442\u043a\u043b\u043e\u043d\u0438\u0442\u044c/,
+    })).not.toBeInTheDocument();
+  });
+
   it("normalizes withdrawal currency labels before display", () => {
     mockState.list = {
       items: [
@@ -366,6 +388,25 @@ describe("<AdminWithdrawalsPage />", () => {
       name: /\u041e\u0434\u043e\u0431\u0440\u0435\u043d\u043d\u044b\u0435/,
     }));
 
+    expect(screen.queryByRole("button", {
+      name: /\u041e\u0442\u043c\u0435\u0447\u0435\u043d\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e/,
+    })).not.toBeInTheDocument();
+  });
+
+  it("does not expose mark-sent for approved withdrawals with malformed runtime ids", async () => {
+    mockState.list = {
+      items: [makeItem({ id: "0x2" as unknown as number, status: "approved" })],
+      counters: {},
+    };
+    const user = userEvent.setup();
+    const { container } = renderPage();
+
+    await user.click(screen.getByRole("button", {
+      name: /\u041e\u0434\u043e\u0431\u0440\u0435\u043d\u043d\u044b\u0435/,
+    }));
+
+    expect(renderedNeutralIds(container)).toBe(1);
+    expect(screen.queryByText(/0x2/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", {
       name: /\u041e\u0442\u043c\u0435\u0447\u0435\u043d\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e/,
     })).not.toBeInTheDocument();

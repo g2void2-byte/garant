@@ -12,7 +12,16 @@ import {
 } from "@/api/admin/hooks";
 import { formatDateTime } from "@/lib/format";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
-import { formatAdminAmount, formatAdminCurrencyCode, formatAdminUsername, getAdminTotalPages, hasPositiveAdminDecimal, parseAdminCount } from "./format";
+import {
+  formatAdminAmount,
+  formatAdminCurrencyCode,
+  formatAdminId,
+  formatAdminUsername,
+  getAdminTotalPages,
+  hasPositiveAdminDecimal,
+  parseAdminCount,
+  parseAdminId,
+} from "./format";
 
 const STATUSES = ["pending", "approved", "rejected", "sent"] as const;
 type Status = (typeof STATUSES)[number];
@@ -84,7 +93,9 @@ export default function AdminWithdrawalsPage() {
             Заявок нет
           </p>
         ) : (
-          data?.items.map((w, _idx) => (
+          data?.items.map((w, _idx) => {
+            const withdrawalId = parseAdminId(w.id);
+            return (
             <div
               key={w.id}
               className="bg-panel rounded-card p-3 space-y-2"
@@ -95,7 +106,7 @@ export default function AdminWithdrawalsPage() {
                     {formatAdminAmount(w.amount, 8)} {formatAdminCurrencyCode(w.currency_code)}
                   </div>
                   <div className="text-xs text-text-muted">
-                    {formatAdminUsername(w.username)} ({w.display_name}) · #{w.id}
+                    {formatAdminUsername(w.username)} ({w.display_name}) · #{formatAdminId(w.id)}
                   </div>
                   <div className="text-[11px] text-text-muted">
                     {formatDateTime(w.created_at)}
@@ -127,7 +138,7 @@ export default function AdminWithdrawalsPage() {
                   Комментарий: {w.admin_note}
                 </div>
               )}
-              {w.status === "pending" && (
+              {withdrawalId !== null && w.status === "pending" && (
                 <div className="flex gap-2 pt-1">
                   {hasPositiveAdminDecimal(w.amount) && (
                     <Button
@@ -136,7 +147,7 @@ export default function AdminWithdrawalsPage() {
                       onClick={async () => {
                         try {
                           await decide.mutateAsync({
-                            id: w.id,
+                            id: withdrawalId,
                             body: { action: "approve" },
                           });
                           toast.show({
@@ -170,7 +181,7 @@ export default function AdminWithdrawalsPage() {
                       const note = window.prompt("Причина отказа (необязательно)") ?? "";
                       try {
                         await decide.mutateAsync({
-                          id: w.id,
+                          id: withdrawalId,
                           body: { action: "reject", note: note.trim() || undefined },
                         });
                         toast.show({ kind: "info", title: "Отклонено" });
@@ -187,7 +198,7 @@ export default function AdminWithdrawalsPage() {
                   </Button>
                 </div>
               )}
-              {w.status === "approved" && hasPositiveAdminDecimal(w.amount) && (
+              {withdrawalId !== null && w.status === "approved" && hasPositiveAdminDecimal(w.amount) && (
                 <Button
                   type="button"
                   size="sm"
@@ -195,7 +206,7 @@ export default function AdminWithdrawalsPage() {
                   onClick={async () => {
                     try {
                       await decide.mutateAsync({
-                        id: w.id,
+                        id: withdrawalId,
                         body: { action: "mark_sent" },
                       });
                       toast.show({ kind: "success", title: "Отмечено как отправлено" });
@@ -212,7 +223,8 @@ export default function AdminWithdrawalsPage() {
                 </Button>
               )}
             </div>
-          ))
+            );
+          })
         )}
       </div>
       {totalPages > 1 && (

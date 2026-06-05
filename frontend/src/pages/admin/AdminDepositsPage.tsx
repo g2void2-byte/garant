@@ -25,9 +25,11 @@ import {
   formatAdminCount,
   formatAdminCurrencyCode,
   formatAdminDepositStatus,
+  formatAdminId,
   formatAdminUsername,
   getAdminTotalPages,
   hasPositiveAdminDecimal,
+  parseAdminId,
 } from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "all
@@ -91,7 +93,9 @@ export default function AdminDepositsPage() {
             Депозитов нет
           </p>
         ) : (
-          data?.items.map((d, _idx) => (
+          data?.items.map((d, _idx) => {
+            const depositId = parseAdminId(d.id);
+            return (
             <div
               key={d.id}
               className="bg-panel rounded-card p-3"
@@ -102,7 +106,7 @@ export default function AdminDepositsPage() {
                     {formatAdminAmount(d.amount)} {formatAdminCurrencyCode(d.currency_code)}
                   </div>
                   <div className="text-xs text-text-muted truncate">
-                    {formatAdminUsername(d.username)} ({d.display_name}) · #{d.id}
+                    {formatAdminUsername(d.username)} ({d.display_name}) · #{formatAdminId(d.id)}
                   </div>
                   <div className="text-[11px] text-text-muted mt-1">
                     {formatDateTime(d.created_at)}
@@ -111,13 +115,13 @@ export default function AdminDepositsPage() {
                 <StatusBadge status={d.status} />
               </div>
               <div className="mt-2 flex gap-2">
-                {d.status === "pending" && hasPositiveAdminDecimal(d.amount) && (
+                {depositId !== null && d.status === "pending" && hasPositiveAdminDecimal(d.amount) && (
                   <Button
                     type="button"
                     size="sm"
                     onClick={async () => {
                       try {
-                        await markPaid.mutateAsync({ id: d.id });
+                        await markPaid.mutateAsync({ id: depositId });
                         toast.show({ kind: "success", title: "Зачислен" });
                       } catch (e) {
                         toast.show({
@@ -131,14 +135,14 @@ export default function AdminDepositsPage() {
                     <Check size={14} className="mr-1" /> Зачислить
                   </Button>
                 )}
-                {d.status === "paid" && hasPositiveAdminDecimal(d.amount) && (
+                {depositId !== null && d.status === "paid" && hasPositiveAdminDecimal(d.amount) && (
                   <Button
                     type="button"
                     size="sm"
                     variant="danger"
                     onClick={async () => {
                       try {
-                        await refund.mutateAsync({ id: d.id });
+                        await refund.mutateAsync({ id: depositId });
                         toast.show({ kind: "success", title: "Возвращён" });
                       } catch (e) {
                         toast.show({
@@ -164,7 +168,8 @@ export default function AdminDepositsPage() {
                 )}
               </div>
             </div>
-          ))
+            );
+          })
         )}
       </div>
       {data && getAdminTotalPages(data.total, PAGE_SIZE) > 1 && (

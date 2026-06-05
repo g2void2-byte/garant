@@ -78,6 +78,10 @@ function renderPage() {
   );
 }
 
+function renderedNeutralIds(container: HTMLElement): number {
+  return (container.textContent ?? "").match(/#\s*\u2014/g)?.length ?? 0;
+}
+
 function makeDeposit(
   overrides: Partial<AdminDepositListDto["items"][number]> = {},
 ): AdminDepositListDto["items"][number] {
@@ -257,6 +261,29 @@ describe("<AdminDepositsPage />", () => {
     renderPage();
     expect(screen.getByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/)).toBeInTheDocument();
     expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
+  it("does not expose money actions for malformed runtime deposit ids", () => {
+    mockState.list = {
+      items: [
+        makeDeposit({ id: "0x64" as unknown as number }),
+        makeDeposit({ id: "0xc8" as unknown as number, status: "paid" }),
+      ],
+      total: 2,
+      page: 1,
+      page_size: 50,
+    };
+
+    const { container } = renderPage();
+
+    expect(renderedNeutralIds(container)).toBe(2);
+    expect(screen.queryByText(/0x64|0xc8/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u0417\u0430\u0447\u0438\u0441\u043b\u0438\u0442\u044c/,
+    })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u0412\u043e\u0437\u0432\u0440\u0430\u0442/,
+    })).not.toBeInTheDocument();
   });
 
   it("renders malformed created_at as a neutral timestamp", () => {

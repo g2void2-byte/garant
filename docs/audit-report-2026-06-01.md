@@ -193,6 +193,7 @@
 - M-221: public profile/review/comment metadata now validates runtime ratings and ids before display/linking.
 - M-222: public deal rows and create-success actions now validate runtime deal/deposit ids before linking.
 - M-223: admin deal queues now validate runtime deal ids before opening details or claiming arbitration.
+- M-224: admin finance queues now validate runtime deposit/withdrawal ids before money mutations.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2487,6 +2488,16 @@ The admin deals list and arbitration queue rendered `deal.id` directly and used 
 Risk: these queues are operational admin surfaces. A malformed id should block navigation and claim actions rather than creating a plausible-looking control that cannot target a valid deal.
 
 Fix: both queues now format ids through the admin id boundary, show `#—` for malformed ids, and disable row open/claim actions unless the id parses as a positive integer. Regressions cover malformed admin deal-list rows and arbitration rows.
+
+### M-224. Admin finance queues trusted malformed runtime money-row ids
+
+Links: `frontend/src/pages/admin/AdminDepositsPage.tsx`, `frontend/src/pages/admin/AdminWithdrawalsPage.tsx`, regressions in the adjacent tests.
+
+Admin deposit rows rendered `d.id` directly and sent it unchanged to mark-paid/refund mutations. Admin withdrawal rows did the same for approve/reject/mark-sent decisions. Runtime ids like `"0x64"` could therefore look like valid operational row ids or be sent to money-moving admin endpoints.
+
+Risk: these queues move funds or change withdrawal/deposit state. A malformed runtime id should never be accepted as the target of a finance mutation, even when the amount and status look valid.
+
+Fix: deposit and withdrawal rows now format ids through `formatAdminId`, show `#—` for malformed ids, and only render mark-paid/refund/approve/reject/mark-sent actions when the row id parses as a positive integer. Regressions cover malformed deposit ids and both pending/approved withdrawal id paths.
 
 ## Наблюдения без отдельного finding
 
