@@ -2689,6 +2689,7 @@
         "type": "object"
       },
       "AdminSetStatsIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /admin/users/:id/stats``.\n\nEvery field is optional \u2014 only provided keys are applied. Negative\nvalues are rejected because counts/sums don't make sense below\nzero. Rating is *not* part of this schema (see\n:class:`AdminSetRatingIn`) and has no range validation.",
         "properties": {
           "bad": {

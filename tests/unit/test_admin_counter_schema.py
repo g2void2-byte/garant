@@ -27,6 +27,11 @@ def test_admin_counter_fields_accept_explicit_non_negative_ints() -> None:
     assert settings.faq_stats_deals == 20
 
 
+def test_admin_set_stats_rejects_unknown_fields() -> None:
+    with pytest.raises(ValidationError):
+        AdminSetStatsIn(deposit_total=100)
+
+
 @pytest.mark.parametrize(
     "field",
     ["deals_total", "deals_success", "deals_failed", "deals_arbitrage", "good", "bad"],

@@ -2838,6 +2838,16 @@ Risk: admin scripts or generated clients that send minimal role changes could ac
 
 Fix: role flags now use optional-but-not-null sentinels and OpenAPI exposes them as optional booleans without `null`. The route derives `after` from the current row and applies only fields present in `model_fields_set`; `{}` is rejected with 400. Regressions cover schema omitted sentinels, partial preservation of existing flags, and empty-body non-mutation.
 
+### M-257. Retired admin stats fields were accepted as successful no-ops
+
+Links: `backend/app/schemas.py`, OpenAPI snapshot `frontend/openapi.json`, generated contract `frontend/src/api/openapi.generated.ts`, regressions in `test_admin_counter_schema.py` and `test_admin_users.py`.
+
+The legacy `deposit_total` user aggregate was removed, and the user-visible deposit is now edited through `POST /api/admin/users/:id/trust-deposit`. The stats endpoint docstring and test name already said old `deposit_total` payloads should fail loudly, but `AdminSetStatsIn` still used Pydantic's default `extra="ignore"`. A stale admin client could send `{"deposit_total": 1250.50}`, receive 200, and see no stored or returned change.
+
+Risk: retired admin tooling produces successful-looking writes that mutate nothing. Because the response is the normal user detail shape, an operator may miss that the intended deposit edit was discarded unless they know to use the separate trust-deposit endpoint.
+
+Fix: `AdminSetStatsIn` now uses `extra="forbid"`, so unknown stats body keys return 422 before the route. The regression suite covers schema-level unknown-field rejection and the retired `deposit_total` endpoint payload.
+
 ## Наблюдения без отдельного finding
 
 

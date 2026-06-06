@@ -717,13 +717,7 @@ async def test_set_stats_rejects_deposit_total(client):
         json={"deposit_total": 1250.50},
         headers=with_totp(auth_headers(admin_init)),
     )
-    # Pydantic ignores unknown keys by default (the schema is not
-    # ``model_config = ConfigDict(extra="forbid")``). The request
-    # therefore succeeds but writes nothing — assert the response
-    # body does not carry a ``deposit_total`` field at all (the
-    # admin detail DTO no longer declares it).
-    assert resp.status_code == 200
-    assert "deposit_total" not in resp.json()
+    assert resp.status_code == 422, resp.text
 
 
 # ── Item 11: public DTO breakdown ──────────────────────────────────────────

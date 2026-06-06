@@ -14,6 +14,7 @@ from urllib.parse import unquote, urlparse
 from pydantic import (
     BaseModel,
     BeforeValidator,
+    ConfigDict,
     Field,
     PlainSerializer,
     StringConstraints,
@@ -1567,6 +1568,8 @@ class AdminSetStatsIn(BaseModel):
     zero. Rating is *not* part of this schema (see
     :class:`AdminSetRatingIn`) and has no range validation.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     deals_total: int | None = None
     deals_success: int | None = None
