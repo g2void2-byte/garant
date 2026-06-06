@@ -1466,9 +1466,33 @@ async def delete_deal(
 
     paths_to_delete: list[Path] = []
     if all_media_ids:
+        # ``Media`` rows are owner-scoped, not deal-scoped. A user can
+        # reuse the same uploaded proof in another deal chat, so only
+        # delete files that no remaining message references.
+        still_referenced: set[int] = set()
+        other_messages = (
+            await session.execute(
+                select(DealMessage.attachments_json).where(
+                    DealMessage.deal_id != deal.id,
+                    DealMessage.attachments_json.is_not(None),
+                )
+            )
+        ).scalars()
+        for attachments_json in other_messages:
+            still_referenced.update(
+                mid for mid in _parse_attachment_ids(attachments_json) if mid in all_media_ids
+            )
+            if still_referenced == all_media_ids:
+                break
+
+        media_ids_to_delete = all_media_ids - still_referenced
+    else:
+        media_ids_to_delete = set()
+
+    if media_ids_to_delete:
         media_rows = (
             await session.execute(
-                select(Media).where(Media.id.in_(all_media_ids))
+                select(Media).where(Media.id.in_(media_ids_to_delete))
             )
         ).scalars().all()
 
@@ -1478,7 +1502,7 @@ async def delete_deal(
             file_path = media_root / m.kind / filename
             paths_to_delete.append(file_path)
 
-        await session.execute(Media.__table__.delete().where(Media.id.in_(all_media_ids)))
+        await session.execute(Media.__table__.delete().where(Media.id.in_(media_ids_to_delete)))
 
         def delete_files(paths):
             for p in paths:

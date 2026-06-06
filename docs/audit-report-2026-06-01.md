@@ -2738,6 +2738,16 @@ Risk: moderation reasons are operator-visible state and are also surfaced to aff
 
 Fix: `ban_user` and `freeze_user` now use Pydantic `model_fields_set` to distinguish a sent `reason` key from an omitted one. Explicit `null` or a blank string normalized to `None` clears the stored reason, while an empty body remains an idempotent no-op for already moderated users. Regressions cover clearing existing `ban_reason` and `freeze_reason` with `{ reason: null }`.
 
+### M-247. Admin deal delete removed media still referenced by other deals
+
+Links: `backend/app/routers/admin/deals.py`, regression in `test_pr_fixes_regression.py`.
+
+Deal-chat attachments store `Media.id` values in `DealMessage.attachments_json`, but `Media` rows are owner-scoped and are not tied to a single deal. The message send endpoint permits a participant to attach their own `kind="deal"` upload to any deal they can chat in. `POST /api/admin/deals/:id/delete` collected attachment ids from the deleted deal's messages and deleted those `Media` rows and files unconditionally, so a reused proof image could disappear from another active deal's chat.
+
+Risk: admin deletion is already a destructive workflow, but it should be scoped to the target deal. Removing shared media rows makes unrelated chats lose attachments and can destroy evidence still needed in another dispute or handoff.
+
+Fix: the delete path now scans remaining deal messages for references to the collected media ids and deletes only the ids that are no longer referenced anywhere else. The existing orphan cleanup behavior is preserved for media used only by the deleted deal. The regression attaches one upload to two deals, deletes the first deal, and verifies the second deal still has the `Media` row, file, and serialized attachment.
+
 ## Наблюдения без отдельного finding
 
 

@@ -4,7 +4,7 @@ Covers:
 1. Public reviews creation persistence (commit to DB).
 2. Resolve endpoint returns 403 Forbidden for unauthorized non-admins/non-arbiters.
 3. Case-insensitive signature verification in Crystalpay webhook.
-4. Admin delete deal cleans up attached media rows and unlinks files on disk.
+4. Admin delete deal cleans up orphan attached media without deleting shared media.
 5. Late topup payment webhook credits buyer's spendable balance instead of resurrecting the deal.
 """
 
@@ -276,6 +276,93 @@ async def test_admin_delete_deal_cleans_media_files(client):
         assert await session.get(Media, media_id) is None
         assert await session.get(Deal, deal_id) is None
         assert not file_path.exists()
+
+
+async def test_admin_delete_deal_keeps_media_referenced_by_other_deals(client):
+    buyer_init = signed_init_data(6033, "buyer_shared_media")
+    seller_one_init = signed_init_data(6034, "seller_shared_one")
+    seller_two_init = signed_init_data(6035, "seller_shared_two")
+    buyer_pin = await setup_pin(client, buyer_init)
+    await setup_pin(client, seller_one_init)
+    await setup_pin(client, seller_two_init)
+
+    async with async_session() as session:
+        buyer_id = await get_user_id_by_tg(session, 6033)
+        await credit_balance(session, buyer_id, "USDT", 200.0)
+
+    async def create_deal(counterparty: str, description: str) -> int:
+        resp = await client.post(
+            "/api/deals",
+            json={
+                "counterparty": counterparty,
+                "role": "buyer",
+                "amount": 50,
+                "description": description,
+                "currency_code": "USDT",
+            },
+            headers={**auth_headers(buyer_init), "X-Pin-Token": buyer_pin},
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    deal_one_id = await create_deal("seller_shared_one", "first shared media deal")
+    deal_two_id = await create_deal("seller_shared_two", "second shared media deal")
+
+    png_bytes = tiny_image_bytes("PNG")
+    files = {"file": ("shared.png", io.BytesIO(png_bytes), "image/png")}
+    up = await client.post(
+        "/api/media/upload",
+        data={"kind": "deal"},
+        files=files,
+        headers=auth_headers(buyer_init),
+    )
+    assert up.status_code == 201, up.text
+    media_id = up.json()["id"]
+
+    for deal_id in (deal_one_id, deal_two_id):
+        resp = await client.post(
+            f"/api/deals/{deal_id}/messages",
+            json={"text": "same proof", "attachments": [media_id]},
+            headers=auth_headers(buyer_init),
+        )
+        assert resp.status_code == 201, resp.text
+
+    async with async_session() as session:
+        m = await session.get(Media, media_id)
+        assert m is not None
+        filename = m.url.split("/")[-1]
+        media_root = Path(settings.media_root).expanduser().resolve()
+        file_path = media_root / m.kind / filename
+        assert file_path.exists()
+
+    admin_init = signed_init_data(9100, "admin_shared_media")
+    await client.get("/api/me", headers=auth_headers(admin_init))
+    async with async_session() as session:
+        user_id = await get_user_id_by_tg(session, 9100)
+        user = await session.get(User, user_id)
+        user.is_admin = True
+        await session.commit()
+
+    del_resp = await client.post(
+        f"/api/admin/deals/{deal_one_id}/delete",
+        json={"reason": "cleanup shared media test"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert del_resp.status_code == 200, del_resp.text
+
+    async with async_session() as session:
+        assert await session.get(Media, media_id) is not None
+        assert await session.get(Deal, deal_one_id) is None
+        assert await session.get(Deal, deal_two_id) is not None
+        assert file_path.exists()
+
+    listed = await client.get(
+        f"/api/deals/{deal_two_id}/messages",
+        headers=auth_headers(seller_two_init),
+    )
+    assert listed.status_code == 200, listed.text
+    messages = listed.json()
+    assert messages[0]["attachments"][0]["id"] == media_id
 
 
 async def test_late_payment_credits_buyer_balance_instead_of_deal_resurrection(client):
