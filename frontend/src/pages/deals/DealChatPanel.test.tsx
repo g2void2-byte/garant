@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { DealMessageDto, MediaDto } from "@/api/types";
 
@@ -148,5 +148,55 @@ describe("<DealChatPanel />", () => {
       kind: "error",
       title: "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 ID \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f",
     });
+  });
+
+  it("normalizes uploaded numeric-string attachment ids before sending", async () => {
+    const user = userEvent.setup();
+    mockState.uploadMedia.mutateAsync.mockResolvedValue(
+      makeMedia({ id: "10" as unknown as number }),
+    );
+    mockState.sendMessage.mutateAsync.mockResolvedValue(makeMessage());
+
+    const { container } = render(<DealChatPanel dealId={42} />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["proof"], "proof.png", { type: "image/png" })],
+      },
+    });
+
+    await waitFor(() => expect(screen.getByRole("img", { name: "proof.png" })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /\u041e\u0442\u043f\u0440\u0430\u0432\u0438\u0442\u044c/i }));
+
+    await waitFor(() =>
+      expect(mockState.sendMessage.mutateAsync).toHaveBeenCalledWith({
+        text: "",
+        attachments: [10],
+      }),
+    );
+  });
+
+  it("rejects uploaded attachments with malformed runtime ids", async () => {
+    mockState.uploadMedia.mutateAsync.mockResolvedValue(
+      makeMedia({ id: "0x10" as unknown as number }),
+    );
+
+    const { container } = render(<DealChatPanel dealId={42} />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["proof"], "proof.png", { type: "image/png" })],
+      },
+    });
+
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith({
+        kind: "error",
+        title: "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 ID \u0432\u043b\u043e\u0436\u0435\u043d\u0438\u044f",
+      }),
+    );
+    expect(screen.queryByRole("img", { name: "proof.png" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /\u041e\u0442\u043f\u0440\u0430\u0432\u0438\u0442\u044c/i })).toBeDisabled();
+    expect(mockState.sendMessage.mutateAsync).not.toHaveBeenCalled();
   });
 });

@@ -211,6 +211,7 @@
 - M-239: admin side-effect cache invalidations now normalize runtime ids before building query keys.
 - M-240: wallet deposit status polling now normalizes runtime deposit ids.
 - M-241: deal topup invoice detail flow now opens the realtime modal and normalizes runtime invoice ids.
+- M-242: deal chat upload responses now normalize attachment ids before send payloads.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2685,6 +2686,16 @@ Links: `frontend/src/pages/deals/DealDetailPage.tsx`, `frontend/src/components/w
 Risk: a buyer paying from an existing deal detail page skipped the modal's deposit/deal polling and paid transition UX. If an API payload supplied a numeric-string invoice id, polling could miss the canonical deposit query; malformed ids could also create bogus query inputs or exact invalidation keys.
 
 Fix: the detail CTA now opens the existing realtime invoice modal, the detail page parses `topup_invoice.deposit_id` before enabling that flow, and `DealInvoiceModal` normalizes runtime deal/deposit ids before polling, exact invalidation, fallback invoice labels, and success callbacks. Regressions cover numeric-string deal invoice ids, malformed-id polling suppression, the detail-page modal open path, and malformed detail invoice ids.
+
+### M-242. Deal chat sent raw upload media ids as attachment references
+
+Links: `frontend/src/pages/deals/DealChatPanel.tsx`, backend strict attachment schema `backend/app/schemas.py`, regression in `DealChatPanel.test.tsx`.
+
+The deal chat upload flow accepted the runtime `MediaDto` returned by `POST /api/media/upload` and stored it directly in `pending`. When the user sent the message, the payload used `attachments: pending.map((m) => m.id)`. Backend `DealMessageCreate` intentionally rejects non-integer attachment ids, so a numeric-string media id such as `"10"` from a drifted runtime response could upload successfully, render a pending chip, and then fail on send with a schema error.
+
+Risk: this is a normal chat workflow during disputes and handoff. A successful file upload followed by a rejected send loses the user's message context and leaves the UI showing an attachment that cannot be submitted until the page is refreshed or the upload is retried.
+
+Fix: `DealChatPanel` now parses upload response ids through the shared positive-id boundary before adding them to pending attachments, rejects malformed ids with a local error, and revalidates pending ids before building the send payload. Regressions cover numeric-string upload ids being sent as numbers and malformed upload ids being rejected before send.
 
 ## Наблюдения без отдельного finding
 

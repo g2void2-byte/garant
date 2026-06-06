@@ -20,6 +20,8 @@ import { parsePositiveIntValue } from "@/lib/routeParams";
 const MAX_ATTACHMENTS = 10;
 const INVALID_DEAL_MESSAGE_CURSOR_ERROR =
   "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 ID \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f";
+const INVALID_DEAL_ATTACHMENT_ERROR =
+  "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 ID \u0432\u043b\u043e\u0436\u0435\u043d\u0438\u044f";
 
 interface DealChatPanelProps {
   dealId: number;
@@ -118,7 +120,11 @@ export function DealChatPanel({ dealId }: DealChatPanelProps) {
     try {
       for (const file of files) {
         const media = await uploadMedia.mutateAsync({ kind: "deal", file });
-        setPending((p) => [...p, media]);
+        const mediaId = parsePositiveIntValue(media.id);
+        if (mediaId === undefined) {
+          throw new Error(INVALID_DEAL_ATTACHMENT_ERROR);
+        }
+        setPending((p) => [...p, { ...media, id: mediaId }]);
       }
     } catch (err) {
       const message = (err as Error)?.message || "Не удалось загрузить файл";
@@ -138,10 +144,21 @@ export function DealChatPanel({ dealId }: DealChatPanelProps) {
     const trimmed = text.trim();
     if (!trimmed && pending.length === 0) return;
     setError(null);
+    const attachmentIds: number[] = [];
+    for (const media of pending) {
+      const mediaId = parsePositiveIntValue(media.id);
+      if (mediaId === undefined) {
+        setError(INVALID_DEAL_ATTACHMENT_ERROR);
+        toast.show({ kind: "error", title: INVALID_DEAL_ATTACHMENT_ERROR });
+        haptic("error");
+        return;
+      }
+      attachmentIds.push(mediaId);
+    }
     try {
       await sendMessage.mutateAsync({
         text: trimmed,
-        attachments: pending.map((m) => m.id),
+        attachments: attachmentIds,
       });
       setText("");
       setPending([]);
