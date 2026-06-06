@@ -2708,6 +2708,16 @@ Risk: a malformed runtime media URL such as `javascript:...`, a protocol-relativ
 
 Fix: banner uploads now pass the returned URL through `safeMediaUrl()`, submit the normalized `/media/...` value to `PATCH /api/me`, and reject malformed upload URLs locally before any profile update mutation. Regressions cover trimming/normalizing valid media URLs and suppressing malformed URLs before `useUpdateMe`.
 
+### M-244. Profile PATCH collapsed explicit null clears into omitted fields
+
+Links: `backend/app/routers/me.py`, regression in `test_admin_user_consistency.py`.
+
+`PATCH /api/me` used `if body.<field> is not None` to decide whether nullable profile fields were present. That made omitted keys and explicit `null` indistinguishable for `banner_url`, `photo_url`, `country`, and `display_currency_code`. The country and display-currency validators also normalize empty strings to `None`, so both the documented empty-string clear path and the frontend's `null` clear payload were silently treated as no-ops.
+
+Risk: users could set a banner/avatar URL, country, or profile balance currency but could not reliably clear those values from Settings. The UI cache would refresh with the old value, making the save look ineffective and leaving stale public profile metadata in place.
+
+Fix: the route now uses Pydantic `model_fields_set` to distinguish keys that were actually sent from omitted fields. Explicit `null` or normalized empty-string values clear the nullable columns, while omitted fields remain no-ops. The regression covers setting values, preserving them through an unrelated PATCH, clearing with `null`, and clearing country/display currency with empty strings.
+
 ## Наблюдения без отдельного finding
 
 
