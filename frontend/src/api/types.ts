@@ -848,14 +848,14 @@ export interface AdminCurrencyDto {
 export interface AdminCurrencyUpsertBody {
   code: string;
   name?: string;
-  network?: string;
-  icon_url?: string;
+  network?: string | null;
+  icon_url?: string | null;
   decimals?: number;
   min_deposit?: number | string;
   min_withdraw?: number | string;
   is_active?: boolean;
   sort_order?: number;
-  address_regex?: string;
+  address_regex?: string | null;
   kind?: "crypto" | "fiat";
 }
 

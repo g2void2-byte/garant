@@ -84,6 +84,59 @@ async def test_currency_update_partial_fields_keeps_unset_values(client):
     assert after["sort_order"] == 7
 
 
+async def test_currency_update_clears_nullable_string_fields_with_null(client):
+    """OpenAPI exposes these fields as nullable; explicit ``null`` must
+    clear them instead of being collapsed into "field omitted"."""
+    admin_init, admin_id = await _make_admin(client, tg=1)
+
+    resp = await client.put(
+        "/api/admin/currencies",
+        json={
+            "code": "JETN",
+            "name": "Nullable Jeton",
+            "network": "TON",
+            "icon_url": "https://example.test/jetn.svg",
+            "address_regex": "^JETN[0-9]+$",
+        },
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.put(
+        "/api/admin/currencies",
+        json={"code": "JETN", "network": None, "icon_url": None, "address_regex": None},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["network"] == ""
+    assert body["icon_url"] == ""
+    assert body["address_regex"] == ""
+
+    async with async_session() as session:
+        row = (await session.execute(select(Currency).where(Currency.code == "JETN"))).scalar_one()
+        assert row.network == ""
+        assert row.icon_url == ""
+        assert row.address_regex == ""
+        audit = (
+            await session.execute(
+                select(AdminAuditLog)
+                .where(AdminAuditLog.actor_id == admin_id)
+                .where(AdminAuditLog.target_type == "currency")
+                .where(AdminAuditLog.action == "currency.update")
+                .order_by(AdminAuditLog.id.desc())
+                .limit(1)
+            )
+        ).scalar_one()
+    assert audit.payload is not None
+    assert audit.payload["before"]["network"] == "TON"
+    assert audit.payload["after"]["network"] == ""
+    assert audit.payload["before"]["icon_url"] == "https://example.test/jetn.svg"
+    assert audit.payload["after"]["icon_url"] == ""
+    assert audit.payload["before"]["address_regex"] == "^JETN[0-9]+$"
+    assert audit.payload["after"]["address_regex"] == ""
+
+
 async def test_currency_update_can_deactivate(client):
     """Flipping ``is_active`` to False on an existing row must persist
     and must surface in the response body (so the admin UI can render

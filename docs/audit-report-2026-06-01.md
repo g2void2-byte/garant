@@ -2778,6 +2778,16 @@ Risk: service moderation state becomes inconsistent. Admins can unban a service 
 
 Fix: admin service updates now use Pydantic `model_fields_set` for `ban_reason`, normalize blank reasons to `None`, clear stale reasons automatically when status leaves `banned` unless a reason was explicitly supplied, and the frontend admin update type now allows `null`. Regressions cover explicit null clearing and `banned -> active` clearing the stored reason/audit payload.
 
+### M-251. Admin currency nullable string clears were ignored
+
+Links: `backend/app/routers/admin/taxonomy.py`, `frontend/src/api/types.ts`, regression in `test_admin_taxonomy_currencies.py`.
+
+`AdminCurrencyUpsertIn` exposes nullable `network`, `icon_url`, and `address_regex` fields, and generated OpenAPI advertises each as `string | null`. On the update branch the router still used `if body.<field> is not None`, so explicit JSON `null` was treated like an omitted field and could not clear an existing value. The handwritten frontend type repeated the drift by narrowing those fields to plain `string`.
+
+Risk: admins using the API contract could remove an obsolete network label, icon URL, or withdrawal-address regex and receive a 200 while the old value remained active. The `address_regex` case is operationally sensitive because a stale regex keeps affecting future withdrawal validation for that currency.
+
+Fix: the currency update branch now uses `model_fields_set` for nullable string fields and maps explicit `null` to the stored empty-string clear value. Handwritten frontend types now match the nullable OpenAPI contract. The regression creates a currency with all three values, updates them with explicit `null`, and verifies response, DB row, and audit payload clear them.
+
 ## Наблюдения без отдельного finding
 
 

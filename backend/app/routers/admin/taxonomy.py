@@ -228,10 +228,11 @@ async def upsert_currency(
         before = _currency_audit_snapshot(existing)
         if body.name is not None:
             existing.name = body.name
-        if body.network is not None:
-            existing.network = body.network
-        if body.icon_url is not None:
-            existing.icon_url = body.icon_url
+        requested_fields = body.model_fields_set
+        if "network" in requested_fields:
+            existing.network = body.network or ""
+        if "icon_url" in requested_fields:
+            existing.icon_url = body.icon_url or ""
         if body.decimals is not None:
             existing.decimals = body.decimals
         if body.min_deposit is not None:
@@ -242,8 +243,8 @@ async def upsert_currency(
             existing.is_active = body.is_active
         if body.sort_order is not None:
             existing.sort_order = body.sort_order
-        if body.address_regex is not None:
-            existing.address_regex = body.address_regex
+        if "address_regex" in requested_fields:
+            existing.address_regex = body.address_regex or ""
         if body.kind is not None:
             existing.kind = body.kind
         action = "currency.update"
