@@ -2848,6 +2848,16 @@ Risk: retired admin tooling produces successful-looking writes that mutate nothi
 
 Fix: `AdminSetStatsIn` now uses `extra="forbid"`, so unknown stats body keys return 422 before the route. The regression suite covers schema-level unknown-field rejection and the retired `deposit_total` endpoint payload.
 
+### M-258. Admin stats accepted explicit null as a successful no-op
+
+Links: `backend/app/schemas.py`, OpenAPI snapshot `frontend/openapi.json`, generated contract `frontend/src/api/openapi.generated.ts`, regressions in `test_admin_counter_schema.py`, `test_admin_users.py`, and `openapi.contract.test.ts`.
+
+`POST /api/admin/users/:id/stats` documents partial update semantics: omitted keys stay unchanged, provided keys are applied. The schema also exposed every stats field as nullable, and the route only wrote fields whose parsed value was not `None`. A payload such as `{"deals_total": null}` or `{"deals_sum_override": null}` therefore returned success while preserving the old value.
+
+Risk: generated clients and admin scripts could send `null` while intending to reset a counter or clear the manual deals sum override, then receive a normal 200 response with no audit entry and no mutation. This is especially confusing for `deals_sum_override`, because the stored column is non-nullable and the admin UI edits it as a numeric override, not as a nullable clear operation.
+
+Fix: stats fields now use optional-but-not-null sentinels. OpenAPI no longer advertises `null` for the stats request body, while omitted fields still work as the internal partial-update sentinel. Explicit JSON `null` now fails validation with 422, covered at schema, endpoint, and OpenAPI-contract levels.
+
 ## Наблюдения без отдельного finding
 
 

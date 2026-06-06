@@ -2690,51 +2690,23 @@
       },
       "AdminSetStatsIn": {
         "additionalProperties": false,
-        "description": "Body for ``POST /admin/users/:id/stats``.\n\nEvery field is optional \u2014 only provided keys are applied. Negative\nvalues are rejected because counts/sums don't make sense below\nzero. Rating is *not* part of this schema (see\n:class:`AdminSetRatingIn`) and has no range validation.",
+        "description": "Body for ``POST /admin/users/:id/stats``.\n\nEvery field is optional \u2014 only provided keys are applied. Negative\nvalues and explicit JSON ``null`` are rejected because counts/sums\ndon't make sense below zero. Rating is *not* part of this schema (see\n:class:`AdminSetRatingIn`) and has no range validation.",
         "properties": {
           "bad": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bad"
+            "title": "Bad",
+            "type": "integer"
           },
           "deals_arbitrage": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deals Arbitrage"
+            "title": "Deals Arbitrage",
+            "type": "integer"
           },
           "deals_failed": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deals Failed"
+            "title": "Deals Failed",
+            "type": "integer"
           },
           "deals_success": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deals Success"
+            "title": "Deals Success",
+            "type": "integer"
           },
           "deals_sum_override": {
             "anyOf": [
@@ -2744,34 +2716,17 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Deals Sum Override"
           },
           "deals_total": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deals Total"
+            "title": "Deals Total",
+            "type": "integer"
           },
           "good": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Good"
+            "title": "Good",
+            "type": "integer"
           }
         },
         "title": "AdminSetStatsIn",

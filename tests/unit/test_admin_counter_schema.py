@@ -34,6 +34,34 @@ def test_admin_set_stats_rejects_unknown_fields() -> None:
 
 @pytest.mark.parametrize(
     "field",
+    [
+        "deals_total",
+        "deals_success",
+        "deals_failed",
+        "deals_arbitrage",
+        "good",
+        "bad",
+        "deals_sum_override",
+    ],
+)
+def test_admin_set_stats_rejects_noop_explicit_null_fields(field: str) -> None:
+    with pytest.raises(ValidationError) as exc:
+        AdminSetStatsIn(**{field: None})
+
+    assert exc.value.errors()[0]["loc"] == (field,)
+
+
+def test_admin_set_stats_schema_hides_null_for_noop_fields() -> None:
+    schema = AdminSetStatsIn.model_json_schema()
+
+    assert schema["additionalProperties"] is False
+    for field_schema in schema["properties"].values():
+        assert {"type": "null"} not in field_schema.get("anyOf", [])
+        assert field_schema.get("type") != "null"
+
+
+@pytest.mark.parametrize(
+    "field",
     ["deals_total", "deals_success", "deals_failed", "deals_arbitrage", "good", "bad"],
 )
 @pytest.mark.parametrize("bad", [True, False, "5", 1.0, -1])

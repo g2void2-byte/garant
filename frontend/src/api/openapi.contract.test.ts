@@ -641,6 +641,27 @@ describe("OpenAPI contract", () => {
     expect(openapi.components.schemas).toHaveProperty(name);
   });
 
+  it("AdminSetStatsIn forbids null for no-op partial update fields", () => {
+    const stats = openapi.components.schemas.AdminSetStatsIn as {
+      additionalProperties?: boolean;
+      properties: Record<string, { anyOf?: Array<{ type?: string }>; type?: string }>;
+    };
+
+    expect(stats.additionalProperties).toBe(false);
+    for (const field of [
+      "deals_total",
+      "deals_success",
+      "deals_failed",
+      "deals_arbitrage",
+      "good",
+      "bad",
+      "deals_sum_override",
+    ]) {
+      expect(stats.properties[field]?.type).not.toBe("null");
+      expect(stats.properties[field]?.anyOf?.map((part) => part.type) ?? []).not.toContain("null");
+    }
+  });
+
   it("DealOut requires the buyer/seller fields the deal list UI reads", () => {
     const deal = openapi.components.schemas.DealOut as {
       required: readonly string[];

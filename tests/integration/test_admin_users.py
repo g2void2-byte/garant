@@ -699,6 +699,22 @@ async def test_set_stats_rejects_negative(client):
     assert resp.status_code == 422
 
 
+async def test_set_stats_rejects_explicit_null_noop_fields(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+
+    for payload in ({"deals_total": None}, {"deals_sum_override": None}):
+        resp = await client.post(
+            f"/api/admin/users/{target_id}/stats",
+            json=payload,
+            headers=with_totp(auth_headers(admin_init)),
+        )
+        assert resp.status_code == 422, resp.text
+
+
 async def test_set_stats_rejects_deposit_total(client):
     """``POST /api/admin/users/:id/stats`` no longer accepts
     ``deposit_total`` — the column was retired together with the

@@ -3393,25 +3393,25 @@ export interface components {
          * @description Body for ``POST /admin/users/:id/stats``.
          *
          *     Every field is optional — only provided keys are applied. Negative
-         *     values are rejected because counts/sums don't make sense below
-         *     zero. Rating is *not* part of this schema (see
+         *     values and explicit JSON ``null`` are rejected because counts/sums
+         *     don't make sense below zero. Rating is *not* part of this schema (see
          *     :class:`AdminSetRatingIn`) and has no range validation.
          */
         AdminSetStatsIn: {
             /** Bad */
-            bad?: number | null;
+            bad?: number;
             /** Deals Arbitrage */
-            deals_arbitrage?: number | null;
+            deals_arbitrage?: number;
             /** Deals Failed */
-            deals_failed?: number | null;
+            deals_failed?: number;
             /** Deals Success */
-            deals_success?: number | null;
+            deals_success?: number;
             /** Deals Sum Override */
-            deals_sum_override?: number | string | null;
+            deals_sum_override?: number | string;
             /** Deals Total */
-            deals_total?: number | null;
+            deals_total?: number;
             /** Good */
-            good?: number | null;
+            good?: number;
         };
         /**
          * AdminSetTrustDepositIn

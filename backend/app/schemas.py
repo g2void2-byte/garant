@@ -1564,24 +1564,24 @@ class AdminSetStatsIn(BaseModel):
     """Body for ``POST /admin/users/:id/stats``.
 
     Every field is optional — only provided keys are applied. Negative
-    values are rejected because counts/sums don't make sense below
-    zero. Rating is *not* part of this schema (see
+    values and explicit JSON ``null`` are rejected because counts/sums
+    don't make sense below zero. Rating is *not* part of this schema (see
     :class:`AdminSetRatingIn`) and has no range validation.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    deals_total: int | None = None
-    deals_success: int | None = None
-    deals_failed: int | None = None
-    deals_arbitrage: int | None = None
-    good: int | None = None
-    bad: int | None = None
+    deals_total: int | SkipJsonSchema[None] = None
+    deals_success: int | SkipJsonSchema[None] = None
+    deals_failed: int | SkipJsonSchema[None] = None
+    deals_arbitrage: int | SkipJsonSchema[None] = None
+    good: int | SkipJsonSchema[None] = None
+    bad: int | SkipJsonSchema[None] = None
     # Admin-editable "сумма сделок" — surfaced as ``deals_sum`` on the
     # public/private user DTOs. ``Decimal`` to match the rest of the
     # money columns (Numeric(28, 8)); negative values rejected by the
     # validator below.
-    deals_sum_override: Decimal | None = None
+    deals_sum_override: Decimal | SkipJsonSchema[None] = None
 
     @field_validator(
         "deals_total",
@@ -1594,7 +1594,12 @@ class AdminSetStatsIn(BaseModel):
     )
     @classmethod
     def _non_negative_int(cls, v: object) -> int | None:
-        return _validate_optional_non_negative_int(v)
+        return _validate_optional_non_negative_int(_reject_explicit_null_value(v))
+
+    @field_validator("deals_sum_override", mode="before")
+    @classmethod
+    def _reject_null_deals_sum_override(cls, v: object) -> object:
+        return _reject_explicit_null_value(v)
 
     @field_validator("deals_sum_override")
     @classmethod
