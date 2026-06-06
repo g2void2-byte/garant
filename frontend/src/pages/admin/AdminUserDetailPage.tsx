@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Ban,
@@ -207,6 +207,11 @@ function ModerationSection({ user, userId, isSelf }: { user: AdminUserDetailDto;
   const [banReason, setBanReason] = useState("");
   const [freezeReason, setFreezeReason] = useState("");
 
+  useEffect(() => {
+    setBanReason("");
+    setFreezeReason("");
+  }, [userId]);
+
   const run = async <T,>(
     label: string,
     mutateAsync: (args: { userId: number; body?: Record<string, unknown> }) => Promise<T>,
@@ -315,6 +320,12 @@ function RolesSection({ user, userId, isSelf }: { user: AdminUserDetailDto; user
   const [isArbiter, setIsArbiter] = useState(user.is_arbiter);
   const [isVip, setIsVip] = useState(user.is_vip);
 
+  useEffect(() => {
+    setIsAdmin(user.is_admin);
+    setIsArbiter(user.is_arbiter);
+    setIsVip(user.is_vip);
+  }, [userId, user.is_admin, user.is_arbiter, user.is_vip]);
+
   const dirty =
     isAdmin !== user.is_admin || isArbiter !== user.is_arbiter || isVip !== user.is_vip;
 
@@ -404,6 +415,10 @@ function RatingSection({ user, userId }: { user: AdminUserDetailDto; userId: num
     user.rating_manual !== null ? String(user.rating_manual) : "",
   );
 
+  useEffect(() => {
+    setDraft(user.rating_manual !== null ? String(user.rating_manual) : "");
+  }, [userId, user.rating_manual]);
+
   const save = async (clear = false) => {
     const value = clear ? null : parseRatingOverride(draft);
     if (!clear && value === null) {
@@ -485,15 +500,43 @@ interface StatsDraft {
 function StatsSection({ user, userId }: { user: AdminUserDetailDto; userId: number }) {
   const toast = useToast();
   const setStats = useAdminSetStats();
-  const [draft, setDraft] = useState<StatsDraft>({
-    deals_total: String(user.deals_total),
-    deals_success: String(user.deals_success),
-    deals_failed: String(user.deals_failed),
-    deals_arbitrage: String(user.deals_arbitrage),
-    deals_sum_override: String(user.deals_sum_override ?? 0),
-    good: String(user.good),
-    bad: String(user.bad),
-  });
+  const userDealsTotal = user.deals_total;
+  const userDealsSuccess = user.deals_success;
+  const userDealsFailed = user.deals_failed;
+  const userDealsArbitrage = user.deals_arbitrage;
+  const userDealsSumOverride = user.deals_sum_override;
+  const userGood = user.good;
+  const userBad = user.bad;
+  const [draft, setDraft] = useState<StatsDraft>(() => ({
+    deals_total: String(userDealsTotal),
+    deals_success: String(userDealsSuccess),
+    deals_failed: String(userDealsFailed),
+    deals_arbitrage: String(userDealsArbitrage),
+    deals_sum_override: String(userDealsSumOverride ?? 0),
+    good: String(userGood),
+    bad: String(userBad),
+  }));
+
+  useEffect(() => {
+    setDraft({
+      deals_total: String(userDealsTotal),
+      deals_success: String(userDealsSuccess),
+      deals_failed: String(userDealsFailed),
+      deals_arbitrage: String(userDealsArbitrage),
+      deals_sum_override: String(userDealsSumOverride ?? 0),
+      good: String(userGood),
+      bad: String(userBad),
+    });
+  }, [
+    userId,
+    userDealsTotal,
+    userDealsSuccess,
+    userDealsFailed,
+    userDealsArbitrage,
+    userDealsSumOverride,
+    userGood,
+    userBad,
+  ]);
 
   const fields: Array<{
     key: keyof StatsDraft;
@@ -575,6 +618,11 @@ function TrustDepositSection({ user, userId }: { user: AdminUserDetailDto; userI
   const [amount, setAmount] = useState(String(user.trust_deposit_balance));
   const [reason, setReason] = useState("");
 
+  useEffect(() => {
+    setAmount(String(user.trust_deposit_balance));
+    setReason("");
+  }, [userId, user.trust_deposit_balance]);
+
   const apply = async () => {
     const amountValue = normalizeDecimalInput(amount);
     const n = parseAdminNonNegativeDecimal(amount);
@@ -651,12 +699,19 @@ function BalanceSection({ userId }: { userId: number }) {
   );
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
+  const previousUserId = useRef(userId);
   const allCurrencies = useMemo(() => normalizeCurrencyCodeRows(currencies ?? []), [currencies]);
   useEffect(() => {
+    const userChanged = previousUserId.current !== userId;
+    previousUserId.current = userId;
     setCurrency((current) =>
-      pickAdminMutationCurrency(current, allCurrencies, fallback),
+      pickAdminMutationCurrency(userChanged ? fallback : current, allCurrencies, fallback),
     );
-  }, [allCurrencies, fallback]);
+    if (userChanged) {
+      setAmount("");
+      setReason("");
+    }
+  }, [allCurrencies, fallback, userId]);
   const amountValue = normalizeDecimalInput(amount);
   const parsedAmount = amountValue ? parsePositiveDecimalInput(amountValue) : null;
   const amountError = amountValue && parsedAmount === null

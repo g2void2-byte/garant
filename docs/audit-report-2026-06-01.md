@@ -2718,6 +2718,16 @@ Risk: users could set a banner/avatar URL, country, or profile balance currency 
 
 Fix: the route now uses Pydantic `model_fields_set` to distinguish keys that were actually sent from omitted fields. Explicit `null` or normalized empty-string values clear the nullable columns, while omitted fields remain no-ops. The regression covers setting values, preserving them through an unrelated PATCH, clearing with `null`, and clearing country/display currency with empty strings.
 
+### M-245. Admin user detail forms kept stale state across user changes
+
+Links: `frontend/src/pages/admin/AdminUserDetailPage.tsx`, regression in `AdminUserDetailPage.test.tsx`.
+
+The admin user detail page initialized several editable forms from `user` with `useState(...)` only: moderation reasons, role toggles, manual rating, stats, trust deposit, and per-user wallet adjustment inputs. React Router can reuse the same component instance when navigating from one `/admin/users/:id` route to another, and query refetches can also replace `user` without remounting those child sections. The local form state therefore stayed bound to the previous user until the admin manually changed each field.
+
+Risk: an admin opening user B after editing or viewing user A could see A's role toggles, numeric stats, trust-deposit amount, moderation reason drafts, or wallet adjustment inputs in B's action panel. Saving from that stale form could apply unintended values to the new target user.
+
+Fix: each editable section now resynchronizes local state from the loaded user when the canonical `userId` or backing payload fields change. The wallet adjustment section preserves normal currency-list loading behavior but resets amount/reason and defaults currency on target-user changes. The regression dirties forms for one admin user, navigates to another user detail route without remounting, and verifies the forms show the second user's payload.
+
 ## Наблюдения без отдельного finding
 
 

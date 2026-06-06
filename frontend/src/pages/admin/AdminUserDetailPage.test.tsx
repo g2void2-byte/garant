@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useEffect } from "react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AdminUserDetailDto } from "@/api/types";
 
@@ -124,11 +125,25 @@ vi.mock("./UserContentSections", () => ({
 
 import AdminUserDetailPage from "./AdminUserDetailPage";
 
+let navigateInTest: ((to: string) => void) | undefined;
+
+function NavigationCapture() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    navigateInTest = navigate;
+    return () => {
+      navigateInTest = undefined;
+    };
+  }, [navigate]);
+  return null;
+}
+
 function renderPage(id: number | string = "5") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[`/admin/users/${id}`]}>
+        <NavigationCapture />
         <Routes>
           <Route
             path="/admin/users/:id"
@@ -182,6 +197,7 @@ function makeUser(
 }
 
 beforeEach(() => {
+  navigateInTest = undefined;
   mockState.user = undefined;
   mockState.lastUserId = undefined;
   mockState.loading = false;
@@ -231,6 +247,77 @@ describe("<AdminUserDetailPage />", () => {
     expect(mockState.serviceUserId).toBe(5);
     expect(mockState.reviewUserId).toBe(5);
     expect(mockState.commentUserId).toBe(5);
+  });
+
+  it("resets editable form state after navigating to another user detail", async () => {
+    mockState.user = makeUser({
+      id: 5,
+      username: "alice",
+      display_name: "Alice",
+      is_admin: false,
+      is_arbiter: false,
+      is_vip: false,
+      rating_manual: 4.8,
+      deals_total: 10,
+      deals_success: 9,
+      deals_failed: 1,
+      deals_arbitrage: 0,
+      deals_sum_override: 0,
+      good: 20,
+      bad: 1,
+      trust_deposit_balance: 100,
+    });
+    renderPage("5");
+
+    fireEvent.change(
+      screen.getByPlaceholderText("\u041f\u0440\u0438\u0447\u0438\u043d\u0430 \u0431\u0430\u043d\u0430 (\u043e\u043f\u0446\u0438\u043e\u043d\u0430\u043b\u044c\u043d\u043e)"),
+      { target: { value: "old ban reason" } },
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: /\u0410\u0434\u043c\u0438\u043d/ }));
+    fireEvent.change(screen.getByPlaceholderText(/4\.8/), {
+      target: { value: "1.1" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: /\u0421\u0434\u0435\u043b\u043e\u043a \u0432\u0441\u0435\u0433\u043e/i }), {
+      target: { value: "123" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: /\u041d\u043e\u0432\u043e\u0435 \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435/i }), {
+      target: { value: "555" },
+    });
+
+    mockState.user = makeUser({
+      id: 6,
+      username: "bob",
+      display_name: "Bob",
+      is_admin: true,
+      is_arbiter: true,
+      is_vip: true,
+      rating_manual: null,
+      deals_total: 2,
+      deals_success: 2,
+      deals_failed: 0,
+      deals_arbitrage: 1,
+      deals_sum_override: 42,
+      good: 3,
+      bad: 4,
+      trust_deposit_balance: 250,
+    });
+    expect(navigateInTest).toBeDefined();
+    act(() => navigateInTest?.("/admin/users/6"));
+
+    await waitFor(() => expect(mockState.lastUserId).toBe(6));
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("\u041f\u0440\u0438\u0447\u0438\u043d\u0430 \u0431\u0430\u043d\u0430 (\u043e\u043f\u0446\u0438\u043e\u043d\u0430\u043b\u044c\u043d\u043e)"),
+    ).toHaveValue("");
+    expect(screen.getByRole("checkbox", { name: /\u0410\u0434\u043c\u0438\u043d/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /\u0410\u0440\u0431\u0438\u0442\u0440/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /VIP/ })).toBeChecked();
+    expect(screen.getByPlaceholderText(/4\.8/)).toHaveDisplayValue("");
+    expect(screen.getByRole("spinbutton", { name: /\u0421\u0434\u0435\u043b\u043e\u043a \u0432\u0441\u0435\u0433\u043e/i })).toHaveValue(2);
+    expect(screen.getByRole("spinbutton", { name: /^\u0423\u0441\u043f\u0435\u0448\u043d\u044b\u0445$/i })).toHaveValue(2);
+    expect(screen.getByRole("spinbutton", { name: /\u0412 \u0430\u0440\u0431\u0438\u0442\u0440\u0430\u0436\u0435/i })).toHaveValue(1);
+    expect(screen.getByRole("spinbutton", { name: /\u041f\u043e\u043b\u043e\u0436\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0445/i })).toHaveValue(3);
+    expect(screen.getByRole("spinbutton", { name: /\u041d\u043e\u0432\u043e\u0435 \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435/i })).toHaveValue(250);
   });
 
   it("renders skeletons while loading", () => {
