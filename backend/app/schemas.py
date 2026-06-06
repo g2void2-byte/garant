@@ -20,6 +20,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic.json_schema import SkipJsonSchema
 
 from .money import MONEY_SCALE
 
@@ -2331,24 +2332,34 @@ class AdminSettingsOut(BaseModel):
 class AdminSettingsUpdateIn(BaseModel):
     """Partial update of :class:`AppSettings`.
 
-    Every field is optional. Numeric values must be non-negative
-    (commission percentages additionally bounded to ``0..100``).
+    Every field is optional but explicit JSON ``null`` is not accepted:
+    settings columns are non-nullable and ``null`` would otherwise
+    surface as a database integrity error. Numeric values must be
+    non-negative (commission percentages additionally bounded to
+    ``0..100``).
     """
 
-    deal_commission_percent: Decimal | None = None
-    vip_commission_percent: Decimal | None = None
-    inactivity_pending_confirmation_days: int | None = None
-    inactivity_pending_cancellation_days: int | None = None
-    max_active_services_per_user: int | None = None
-    maintenance_enabled: bool | None = None
-    maintenance_message: str | None = None
-    auto_withdraw_enabled: bool | None = None
-    pending_topup_expiry_hours: int | None = None
-    pin_reset_price_usd: Decimal | None = None
-    faq_stats_badge_enabled: bool | None = None
-    faq_stats_users: int | None = None
-    faq_stats_deals: int | None = None
-    faq_stats_total_usd: Decimal | None = None
+    deal_commission_percent: Decimal | SkipJsonSchema[None] = None
+    vip_commission_percent: Decimal | SkipJsonSchema[None] = None
+    inactivity_pending_confirmation_days: int | SkipJsonSchema[None] = None
+    inactivity_pending_cancellation_days: int | SkipJsonSchema[None] = None
+    max_active_services_per_user: int | SkipJsonSchema[None] = None
+    maintenance_enabled: bool | SkipJsonSchema[None] = None
+    maintenance_message: str | SkipJsonSchema[None] = None
+    auto_withdraw_enabled: bool | SkipJsonSchema[None] = None
+    pending_topup_expiry_hours: int | SkipJsonSchema[None] = None
+    pin_reset_price_usd: Decimal | SkipJsonSchema[None] = None
+    faq_stats_badge_enabled: bool | SkipJsonSchema[None] = None
+    faq_stats_users: int | SkipJsonSchema[None] = None
+    faq_stats_deals: int | SkipJsonSchema[None] = None
+    faq_stats_total_usd: Decimal | SkipJsonSchema[None] = None
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _reject_explicit_null(cls, v: object) -> object:
+        if v is None:
+            raise ValueError("РџРѕР»Рµ РЅРµ РјРѕР¶РµС‚ Р±С‹С‚СЊ null")
+        return v
 
     @field_validator(
         "maintenance_enabled",

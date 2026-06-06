@@ -3468,38 +3468,41 @@ export interface components {
          * AdminSettingsUpdateIn
          * @description Partial update of :class:`AppSettings`.
          *
-         *     Every field is optional. Numeric values must be non-negative
-         *     (commission percentages additionally bounded to ``0..100``).
+         *     Every field is optional but explicit JSON ``null`` is not accepted:
+         *     settings columns are non-nullable and ``null`` would otherwise
+         *     surface as a database integrity error. Numeric values must be
+         *     non-negative (commission percentages additionally bounded to
+         *     ``0..100``).
          */
         AdminSettingsUpdateIn: {
             /** Auto Withdraw Enabled */
-            auto_withdraw_enabled?: boolean | null;
+            auto_withdraw_enabled?: boolean;
             /** Deal Commission Percent */
-            deal_commission_percent?: number | string | null;
+            deal_commission_percent?: number | string;
             /** Faq Stats Badge Enabled */
-            faq_stats_badge_enabled?: boolean | null;
+            faq_stats_badge_enabled?: boolean;
             /** Faq Stats Deals */
-            faq_stats_deals?: number | null;
+            faq_stats_deals?: number;
             /** Faq Stats Total Usd */
-            faq_stats_total_usd?: number | string | null;
+            faq_stats_total_usd?: number | string;
             /** Faq Stats Users */
-            faq_stats_users?: number | null;
+            faq_stats_users?: number;
             /** Inactivity Pending Cancellation Days */
-            inactivity_pending_cancellation_days?: number | null;
+            inactivity_pending_cancellation_days?: number;
             /** Inactivity Pending Confirmation Days */
-            inactivity_pending_confirmation_days?: number | null;
+            inactivity_pending_confirmation_days?: number;
             /** Maintenance Enabled */
-            maintenance_enabled?: boolean | null;
+            maintenance_enabled?: boolean;
             /** Maintenance Message */
-            maintenance_message?: string | null;
+            maintenance_message?: string;
             /** Max Active Services Per User */
-            max_active_services_per_user?: number | null;
+            max_active_services_per_user?: number;
             /** Pending Topup Expiry Hours */
-            pending_topup_expiry_hours?: number | null;
+            pending_topup_expiry_hours?: number;
             /** Pin Reset Price Usd */
-            pin_reset_price_usd?: number | string | null;
+            pin_reset_price_usd?: number | string;
             /** Vip Commission Percent */
-            vip_commission_percent?: number | string | null;
+            vip_commission_percent?: number | string;
         };
         /** AdminSystemStatusOut */
         AdminSystemStatusOut: {

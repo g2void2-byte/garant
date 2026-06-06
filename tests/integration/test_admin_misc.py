@@ -98,6 +98,26 @@ async def test_settings_patch_persists_and_audits(client):
         assert payload["after"]["faq_stats_total_usd"] == "123456789.12345678"
 
 
+async def test_settings_patch_rejects_explicit_null_before_db_write(client):
+    admin_init, _ = await _make_admin(client, tg=1)
+
+    resp = await client.patch(
+        "/api/admin/settings",
+        json={"maintenance_message": None},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+
+    assert resp.status_code == 422, resp.text
+
+    async with async_session() as session:
+        audits = (
+            await session.execute(
+                select(AdminAuditLog).where(AdminAuditLog.action == "settings.update")
+            )
+        ).scalars().all()
+        assert audits == []
+
+
 async def test_settings_patch_rbac(client):
     init = signed_init_data(10, "alice")
     await _bootstrap(client, tg_user_id=10, username="alice")

@@ -2980,18 +2980,11 @@
         "type": "object"
       },
       "AdminSettingsUpdateIn": {
-        "description": "Partial update of :class:`AppSettings`.\n\nEvery field is optional. Numeric values must be non-negative\n(commission percentages additionally bounded to ``0..100``).",
+        "description": "Partial update of :class:`AppSettings`.\n\nEvery field is optional but explicit JSON ``null`` is not accepted:\nsettings columns are non-nullable and ``null`` would otherwise\nsurface as a database integrity error. Numeric values must be\nnon-negative (commission percentages additionally bounded to\n``0..100``).",
         "properties": {
           "auto_withdraw_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Auto Withdraw Enabled"
+            "title": "Auto Withdraw Enabled",
+            "type": "boolean"
           },
           "deal_commission_percent": {
             "anyOf": [
@@ -3001,34 +2994,17 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Deal Commission Percent"
           },
           "faq_stats_badge_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Faq Stats Badge Enabled"
+            "title": "Faq Stats Badge Enabled",
+            "type": "boolean"
           },
           "faq_stats_deals": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Faq Stats Deals"
+            "title": "Faq Stats Deals",
+            "type": "integer"
           },
           "faq_stats_total_usd": {
             "anyOf": [
@@ -3038,89 +3014,37 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Faq Stats Total Usd"
           },
           "faq_stats_users": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Faq Stats Users"
+            "title": "Faq Stats Users",
+            "type": "integer"
           },
           "inactivity_pending_cancellation_days": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inactivity Pending Cancellation Days"
+            "title": "Inactivity Pending Cancellation Days",
+            "type": "integer"
           },
           "inactivity_pending_confirmation_days": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inactivity Pending Confirmation Days"
+            "title": "Inactivity Pending Confirmation Days",
+            "type": "integer"
           },
           "maintenance_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Maintenance Enabled"
+            "title": "Maintenance Enabled",
+            "type": "boolean"
           },
           "maintenance_message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Maintenance Message"
+            "title": "Maintenance Message",
+            "type": "string"
           },
           "max_active_services_per_user": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Active Services Per User"
+            "title": "Max Active Services Per User",
+            "type": "integer"
           },
           "pending_topup_expiry_hours": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pending Topup Expiry Hours"
+            "title": "Pending Topup Expiry Hours",
+            "type": "integer"
           },
           "pin_reset_price_usd": {
             "anyOf": [
@@ -3130,9 +3054,6 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Pin Reset Price Usd"
@@ -3145,9 +3066,6 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Vip Commission Percent"

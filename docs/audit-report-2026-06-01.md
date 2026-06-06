@@ -2788,6 +2788,16 @@ Risk: admins using the API contract could remove an obsolete network label, icon
 
 Fix: the currency update branch now uses `model_fields_set` for nullable string fields and maps explicit `null` to the stored empty-string clear value. Handwritten frontend types now match the nullable OpenAPI contract. The regression creates a currency with all three values, updates them with explicit `null`, and verifies response, DB row, and audit payload clear them.
 
+### M-252. Admin settings PATCH accepted explicit null for non-nullable settings
+
+Links: `backend/app/schemas.py`, OpenAPI snapshot `frontend/openapi.json`, generated contract `frontend/src/api/openapi.generated.ts`, regressions in `test_admin_settings_schema.py`, `test_strict_bool_schema.py`, and `test_admin_misc.py`.
+
+`AdminSettingsUpdateIn` used `T | None = None` for every partial PATCH field. That made omitted fields and explicit JSON `null` both valid at the schema boundary, and generated OpenAPI advertised settings fields as nullable. The settings row columns are non-nullable, though, and `PATCH /api/admin/settings` writes `model_dump(exclude_unset=True)` directly into the singleton row. A request such as `{"maintenance_message": null}` could therefore pass request validation and fail later at commit with a database integrity error instead of a clean API validation error.
+
+Risk: admin scripts or generated clients following the nullable OpenAPI contract could turn a bad settings payload into a DB-level failure path. Operational settings such as commission, maintenance, auto-withdraw, PIN reset price, and FAQ counters should reject malformed `null` values at the edge before audit/logging/commit logic is entered.
+
+Fix: settings update fields now use `T | SkipJsonSchema[None] = None` plus a wildcard before-validator, so omission still keeps normal partial PATCH behavior while explicit `null` returns 422 and is not advertised in OpenAPI. The OpenAPI snapshot and generated TS contract no longer expose `null` for `AdminSettingsUpdateIn`. Regressions cover every settings field at schema level, strict bool `None` rejection for settings flags, and an endpoint request proving `null` is rejected before any `settings.update` audit row is written.
+
 ## Наблюдения без отдельного finding
 
 

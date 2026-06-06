@@ -56,12 +56,11 @@ def test_clear_rating_rejects_coerced_bool_values(model: type[Any]) -> None:
     "field",
     ["maintenance_enabled", "auto_withdraw_enabled", "faq_stats_badge_enabled"],
 )
-def test_admin_settings_accepts_only_real_bool_or_none_for_flags(field: str) -> None:
+def test_admin_settings_accepts_only_real_bool_for_requested_flags(field: str) -> None:
     assert getattr(AdminSettingsUpdateIn(**{field: True}), field) is True
     assert getattr(AdminSettingsUpdateIn(**{field: False}), field) is False
-    assert getattr(AdminSettingsUpdateIn(**{field: None}), field) is None
 
-    for bad in BAD_BOOL_VALUES:
+    for bad in (*BAD_BOOL_VALUES, None):
         with pytest.raises(ValidationError):
             AdminSettingsUpdateIn(**{field: bad})
 
