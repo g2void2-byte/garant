@@ -262,6 +262,38 @@ async def test_broadcasts_preview_and_send(client):
         assert len(rows) == 1
 
 
+async def test_broadcasts_count_inapp_delivery_when_dm_fails(client, monkeypatch):
+    import backend.app.routers.admin.broadcasts as broadcasts_mod
+
+    sent_dm_targets: list[int] = []
+
+    async def failed_dm(tg_user_id: int, _text: str) -> bool:
+        sent_dm_targets.append(tg_user_id)
+        return False
+
+    monkeypatch.setattr(broadcasts_mod, "bot_send_dm", failed_dm)
+
+    admin_init, _ = await _make_admin(client, tg=11)
+    await _bootstrap(client, tg_user_id=12, username="broadcast_recipient")
+
+    send = await client.post(
+        "/api/admin/broadcasts",
+        json={
+            "body": "Hello",
+            "audience_role": "regular",
+            "dispatch_inapp": True,
+            "dispatch_dm": True,
+        },
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert send.status_code == 200, send.text
+    payload = send.json()
+    assert payload["total_recipients"] == 1
+    assert payload["delivered_count"] == 1
+    assert payload["failed_count"] == 0
+    assert sent_dm_targets == [12]
+
+
 async def test_broadcasts_page_recipient_ids_in_chunks(client, monkeypatch):
     import backend.app.routers.admin.broadcasts as broadcasts_mod
 

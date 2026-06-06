@@ -259,11 +259,12 @@ async def create_broadcast(
 
         # Per-chunk buffers; nothing crosses the loop boundary.
         chunk_pending: list[tuple[Notification, dict[str, Any] | None]] = []
-        chunk_dm_targets: list[tuple[User, str]] = []
-        chunk_inapp_only = 0
+        chunk_dm_targets: list[tuple[User, str, bool]] = []
+        chunk_delivered_without_dm = 0
 
         for u in chunk_users:
             try:
+                delivered_via_inapp = False
                 if body.dispatch_inapp:
                     notif, ws_payload = await notifier.insert(
                         session,
@@ -274,6 +275,7 @@ async def create_broadcast(
                         {"deeplink": body.deeplink} if body.deeplink else None,
                     )
                     chunk_pending.append((notif, ws_payload))
+                    delivered_via_inapp = True
                 if body.dispatch_dm and u.tg_user_id:
                     title = body.title or "Сообщение от администрации"
                     dm_text = f"<b>{html.escape(title)}</b>\n\n{html.escape(body.body)}"
@@ -281,14 +283,14 @@ async def create_broadcast(
                         href = html.escape(body.deeplink, quote=True)
                         text_part = html.escape(body.deeplink)
                         dm_text += f'\n\n<a href="{href}">{text_part}</a>'
-                    chunk_dm_targets.append((u, dm_text))
+                    chunk_dm_targets.append((u, dm_text, delivered_via_inapp))
                 else:
                     # Either DM dispatch is off, or the user has no
                     # Telegram id. Only count the in-app fallback when
                     # that leg is actually enabled; a DM-only recipient
                     # without a usable Telegram id was not delivered.
-                    if body.dispatch_inapp:
-                        chunk_inapp_only += 1
+                    if delivered_via_inapp:
+                        chunk_delivered_without_dm += 1
                     else:
                         failed += 1
             except Exception:  # noqa: BLE001
@@ -328,7 +330,7 @@ async def create_broadcast(
                     },
                 )
 
-        delivered += chunk_inapp_only
+        delivered += chunk_delivered_without_dm
 
         if chunk_dm_targets:
             sem = asyncio.Semaphore(_DM_CONCURRENCY)
@@ -363,9 +365,13 @@ async def create_broadcast(
                         )
                         return False
 
-            results = await asyncio.gather(*(_send_dm(u, t) for u, t in chunk_dm_targets))
-            for ok in results:
-                if ok:
+            results = await asyncio.gather(*(_send_dm(u, t) for u, t, _ in chunk_dm_targets))
+            for ok, (_, _, delivered_via_inapp) in zip(
+                results,
+                chunk_dm_targets,
+                strict=True,
+            ):
+                if ok or delivered_via_inapp:
                     delivered += 1
                 else:
                     failed += 1

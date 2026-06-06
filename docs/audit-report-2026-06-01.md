@@ -2748,6 +2748,16 @@ Risk: admin deletion is already a destructive workflow, but it should be scoped 
 
 Fix: the delete path now scans remaining deal messages for references to the collected media ids and deletes only the ids that are no longer referenced anywhere else. The existing orphan cleanup behavior is preserved for media used only by the deleted deal. The regression attaches one upload to two deals, deletes the first deal, and verifies the second deal still has the `Media` row, file, and serialized attachment.
 
+### M-248. Broadcast delivery stats marked in-app recipients failed when DM failed
+
+Links: `backend/app/routers/admin/broadcasts.py`, regression in `test_admin_misc.py`.
+
+Admin broadcasts can be sent through in-app notifications, Telegram DM, or both. `Broadcast.total_recipients` / `delivered_count` are recipient-level counters, but the send loop treated a recipient with both channels enabled as delivered only if the DM leg succeeded. If the durable in-app notification was inserted and committed but `bot_send_dm` returned `False`, the broadcast history showed that recipient as failed even though they had received the in-app notification.
+
+Risk: broadcast history is an operator-facing delivery report. Marking in-app delivered recipients as failed can trigger unnecessary retries and makes the admin believe a broadcast did not reach users who actually have a notification row and websocket/in-app path.
+
+Fix: the chunk accounting now tracks whether the recipient already had a successful in-app insert before optional DM dispatch. A recipient counts as delivered when either the in-app leg or the DM leg succeeds, and counts as failed only when no enabled channel succeeded. The regression stubs DM failure with both channels enabled and verifies `delivered_count=1`, `failed_count=0`.
+
 ## Наблюдения без отдельного finding
 
 
