@@ -2888,6 +2888,16 @@ Risk: these endpoints are operator-facing and frequently scripted. Silent field 
 
 Fix: the remaining admin/action request schemas now set `extra="forbid"`, including the service moderation body used under the admin services router. OpenAPI now exposes `additionalProperties: false` for those bodies, and regressions cover both schema validation and contract drift.
 
+### M-262. Public action schemas silently dropped stale request fields
+
+Links: `backend/app/schemas.py`, `backend/app/routers/pin.py`, `backend/app/routers/account.py`, OpenAPI snapshot `frontend/openapi.json`, regressions in `test_public_action_extra_schema.py` and `openapi.contract.test.ts`.
+
+Several public write bodies with closed operational semantics still accepted unknown JSON keys: PIN setup/check/change/reset-confirm, account-transfer confirmation, wallet deposit/withdraw creation, deal creation/action/message bodies, and review/comment creation. Pydantic ignored stale keys by default, so a client could send a deprecated or mistyped parameter together with a valid one and receive a normal response while part of the intended action was discarded.
+
+Risk: these endpoints touch authentication state, account migration, wallet money movement, deal state transitions, and user-visible reviews/messages. Silent extra-field drops make client drift hard to detect: an old frontend or script can appear to work while losing a security, routing, or money-related parameter before route logic ever sees it.
+
+Fix: those public action schemas now set `extra="forbid"`. Existing legacy-compatible fields remain explicit (`role="buyer"`, `payment_provider`, wallet deposit `purpose`/`provider`, withdrawal `address`), while truly unknown keys fail at validation with 422. Regression tests cover schema behavior and OpenAPI `additionalProperties: false`.
+
 ## Наблюдения без отдельного finding
 
 

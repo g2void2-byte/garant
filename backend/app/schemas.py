@@ -849,6 +849,8 @@ class ServiceDetailOut(ServiceOut):
 
 
 class ServiceCommentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     text: str = ""
     rating: int | None = None
 
@@ -895,6 +897,8 @@ class ServiceCommentOut(BaseModel):
 
 
 class DealCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     counterparty: str
     # Audit C1 — ``Literal["buyer"]`` so the caller of ``POST /api/deals``
     # is always the buyer (the side whose balance gets debited into the
@@ -991,6 +995,8 @@ class DealCreateWithTopupOut(BaseModel):
 
 
 class DealCancelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     reason: str = ""
 
     @field_validator("reason")
@@ -1004,6 +1010,8 @@ class DealCancelRequest(BaseModel):
 
 
 class DealArbitrationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     reason: str = ""
 
     @field_validator("reason")
@@ -1013,6 +1021,8 @@ class DealArbitrationRequest(BaseModel):
 
 
 class DealResolveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     winner: Literal["buyer", "seller"]
     note: str = ""
 
@@ -1085,6 +1095,8 @@ class MediaOut(BaseModel):
 
 
 class DealMessageCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     text: str = ""
     attachments: list[int] = []
 
@@ -1131,6 +1143,8 @@ class DealMessageOut(BaseModel):
 
 
 class ReviewCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     target_username: str
     rating: int
     text: str = ""
@@ -1269,6 +1283,8 @@ class WalletBalanceOut(BaseModel):
 
 
 class WalletDepositCreateReq(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     currency_code: str
     amount: Decimal
     # Routing tag for ``services_wallet.create_deposit_invoice``.
@@ -1322,6 +1338,8 @@ class WalletDepositOut(BaseModel):
 
 
 class WalletWithdrawCreateReq(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     currency_code: str
     amount: Decimal
     # Optional for the current CryptoBot Transfer payout model: the

@@ -4019,6 +4019,7 @@
         "type": "object"
       },
       "DealArbitrationRequest": {
+        "additionalProperties": false,
         "properties": {
           "reason": {
             "default": "",
@@ -4030,6 +4031,7 @@
         "type": "object"
       },
       "DealCancelRequest": {
+        "additionalProperties": false,
         "properties": {
           "reason": {
             "default": "",
@@ -4041,6 +4043,7 @@
         "type": "object"
       },
       "DealCreateWithTopup": {
+        "additionalProperties": false,
         "description": "P10 \u2014 input for ``POST /api/deals/with-topup``.\n\nExactly the same shape as :class:`DealCreate` but routed through\nthe commission-via-invoice service entry point. Kept as a separate\nclass so the OpenAPI surface stays explicit; the legacy\n``POST /api/deals`` route now delegates to the same service.",
         "properties": {
           "amount": {
@@ -4118,6 +4121,7 @@
         "type": "object"
       },
       "DealMessageCreate": {
+        "additionalProperties": false,
         "properties": {
           "attachments": {
             "default": [],
@@ -4460,6 +4464,7 @@
         "type": "object"
       },
       "DealResolveRequest": {
+        "additionalProperties": false,
         "properties": {
           "note": {
             "default": "",
@@ -4817,6 +4822,7 @@
         "type": "object"
       },
       "PinChangeIn": {
+        "additionalProperties": false,
         "properties": {
           "new_pin": {
             "maxLength": 4,
@@ -4839,6 +4845,7 @@
         "type": "object"
       },
       "PinCheckIn": {
+        "additionalProperties": false,
         "properties": {
           "pin": {
             "maxLength": 4,
@@ -4854,6 +4861,7 @@
         "type": "object"
       },
       "PinResetConfirmIn": {
+        "additionalProperties": false,
         "properties": {
           "code": {
             "maxLength": 6,
@@ -4957,6 +4965,7 @@
         "type": "object"
       },
       "PinSetupIn": {
+        "additionalProperties": false,
         "properties": {
           "pin": {
             "maxLength": 4,
@@ -5032,6 +5041,7 @@
         "type": "object"
       },
       "ReviewCreate": {
+        "additionalProperties": false,
         "properties": {
           "deal_id": {
             "title": "Deal Id",
@@ -5125,6 +5135,7 @@
         "type": "object"
       },
       "ServiceCommentCreate": {
+        "additionalProperties": false,
         "properties": {
           "rating": {
             "anyOf": [
@@ -5654,6 +5665,7 @@
         "type": "object"
       },
       "TransferConfirmIn": {
+        "additionalProperties": false,
         "properties": {
           "code": {
             "maxLength": 32,
@@ -6380,6 +6392,7 @@
         "type": "object"
       },
       "WalletDepositCreateReq": {
+        "additionalProperties": false,
         "properties": {
           "amount": {
             "anyOf": [
@@ -6500,6 +6513,7 @@
         "type": "string"
       },
       "WalletWithdrawCreateReq": {
+        "additionalProperties": false,
         "properties": {
           "address": {
             "anyOf": [

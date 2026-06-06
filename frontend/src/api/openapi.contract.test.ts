@@ -694,6 +694,20 @@ describe("OpenAPI contract", () => {
     "AdminCurrencyRateUpsertIn",
     "AdminWithdrawalDecisionIn",
     "AdminSettingsUpdateIn",
+    "PinSetupIn",
+    "PinCheckIn",
+    "PinChangeIn",
+    "PinResetConfirmIn",
+    "TransferConfirmIn",
+    "WalletDepositCreateReq",
+    "WalletWithdrawCreateReq",
+    "DealCreateWithTopup",
+    "DealCancelRequest",
+    "DealArbitrationRequest",
+    "DealResolveRequest",
+    "DealMessageCreate",
+    "ReviewCreate",
+    "ServiceCommentCreate",
   ])("%s rejects unknown request fields", (name) => {
     const schema = openapi.components.schemas[name as keyof typeof openapi.components.schemas] as {
       additionalProperties?: boolean;

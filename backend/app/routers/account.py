@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..bot.notify import send_dm
 from ..config import settings
@@ -42,6 +42,8 @@ class TransferStartOut(BaseModel):
 
 
 class TransferConfirmIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     code: str = Field(..., min_length=1, max_length=32)
 
     @field_validator("code")

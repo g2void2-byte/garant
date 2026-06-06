@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -75,19 +75,27 @@ class PinStatusOut(BaseModel):
 
 
 class PinSetupIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     pin: str = Field(..., min_length=4, max_length=4)
 
 
 class PinCheckIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     pin: str = Field(..., min_length=4, max_length=4)
 
 
 class PinChangeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     old_pin: str = Field(..., min_length=4, max_length=4)
     new_pin: str = Field(..., min_length=4, max_length=4)
 
 
 class PinResetConfirmIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     code: str = Field(..., min_length=6, max_length=6)
     new_pin: str = Field(..., min_length=4, max_length=4)
 
