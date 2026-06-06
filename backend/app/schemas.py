@@ -1622,6 +1622,8 @@ class AdminSetTrustDepositIn(BaseModel):
     structurally impossible.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     amount: Decimal
     reason: str | None = None
 
@@ -2197,6 +2199,8 @@ class AdminWalletAdjustIn(BaseModel):
     корректирует баланс как я укажу").
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     currency_code: CurrencyCodeStr
     amount: Decimal
     reason: str | None = None
@@ -2241,6 +2245,8 @@ class AdminCurrencyRateOut(BaseModel):
 
 
 class AdminCurrencyRateUpsertIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     currency_code: CurrencyCodeStr
     usd_rate: Decimal
     source: str = "manual"
@@ -2319,6 +2325,8 @@ class AdminWithdrawalListOut(BaseModel):
 class AdminWithdrawalDecisionIn(BaseModel):
     """Body for approve/reject + manual mark-sent on a withdrawal."""
 
+    model_config = ConfigDict(extra="forbid")
+
     action: Literal["approve", "reject", "mark_sent"]
     note: str | None = None
 
@@ -2378,6 +2386,8 @@ class AdminSettingsUpdateIn(BaseModel):
     non-negative (commission percentages additionally bounded to
     ``0..100``).
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     deal_commission_percent: Decimal | SkipJsonSchema[None] = None
     vip_commission_percent: Decimal | SkipJsonSchema[None] = None

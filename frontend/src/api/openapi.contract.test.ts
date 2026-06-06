@@ -673,6 +673,20 @@ describe("OpenAPI contract", () => {
     expect(review.properties.text).not.toHaveProperty("default");
   });
 
+  it.each([
+    "AdminSetTrustDepositIn",
+    "AdminWalletAdjustIn",
+    "AdminCurrencyRateUpsertIn",
+    "AdminWithdrawalDecisionIn",
+    "AdminSettingsUpdateIn",
+  ])("%s rejects unknown request fields", (name) => {
+    const schema = openapi.components.schemas[name as keyof typeof openapi.components.schemas] as {
+      additionalProperties?: boolean;
+    };
+
+    expect(schema.additionalProperties).toBe(false);
+  });
+
   it("DealOut requires the buyer/seller fields the deal list UI reads", () => {
     const deal = openapi.components.schemas.DealOut as {
       required: readonly string[];

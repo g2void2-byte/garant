@@ -2868,6 +2868,16 @@ Risk: generated clients or scripts that only intend to edit a review rating can 
 
 Fix: `text` is now an explicit required field in `AdminReviewUpsertIn`; callers that want a blank review must send `text: ""` deliberately. OpenAPI no longer publishes a default for the field, and regressions cover schema validation, the endpoint rejecting a rating-only update, and contract drift.
 
+### M-260. Financial admin write schemas ignored unknown request fields
+
+Links: `backend/app/schemas.py`, OpenAPI snapshot `frontend/openapi.json`, regressions in `test_admin_finance_extra_schema.py` and `openapi.contract.test.ts`.
+
+Several high-impact admin write bodies still used Pydantic's default `extra="ignore"`: trust-deposit edits, wallet adjustments, manual currency-rate upserts, withdrawal decisions, and settings updates. A stale or mistyped client could send an extra field such as `delta`, `deposit_total`, `manual_sent`, or an obsolete settings key together with a valid field, receive a normal success response, and never learn that part of the intended financial operation was discarded.
+
+Risk: these endpoints control balances, displayed trust deposits, USD estimates, payout decisions, and operational settings. Silent extra-field drops make admin automation brittle: a renamed key can be ignored while the rest of the payload still mutates state, producing audit logs that look valid but omit the operator's intended parameter.
+
+Fix: the affected schemas now set `extra="forbid"`, so unknown keys fail with 422 before any route logic runs. OpenAPI publishes `additionalProperties: false` for each body, and regression tests assert both the Pydantic behavior and generated contract.
+
 ## Наблюдения без отдельного finding
 
 
