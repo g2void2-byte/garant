@@ -3262,6 +3262,8 @@ export interface components {
          *
          *     For create, ``target_id`` and ``author_id`` are required. For edit,
          *     they are ignored — only ``rating`` and ``text`` can be changed.
+         *     ``text`` must be provided explicitly; pass an empty string to store
+         *     an intentionally blank review.
          */
         AdminReviewUpsertIn: {
             /** Author Id */
@@ -3272,10 +3274,7 @@ export interface components {
             rating: number;
             /** Target Id */
             target_id?: number | null;
-            /**
-             * Text
-             * @default
-             */
+            /** Text */
             text: string;
         };
         /** AdminServiceItemOut */

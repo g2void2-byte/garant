@@ -662,6 +662,17 @@ describe("OpenAPI contract", () => {
     }
   });
 
+  it("AdminReviewUpsertIn requires explicit text instead of defaulting to blank", () => {
+    const review = openapi.components.schemas.AdminReviewUpsertIn as {
+      properties: Record<string, { default?: unknown; type?: string }>;
+      required?: readonly string[];
+    };
+
+    expect(review.required).toEqual(expect.arrayContaining(["rating", "text"]));
+    expect(review.properties.text).toEqual(expect.objectContaining({ type: "string" }));
+    expect(review.properties.text).not.toHaveProperty("default");
+  });
+
   it("DealOut requires the buyer/seller fields the deal list UI reads", () => {
     const deal = openapi.components.schemas.DealOut as {
       required: readonly string[];

@@ -2858,6 +2858,16 @@ Risk: generated clients and admin scripts could send `null` while intending to r
 
 Fix: stats fields now use optional-but-not-null sentinels. OpenAPI no longer advertises `null` for the stats request body, while omitted fields still work as the internal partial-update sentinel. Explicit JSON `null` now fails validation with 422, covered at schema, endpoint, and OpenAPI-contract levels.
 
+### M-259. Admin review updates defaulted missing text to an unintended clear
+
+Links: `backend/app/schemas.py`, OpenAPI snapshot `frontend/openapi.json`, generated contract `frontend/src/api/openapi.generated.ts`, regressions in `test_admin_review_schema.py`, `test_admin_content.py`, and `openapi.contract.test.ts`.
+
+Admin review create/edit shared `AdminReviewUpsertIn`. The `text` field had a schema default of `""`, which is harmless on create but dangerous on edit: `POST /api/admin/reviews/{id}` with `{"rating": 2}` parsed as `text=""`. The route compared the parsed body to the stored row and cleared the existing review text while returning a normal 200 and writing a legitimate-looking audit entry.
+
+Risk: generated clients or scripts that only intend to edit a review rating can erase review text by omitting the key. Because `rating` is required and the backend accepts the request, the operator sees a successful rating change rather than a validation error for an incomplete edit payload.
+
+Fix: `text` is now an explicit required field in `AdminReviewUpsertIn`; callers that want a blank review must send `text: ""` deliberately. OpenAPI no longer publishes a default for the field, and regressions cover schema validation, the endpoint rejecting a rating-only update, and contract drift.
+
 ## Наблюдения без отдельного finding
 
 

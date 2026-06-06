@@ -2381,7 +2381,7 @@
         "type": "object"
       },
       "AdminReviewUpsertIn": {
-        "description": "Body for ``POST /api/admin/reviews`` (create) /\n``POST /api/admin/reviews/:id`` (edit).\n\nFor create, ``target_id`` and ``author_id`` are required. For edit,\nthey are ignored \u2014 only ``rating`` and ``text`` can be changed.",
+        "description": "Body for ``POST /api/admin/reviews`` (create) /\n``POST /api/admin/reviews/:id`` (edit).\n\nFor create, ``target_id`` and ``author_id`` are required. For edit,\nthey are ignored \u2014 only ``rating`` and ``text`` can be changed.\n``text`` must be provided explicitly; pass an empty string to store\nan intentionally blank review.",
         "properties": {
           "author_id": {
             "anyOf": [
@@ -2421,13 +2421,13 @@
             "title": "Target Id"
           },
           "text": {
-            "default": "",
             "title": "Text",
             "type": "string"
           }
         },
         "required": [
-          "rating"
+          "rating",
+          "text"
         ],
         "title": "AdminReviewUpsertIn",
         "type": "object"

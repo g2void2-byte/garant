@@ -388,6 +388,31 @@ async def test_update_and_delete_review(client):
         assert await session.get(Review, rid) is None
 
 
+async def test_update_review_rejects_missing_text(client):
+    a_id = await _bootstrap_user(client, 200, "a")
+    b_id = await _bootstrap_user(client, 201, "b")
+    admin_init = await _make_admin(client)
+    create = await client.post(
+        "/api/admin/reviews",
+        json={"author_id": a_id, "target_id": b_id, "rating": 4, "text": "keep me"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert create.status_code == 201, create.text
+    rid = create.json()["id"]
+
+    resp = await client.post(
+        f"/api/admin/reviews/{rid}",
+        json={"rating": 2},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 422, resp.text
+
+    async with async_session() as session:
+        review = await session.get(Review, rid)
+        assert review is not None
+        assert review.text == "keep me"
+
+
 async def test_admin_review_create_update_delete_recomputes_target_counters(client):
     """Item 14 — admin review CRUD has to keep ``target.good`` /
     ``target.bad`` in sync with the ``reviews`` table.

@@ -2033,13 +2033,15 @@ class AdminReviewUpsertIn(BaseModel):
 
     For create, ``target_id`` and ``author_id`` are required. For edit,
     they are ignored — only ``rating`` and ``text`` can be changed.
+    ``text`` must be provided explicitly; pass an empty string to store
+    an intentionally blank review.
     """
 
     target_id: int | None = None
     author_id: int | None = None
     deal_id: int | None = None
     rating: int
-    text: str = ""
+    text: str
 
     @field_validator("target_id", "author_id", "deal_id", mode="before")
     @classmethod
