@@ -674,6 +674,21 @@ describe("OpenAPI contract", () => {
   });
 
   it.each([
+    "ServiceModerationDecision",
+    "AdminReasonIn",
+    "AdminSetRoleIn",
+    "AdminSetRatingIn",
+    "AdminDealForceOut",
+    "AdminDealSplitIn",
+    "AdminDealAssignArbiterIn",
+    "AdminServiceUpdateIn",
+    "AdminReviewUpsertIn",
+    "AdminCommentUpdateIn",
+    "AdminCategoryUpsertIn",
+    "AdminCurrencyUpsertIn",
+    "AdminBroadcastCreateIn",
+    "Admin2faConfirmIn",
+    "Admin2faVerifyIn",
     "AdminSetTrustDepositIn",
     "AdminWalletAdjustIn",
     "AdminCurrencyRateUpsertIn",

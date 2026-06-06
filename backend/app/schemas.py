@@ -815,6 +815,8 @@ class ServiceUpdate(BaseModel):
 
 
 class ServiceModerationDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     action: Literal["ban", "unban"]
     reason: str = ""
 
@@ -1504,6 +1506,8 @@ class AdminReasonIn(BaseModel):
     to the affected user.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     reason: str | None = None
 
     @field_validator("reason")
@@ -1526,6 +1530,8 @@ class AdminSetRoleIn(BaseModel):
     was dropped from the spec and is not supported here.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     is_admin: bool | SkipJsonSchema[None] = None
     is_arbiter: bool | SkipJsonSchema[None] = None
     is_vip: bool | SkipJsonSchema[None] = None
@@ -1542,6 +1548,8 @@ class AdminSetRatingIn(BaseModel):
     ``rating`` is the manual override (0..5 with one decimal). Pass
     ``None`` to clear the override and restore the auto-computed rating.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     rating: float | None = None
 
@@ -1804,6 +1812,8 @@ class AdminDealForceOut(BaseModel):
     Optional ``reason`` is propagated into the audit log and DMs.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     reason: str | None = None
     approval_id: int | None = None
 
@@ -1835,6 +1845,8 @@ class AdminDealSplitIn(BaseModel):
     locked principal.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     buyer_percent: Decimal
     reason: str | None = None
     approval_id: int | None = None
@@ -1859,6 +1871,8 @@ class AdminDealAssignArbiterIn(BaseModel):
     ``arbiter_id`` must reference a user with ``is_arbiter=True`` (admins
     are accepted too). Use ``None`` to clear the assignment.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     arbiter_id: int | None = None
 
@@ -1920,6 +1934,8 @@ class AdminServiceUpdateIn(BaseModel):
     service columns reject explicit JSON ``null`` instead of silently
     treating it as an omitted field.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     title: str | SkipJsonSchema[None] = None
     description: str | SkipJsonSchema[None] = None
@@ -2039,6 +2055,8 @@ class AdminReviewUpsertIn(BaseModel):
     an intentionally blank review.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     target_id: int | None = None
     author_id: int | None = None
     deal_id: int | None = None
@@ -2090,6 +2108,8 @@ class AdminCommentListOut(BaseModel):
 
 
 class AdminCommentUpdateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     text: str | SkipJsonSchema[None] = None
     rating: int | None = None
     clear_rating: bool = False
@@ -2498,6 +2518,8 @@ class AdminCategoryOut(BaseModel):
 
 
 class AdminCategoryUpsertIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     slug: str
     name: str
     icon: str = ""
@@ -2563,6 +2585,8 @@ class AdminCurrencyOut(BaseModel):
 
 
 class AdminCurrencyUpsertIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     code: CurrencyCodeStr
     name: str | SkipJsonSchema[None] = None
     network: str | None = None
@@ -2757,6 +2781,8 @@ class AdminBroadcastCreateIn(BaseModel):
     Audience filters compose with AND. All optional; if every filter is
     omitted the broadcast goes to *every* user.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     title: str = ""
     body: str
@@ -2955,6 +2981,8 @@ class Admin2faSetupOut(BaseModel):
 
 
 class Admin2faConfirmIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     secret: str = Field(
         min_length=MIN_TOTP_SECRET_LEN,
         max_length=MAX_TOTP_SECRET_LEN,
@@ -2991,6 +3019,8 @@ class Admin2faStatusOut(BaseModel):
 
 
 class Admin2faVerifyIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     code: str = Field(pattern=TOTP_CODE_PATTERN)
 
     @field_validator("code", mode="before")

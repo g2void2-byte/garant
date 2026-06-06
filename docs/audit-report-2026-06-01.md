@@ -2878,6 +2878,16 @@ Risk: these endpoints control balances, displayed trust deposits, USD estimates,
 
 Fix: the affected schemas now set `extra="forbid"`, so unknown keys fail with 422 before any route logic runs. OpenAPI publishes `additionalProperties: false` for each body, and regression tests assert both the Pydantic behavior and generated contract.
 
+### M-261. Admin action schemas still accepted stale unknown fields
+
+Links: `backend/app/schemas.py`, OpenAPI snapshot `frontend/openapi.json`, regressions in `test_admin_action_extra_schema.py` and `openapi.contract.test.ts`.
+
+After the high-impact financial schemas were closed, many remaining admin action bodies still used Pydantic's default `extra="ignore"`: reason-based user/deposit actions, role/rating updates, forced deal actions, service moderation/content edits, taxonomy/currency upserts, broadcasts, and 2FA confirmation/verification. A stale admin client could send an obsolete field together with a valid one, get a successful mutation, and never learn that the obsolete part of the command was ignored.
+
+Risk: these endpoints are operator-facing and frequently scripted. Silent field drops are especially confusing for partial updates and action endpoints because the response can legitimately change state while losing one parameter the operator thought they sent. That makes audit rows look complete even though the request contract was only partially honored.
+
+Fix: the remaining admin/action request schemas now set `extra="forbid"`, including the service moderation body used under the admin services router. OpenAPI now exposes `additionalProperties: false` for those bodies, and regressions cover both schema validation and contract drift.
+
 ## Наблюдения без отдельного finding
 
 

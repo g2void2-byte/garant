@@ -2,6 +2,7 @@
   "components": {
     "schemas": {
       "Admin2faConfirmIn": {
+        "additionalProperties": false,
         "properties": {
           "code": {
             "pattern": "^\\d{6}$",
@@ -88,6 +89,7 @@
         "type": "object"
       },
       "Admin2faVerifyIn": {
+        "additionalProperties": false,
         "properties": {
           "code": {
             "pattern": "^\\d{6}$",
@@ -709,6 +711,7 @@
         "type": "object"
       },
       "AdminBroadcastCreateIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /api/admin/broadcasts``.\n\nAudience filters compose with AND. All optional; if every filter is\nomitted the broadcast goes to *every* user.",
         "properties": {
           "audience_active_days": {
@@ -1098,6 +1101,7 @@
         "type": "object"
       },
       "AdminCategoryUpsertIn": {
+        "additionalProperties": false,
         "properties": {
           "icon": {
             "default": "",
@@ -1210,6 +1214,7 @@
         "type": "object"
       },
       "AdminCommentUpdateIn": {
+        "additionalProperties": false,
         "properties": {
           "clear_rating": {
             "default": false,
@@ -1409,6 +1414,7 @@
         "type": "object"
       },
       "AdminCurrencyUpsertIn": {
+        "additionalProperties": false,
         "properties": {
           "address_regex": {
             "anyOf": [
@@ -1608,6 +1614,7 @@
         "type": "object"
       },
       "AdminDealAssignArbiterIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /api/admin/deals/:id/assign-arbiter``.\n\n``arbiter_id`` must reference a user with ``is_arbiter=True`` (admins\nare accepted too). Use ``None`` to clear the assignment.",
         "properties": {
           "arbiter_id": {
@@ -1917,6 +1924,7 @@
         "type": "object"
       },
       "AdminDealForceOut": {
+        "additionalProperties": false,
         "description": "Body for ``POST /api/admin/deals/:id/force-release`` and similar.\n\nOptional ``reason`` is propagated into the audit log and DMs.",
         "properties": {
           "approval_id": {
@@ -2103,6 +2111,7 @@
         "type": "object"
       },
       "AdminDealSplitIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /api/admin/deals/:id/split``.\n\n``buyer_percent`` is the share returned to the buyer; the seller\ngets ``100 - buyer_percent`` of the same locked pot. Commission\nis collected on the platform via the deposit invoice (P10) and\nis *never* refunded \u2014 admin-forced splits operate only on the\nlocked principal.",
         "properties": {
           "approval_id": {
@@ -2258,6 +2267,7 @@
         "type": "object"
       },
       "AdminReasonIn": {
+        "additionalProperties": false,
         "description": "Optional ``{reason}`` body shared by most state-change endpoints.\n\nUser stated reasons are *optional* \u2014 server accepts an empty body.\nA reason is logged verbatim into ``admin_audit_log.reason`` and DMed\nto the affected user.",
         "properties": {
           "reason": {
@@ -2382,6 +2392,7 @@
         "type": "object"
       },
       "AdminReviewUpsertIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /api/admin/reviews`` (create) /\n``POST /api/admin/reviews/:id`` (edit).\n\nFor create, ``target_id`` and ``author_id`` are required. For edit,\nthey are ignored \u2014 only ``rating`` and ``text`` can be changed.\n``text`` must be provided explicitly; pass an empty string to store\nan intentionally blank review.",
         "properties": {
           "author_id": {
@@ -2565,6 +2576,7 @@
         "type": "object"
       },
       "AdminServiceUpdateIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /api/admin/services/:id``.\n\nEvery field is optional. Negative numeric values are rejected per\nthe spec (counts / deposits cannot be < 0). ``rating_manual`` is\nbounded to 0..5 to match the user rating override; pass ``None``\nexplicitly or set ``clear_rating=true`` to remove it. Non-nullable\nservice columns reject explicit JSON ``null`` instead of silently\ntreating it as an omitted field.",
         "properties": {
           "ban_reason": {
@@ -2653,6 +2665,7 @@
         "type": "object"
       },
       "AdminSetRatingIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /admin/users/:id/rating``.\n\n``rating`` is the manual override (0..5 with one decimal). Pass\n``None`` to clear the override and restore the auto-computed rating.",
         "properties": {
           "rating": {
@@ -2671,6 +2684,7 @@
         "type": "object"
       },
       "AdminSetRoleIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /admin/users/:id/role``.\n\nPass any combination of the three role flags. The moderator role\nwas dropped from the spec and is not supported here.",
         "properties": {
           "is_admin": {
@@ -5359,6 +5373,7 @@
         "type": "object"
       },
       "ServiceModerationDecision": {
+        "additionalProperties": false,
         "properties": {
           "action": {
             "enum": [
