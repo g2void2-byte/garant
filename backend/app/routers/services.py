@@ -468,6 +468,14 @@ async def update_service(
     if service.status == ServiceStatus.banned and not user.is_admin:
         raise HTTPException(403, "Услуга заблокирована администрацией")
 
+    explicit_null_fields = [
+        field
+        for field in ("title", "description", "price", "status", "photo_urls")
+        if field in body.model_fields_set and getattr(body, field) is None
+    ]
+    if explicit_null_fields:
+        raise HTTPException(422, "Field cannot be null")
+
     if body.title is not None:
         title = body.title.strip()
         if not title:

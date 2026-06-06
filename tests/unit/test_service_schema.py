@@ -92,6 +92,18 @@ def test_service_update_trims_optional_title() -> None:
     assert ServiceUpdate(title=None).title is None
 
 
+def test_service_update_openapi_hides_noop_null_fields() -> None:
+    properties = ServiceUpdate.model_json_schema()["properties"]
+
+    for field in ("title", "description", "price", "status", "photo_urls"):
+        assert "null" not in str(properties[field])
+
+
+def test_service_update_rejects_negative_price() -> None:
+    with pytest.raises(ValidationError):
+        ServiceUpdate(price=-1)
+
+
 @pytest.mark.parametrize("bad", ["", "   ", "x" * (MAX_SERVICE_TITLE_LEN + 1)])
 def test_service_update_rejects_empty_or_too_long_title(bad: str) -> None:
     with pytest.raises(ValidationError):

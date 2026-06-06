@@ -47,6 +47,7 @@ async def _seed_service(
     *,
     title: str = "Test service",
     status: ServiceStatus = ServiceStatus.active,
+    photo_urls: list[str] | None = None,
 ) -> int:
     async with async_session() as session:
         s = Service(
@@ -56,6 +57,7 @@ async def _seed_service(
             description="",
             price=10,
             status=status,
+            photo_urls=photo_urls or [],
         )
         session.add(s)
         await session.commit()
@@ -81,6 +83,54 @@ async def test_get_service_detail_returns_owner_card_and_zero_stats(client):
     assert body["comments_count"] == 0
     assert body["rating_avg"] is None
     assert body["rating_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_update_service_rejects_explicit_null_for_noop_fields(client):
+    cat_id = await _seed_category("update-contract")
+    owner_id = await _seed_user(1101, "svc_owner")
+    owner_init = signed_init_data(1101, "svc_owner")
+    svc_id = await _seed_service(
+        owner_id,
+        cat_id,
+        title="Original",
+        photo_urls=["/media/service/original.png"],
+    )
+
+    for field in ("title", "description", "price", "status", "photo_urls"):
+        resp = await client.patch(
+            f"/api/services/{svc_id}",
+            json={field: None},
+            headers=auth_headers(owner_init),
+        )
+        assert resp.status_code == 422, (field, resp.text)
+
+    async with async_session() as session:
+        service = await session.get(Service, svc_id)
+        assert service is not None
+        assert service.title == "Original"
+        assert service.photo_urls == ["/media/service/original.png"]
+
+
+@pytest.mark.asyncio
+async def test_update_service_clears_gallery_with_empty_list(client):
+    cat_id = await _seed_category("update-gallery")
+    owner_id = await _seed_user(1102, "gallery_owner")
+    owner_init = signed_init_data(1102, "gallery_owner")
+    svc_id = await _seed_service(
+        owner_id,
+        cat_id,
+        photo_urls=["/media/service/original.png"],
+    )
+
+    resp = await client.patch(
+        f"/api/services/{svc_id}",
+        json={"photo_urls": []},
+        headers=auth_headers(owner_init),
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["photo_urls"] == []
 
 
 @pytest.mark.asyncio

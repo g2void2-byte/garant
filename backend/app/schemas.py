@@ -782,12 +782,12 @@ class ServiceCreate(BaseModel):
 
 
 class ServiceUpdate(BaseModel):
-    title: str | None = None
-    description: str | None = None
+    title: str | SkipJsonSchema[None] = None
+    description: str | SkipJsonSchema[None] = None
     # L-2: same finiteness/non-negative guard as ``ServiceCreate.price``.
-    price: Decimal | None = Field(default=None, ge=0)
-    status: Literal["draft", "active", "paused"] | None = None
-    photo_urls: list[str] | None = None
+    price: Annotated[Decimal, Field(ge=0)] | SkipJsonSchema[None] = None
+    status: Literal["draft", "active", "paused"] | SkipJsonSchema[None] = None
+    photo_urls: list[str] | SkipJsonSchema[None] = None
 
     @field_validator("title")
     @classmethod
@@ -797,7 +797,10 @@ class ServiceUpdate(BaseModel):
     @field_validator("price")
     @classmethod
     def _price_finite(cls, v: Decimal | float | None) -> Decimal | None:
-        return _reject_non_finite_money(v)
+        result = _reject_non_finite_money(v)
+        if result is not None and result < 0:
+            raise ValueError("Price cannot be negative")
+        return result
 
     @field_validator("description")
     @classmethod

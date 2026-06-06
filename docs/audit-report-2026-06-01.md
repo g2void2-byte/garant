@@ -2808,6 +2808,16 @@ Risk: generated clients or admin scripts following the advertised nullable contr
 
 Fix: nullable rating fields now use `model_fields_set` so explicit `null` clears the stored value while omitted fields remain no-ops, and `clear_rating=true` remains supported. Non-nullable admin service/comment update fields use `SkipJsonSchema[None]` plus before-validation so explicit `null` returns 422 and disappears from OpenAPI. The handwritten frontend comment update body now permits `rating?: number | null` to match the wire contract. Regressions cover schema nullability, service/comment clear behavior, audit payloads, and non-nullable null rejection.
 
+### M-254. Owner service PATCH advertised null values that were silent no-ops
+
+Links: `backend/app/schemas.py`, `backend/app/routers/services.py`, OpenAPI snapshot `frontend/openapi.json`, generated contract `frontend/src/api/openapi.generated.ts`, regressions in `test_service_schema.py` and `test_service_comments.py`.
+
+The owner-facing `ServiceUpdate` body used `T | None = None` for every PATCH field, so OpenAPI advertised `title`, `description`, `price`, `status`, and `photo_urls` as nullable. The route then only applied each change when `body.<field> is not None`, so explicit JSON `null` returned 200 and changed nothing. This was especially misleading for `photo_urls`: `[]` is the documented gallery clear path, but generated clients could send `{"photo_urls": null}` and believe the gallery was removed while the old list remained stored.
+
+Risk: seller tools generated from OpenAPI could turn malformed or stale update payloads into successful no-op requests. Non-nullable service columns and gallery replacement should reject invalid `null` at the API boundary instead of making the caller infer from a later unchanged detail response that nothing happened.
+
+Fix: `ServiceUpdate` now uses `SkipJsonSchema[None]` for no-op sentinel fields, preserving internal PATCH construction while removing `null` from OpenAPI. The route checks `model_fields_set` and returns 422 when a client explicitly sends `null`; omitted fields remain no-ops, and `photo_urls: []` still clears the gallery. Regressions cover schema nullability, endpoint null rejection without mutation, and the empty-list clear path.
+
 ## Наблюдения без отдельного finding
 
 

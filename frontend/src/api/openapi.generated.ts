@@ -4531,15 +4531,18 @@ export interface components {
         /** ServiceUpdate */
         ServiceUpdate: {
             /** Description */
-            description?: string | null;
+            description?: string;
             /** Photo Urls */
-            photo_urls?: string[] | null;
+            photo_urls?: string[];
             /** Price */
-            price?: number | string | null;
-            /** Status */
-            status?: ("draft" | "active" | "paused") | null;
+            price?: number | string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status?: "draft" | "active" | "paused";
             /** Title */
-            title?: string | null;
+            title?: string;
         };
         /** SupportPersonOut */
         SupportPersonOut: {

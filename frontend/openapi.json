@@ -5624,29 +5624,15 @@
       "ServiceUpdate": {
         "properties": {
           "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
+            "title": "Description",
+            "type": "string"
           },
           "photo_urls": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Photo Urls"
+            "items": {
+              "type": "string"
+            },
+            "title": "Photo Urls",
+            "type": "array"
           },
           "price": {
             "anyOf": [
@@ -5657,39 +5643,22 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Price"
           },
           "status": {
-            "anyOf": [
-              {
-                "enum": [
-                  "draft",
-                  "active",
-                  "paused"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "enum": [
+              "draft",
+              "active",
+              "paused"
             ],
-            "title": "Status"
+            "title": "Status",
+            "type": "string"
           },
           "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
+            "title": "Title",
+            "type": "string"
           }
         },
         "title": "ServiceUpdate",
