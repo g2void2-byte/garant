@@ -212,6 +212,7 @@
 - M-240: wallet deposit status polling now normalizes runtime deposit ids.
 - M-241: deal topup invoice detail flow now opens the realtime modal and normalizes runtime invoice ids.
 - M-242: deal chat upload responses now normalize attachment ids before send payloads.
+- M-243: profile banner upload now validates returned media URLs before profile updates.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2696,6 +2697,16 @@ The deal chat upload flow accepted the runtime `MediaDto` returned by `POST /api
 Risk: this is a normal chat workflow during disputes and handoff. A successful file upload followed by a rejected send loses the user's message context and leaves the UI showing an attachment that cannot be submitted until the page is refreshed or the upload is retried.
 
 Fix: `DealChatPanel` now parses upload response ids through the shared positive-id boundary before adding them to pending attachments, rejects malformed ids with a local error, and revalidates pending ids before building the send payload. Regressions cover numeric-string upload ids being sent as numbers and malformed upload ids being rejected before send.
+
+### M-243. Profile banner upload trusted the returned media URL
+
+Links: `frontend/src/pages/profile/SettingsPage.tsx`, shared media URL guard `frontend/src/lib/mediaLinks.ts`, regression in `SettingsPage.test.tsx`.
+
+Service photo uploads already validate `MediaDto.url` with `safeMediaUrl()` before previewing or submitting the URL. Profile banner upload did not: after the crop modal uploaded `kind: "banner"`, `SettingsPage` immediately called `PATCH /api/me` with `banner_url: uploaded.url` and then copied the same raw URL into local state.
+
+Risk: a malformed runtime media URL such as `javascript:...`, a protocol-relative URL, or a whitespace/control-character URL could turn a successful upload into a backend profile-update validation failure. The user sees the crop/upload path succeed and then gets a late API error instead of a local upload-response rejection; if backend/client validation drifted, the raw URL could also be stored as a profile banner.
+
+Fix: banner uploads now pass the returned URL through `safeMediaUrl()`, submit the normalized `/media/...` value to `PATCH /api/me`, and reject malformed upload URLs locally before any profile update mutation. Regressions cover trimming/normalizing valid media URLs and suppressing malformed URLs before `useUpdateMe`.
 
 ## Наблюдения без отдельного finding
 

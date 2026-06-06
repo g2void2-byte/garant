@@ -20,6 +20,10 @@ import { BannerCropModal } from "@/components/BannerCropModal";
 import { useCurrencies, useMe, useUpdateMe, useUploadMedia } from "@/api/hooks";
 import { haptic } from "@/lib/tg";
 import { COUNTRIES, countryFromCode } from "@/lib/countries";
+import { safeMediaUrl } from "@/lib/mediaLinks";
+
+const INVALID_BANNER_URL_MESSAGE =
+  "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u0430\u044f \u0441\u0441\u044b\u043b\u043a\u0430 \u043d\u0430 \u0431\u0430\u043d\u043d\u0435\u0440";
 
 /**
  * Continental "Настройки профиля" page.
@@ -119,12 +123,16 @@ export default function SettingsPage() {
         kind: "banner",
         file: cropped,
       });
+      const safeUrl = safeMediaUrl(uploaded.url);
+      if (!safeUrl) {
+        throw new Error(INVALID_BANNER_URL_MESSAGE);
+      }
       // V12-UI — patch the banner URL onto the user row first, *then*
       // sync the local input. Doing the network call first means the
       // toast / cache update only fires on success; if the PATCH fails
       // the user sees the error and the visible input stays unchanged.
-      await updateMe.mutateAsync({ banner_url: uploaded.url });
-      setBannerUrl(uploaded.url);
+      await updateMe.mutateAsync({ banner_url: safeUrl });
+      setBannerUrl(safeUrl);
       haptic("success");
       toast.show({ kind: "success", title: "Баннер обновлён" });
       setPendingBannerFile(null);
