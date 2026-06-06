@@ -4204,6 +4204,11 @@
           "arbitration_initiator": {
             "anyOf": [
               {
+                "enum": [
+                  "buyer",
+                  "seller",
+                  "other"
+                ],
                 "type": "string"
               },
               {
@@ -4226,6 +4231,10 @@
           "arbitration_resolution": {
             "anyOf": [
               {
+                "enum": [
+                  "buyer",
+                  "seller"
+                ],
                 "type": "string"
               },
               {
@@ -4249,6 +4258,7 @@
           "arbitration_resolved_by": {
             "anyOf": [
               {
+                "const": "admin",
                 "type": "string"
               },
               {
@@ -4282,6 +4292,11 @@
           "cancellation_initiator": {
             "anyOf": [
               {
+                "enum": [
+                  "buyer",
+                  "seller",
+                  "other"
+                ],
                 "type": "string"
               },
               {
@@ -4394,10 +4409,19 @@
           },
           "payment_provider": {
             "default": "cryptobot",
+            "enum": [
+              "cryptobot",
+              "crystalpay"
+            ],
             "title": "Payment Provider",
             "type": "string"
           },
           "role": {
+            "enum": [
+              "buyer",
+              "seller",
+              "other"
+            ],
             "title": "Role",
             "type": "string"
           },
@@ -4424,6 +4448,19 @@
             "title": "Seller Photo Url"
           },
           "status": {
+            "enum": [
+              "cancelled",
+              "pending_confirmation",
+              "pending_payment",
+              "pending_topup",
+              "in_progress",
+              "completed",
+              "arbitration",
+              "resolved_for_buyer",
+              "resolved_for_seller",
+              "pending_cancellation",
+              "cancelled_for_inactivity"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -4542,6 +4579,10 @@
             "type": "string"
           },
           "provider": {
+            "enum": [
+              "cryptobot",
+              "crystalpay"
+            ],
             "title": "Provider",
             "type": "string"
           },

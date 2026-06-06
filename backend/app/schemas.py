@@ -141,6 +141,21 @@ def _validate_https_or_tg_url(v: str, *, what: str, max_len: int = 256) -> str:
 # JSON wire format emits a plain number (``float``) so the frontend
 # (JavaScript) can consume values without a string→number parse step.
 MoneyDecimal = Annotated[Decimal, PlainSerializer(lambda v: float(v), return_type=float)]
+DealStatusWire = Literal[
+    "cancelled",
+    "pending_confirmation",
+    "pending_payment",
+    "pending_topup",
+    "in_progress",
+    "completed",
+    "arbitration",
+    "resolved_for_buyer",
+    "resolved_for_seller",
+    "pending_cancellation",
+    "cancelled_for_inactivity",
+]
+DealRoleWire = Literal["buyer", "seller", "other"]
+PaymentProviderWire = Literal["cryptobot", "crystalpay"]
 
 # ── Users ──────────────────────────────────────────────
 
@@ -977,7 +992,7 @@ class DealTopupInvoiceOut(BaseModel):
     commission: MoneyDecimal
     paid_total: MoneyDecimal = Decimal("0")
     currency_code: str
-    provider: str
+    provider: PaymentProviderWire
     expires_at: datetime | None = None
 
 
@@ -1047,10 +1062,10 @@ class DealOut(BaseModel):
     buyer_photo_url: str | None = None
     seller_photo_url: str | None = None
     description: str
-    status: str
+    status: DealStatusWire
     confirm_buyer: bool
     confirm_seller: bool
-    role: str
+    role: DealRoleWire
     created_at: datetime | None
     # PR-3 — multi-currency + state-machine extras.
     currency_code: str | None = None
@@ -1058,18 +1073,18 @@ class DealOut(BaseModel):
     commission_amount: MoneyDecimal | None = None
     in_progress_at: datetime | None = None
     completed_at: datetime | None = None
-    cancellation_initiator: str | None = None
+    cancellation_initiator: DealRoleWire | None = None
     cancellation_reason: str | None = None
     cancellation_requested_at: datetime | None = None
-    arbitration_initiator: str | None = None
+    arbitration_initiator: DealRoleWire | None = None
     arbitration_reason: str | None = None
-    arbitration_resolved_by: str | None = None
-    arbitration_resolution: str | None = None
+    arbitration_resolved_by: Literal["admin"] | None = None
+    arbitration_resolution: Literal["buyer", "seller"] | None = None
     arbitration_resolved_at: datetime | None = None
     # Persisted upstream invoice provider chosen by the buyer at
     # deal-create time. Surfaced on the wire so the deal detail page
     # can render the right provider badge without an extra lookup.
-    payment_provider: str = "cryptobot"
+    payment_provider: PaymentProviderWire = "cryptobot"
     # P10 — commission-via-invoice flow.
     topup_deposit_id: int | None = None
     commission_paid: bool = False

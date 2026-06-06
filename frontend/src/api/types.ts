@@ -115,6 +115,8 @@ export type DealStatus =
   | "pending_cancellation"
   | "cancelled_for_inactivity";
 
+export type DealRole = "buyer" | "seller" | "other";
+
 export interface DealDto {
   id: number;
   buyer: string | null;
@@ -129,17 +131,17 @@ export interface DealDto {
   status: DealStatus | string;
   confirm_buyer: boolean;
   confirm_seller: boolean;
-  role: "buyer" | "seller" | string;
+  role: DealRole | string;
   created_at: string | null;
   currency_code: string | null;
   amount: number;
   commission_amount: number | null;
   in_progress_at: string | null;
   completed_at: string | null;
-  cancellation_initiator: "buyer" | "seller" | "other" | null;
+  cancellation_initiator: DealRole | null;
   cancellation_reason: string | null;
   cancellation_requested_at: string | null;
-  arbitration_initiator: "buyer" | "seller" | "other" | null;
+  arbitration_initiator: DealRole | null;
   arbitration_reason: string | null;
   arbitration_resolved_by: string | null;
   arbitration_resolution: "buyer" | "seller" | null;

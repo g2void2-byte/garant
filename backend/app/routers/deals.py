@@ -18,7 +18,9 @@ from ..schemas import (
     DealCreateWithTopupOut,
     DealOut,
     DealResolveRequest,
+    DealRoleWire,
     DealTopupInvoiceOut,
+    PaymentProviderWire,
 )
 from ..services_deals import (
     accept_cancel,
@@ -34,6 +36,25 @@ from ..services_deals import (
 )
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
+
+
+def _payment_provider_for(value: object) -> PaymentProviderWire:
+    provider = getattr(value, "value", value) or "cryptobot"
+    if provider == "cryptobot":
+        return "cryptobot"
+    if provider == "crystalpay":
+        return "crystalpay"
+    raise ValueError(f"unknown payment provider: {provider!r}")
+
+
+def _resolution_for(value: str | None) -> Literal["buyer", "seller"] | None:
+    if value is None:
+        return None
+    if value == "buyer":
+        return "buyer"
+    if value == "seller":
+        return "seller"
+    raise ValueError(f"unknown arbitration resolution: {value!r}")
 
 
 def _topup_invoice_from_deposit(
@@ -55,9 +76,7 @@ def _topup_invoice_from_deposit(
         commission=commission,
         paid_total=paid_total,
         currency_code=deposit.currency.code if deposit.currency else "",
-        provider=(
-            deposit.provider.value if hasattr(deposit.provider, "value") else str(deposit.provider)
-        ),
+        provider=_payment_provider_for(deposit.provider),
         expires_at=None,
     )
 
@@ -68,7 +87,7 @@ def _deal_out(
     *,
     topup_invoice: DealTopupInvoiceOut | None = None,
 ) -> DealOut:
-    role = "buyer" if deal.buyer_id == user_id else "seller"
+    role = _role_for(deal, user_id) or "other"
     currency_code = deal.currency.code if deal.currency else None
 
     return DealOut(
@@ -96,9 +115,9 @@ def _deal_out(
         arbitration_initiator=_role_for(deal, deal.arbitration_initiator_id),
         arbitration_reason=deal.arbitration_reason,
         arbitration_resolved_by=("admin" if deal.arbitration_resolved_by is not None else None),
-        arbitration_resolution=deal.arbitration_resolution,
+        arbitration_resolution=_resolution_for(deal.arbitration_resolution),
         arbitration_resolved_at=deal.arbitration_resolved_at,
-        payment_provider=deal.payment_provider or "cryptobot",
+        payment_provider=_payment_provider_for(deal.payment_provider),
         topup_deposit_id=deal.topup_deposit_id,
         commission_paid=bool(deal.commission_paid),
         topup_invoice=topup_invoice,
@@ -132,7 +151,7 @@ async def _hydrate_topup_invoice(session, deal: Deal) -> DealTopupInvoiceOut | N
     return _topup_invoice_from_deposit(deal, deposit, paid_total=paid_total)
 
 
-def _role_for(deal: Deal, user_id: int | None) -> str | None:
+def _role_for(deal: Deal, user_id: int | None) -> DealRoleWire | None:
     if user_id is None:
         return None
     if user_id == deal.buyer_id:

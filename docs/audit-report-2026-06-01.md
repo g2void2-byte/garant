@@ -2908,6 +2908,16 @@ Risk: these bodies sit on user-facing edit flows and telemetry. Silent drops mak
 
 Fix: `UserUpdate`, `ServiceCreate`, `ServiceUpdate`, and `ClientErrorReport` now set `extra="forbid"`. OpenAPI publishes `additionalProperties: false` for each remaining request body, and regressions cover valid payloads, `extra_forbidden` errors, and generated contract drift.
 
+### M-264. Staff deal detail projection mislabeled non-participants as seller
+
+Links: `backend/app/routers/deals.py`, `backend/app/schemas.py`, OpenAPI snapshot `frontend/openapi.json`, regressions in `test_deal_projection.py` and `openapi.contract.test.ts`.
+
+`GET /api/deals/{id}` correctly allowed admins and arbiters to inspect a deal they were not part of, but `_deal_out()` computed the viewer role as `"buyer"` only when `user_id == buyer_id` and `"seller"` for everyone else. A staff viewer whose id matched neither side therefore received `role="seller"` in the user-facing detail DTO.
+
+Risk: the frontend treats `role === "seller"` as a participant role. On the deal detail screen this can expose seller-side CTAs, chat/review affordances, and counterparty labels to staff users even though backend action handlers later reject non-participant commands. The UI state is misleading and can drive invalid requests from moderators.
+
+Fix: `_deal_out()` now uses the same `_role_for()` helper as the rest of the deal projection and returns `role="other"` for staff/non-participants. `DealOut.role` is a closed OpenAPI enum (`buyer | seller | other`) so generated clients no longer see an arbitrary string, and regressions cover buyer/seller/staff projections plus contract drift.
+
 ## Наблюдения без отдельного finding
 
 

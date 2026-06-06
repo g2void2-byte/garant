@@ -149,7 +149,7 @@ const nullableDealFixture = {
   ...dealFixture,
   buyer: null,
   seller: null,
-  role: "unknown-role",
+  role: "other",
 } as const satisfies DealOutSchema;
 
 const mediaFixture = {
@@ -722,6 +722,7 @@ describe("OpenAPI contract", () => {
 
   it("DealOut requires the buyer/seller fields the deal list UI reads", () => {
     const deal = openapi.components.schemas.DealOut as {
+      properties: Record<string, { enum?: string[] }>;
       required: readonly string[];
     };
     expect(deal.required).toEqual(
@@ -736,6 +737,10 @@ describe("OpenAPI contract", () => {
         "confirm_seller",
         "role",
       ]),
+    );
+    expect(deal.properties.role.enum).toEqual(["buyer", "seller", "other"]);
+    expect(deal.properties.status.enum).toEqual(
+      expect.arrayContaining(["pending_topup", "pending_confirmation", "in_progress"]),
     );
   });
 
