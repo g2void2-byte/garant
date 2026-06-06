@@ -2758,6 +2758,16 @@ Risk: broadcast history is an operator-facing delivery report. Marking in-app de
 
 Fix: the chunk accounting now tracks whether the recipient already had a successful in-app insert before optional DM dispatch. A recipient counts as delivered when either the in-app leg or the DM leg succeeds, and counts as failed only when no enabled channel succeeded. The regression stubs DM failure with both channels enabled and verifies `delivered_count=1`, `failed_count=0`.
 
+### M-249. Stale withdrawal sweep held earlier row locks across later provider calls
+
+Links: `backend/app/services_wallet.py`, regression in `test_admin_finance.py`.
+
+`sweep_stale_withdrawals()` snapshots stale pending withdrawals, calls CryptoBot `get_transfers(spend_id=...)`, locks the matching withdrawal/balance, and flips the row to either `sent` or synthetic `rejected`. The code staged every row mutation and notification in one transaction and committed only after the whole batch. The initial snapshot transaction also stayed open into the first provider call, and skip branches after `FOR UPDATE` could continue without releasing the short-lived lock. After reconciling the first row, its `wallet_withdrawals` and `user_balances` locks therefore stayed open while the sweep queried CryptoBot for every later candidate. The same balance mutations also bypassed `record_balance_ledger()`, leaving sweep-driven sent/refund transitions without the append-only wallet ledger trail that normal withdrawal lock/sent/reject paths write.
+
+Risk: a slow or retrying CryptoBot lookup for an unrelated stale withdrawal could block users/admins touching already-reconciled balances or withdrawal rows. If the worker crashed before the final batch commit, already-processed rows were rolled back despite having passed provider reconciliation. Missing ledger rows made these synthetic money movements harder to audit after the fact.
+
+Fix: the read-only snapshot is closed before provider I/O, skip branches release their short lock before continuing, and each reconciled withdrawal records the matching wallet ledger entry (`withdrawal.sent` for found transfers, `withdrawal.stale_refund` for synthetic refunds) before committing immediately after the locked section. Post-commit notification dispatch remains best-effort after committed rows are collected. The regression creates two stale withdrawals and verifies the first one is already committed, with its ledger entry visible from a separate session, when the second CryptoBot lookup starts.
+
 ## Наблюдения без отдельного finding
 
 
