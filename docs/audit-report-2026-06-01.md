@@ -208,6 +208,7 @@
 - M-236: public deal detail now keeps deal-scoped flows bound to the canonical route id.
 - M-237: deal message cache merges now normalize runtime ids before de-duping.
 - M-238: notification cache/read/load-more paths now normalize runtime ids.
+- M-239: admin side-effect cache invalidations now normalize runtime ids before building query keys.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2652,6 +2653,16 @@ Notification rows already validated ids before navigation/read actions, but the 
 Risk: notifications are a high-frequency user-facing feed. Raw-id drift makes unread badges and row pips stale, creates duplicate notifications on reconnect/replay, and can strand pagination at a valid-but-string cursor.
 
 Fix: notification cache read predicates, live notification de-dupe, local page read state, and load-more cursor/page merge now compare ids through the shared positive-id parser with raw equality fallback for malformed values. Regressions cover optimistic read, server read events, live duplicate events, numeric-string load-more cursors, and loaded-page de-dupe.
+
+### M-239. Admin side-effect invalidations trusted raw runtime ids
+
+Links: `frontend/src/api/admin/hooks.ts`, regression in `hooks.test.tsx`.
+
+Several admin mutation success paths built TanStack Query invalidation keys directly from ids returned in runtime responses: deal approval `target_id`, force-release/refund buyer and seller ids, arbitration claim `deal_id`, service owner/service ids, review author/target ids, comment author/service ids, deposit `user_id`, and withdrawal `user_id`. Numeric string ids therefore missed the canonical numeric cache entries, while malformed ids could create useless per-id query keys instead of refreshing the relevant prefix.
+
+Risk: these mutations are admin side-effect surfaces for balances, deal state, reviews, service projections, wallet rows, and audit-adjacent admin views. A successful mutation followed by a stale cache can show admins old balances/statuses and hide the effect of their own action until a broad refetch or navigation reset.
+
+Fix: admin hooks now parse response-sourced ids through the shared positive-id boundary before building invalidation keys, fall back to prefix invalidation when runtime ids are malformed, and keep canonical mutation variables as the source of truth where the target id is already known. Regressions cover numeric-string and malformed ids across deal actions, approvals, services, comments, deposits, withdrawals, and reviews.
 
 ## Наблюдения без отдельного finding
 

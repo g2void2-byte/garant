@@ -24,10 +24,10 @@ import type {
  * had the same gap. The mutation response for ``useAdminDealAction``
  * is ``AdminDealDetailDto`` and exposes ``buyer.user_id`` /
  * ``seller.user_id`` (verified at frontend/src/api/types.ts:374-422),
- * so the fix reads those ids straight from the response. The claim
- * payload only carries ``{ claimed, deal_id, arbiter_id }``, so the
- * fix falls back to a prefix-only ``["admin", "user"]`` invalidation
- * (TanStack Query treats it as a prefix matcher).
+ * so the fix normalizes those ids before building query keys. The
+ * claim payload only carries ``{ claimed, deal_id, arbiter_id }``, so
+ * the fix falls back to a prefix-only ``["admin", "user"]``
+ * invalidation (TanStack Query treats it as a prefix matcher).
  */
 
 const apiState = vi.hoisted(() => ({
@@ -59,6 +59,7 @@ vi.mock("../client", () => ({
 
 import {
   useAdminAdjustBalance,
+  useAdminApproveDealApproval,
   useAdminClaimArbitration,
   useAdminCreateBroadcast,
   useAdminCreateReview,
@@ -74,6 +75,7 @@ import {
   useAdminForceRefund,
   useAdminForceRelease,
   useAdminFlushRedis,
+  useAdminRejectDealApproval,
   useAdminSetStats,
   useAdminSetTrustDeposit,
   useAdminUpsertCurrencyRate,
@@ -240,6 +242,10 @@ function makeCurrency(overrides: Partial<AdminCurrencyDto> = {}): AdminCurrencyD
   };
 }
 
+function runtimeNumber(value: unknown): number {
+  return value as number;
+}
+
 function spyInvalidate(qc: QueryClient) {
   return vi.spyOn(qc, "invalidateQueries");
 }
@@ -324,6 +330,45 @@ describe("useAdminDealAction (force-release / force-refund) — V5-F-5 invalidat
     expect(hasKey(keys, ["admin", "audit"])).toBe(true);
   });
 
+  it("normalizes string buyer + seller ids before user-detail invalidation", async () => {
+    apiState.postResponse = {
+      deal: makeDealDetail({
+        buyer: makeBalance({ user_id: runtimeNumber("42") }),
+        seller: makeBalance({ user_id: runtimeNumber("99") }),
+      }),
+    };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminForceRelease(), { wrapper });
+    await result.current.mutateAsync({ dealId: 7 });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    expect(hasKey(keys, ["admin", "user", 42])).toBe(true);
+    expect(hasKey(keys, ["admin", "user", 99])).toBe(true);
+    expect(hasKey(keys, ["admin", "user", "42"])).toBe(false);
+    expect(hasKey(keys, ["admin", "user", "99"])).toBe(false);
+  });
+
+  it("falls back to the admin user prefix when party ids are malformed", async () => {
+    apiState.postResponse = {
+      deal: makeDealDetail({
+        buyer: makeBalance({ user_id: runtimeNumber("0x42") }),
+        seller: makeBalance({ user_id: runtimeNumber("0x99") }),
+      }),
+    };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminForceRefund(), { wrapper });
+    await result.current.mutateAsync({ dealId: 7 });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    expect(hasKey(keys, ["admin", "user"])).toBe(true);
+    expect(hasKey(keys, ["admin", "user", "0x42"])).toBe(false);
+    expect(hasKey(keys, ["admin", "user", "0x99"])).toBe(false);
+  });
+
   it("does NOT invalidate user keys when the response is `{ deleted: true }` (no buyer/seller)", async () => {
     // The mutationFn returns `json.deal ?? json`; when the server
     // replies with `{ deleted: true }` (no `deal` envelope), the
@@ -346,6 +391,36 @@ describe("useAdminDealAction (force-release / force-refund) — V5-F-5 invalidat
     expect(hasKey(keys, ["admin", "arbitration"])).toBe(true);
     expect(hasKey(keys, ["admin", "dashboard"])).toBe(true);
     expect(hasKey(keys, ["admin", "audit"])).toBe(true);
+  });
+});
+
+describe("admin deal approvals - response id invalidations", () => {
+  it("normalizes string approval target ids before deal-detail invalidation", async () => {
+    apiState.postResponse = { target_id: runtimeNumber("7") };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminApproveDealApproval(), { wrapper });
+    await result.current.mutateAsync(77);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    expect(hasKey(keys, ["admin", "deal", 7])).toBe(true);
+    expect(hasKey(keys, ["admin", "deal", "7"])).toBe(false);
+    expect(hasKey(keys, ["admin", "deals"])).toBe(true);
+  });
+
+  it("falls back to the admin deal prefix when approval target ids are malformed", async () => {
+    apiState.postResponse = { target_id: runtimeNumber("0x7") };
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminRejectDealApproval(), { wrapper });
+    await result.current.mutateAsync(77);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    expect(hasKey(keys, ["admin", "deal"])).toBe(true);
+    expect(hasKey(keys, ["admin", "deal", "0x7"])).toBe(false);
+    expect(hasKey(keys, ["admin", "deals"])).toBe(true);
   });
 });
 
@@ -432,6 +507,25 @@ describe("admin service/comment mutations - public cache invalidations", () => {
     }
   });
 
+  it("normalizes string service response ids before precise invalidation", async () => {
+    apiState.postResponse = makeService({
+      id: runtimeNumber("55"),
+      owner_id: runtimeNumber("42"),
+      title: "Updated API",
+    });
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminUpdateService(), { wrapper });
+    await result.current.mutateAsync({ serviceId: 55, body: { title: "Updated API" } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    expect(hasKey(keys, ["admin", "user-services", 42])).toBe(true);
+    expect(hasKey(keys, ["admin", "user-services", "42"])).toBe(false);
+    expect(hasKey(keys, ["service", 55])).toBe(true);
+    expect(hasKey(keys, ["service", "55"])).toBe(false);
+  });
+
   it("service delete invalidates public catalog/detail/comment caches", async () => {
     apiState.postResponse = { deleted: true, service_id: 55 };
     const { invalidateSpy, wrapper } = makeHarness();
@@ -474,7 +568,12 @@ describe("admin service/comment mutations - public cache invalidations", () => {
   });
 
   it("comment delete uses backend side-effect ids for precise invalidation", async () => {
-    apiState.postResponse = { deleted: true, comment_id: 77, service_id: 55, author_id: 42 };
+    apiState.postResponse = {
+      deleted: true,
+      comment_id: 77,
+      service_id: runtimeNumber("55"),
+      author_id: runtimeNumber("42"),
+    };
     const { invalidateSpy, wrapper } = makeHarness();
 
     const { result } = renderHook(() => useAdminDeleteComment(), { wrapper });
@@ -490,6 +589,8 @@ describe("admin service/comment mutations - public cache invalidations", () => {
     ] as const) {
       expect(hasKey(keys, expected)).toBe(true);
     }
+    expect(hasKey(keys, ["admin", "user-comments", "42"])).toBe(false);
+    expect(hasKey(keys, ["service", "55"])).toBe(false);
   });
 });
 
@@ -622,7 +723,7 @@ describe("admin deposit actions — side-effect cache invalidations", () => {
   ] as const;
 
   it("mark-paid invalidates every cache touched by the backend side effects", async () => {
-    apiState.postResponse = makeDeposit({ status: "paid" });
+    apiState.postResponse = makeDeposit({ status: "paid", user_id: runtimeNumber("42") });
     const { invalidateSpy, wrapper } = makeHarness();
 
     const { result } = renderHook(() => useAdminDepositMarkPaid(), { wrapper });
@@ -633,6 +734,8 @@ describe("admin deposit actions — side-effect cache invalidations", () => {
     for (const expected of expectedKeys) {
       expect(hasKey(keys, expected)).toBe(true);
     }
+    expect(hasKey(keys, ["admin", "user-wallet", "42"])).toBe(false);
+    expect(hasKey(keys, ["admin", "user", "42"])).toBe(false);
   });
 
   it("refund invalidates every cache touched by the backend side effects", async () => {
@@ -652,7 +755,7 @@ describe("admin deposit actions — side-effect cache invalidations", () => {
 
 describe("admin withdrawal decisions — side-effect cache invalidations", () => {
   it("invalidates admin analytics and user-facing wallet caches", async () => {
-    apiState.postResponse = makeWithdrawal({ status: "sent" });
+    apiState.postResponse = makeWithdrawal({ status: "sent", user_id: runtimeNumber("42") });
     const { invalidateSpy, wrapper } = makeHarness();
 
     const { result } = renderHook(() => useAdminDecideWithdrawal(), { wrapper });
@@ -673,6 +776,8 @@ describe("admin withdrawal decisions — side-effect cache invalidations", () =>
     ] as const) {
       expect(hasKey(keys, expected)).toBe(true);
     }
+    expect(hasKey(keys, ["admin", "user-wallet", "42"])).toBe(false);
+    expect(hasKey(keys, ["admin", "user", "42"])).toBe(false);
   });
 
   it("invalidates broad caches when the backend reports an error after a partial commit", async () => {
@@ -740,6 +845,42 @@ describe("admin review mutations — rating side-effect cache invalidations", ()
     for (const expected of expectedReviewKeys) {
       expect(hasKey(keys, expected)).toBe(true);
     }
+  });
+
+  it("normalizes string review actor ids before user-detail invalidation", async () => {
+    apiState.postResponse = makeReview({
+      author_id: runtimeNumber("99"),
+      target_id: runtimeNumber("42"),
+      rating: 2,
+    });
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminUpdateReview(), { wrapper });
+    await result.current.mutateAsync({ reviewId: 12, body: { rating: 2, text: "bad" } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    expect(hasKey(keys, ["admin", "user", 42])).toBe(true);
+    expect(hasKey(keys, ["admin", "user", 99])).toBe(true);
+    expect(hasKey(keys, ["admin", "user", "42"])).toBe(false);
+    expect(hasKey(keys, ["admin", "user", "99"])).toBe(false);
+  });
+
+  it("falls back to broad admin user invalidation for malformed review actor ids", async () => {
+    apiState.postResponse = makeReview({
+      author_id: runtimeNumber("0x99"),
+      target_id: runtimeNumber("0x42"),
+    });
+    const { invalidateSpy, wrapper } = makeHarness();
+
+    const { result } = renderHook(() => useAdminUpdateReview(), { wrapper });
+    await result.current.mutateAsync({ reviewId: 12, body: { rating: 2, text: "bad" } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const keys = invalidatedKeys(invalidateSpy);
+    expect(hasKey(keys, ["admin", "user"])).toBe(true);
+    expect(hasKey(keys, ["admin", "user", "0x42"])).toBe(false);
+    expect(hasKey(keys, ["admin", "user", "0x99"])).toBe(false);
   });
 
   it("delete falls back to broad user invalidations because the response has no target id", async () => {
