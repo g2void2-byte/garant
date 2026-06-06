@@ -137,6 +137,58 @@ async def test_currency_update_clears_nullable_string_fields_with_null(client):
     assert audit.payload["after"]["address_regex"] == ""
 
 
+async def test_currency_upsert_rejects_explicit_null_for_noop_fields(client):
+    """Non-nullable currency columns use omission for no-op/defaults.
+
+    Explicit JSON ``null`` should fail instead of looking successful
+    while preserving the previous row values.
+    """
+    admin_init, _ = await _make_admin(client, tg=1)
+
+    resp = await client.put(
+        "/api/admin/currencies",
+        json={
+            "code": "NUL1",
+            "name": "Null Guard",
+            "network": "BANK",
+            "decimals": 6,
+            "min_deposit": "0.75000001",
+            "min_withdraw": "1.25000001",
+            "is_active": True,
+            "sort_order": 4,
+            "kind": "fiat",
+        },
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+
+    for field in (
+        "name",
+        "decimals",
+        "min_deposit",
+        "min_withdraw",
+        "is_active",
+        "sort_order",
+        "kind",
+    ):
+        resp = await client.put(
+            "/api/admin/currencies",
+            json={"code": "NUL1", field: None},
+            headers=with_totp(auth_headers(admin_init)),
+        )
+        assert resp.status_code == 422, (field, resp.text)
+
+    async with async_session() as session:
+        row = (await session.execute(select(Currency).where(Currency.code == "NUL1"))).scalar_one()
+        assert row.name == "Null Guard"
+        assert row.decimals == 6
+        assert Decimal(str(row.min_deposit)) == Decimal("0.75000001")
+        assert Decimal(str(row.min_withdraw)) == Decimal("1.25000001")
+        assert row.is_active is True
+        assert row.sort_order == 4
+        assert row.kind == "fiat"
+
+
 async def test_currency_update_can_deactivate(client):
     """Flipping ``is_active`` to False on an existing row must persist
     and must surface in the response body (so the admin UI can render

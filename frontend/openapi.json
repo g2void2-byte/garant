@@ -1428,15 +1428,8 @@
             "type": "string"
           },
           "decimals": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Decimals"
+            "title": "Decimals",
+            "type": "integer"
           },
           "icon_url": {
             "anyOf": [
@@ -1450,30 +1443,16 @@
             "title": "Icon Url"
           },
           "is_active": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Active"
+            "title": "Is Active",
+            "type": "boolean"
           },
           "kind": {
-            "anyOf": [
-              {
-                "enum": [
-                  "crypto",
-                  "fiat"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "enum": [
+              "crypto",
+              "fiat"
             ],
-            "title": "Kind"
+            "title": "Kind",
+            "type": "string"
           },
           "min_deposit": {
             "anyOf": [
@@ -1483,9 +1462,6 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Min Deposit"
@@ -1498,23 +1474,13 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Min Withdraw"
           },
           "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
+            "title": "Name",
+            "type": "string"
           },
           "network": {
             "anyOf": [
@@ -1528,15 +1494,8 @@
             "title": "Network"
           },
           "sort_order": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sort Order"
+            "title": "Sort Order",
+            "type": "integer"
           }
         },
         "required": [

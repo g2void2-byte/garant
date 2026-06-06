@@ -2818,6 +2818,16 @@ Risk: seller tools generated from OpenAPI could turn malformed or stale update p
 
 Fix: `ServiceUpdate` now uses `SkipJsonSchema[None]` for no-op sentinel fields, preserving internal PATCH construction while removing `null` from OpenAPI. The route checks `model_fields_set` and returns 422 when a client explicitly sends `null`; omitted fields remain no-ops, and `photo_urls: []` still clears the gallery. Regressions cover schema nullability, endpoint null rejection without mutation, and the empty-list clear path.
 
+### M-255. Admin currency upsert advertised `null` for non-nullable no-op fields
+
+Links: `backend/app/schemas.py`, `backend/app/routers/admin/taxonomy.py`, OpenAPI snapshot `frontend/openapi.json`, generated contract `frontend/src/api/openapi.generated.ts`, regressions in `test_admin_currency_schema.py` and `test_admin_taxonomy_currencies.py`.
+
+`AdminCurrencyUpsertIn` intentionally accepts omission for partial updates/defaulted creates, and explicit `null` is a real clear operation for string fields that are stored as empty strings (`network`, `icon_url`, `address_regex`). The same nullable schema was also exposed for non-nullable/no-op fields: `name`, `decimals`, `min_deposit`, `min_withdraw`, `is_active`, `sort_order`, and `kind`. Sending those fields as JSON `null` produced a successful-looking PUT that either preserved the previous value on update or selected the create default, even though the persisted columns are not nullable.
+
+Risk: admin tooling generated from OpenAPI could send `null` while intending to clear, reset, or deactivate a currency field, receive 200, and leave wallet/catalog constraints unchanged. This is especially sensitive for `is_active`, precision, and deposit/withdraw limits, because a stale currency row remains available or constrained exactly as before.
+
+Fix: non-nullable/no-op currency fields now use `SkipJsonSchema[None]` so OpenAPI no longer advertises `null`, while Python construction can still use `None` as the internal omitted sentinel. The upsert route rejects explicit JSON `null` for those fields with 422 via `model_fields_set`; nullable string clears remain supported and covered separately.
+
 ## Наблюдения без отдельного finding
 
 

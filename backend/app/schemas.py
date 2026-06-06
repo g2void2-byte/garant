@@ -2544,10 +2544,10 @@ class AdminCurrencyOut(BaseModel):
 
 class AdminCurrencyUpsertIn(BaseModel):
     code: CurrencyCodeStr
-    name: str | None = None
+    name: str | SkipJsonSchema[None] = None
     network: str | None = None
     icon_url: str | None = None
-    decimals: int | None = None
+    decimals: int | SkipJsonSchema[None] = None
     # Audit §13.7.2 — ``Decimal`` end-to-end so an admin who enters
     # ``0.123456789012345678`` doesn't silently lose precision through
     # a float64 round-trip on the way into the ``Numeric(28, 8)`` DB
@@ -2555,10 +2555,10 @@ class AdminCurrencyUpsertIn(BaseModel):
     # the *input* side is already ``Decimal`` (pydantic v2 coerces JSON
     # numbers natively); ``Decimal | None`` keeps the contract symmetric
     # with ``ServiceUpdate.price``.
-    min_deposit: Decimal | None = None
-    min_withdraw: Decimal | None = None
-    is_active: bool | None = None
-    sort_order: int | None = None
+    min_deposit: Decimal | SkipJsonSchema[None] = None
+    min_withdraw: Decimal | SkipJsonSchema[None] = None
+    is_active: bool | SkipJsonSchema[None] = None
+    sort_order: int | SkipJsonSchema[None] = None
     # Audit §13.7.3 — allow the admin to set the per-currency address
     # regex through the upsert endpoint instead of relying on the
     # ``d9f1c3a8e205_currencies_address_regex`` back-fill migration +
@@ -2571,7 +2571,7 @@ class AdminCurrencyUpsertIn(BaseModel):
     # ``"crypto"`` (default) or ``"fiat"``. Admin-editable so a
     # newly-added asset can be classified without an out-of-band
     # SQL update.
-    kind: Literal["crypto", "fiat"] | None = None
+    kind: Literal["crypto", "fiat"] | SkipJsonSchema[None] = None
 
     @field_validator("is_active", mode="before")
     @classmethod

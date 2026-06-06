@@ -2928,23 +2928,26 @@ export interface components {
             /** Code */
             code: string;
             /** Decimals */
-            decimals?: number | null;
+            decimals?: number;
             /** Icon Url */
             icon_url?: string | null;
             /** Is Active */
-            is_active?: boolean | null;
-            /** Kind */
-            kind?: ("crypto" | "fiat") | null;
+            is_active?: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind?: "crypto" | "fiat";
             /** Min Deposit */
-            min_deposit?: number | string | null;
+            min_deposit?: number | string;
             /** Min Withdraw */
-            min_withdraw?: number | string | null;
+            min_withdraw?: number | string;
             /** Name */
-            name?: string | null;
+            name?: string;
             /** Network */
             network?: string | null;
             /** Sort Order */
-            sort_order?: number | null;
+            sort_order?: number;
         };
         /**
          * AdminDashboardOut

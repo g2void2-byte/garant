@@ -197,6 +197,22 @@ async def upsert_currency(
     session: SessionDep,
     request: Request,
 ):
+    explicit_null_fields = [
+        field
+        for field in (
+            "name",
+            "decimals",
+            "min_deposit",
+            "min_withdraw",
+            "is_active",
+            "sort_order",
+            "kind",
+        )
+        if field in body.model_fields_set and getattr(body, field) is None
+    ]
+    if explicit_null_fields:
+        raise HTTPException(422, "Field cannot be null")
+
     existing = (
         await session.execute(select(Currency).where(Currency.code == body.code))
     ).scalar_one_or_none()

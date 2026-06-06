@@ -59,6 +59,24 @@ def test_admin_currency_integer_fields_accept_explicit_ints_or_none() -> None:
     assert AdminCurrencyUpsertIn(code="USD", decimals=None, sort_order=None).decimals is None
 
 
+def test_admin_currency_openapi_hides_noop_null_fields() -> None:
+    properties = AdminCurrencyUpsertIn.model_json_schema()["properties"]
+
+    for field in (
+        "name",
+        "decimals",
+        "min_deposit",
+        "min_withdraw",
+        "is_active",
+        "sort_order",
+        "kind",
+    ):
+        assert "null" not in str(properties[field])
+
+    for field in ("network", "icon_url", "address_regex"):
+        assert "null" in str(properties[field])
+
+
 @pytest.mark.parametrize("bad", [True, False, "8", 8.0, -1, 9, 18, 19])
 def test_admin_currency_decimals_rejects_coerced_or_out_of_range_ints(
     bad: object,
