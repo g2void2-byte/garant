@@ -222,6 +222,7 @@ async def update_service(
 
     before: dict = {}
     after: dict = {}
+    requested_fields = body.model_fields_set
 
     if body.title is not None and body.title != service.title:
         before["title"] = service.title
@@ -290,7 +291,15 @@ async def update_service(
             before["status"] = service.status.value
             after["status"] = new_status.value
             service.status = new_status
-    if body.ban_reason is not None and body.ban_reason != service.ban_reason:
+            if (
+                new_status != ServiceStatus.banned
+                and "ban_reason" not in requested_fields
+                and service.ban_reason is not None
+            ):
+                before["ban_reason"] = service.ban_reason
+                after["ban_reason"] = None
+                service.ban_reason = None
+    if "ban_reason" in requested_fields and body.ban_reason != service.ban_reason:
         before["ban_reason"] = service.ban_reason
         after["ban_reason"] = body.ban_reason
         service.ban_reason = body.ban_reason

@@ -2768,6 +2768,16 @@ Risk: a slow or retrying CryptoBot lookup for an unrelated stale withdrawal coul
 
 Fix: the read-only snapshot is closed before provider I/O, skip branches release their short lock before continuing, and each reconciled withdrawal records the matching wallet ledger entry (`withdrawal.sent` for found transfers, `withdrawal.stale_refund` for synthetic refunds) before committing immediately after the locked section. Post-commit notification dispatch remains best-effort after committed rows are collected. The regression creates two stale withdrawals and verifies the first one is already committed, with its ledger entry visible from a separate session, when the second CryptoBot lookup starts.
 
+### M-250. Admin service ban reasons could not be cleared cleanly
+
+Links: `backend/app/routers/admin/content.py`, `backend/app/schemas.py`, `frontend/src/api/types.ts`, regression in `test_admin_content.py`.
+
+`AdminServiceUpdateIn` exposes `ban_reason: str | None`, and generated OpenAPI already advertises `ban_reason?: string | null`, but the admin content route only applied the field when `body.ban_reason is not None`. Explicit `{"ban_reason": null}` therefore collapsed into the same behavior as an omitted field. The same route changed a service from `banned` to `active` without clearing the old `Service.ban_reason`, leaving stale moderation text attached to an unbanned service. The handwritten frontend type also narrowed `ban_reason` to `string`, hiding the nullable wire contract from admin callers.
+
+Risk: service moderation state becomes inconsistent. Admins can unban a service or intentionally clear the reason while the DB/API keeps the old explanation, so later admin views and audit payloads can show stale policy text that no longer describes the current service state.
+
+Fix: admin service updates now use Pydantic `model_fields_set` for `ban_reason`, normalize blank reasons to `None`, clear stale reasons automatically when status leaves `banned` unless a reason was explicitly supplied, and the frontend admin update type now allows `null`. Regressions cover explicit null clearing and `banned -> active` clearing the stored reason/audit payload.
+
 ## Наблюдения без отдельного finding
 
 

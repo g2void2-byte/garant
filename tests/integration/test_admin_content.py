@@ -13,6 +13,7 @@ from backend.app.models import (
     Review,
     Service,
     ServiceComment,
+    ServiceStatus,
     User,
 )
 from tests.helpers import auth_headers, signed_init_data, with_totp
@@ -44,6 +45,8 @@ async def _create_service(
     price: Decimal | int | str = 10,
     deposit: Decimal | int | str = 0,
     rating_manual: Decimal | None = None,
+    status: ServiceStatus = ServiceStatus.active,
+    ban_reason: str | None = None,
 ) -> int:
     async with async_session() as session:
         cat = (await session.execute(select(Category))).scalars().first()
@@ -56,6 +59,8 @@ async def _create_service(
             price=price,
             deposit=deposit,
             rating_manual=rating_manual,
+            status=status,
+            ban_reason=ban_reason,
         )
         session.add(service)
         await session.commit()
@@ -171,6 +176,80 @@ async def test_update_service_no_change_no_audit_row(client):
             ).scalars()
         )
     assert rows == []
+
+
+async def test_update_service_clears_ban_reason_with_explicit_null(client):
+    owner_id = await _bootstrap_user(client, 100, "owner")
+    sid = await _create_service(
+        owner_id,
+        status=ServiceStatus.banned,
+        ban_reason="old reason",
+    )
+    admin_init = await _make_admin(client)
+
+    resp = await client.post(
+        f"/api/admin/services/{sid}",
+        json={"ban_reason": None},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "banned"
+    assert body["ban_reason"] is None
+
+    async with async_session() as session:
+        service = await session.get(Service, sid)
+        assert service is not None
+        assert service.ban_reason is None
+        audit = (
+            await session.execute(
+                select(AdminAuditLog)
+                .where(AdminAuditLog.action == "service.edit")
+                .order_by(AdminAuditLog.id.desc())
+                .limit(1)
+            )
+        ).scalar_one()
+    assert audit.payload is not None
+    assert audit.payload["before"]["ban_reason"] == "old reason"
+    assert audit.payload["after"]["ban_reason"] is None
+
+
+async def test_update_service_unban_clears_stale_ban_reason(client):
+    owner_id = await _bootstrap_user(client, 100, "owner")
+    sid = await _create_service(
+        owner_id,
+        status=ServiceStatus.banned,
+        ban_reason="policy issue",
+    )
+    admin_init = await _make_admin(client)
+
+    resp = await client.post(
+        f"/api/admin/services/{sid}",
+        json={"status": "active"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "active"
+    assert body["ban_reason"] is None
+
+    async with async_session() as session:
+        service = await session.get(Service, sid)
+        assert service is not None
+        assert service.status == ServiceStatus.active
+        assert service.ban_reason is None
+        audit = (
+            await session.execute(
+                select(AdminAuditLog)
+                .where(AdminAuditLog.action == "service.edit")
+                .order_by(AdminAuditLog.id.desc())
+                .limit(1)
+            )
+        ).scalar_one()
+    assert audit.payload is not None
+    assert audit.payload["after"]["status"] == "active"
+    assert audit.payload["before"]["ban_reason"] == "policy issue"
+    assert audit.payload["after"]["ban_reason"] is None
 
 
 async def test_delete_service(client):

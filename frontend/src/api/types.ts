@@ -620,7 +620,7 @@ export interface AdminServiceUpdateBody {
   rating_manual?: number | string | null;
   clear_rating?: boolean;
   status?: "draft" | "active" | "paused" | "banned";
-  ban_reason?: string;
+  ban_reason?: string | null;
 }
 
 export interface AdminReviewItemDto {

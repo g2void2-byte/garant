@@ -1961,6 +1961,18 @@ class AdminServiceUpdateIn(BaseModel):
             raise ValueError("Рейтинг должен быть в диапазоне 0..5")
         return d.quantize(Decimal("0.1"))
 
+    @field_validator("ban_reason")
+    @classmethod
+    def _ban_reason_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if len(v) > 500:
+            raise ValueError("Причина бана слишком длинная (≤500)")
+        return v
+
 
 class AdminReviewItemOut(BaseModel):
     id: int
