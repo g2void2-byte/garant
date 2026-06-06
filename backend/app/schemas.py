@@ -25,6 +25,12 @@ from pydantic.json_schema import SkipJsonSchema
 from .money import MONEY_SCALE
 
 
+def _reject_explicit_null_value(v: object) -> object:
+    if v is None:
+        raise ValueError("Field cannot be null")
+    return v
+
+
 def _validate_https_or_media_url(v: str, *, what: str, max_len: int = 1024) -> str:
     """Audit L-3 — strict URL validator for user-supplied avatar/banner/forum links.
 
@@ -1897,19 +1903,35 @@ class AdminServiceUpdateIn(BaseModel):
     Every field is optional. Negative numeric values are rejected per
     the spec (counts / deposits cannot be < 0). ``rating_manual`` is
     bounded to 0..5 to match the user rating override; pass ``None``
-    explicitly with ``clear_rating=true`` to remove it.
+    explicitly or set ``clear_rating=true`` to remove it. Non-nullable
+    service columns reject explicit JSON ``null`` instead of silently
+    treating it as an omitted field.
     """
 
-    title: str | None = None
-    description: str | None = None
-    price: Decimal | None = None
-    deposit: Decimal | None = None
-    views: int | None = None
-    deals_count: int | None = None
+    title: str | SkipJsonSchema[None] = None
+    description: str | SkipJsonSchema[None] = None
+    price: Decimal | SkipJsonSchema[None] = None
+    deposit: Decimal | SkipJsonSchema[None] = None
+    views: int | SkipJsonSchema[None] = None
+    deals_count: int | SkipJsonSchema[None] = None
     rating_manual: Decimal | None = None
     clear_rating: bool = False
-    status: Literal["draft", "active", "paused", "banned"] | None = None
+    status: Literal["draft", "active", "paused", "banned"] | SkipJsonSchema[None] = None
     ban_reason: str | None = None
+
+    @field_validator(
+        "title",
+        "description",
+        "price",
+        "deposit",
+        "views",
+        "deals_count",
+        "status",
+        mode="before",
+    )
+    @classmethod
+    def _reject_noop_null(cls, v: object) -> object:
+        return _reject_explicit_null_value(v)
 
     @field_validator("clear_rating", mode="before")
     @classmethod
@@ -2053,9 +2075,14 @@ class AdminCommentListOut(BaseModel):
 
 
 class AdminCommentUpdateIn(BaseModel):
-    text: str | None = None
+    text: str | SkipJsonSchema[None] = None
     rating: int | None = None
     clear_rating: bool = False
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def _reject_noop_text_null(cls, v: object) -> object:
+        return _reject_explicit_null_value(v)
 
     @field_validator("clear_rating", mode="before")
     @classmethod

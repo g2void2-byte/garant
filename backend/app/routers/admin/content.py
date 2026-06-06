@@ -254,7 +254,10 @@ async def update_service(
         before["deals_count"] = service.deals_count
         after["deals_count"] = body.deals_count
         service.deals_count = body.deals_count
-    if body.clear_rating:
+    clear_rating_requested = body.clear_rating or (
+        "rating_manual" in requested_fields and body.rating_manual is None
+    )
+    if clear_rating_requested:
         if service.rating_manual is not None:
             before["rating_manual"] = _audit_decimal(service.rating_manual)
             after["rating_manual"] = None
@@ -755,11 +758,15 @@ async def update_comment(
 
     before: dict = {}
     after: dict = {}
+    requested_fields = body.model_fields_set
     if body.text is not None and body.text != comment.text:
         before["text"] = comment.text
         after["text"] = body.text
         comment.text = body.text
-    if body.clear_rating:
+    clear_rating_requested = body.clear_rating or (
+        "rating" in requested_fields and body.rating is None
+    )
+    if clear_rating_requested:
         if comment.rating is not None:
             before["rating"] = comment.rating
             after["rating"] = None

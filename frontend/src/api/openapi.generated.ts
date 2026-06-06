@@ -2852,7 +2852,7 @@ export interface components {
             /** Rating */
             rating?: number | null;
             /** Text */
-            text?: string | null;
+            text?: string;
         };
         /** AdminCurrencyOut */
         AdminCurrencyOut: {
@@ -3327,7 +3327,9 @@ export interface components {
          *     Every field is optional. Negative numeric values are rejected per
          *     the spec (counts / deposits cannot be < 0). ``rating_manual`` is
          *     bounded to 0..5 to match the user rating override; pass ``None``
-         *     explicitly with ``clear_rating=true`` to remove it.
+         *     explicitly or set ``clear_rating=true`` to remove it. Non-nullable
+         *     service columns reject explicit JSON ``null`` instead of silently
+         *     treating it as an omitted field.
          */
         AdminServiceUpdateIn: {
             /** Ban Reason */
@@ -3338,21 +3340,24 @@ export interface components {
              */
             clear_rating: boolean;
             /** Deals Count */
-            deals_count?: number | null;
+            deals_count?: number;
             /** Deposit */
-            deposit?: number | string | null;
+            deposit?: number | string;
             /** Description */
-            description?: string | null;
+            description?: string;
             /** Price */
-            price?: number | string | null;
+            price?: number | string;
             /** Rating Manual */
             rating_manual?: number | string | null;
-            /** Status */
-            status?: ("draft" | "active" | "paused" | "banned") | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status?: "draft" | "active" | "paused" | "banned";
             /** Title */
-            title?: string | null;
+            title?: string;
             /** Views */
-            views?: number | null;
+            views?: number;
         };
         /**
          * AdminSetRatingIn

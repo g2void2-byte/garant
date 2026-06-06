@@ -669,7 +669,7 @@ export interface AdminCommentListDto {
 
 export interface AdminCommentUpdateBody {
   text?: string;
-  rating?: number;
+  rating?: number | null;
   clear_rating?: boolean;
 }
 

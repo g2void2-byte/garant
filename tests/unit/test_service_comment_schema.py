@@ -19,9 +19,19 @@ def test_service_comment_create_rejects_coerced_or_out_of_range_rating(
         ServiceCommentCreate(text="ok", rating=bad)
 
 
-def test_admin_comment_update_accepts_integer_rating_or_none() -> None:
+def test_admin_comment_update_accepts_integer_rating_or_null_clear() -> None:
     assert AdminCommentUpdateIn(rating=5).rating == 5
-    assert AdminCommentUpdateIn(rating=None).rating is None
+    body = AdminCommentUpdateIn(rating=None)
+
+    assert body.rating is None
+    assert body.model_fields_set == {"rating"}
+
+
+def test_admin_comment_update_rejects_noop_explicit_null_text() -> None:
+    with pytest.raises(ValidationError) as exc:
+        AdminCommentUpdateIn(text=None)
+
+    assert exc.value.errors()[0]["loc"] == ("text",)
 
 
 @pytest.mark.parametrize("bad", [True, False, "5", 1.0, 0, 6])

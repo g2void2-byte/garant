@@ -2798,6 +2798,16 @@ Risk: admin scripts or generated clients following the nullable OpenAPI contract
 
 Fix: settings update fields now use `T | SkipJsonSchema[None] = None` plus a wildcard before-validator, so omission still keeps normal partial PATCH behavior while explicit `null` returns 422 and is not advertised in OpenAPI. The OpenAPI snapshot and generated TS contract no longer expose `null` for `AdminSettingsUpdateIn`. Regressions cover every settings field at schema level, strict bool `None` rejection for settings flags, and an endpoint request proving `null` is rejected before any `settings.update` audit row is written.
 
+### M-253. Admin content updates treated explicit null rating clears as no-op
+
+Links: `backend/app/schemas.py`, `backend/app/routers/admin/content.py`, frontend DTO `frontend/src/api/types.ts`, OpenAPI snapshot `frontend/openapi.json`, generated contract `frontend/src/api/openapi.generated.ts`, regressions in `test_admin_counter_schema.py`, `test_service_comment_schema.py`, and `test_admin_content.py`.
+
+`AdminServiceUpdateIn` and `AdminCommentUpdateIn` used `T | None = None` for partial update fields, so OpenAPI advertised nullable request properties. The routes still updated most fields with `if body.<field> is not None`, which collapsed explicit JSON `null` into the same path as omission. For nullable rating fields this meant `{"rating_manual": null}` and `{"rating": null}` returned 200 without clearing the stored override/comment rating unless the legacy `clear_rating` flag was also sent. For non-nullable fields such as service `title`, `price`, `status`, and comment `text`, explicit `null` was also accepted and silently ignored.
+
+Risk: generated clients or admin scripts following the advertised nullable contract could believe they cleared a service/comment rating when the old value stayed active. The broader nullable schema also made malformed admin update bodies look valid even though the endpoint had no null semantics for non-nullable columns.
+
+Fix: nullable rating fields now use `model_fields_set` so explicit `null` clears the stored value while omitted fields remain no-ops, and `clear_rating=true` remains supported. Non-nullable admin service/comment update fields use `SkipJsonSchema[None]` plus before-validation so explicit `null` returns 422 and disappears from OpenAPI. The handwritten frontend comment update body now permits `rating?: number | null` to match the wire contract. Regressions cover schema nullability, service/comment clear behavior, audit payloads, and non-nullable null rejection.
+
 ## Наблюдения без отдельного finding
 
 

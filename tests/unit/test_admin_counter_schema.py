@@ -49,6 +49,25 @@ def test_admin_service_update_rejects_coerced_or_negative_counter_ints(
 
 @pytest.mark.parametrize(
     "field",
+    ["title", "description", "price", "deposit", "views", "deals_count", "status"],
+)
+def test_admin_service_update_rejects_noop_explicit_null_fields(field: str) -> None:
+    with pytest.raises(ValidationError) as exc:
+        AdminServiceUpdateIn(**{field: None})
+
+    assert exc.value.errors()[0]["loc"] == (field,)
+
+
+def test_admin_service_update_accepts_nullable_rating_and_ban_reason_clears() -> None:
+    body = AdminServiceUpdateIn(rating_manual=None, ban_reason=None)
+
+    assert body.rating_manual is None
+    assert body.ban_reason is None
+    assert body.model_fields_set == {"rating_manual", "ban_reason"}
+
+
+@pytest.mark.parametrize(
+    "field",
     [
         "inactivity_pending_confirmation_days",
         "inactivity_pending_cancellation_days",

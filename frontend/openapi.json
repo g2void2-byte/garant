@@ -1228,15 +1228,8 @@
             "title": "Rating"
           },
           "text": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text"
+            "title": "Text",
+            "type": "string"
           }
         },
         "title": "AdminCommentUpdateIn",
@@ -2612,7 +2605,7 @@
         "type": "object"
       },
       "AdminServiceUpdateIn": {
-        "description": "Body for ``POST /api/admin/services/:id``.\n\nEvery field is optional. Negative numeric values are rejected per\nthe spec (counts / deposits cannot be < 0). ``rating_manual`` is\nbounded to 0..5 to match the user rating override; pass ``None``\nexplicitly with ``clear_rating=true`` to remove it.",
+        "description": "Body for ``POST /api/admin/services/:id``.\n\nEvery field is optional. Negative numeric values are rejected per\nthe spec (counts / deposits cannot be < 0). ``rating_manual`` is\nbounded to 0..5 to match the user rating override; pass ``None``\nexplicitly or set ``clear_rating=true`` to remove it. Non-nullable\nservice columns reject explicit JSON ``null`` instead of silently\ntreating it as an omitted field.",
         "properties": {
           "ban_reason": {
             "anyOf": [
@@ -2631,15 +2624,8 @@
             "type": "boolean"
           },
           "deals_count": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deals Count"
+            "title": "Deals Count",
+            "type": "integer"
           },
           "deposit": {
             "anyOf": [
@@ -2649,23 +2635,13 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Deposit"
           },
           "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
+            "title": "Description",
+            "type": "string"
           },
           "price": {
             "anyOf": [
@@ -2675,9 +2651,6 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Price"
@@ -2698,43 +2671,22 @@
             "title": "Rating Manual"
           },
           "status": {
-            "anyOf": [
-              {
-                "enum": [
-                  "draft",
-                  "active",
-                  "paused",
-                  "banned"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "enum": [
+              "draft",
+              "active",
+              "paused",
+              "banned"
             ],
-            "title": "Status"
+            "title": "Status",
+            "type": "string"
           },
           "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
+            "title": "Title",
+            "type": "string"
           },
           "views": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Views"
+            "title": "Views",
+            "type": "integer"
           }
         },
         "title": "AdminServiceUpdateIn",

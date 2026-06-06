@@ -156,6 +156,50 @@ async def test_update_service_validates_rating_range(client):
     assert resp.status_code == 422
 
 
+async def test_update_service_clears_rating_manual_with_explicit_null(client):
+    owner_id = await _bootstrap_user(client, 100, "owner")
+    sid = await _create_service(owner_id, rating_manual=Decimal("4.5"))
+    admin_init = await _make_admin(client)
+
+    resp = await client.post(
+        f"/api/admin/services/{sid}",
+        json={"rating_manual": None},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["rating_manual"] is None
+
+    async with async_session() as session:
+        service = await session.get(Service, sid)
+        assert service is not None
+        assert service.rating_manual is None
+        audit = (
+            await session.execute(
+                select(AdminAuditLog)
+                .where(AdminAuditLog.action == "service.edit")
+                .order_by(AdminAuditLog.id.desc())
+                .limit(1)
+            )
+        ).scalar_one()
+    assert audit.payload is not None
+    assert Decimal(audit.payload["before"]["rating_manual"]) == Decimal("4.50")
+    assert audit.payload["after"]["rating_manual"] is None
+
+
+async def test_update_service_rejects_explicit_null_for_non_nullable_fields(client):
+    owner_id = await _bootstrap_user(client, 100, "owner")
+    sid = await _create_service(owner_id, title="Same")
+    admin_init = await _make_admin(client)
+
+    resp = await client.post(
+        f"/api/admin/services/{sid}",
+        json={"title": None},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+
+    assert resp.status_code == 422
+
+
 async def test_update_service_no_change_no_audit_row(client):
     owner_id = await _bootstrap_user(client, 100, "owner")
     sid = await _create_service(owner_id, title="Same")
@@ -472,6 +516,54 @@ async def test_update_comment_text_and_rating(client):
     assert resp.status_code == 200
     assert resp.json()["text"] == "edited"
     assert resp.json()["rating"] == 1
+
+
+async def test_update_comment_clears_rating_with_explicit_null(client):
+    author_id = await _bootstrap_user(client, 300, "author")
+    owner_id = await _bootstrap_user(client, 301, "owner")
+    sid = await _create_service(owner_id)
+    cid = await _create_comment(author_id, sid)
+    admin_init = await _make_admin(client)
+
+    resp = await client.post(
+        f"/api/admin/comments/{cid}",
+        json={"rating": None},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["rating"] is None
+
+    async with async_session() as session:
+        comment = await session.get(ServiceComment, cid)
+        assert comment is not None
+        assert comment.rating is None
+        audit = (
+            await session.execute(
+                select(AdminAuditLog)
+                .where(AdminAuditLog.action == "comment.edit")
+                .order_by(AdminAuditLog.id.desc())
+                .limit(1)
+            )
+        ).scalar_one()
+    assert audit.payload is not None
+    assert audit.payload["before"]["rating"] == 4
+    assert audit.payload["after"]["rating"] is None
+
+
+async def test_update_comment_rejects_explicit_null_text(client):
+    author_id = await _bootstrap_user(client, 300, "author")
+    owner_id = await _bootstrap_user(client, 301, "owner")
+    sid = await _create_service(owner_id)
+    cid = await _create_comment(author_id, sid)
+    admin_init = await _make_admin(client)
+
+    resp = await client.post(
+        f"/api/admin/comments/{cid}",
+        json={"text": None},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+
+    assert resp.status_code == 422
 
 
 async def test_delete_comment(client):
