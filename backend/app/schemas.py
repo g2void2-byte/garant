@@ -373,6 +373,8 @@ class UserPublicOut(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     display_name: str | None = None
     description: str | None = None
     banner_url: str | None = None
@@ -742,6 +744,8 @@ class ServiceOut(BaseModel):
 
 
 class ServiceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     category_slug: str
     title: str
     description: str = ""
@@ -783,6 +787,8 @@ class ServiceCreate(BaseModel):
 
 
 class ServiceUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str | SkipJsonSchema[None] = None
     description: str | SkipJsonSchema[None] = None
     # L-2: same finiteness/non-negative guard as ``ServiceCreate.price``.

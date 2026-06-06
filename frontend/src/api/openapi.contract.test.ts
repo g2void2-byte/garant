@@ -674,6 +674,10 @@ describe("OpenAPI contract", () => {
   });
 
   it.each([
+    "ClientErrorReport",
+    "ServiceCreate",
+    "ServiceUpdate",
+    "UserUpdate",
     "ServiceModerationDecision",
     "AdminReasonIn",
     "AdminSetRoleIn",

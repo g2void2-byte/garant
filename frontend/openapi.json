@@ -3928,6 +3928,7 @@
         "type": "object"
       },
       "ClientErrorReport": {
+        "additionalProperties": false,
         "properties": {
           "component_stack": {
             "default": "",
@@ -5233,6 +5234,7 @@
         "type": "object"
       },
       "ServiceCreate": {
+        "additionalProperties": false,
         "properties": {
           "category_slug": {
             "title": "Category Slug",
@@ -5565,6 +5567,7 @@
         "type": "string"
       },
       "ServiceUpdate": {
+        "additionalProperties": false,
         "properties": {
           "description": {
             "title": "Description",
@@ -6156,6 +6159,7 @@
         "type": "object"
       },
       "UserUpdate": {
+        "additionalProperties": false,
         "properties": {
           "banner_url": {
             "anyOf": [

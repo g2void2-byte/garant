@@ -2898,6 +2898,16 @@ Risk: these endpoints touch authentication state, account migration, wallet mone
 
 Fix: those public action schemas now set `extra="forbid"`. Existing legacy-compatible fields remain explicit (`role="buyer"`, `payment_provider`, wallet deposit `purpose`/`provider`, withdrawal `address`), while truly unknown keys fail at validation with 422. Regression tests cover schema behavior and OpenAPI `additionalProperties: false`.
 
+### M-263. Remaining profile/service/error request schemas silently ignored stale fields
+
+Links: `backend/app/schemas.py`, `backend/app/routers/client_errors.py`, OpenAPI snapshot `frontend/openapi.json`, regressions in `test_profile_service_extra_schema.py` and `openapi.contract.test.ts`.
+
+After the admin and public action request bodies were closed, four write schemas still used Pydantic's default `extra="ignore"`: profile updates, service creation, service updates, and client error reports. A stale client could send an obsolete profile/service field or diagnostic attribute together with a valid payload, receive a normal success/no-content response, and never learn that part of the request was discarded.
+
+Risk: these bodies sit on user-facing edit flows and telemetry. Silent drops make client drift look like a successful update even when a renamed field was lost before route logic, and error reports can omit newly added diagnostic context while still returning 204.
+
+Fix: `UserUpdate`, `ServiceCreate`, `ServiceUpdate`, and `ClientErrorReport` now set `extra="forbid"`. OpenAPI publishes `additionalProperties: false` for each remaining request body, and regressions cover valid payloads, `extra_forbidden` errors, and generated contract drift.
+
 ## Наблюдения без отдельного finding
 
 
