@@ -374,11 +374,12 @@ async def ban_user(
 
     # Idempotent — re-banning a banned user only updates the reason if
     # provided; never writes a duplicate audit row in that case.
+    reason_requested = "reason" in body.model_fields_set
     changed = False
     if not target.is_banned:
         target.is_banned = True
         changed = True
-    if body.reason is not None and target.ban_reason != body.reason:
+    if reason_requested and target.ban_reason != body.reason:
         target.ban_reason = body.reason
         changed = True
 
@@ -435,11 +436,12 @@ async def freeze_user(
     target = await _get_user_or_404(session, user_id)
     await _ensure_not_self(admin, target)
 
+    reason_requested = "reason" in body.model_fields_set
     changed = False
     if not target.is_frozen:
         target.is_frozen = True
         changed = True
-    if body.reason is not None and target.freeze_reason != body.reason:
+    if reason_requested and target.freeze_reason != body.reason:
         target.freeze_reason = body.reason
         changed = True
 

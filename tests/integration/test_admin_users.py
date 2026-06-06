@@ -274,6 +274,26 @@ async def test_ban_user_idempotent(client):
     assert await _audit_count("user.ban") == 0
 
 
+async def test_reban_with_null_reason_clears_existing_reason(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    await _set_flags(target_id, is_banned=True, ban_reason="old reason")
+
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/ban",
+        json={"reason": None},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["is_banned"] is True
+    assert body["ban_reason"] is None
+    assert await _audit_count("user.ban") == 1
+
+
 async def test_ban_self_forbidden(client):
     admin_init = signed_init_data(1, "admin")
     admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
@@ -325,6 +345,25 @@ async def test_freeze_user(client):
     body = resp.json()
     assert body["is_frozen"] is True
     assert body["freeze_reason"] == "Подозрительная активность"
+
+async def test_refreeze_with_null_reason_clears_existing_reason(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    await _set_flags(target_id, is_frozen=True, freeze_reason="old reason")
+
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/freeze",
+        json={"reason": None},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["is_frozen"] is True
+    assert body["freeze_reason"] is None
+    assert await _audit_count("user.freeze") == 1
 
 
 # ── Reset PIN ──────────────────────────────────────────────────────────────

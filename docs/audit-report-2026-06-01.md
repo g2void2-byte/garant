@@ -2728,6 +2728,16 @@ Risk: an admin opening user B after editing or viewing user A could see A's role
 
 Fix: each editable section now resynchronizes local state from the loaded user when the canonical `userId` or backing payload fields change. The wallet adjustment section preserves normal currency-list loading behavior but resets amount/reason and defaults currency on target-user changes. The regression dirties forms for one admin user, navigates to another user detail route without remounting, and verifies the forms show the second user's payload.
 
+### M-246. Admin ban/freeze reason clears were collapsed into omitted fields
+
+Links: `backend/app/routers/admin/users.py`, regression in `test_admin_users.py`.
+
+The admin user detail page sends `{ reason: null }` when an admin clears the ban/freeze reason input and applies the action again. The backend `ban` and `freeze` endpoints used `body.reason is not None` to decide whether the reason field was provided, so explicit `null` and blank strings normalized to `None` were treated the same as an omitted key. Re-banning or re-freezing an already moderated user could therefore update a non-empty reason, but could not clear it without unbanning/unfreezing first.
+
+Risk: moderation reasons are operator-visible state and are also surfaced to affected users. A stale reason after an admin deliberately clears the field makes the admin form look ineffective and can keep displaying an outdated policy/support explanation on the user record.
+
+Fix: `ban_user` and `freeze_user` now use Pydantic `model_fields_set` to distinguish a sent `reason` key from an omitted one. Explicit `null` or a blank string normalized to `None` clears the stored reason, while an empty body remains an idempotent no-op for already moderated users. Regressions cover clearing existing `ban_reason` and `freeze_reason` with `{ reason: null }`.
+
 ## Наблюдения без отдельного finding
 
 
