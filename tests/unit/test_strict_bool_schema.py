@@ -42,6 +42,19 @@ def test_admin_role_flags_reject_coerced_bool_values(field: str) -> None:
             AdminSetRoleIn(**{field: bad})
 
 
+def test_admin_role_omitted_flags_are_noop_sentinels() -> None:
+    body = AdminSetRoleIn(is_vip=True)
+
+    assert body.model_fields_set == {"is_vip"}
+    assert body.is_admin is None
+    assert body.is_arbiter is None
+    assert body.is_vip is True
+
+    properties = AdminSetRoleIn.model_json_schema()["properties"]
+    for field in ("is_admin", "is_arbiter", "is_vip"):
+        assert "null" not in str(properties[field])
+
+
 @pytest.mark.parametrize("model", [AdminServiceUpdateIn, AdminCommentUpdateIn])
 def test_clear_rating_rejects_coerced_bool_values(model: type[Any]) -> None:
     assert model(clear_rating=True).clear_rating is True

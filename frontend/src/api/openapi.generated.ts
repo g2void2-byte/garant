@@ -3381,21 +3381,12 @@ export interface components {
          *     was dropped from the spec and is not supported here.
          */
         AdminSetRoleIn: {
-            /**
-             * Is Admin
-             * @default false
-             */
-            is_admin: boolean;
-            /**
-             * Is Arbiter
-             * @default false
-             */
-            is_arbiter: boolean;
-            /**
-             * Is Vip
-             * @default false
-             */
-            is_vip: boolean;
+            /** Is Admin */
+            is_admin?: boolean;
+            /** Is Arbiter */
+            is_arbiter?: boolean;
+            /** Is Vip */
+            is_vip?: boolean;
         };
         /**
          * AdminSetStatsIn

@@ -513,6 +513,50 @@ async def test_set_role_grants_vip(client):
     assert body["is_arbiter"] is False
 
 
+async def test_set_role_partial_update_preserves_unmentioned_flags(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    await _set_flags(target_id, is_arbiter=True, is_vip=True)
+
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/role",
+        json={"is_admin": True},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["is_admin"] is True
+    assert body["is_arbiter"] is True
+    assert body["is_vip"] is True
+
+
+async def test_set_role_empty_body_rejected_without_mutation(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    await _set_flags(target_id, is_arbiter=True, is_vip=True)
+
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/role",
+        json={},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+
+    assert resp.status_code == 400, resp.text
+    async with async_session() as session:
+        target = await session.get(User, target_id)
+        assert target is not None
+        assert target.is_admin is False
+        assert target.is_arbiter is True
+        assert target.is_vip is True
+
+
 async def test_set_role_self_demotion_forbidden(client):
     admin_init = signed_init_data(1, "admin")
     admin_id = await _bootstrap(client, tg_user_id=1, username="admin")

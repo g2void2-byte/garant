@@ -1525,9 +1525,9 @@ class AdminSetRoleIn(BaseModel):
     was dropped from the spec and is not supported here.
     """
 
-    is_admin: bool = False
-    is_arbiter: bool = False
-    is_vip: bool = False
+    is_admin: bool | SkipJsonSchema[None] = None
+    is_arbiter: bool | SkipJsonSchema[None] = None
+    is_vip: bool | SkipJsonSchema[None] = None
 
     @field_validator("is_admin", "is_arbiter", "is_vip", mode="before")
     @classmethod

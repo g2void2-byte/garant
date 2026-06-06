@@ -2673,17 +2673,14 @@
         "description": "Body for ``POST /admin/users/:id/role``.\n\nPass any combination of the three role flags. The moderator role\nwas dropped from the spec and is not supported here.",
         "properties": {
           "is_admin": {
-            "default": false,
             "title": "Is Admin",
             "type": "boolean"
           },
           "is_arbiter": {
-            "default": false,
             "title": "Is Arbiter",
             "type": "boolean"
           },
           "is_vip": {
-            "default": false,
             "title": "Is Vip",
             "type": "boolean"
           }

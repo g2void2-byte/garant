@@ -2828,6 +2828,16 @@ Risk: admin tooling generated from OpenAPI could send `null` while intending to 
 
 Fix: non-nullable/no-op currency fields now use `SkipJsonSchema[None]` so OpenAPI no longer advertises `null`, while Python construction can still use `None` as the internal omitted sentinel. The upsert route rejects explicit JSON `null` for those fields with 422 via `model_fields_set`; nullable string clears remain supported and covered separately.
 
+### M-256. Partial admin role updates reset unmentioned role flags
+
+Links: `backend/app/schemas.py`, `backend/app/routers/admin/users.py`, OpenAPI snapshot `frontend/openapi.json`, generated contract `frontend/src/api/openapi.generated.ts`, regressions in `test_strict_bool_schema.py` and `test_admin_users.py`.
+
+`AdminSetRoleIn` documented partial semantics ("pass any combination of role flags"), and the integration suite already used `{"is_vip": true}` as a partial body. The schema still defaulted every omitted flag to `false`, and the route wrote all three booleans from the parsed body. A caller promoting an existing arbiter/VIP with `{"is_admin": true}` silently removed `is_arbiter` and `is_vip`; an empty `{}` body became "set all roles false" instead of a no-op/error.
+
+Risk: admin scripts or generated clients that send minimal role changes could accidentally demote users from unrelated roles. The most dangerous shape is a partial admin promotion of an existing arbiter, which removes arbitration access while returning 200 and writing a legitimate-looking audit row.
+
+Fix: role flags now use optional-but-not-null sentinels and OpenAPI exposes them as optional booleans without `null`. The route derives `after` from the current row and applies only fields present in `model_fields_set`; `{}` is rejected with 400. Regressions cover schema omitted sentinels, partial preservation of existing flags, and empty-body non-mutation.
+
 ## Наблюдения без отдельного finding
 
 

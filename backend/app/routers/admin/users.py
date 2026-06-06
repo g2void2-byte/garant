@@ -638,9 +638,23 @@ async def set_role(
     """
     target = await _get_user_or_404(session, user_id)
 
-    will_change_admin = target.is_admin != body.is_admin
-    will_change_arbiter = target.is_arbiter != body.is_arbiter
-    will_change_vip = target.is_vip != body.is_vip
+    requested_fields = body.model_fields_set
+    if not requested_fields:
+        raise HTTPException(400, "Нет изменений")
+
+    before = {
+        "is_admin": target.is_admin,
+        "is_arbiter": target.is_arbiter,
+        "is_vip": target.is_vip,
+    }
+    after = before.copy()
+    for field in ("is_admin", "is_arbiter", "is_vip"):
+        if field in requested_fields:
+            after[field] = getattr(body, field)
+
+    will_change_admin = before["is_admin"] != after["is_admin"]
+    will_change_arbiter = before["is_arbiter"] != after["is_arbiter"]
+    will_change_vip = before["is_vip"] != after["is_vip"]
     if admin.id == target.id and (will_change_admin or will_change_arbiter or will_change_vip):
         # Self-demotion is the only "self" action that is special-cased
         # because it can lock the caller out. The arbiter / VIP self-flips
@@ -649,7 +663,7 @@ async def set_role(
         # second admin signing off.
         raise HTTPException(400, "Запрещено менять собственные роли")
 
-    if will_change_admin and not body.is_admin:
+    if will_change_admin and not after["is_admin"]:
         await _ensure_not_last_admin(session, target)
 
     # Audit M-2 — compare before/after BEFORE touching ``target`` so a
@@ -660,21 +674,11 @@ async def set_role(
     # which is a fragile invariant to rely on. This matches the
     # ``set_rating`` shape directly below, which checks first then
     # writes.
-    before = {
-        "is_admin": target.is_admin,
-        "is_arbiter": target.is_arbiter,
-        "is_vip": target.is_vip,
-    }
-    after = {
-        "is_admin": body.is_admin,
-        "is_arbiter": body.is_arbiter,
-        "is_vip": body.is_vip,
-    }
     if before == after:
         return _to_detail(target, has_pin=await _has_pin(target))
-    target.is_admin = body.is_admin
-    target.is_arbiter = body.is_arbiter
-    target.is_vip = body.is_vip
+    target.is_admin = after["is_admin"]
+    target.is_arbiter = after["is_arbiter"]
+    target.is_vip = after["is_vip"]
 
     await _audit_and_notify(
         session=session,
