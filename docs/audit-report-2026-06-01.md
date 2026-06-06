@@ -210,6 +210,7 @@
 - M-238: notification cache/read/load-more paths now normalize runtime ids.
 - M-239: admin side-effect cache invalidations now normalize runtime ids before building query keys.
 - M-240: wallet deposit status polling now normalizes runtime deposit ids.
+- M-241: deal topup invoice detail flow now opens the realtime modal and normalizes runtime invoice ids.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2674,6 +2675,16 @@ The wallet deposit status modal received the freshly-created `WalletDepositDto` 
 Risk: deposit creation is a payment flow. The create response is the only local source used to wire follow-up polling; if a valid numeric id arrives as a string, the user can pay an invoice while the UI remains stuck in pending state.
 
 Fix: `DepositStatusModal` now parses the runtime deposit id through the shared positive-id boundary before calling `useWalletDeposit`, keeps malformed ids from starting a bogus query, and uses a stable auto-open key so numeric-string ids do not break session tracking. Regressions cover numeric-string id normalization and malformed-id polling suppression.
+
+### M-241. Deal topup invoice detail flow bypassed realtime status polling
+
+Links: `frontend/src/pages/deals/DealDetailPage.tsx`, `frontend/src/components/wallet/DealInvoiceModal.tsx`, regressions in `DealDetailPage.test.tsx` and `PaymentModals.amounts.test.tsx`.
+
+`DealDetailPage` rendered a `DealInvoiceModal` branch for pending-topup invoices, but the visible buyer CTA opened `topup_invoice.pay_url` directly and never set `invoiceModalOpen`. The realtime modal was therefore dead on deal detail pages. The same branch passed `topup_invoice.deposit_id` directly into the modal, while the modal itself passed runtime `dealId`/`depositId` values into `useDeal`, `useWalletDeposit`, exact invalidation keys, and success navigation without a positive-id boundary.
+
+Risk: a buyer paying from an existing deal detail page skipped the modal's deposit/deal polling and paid transition UX. If an API payload supplied a numeric-string invoice id, polling could miss the canonical deposit query; malformed ids could also create bogus query inputs or exact invalidation keys.
+
+Fix: the detail CTA now opens the existing realtime invoice modal, the detail page parses `topup_invoice.deposit_id` before enabling that flow, and `DealInvoiceModal` normalizes runtime deal/deposit ids before polling, exact invalidation, fallback invoice labels, and success callbacks. Regressions cover numeric-string deal invoice ids, malformed-id polling suppression, the detail-page modal open path, and malformed detail invoice ids.
 
 ## Наблюдения без отдельного finding
 

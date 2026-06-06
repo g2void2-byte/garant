@@ -20,6 +20,7 @@ import { usePresence } from "@/lib/animate";
 import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { formatPaymentProvider } from "@/lib/paymentProviders";
 import { formatCurrency, parseDecimalValue } from "@/lib/format";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 import { haptic, openPaymentLink } from "@/lib/tg";
 
 interface DealInvoiceModalProps {
@@ -105,9 +106,11 @@ export function DealInvoiceModal({
   const toast = useToast();
   const qc = useQueryClient();
   const { mounted, visible } = usePresence(open, 200);
+  const parsedDealId = parsePositiveIntValue(dealId);
+  const parsedDepositId = parsePositiveIntValue(depositId);
 
-  const depositQuery = useWalletDeposit(open ? depositId : undefined);
-  const dealQuery = useDeal(open ? dealId : undefined);
+  const depositQuery = useWalletDeposit(open ? parsedDepositId : undefined);
+  const dealQuery = useDeal(open ? parsedDealId : undefined);
 
   // Derived status: deal-status leaving ``pending_topup`` is the
   // canonical "paid" signal. ``deposit.status === "paid"`` is the
@@ -125,14 +128,15 @@ export function DealInvoiceModal({
     canPay && isPending && !!payUrl && amountValue !== null && amountValue > 0;
 
   // Auto-open the upstream invoice once per modal session.
-  const autoOpenedRef = useRef<number | null>(null);
+  const autoOpenedRef = useRef<number | string | null>(null);
   useEffect(() => {
     if (!open || !canOpenProvider) return;
-    if (autoOpenedRef.current === depositId) return;
-    autoOpenedRef.current = depositId;
+    const autoOpenKey = parsedDepositId ?? payUrl;
+    if (autoOpenedRef.current === autoOpenKey) return;
+    autoOpenedRef.current = autoOpenKey;
     const t = setTimeout(() => openPaymentLink(payUrl), autoOpenDelayMs);
     return () => clearTimeout(t);
-  }, [open, depositId, payUrl, canOpenProvider, autoOpenDelayMs]);
+  }, [open, parsedDepositId, payUrl, canOpenProvider, autoOpenDelayMs]);
 
   useEffect(() => {
     if (!open || status !== "pending") return;
@@ -158,7 +162,9 @@ export function DealInvoiceModal({
     haptic("success");
     void qc.invalidateQueries({ queryKey: qk.wallet.all() });
     void qc.invalidateQueries({ queryKey: qk.deals.all() });
-    void qc.invalidateQueries({ queryKey: qk.deal.detail(dealId) });
+    if (parsedDealId !== undefined) {
+      void qc.invalidateQueries({ queryKey: qk.deal.detail(parsedDealId) });
+    }
     void qc.invalidateQueries({ queryKey: qk.me() });
     toast.show({
       kind: "success",
@@ -167,11 +173,12 @@ export function DealInvoiceModal({
     });
     const closeTimer = setTimeout(() => {
       onClose();
-      const navTimer = setTimeout(() => onSuccess(dealId), 180);
-      return () => clearTimeout(navTimer);
+      if (parsedDealId !== undefined) {
+        setTimeout(() => onSuccess(parsedDealId), 180);
+      }
     }, postSuccessDelayMs);
     return () => clearTimeout(closeTimer);
-  }, [open, status, onSuccess, qc, dealId, toast, postSuccessDelayMs, onClose, successTitle, successBody]);
+  }, [open, status, onSuccess, qc, parsedDealId, toast, postSuccessDelayMs, onClose, successTitle, successBody]);
 
   const [refreshing, setRefreshing] = useState(false);
   async function refresh() {
@@ -196,7 +203,7 @@ export function DealInvoiceModal({
     }
   }
 
-  const invoiceId = depositQuery.data?.invoice_id ?? String(depositId);
+  const invoiceId = depositQuery.data?.invoice_id ?? (parsedDepositId !== undefined ? String(parsedDepositId) : "\u2014");
   async function copyInvoice() {
     try {
       await navigator.clipboard.writeText(invoiceId);
@@ -250,7 +257,7 @@ export function DealInvoiceModal({
                 id="deal-invoice-title"
                 className="text-[18px] font-semibold tracking-tight text-text"
               >
-                Оплата сделки #{dealId}
+                Оплата сделки #{parsedDealId ?? "\u2014"}
               </h2>
               <p className="text-[12px] text-text-muted">
                 {providerLabel} · {formattedAmount}

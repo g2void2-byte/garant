@@ -9,6 +9,7 @@ import { DepositStatusModal } from "./DepositStatusModal";
 
 const hookState = vi.hoisted(() => ({
   dealStatus: "pending_topup" as string | undefined,
+  dealId: undefined as number | undefined,
   liveDeposit: undefined as WalletDepositDto | undefined,
   walletDepositId: undefined as number | undefined,
 }));
@@ -17,10 +18,13 @@ const openPaymentLinkSpy = vi.hoisted(() => vi.fn());
 const refetchSpy = vi.hoisted(() => vi.fn().mockResolvedValue({ data: undefined }));
 
 vi.mock("@/api/hooks", () => ({
-  useDeal: () => ({
-    data: hookState.dealStatus ? { status: hookState.dealStatus } : undefined,
-    refetch: refetchSpy,
-  }),
+  useDeal: (id: number | undefined) => {
+    hookState.dealId = id;
+    return {
+      data: hookState.dealStatus ? { status: hookState.dealStatus } : undefined,
+      refetch: refetchSpy,
+    };
+  },
   useWalletDeposit: (id: number | undefined) => {
     hookState.walletDepositId = id;
     return {
@@ -78,6 +82,7 @@ function runtimeNumber(value: unknown): number {
 beforeEach(() => {
   vi.useFakeTimers();
   hookState.dealStatus = "pending_topup";
+  hookState.dealId = undefined;
   hookState.liveDeposit = undefined;
   hookState.walletDepositId = undefined;
   openPaymentLinkSpy.mockClear();
@@ -155,6 +160,47 @@ describe("payment modal amount guards", () => {
     expect(screen.getByText(/Провайдер неизвестен/)).toBeInTheDocument();
     expect(screen.queryByText(/provider_reconciled/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^CryptoBot$/)).not.toBeInTheDocument();
+  });
+
+  it("normalizes deal invoice ids before polling status", () => {
+    renderWithProviders(
+      <DealInvoiceModal
+        open
+        onClose={vi.fn()}
+        dealId={runtimeNumber("42")}
+        depositId={runtimeNumber("501")}
+        payUrl="https://t.me/CryptoBot?start=deal_501"
+        amount={10}
+        currencyCode="USD"
+        provider="cryptobot"
+        onSuccess={vi.fn()}
+        autoOpenDelayMs={1000}
+      />,
+    );
+
+    expect(hookState.dealId).toBe(42);
+    expect(hookState.walletDepositId).toBe(501);
+    expect(hookState.walletDepositId).not.toBe("501");
+  });
+
+  it("does not start deal invoice deposit polling for malformed runtime ids", () => {
+    renderWithProviders(
+      <DealInvoiceModal
+        open
+        onClose={vi.fn()}
+        dealId={42}
+        depositId={runtimeNumber("0x501")}
+        payUrl="https://t.me/CryptoBot?start=deal_501"
+        amount={10}
+        currencyCode="USD"
+        provider="cryptobot"
+        onSuccess={vi.fn()}
+        autoOpenDelayMs={1000}
+      />,
+    );
+
+    expect(screen.getByTestId("deal-invoice-modal")).toBeInTheDocument();
+    expect(hookState.walletDepositId).toBeUndefined();
   });
 
   it("does not auto-open or click through malformed deposit invoice amounts", () => {

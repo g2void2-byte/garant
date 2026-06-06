@@ -27,7 +27,7 @@ import {
   useReviews,
 } from "@/api/hooks";
 import { formatAmount, formatDateTime, parseDecimalValue, relativeTime } from "@/lib/format";
-import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
+import { haptic, openTelegramLink } from "@/lib/tg";
 import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { useToast } from "@/components/ui/Toast";
@@ -191,12 +191,14 @@ export default function DealDetailPage() {
     );
 
   const topupInvoiceTotal = parseDecimalValue(deal.topup_invoice?.total);
+  const topupInvoiceDepositId = parsePositiveIntValue(deal.topup_invoice?.deposit_id);
   const topupInvoiceCurrency =
     normalizeCurrencyCode(deal.topup_invoice?.currency_code) ?? currency;
   const canOpenInvoice =
     deal.role === "buyer" &&
     deal.status === "pending_topup" &&
     !!deal.topup_invoice &&
+    topupInvoiceDepositId !== undefined &&
     topupInvoiceTotal !== null &&
     topupInvoiceTotal > 0;
   const showPaidInvoiceState = deal.status !== "pending_topup" && !!deal.topup_invoice;
@@ -400,7 +402,7 @@ export default function DealDetailPage() {
                   {deal.role === "buyer" && topupInvoice ? (
                     <div className="flex gap-2">
                       {canOpenInvoice && (
-                        <Button onClick={() => openPaymentLink(topupInvoice.pay_url)}>Открыть оплату</Button>
+                        <Button onClick={() => setInvoiceModalOpen(true)}>Открыть оплату</Button>
                       )}
                       <Button
                         variant="danger"
@@ -426,12 +428,12 @@ export default function DealDetailPage() {
           </div>
         )}
 
-        {invoiceModalOpen && deal.topup_invoice && canOpenInvoice && (
+        {invoiceModalOpen && deal.topup_invoice && canOpenInvoice && topupInvoiceDepositId !== undefined && (
           <DealInvoiceModal
             open={invoiceModalOpen}
             onClose={() => setInvoiceModalOpen(false)}
             dealId={dealId}
-            depositId={deal.topup_invoice.deposit_id}
+            depositId={topupInvoiceDepositId}
             payUrl={deal.topup_invoice.pay_url}
             amount={deal.topup_invoice.total}
             currencyCode={topupInvoiceCurrency}

@@ -32,6 +32,9 @@ const createReviewState = vi.hoisted(() => ({
 const chatState = vi.hoisted(() => ({
   lastDealId: undefined as number | undefined,
 }));
+const walletDepositState = vi.hoisted(() => ({
+  lastId: undefined as number | undefined,
+}));
 
 vi.mock("@/api/hooks", () => ({
   useDeal: (id: number | undefined) => {
@@ -47,7 +50,10 @@ vi.mock("@/api/hooks", () => ({
   useDealAction: () => actionStub(),
   useCancelPendingTopup: () => cancelTopupState,
   useCreateReview: () => createReviewState,
-  useWalletDeposit: () => ({ data: undefined, isLoading: false }),
+  useWalletDeposit: (id: number | undefined) => {
+    walletDepositState.lastId = id;
+    return { data: undefined, isLoading: false, refetch: vi.fn() };
+  },
 }));
 
 vi.mock("@/lib/tg", () => ({
@@ -167,6 +173,7 @@ beforeEach(() => {
   createReviewState.mutateAsync = vi.fn().mockResolvedValue(undefined);
   createReviewState.isPending = false;
   chatState.lastDealId = undefined;
+  walletDepositState.lastId = undefined;
 });
 
 describe("<DealDetailPage />", () => {
@@ -426,6 +433,59 @@ describe("<DealDetailPage />", () => {
 
     expect(screen.getByText("\u2014")).toBeInTheDocument();
     expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+  });
+
+  it("opens the realtime topup invoice modal with a normalized deposit id", async () => {
+    const user = userEvent.setup();
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      commission_paid: false,
+      topup_deposit_id: "501" as unknown as number,
+      topup_invoice: {
+        deposit_id: "501" as unknown as number,
+        pay_url: "https://pay.example/invoice/501",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: 0,
+        currency_code: "USD",
+        provider: "cryptobot",
+        expires_at: null,
+      },
+    });
+    renderAt(42);
+
+    await user.click(screen.getByRole("button", { name: /Открыть оплату/i }));
+
+    expect(screen.getByTestId("deal-invoice-modal")).toBeInTheDocument();
+    expect(walletDepositState.lastId).toBe(501);
+    expect(walletDepositState.lastId).not.toBe("501");
+  });
+
+  it("does not open realtime topup payment actions for malformed deposit ids", () => {
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      commission_paid: false,
+      topup_deposit_id: "0x501" as unknown as number,
+      topup_invoice: {
+        deposit_id: "0x501" as unknown as number,
+        pay_url: "https://pay.example/invoice/501",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: 0,
+        currency_code: "USD",
+        provider: "cryptobot",
+        expires_at: null,
+      },
+    });
+    renderAt(42);
+
+    expect(screen.queryByRole("button", { name: /Открыть оплату/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Отменить$/i })).toBeInTheDocument();
+    expect(walletDepositState.lastId).toBeUndefined();
   });
 
   it("shows the accept/decline CTAs for seller on a pending_confirmation deal", () => {
