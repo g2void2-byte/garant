@@ -10,6 +10,7 @@ import { DepositStatusModal } from "./DepositStatusModal";
 const hookState = vi.hoisted(() => ({
   dealStatus: "pending_topup" as string | undefined,
   liveDeposit: undefined as WalletDepositDto | undefined,
+  walletDepositId: undefined as number | undefined,
 }));
 
 const openPaymentLinkSpy = vi.hoisted(() => vi.fn());
@@ -20,11 +21,14 @@ vi.mock("@/api/hooks", () => ({
     data: hookState.dealStatus ? { status: hookState.dealStatus } : undefined,
     refetch: refetchSpy,
   }),
-  useWalletDeposit: () => ({
-    data: hookState.liveDeposit,
-    isLoading: false,
-    refetch: refetchSpy,
-  }),
+  useWalletDeposit: (id: number | undefined) => {
+    hookState.walletDepositId = id;
+    return {
+      data: hookState.liveDeposit,
+      isLoading: false,
+      refetch: refetchSpy,
+    };
+  },
 }));
 
 vi.mock("@/lib/tg", () => ({
@@ -67,10 +71,15 @@ function makeDeposit(overrides: Partial<WalletDepositDto> = {}): WalletDepositDt
   };
 }
 
+function runtimeNumber(value: unknown): number {
+  return value as number;
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   hookState.dealStatus = "pending_topup";
   hookState.liveDeposit = undefined;
+  hookState.walletDepositId = undefined;
   openPaymentLinkSpy.mockClear();
   refetchSpy.mockClear();
 });
@@ -171,6 +180,38 @@ describe("payment modal amount guards", () => {
     if (payButton) fireEvent.click(payButton);
 
     expect(openPaymentLinkSpy).not.toHaveBeenCalled();
+  });
+
+  it("normalizes string deposit ids before polling status", () => {
+    const deposit = makeDeposit({ id: runtimeNumber("501") });
+
+    renderWithProviders(
+      <DepositStatusModal
+        deposit={deposit}
+        open
+        onClose={vi.fn()}
+        autoOpenDelayMs={1000}
+      />,
+    );
+
+    expect(hookState.walletDepositId).toBe(501);
+    expect(hookState.walletDepositId).not.toBe("501");
+  });
+
+  it("does not start deposit polling for malformed runtime ids", () => {
+    const deposit = makeDeposit({ id: runtimeNumber("0x501") });
+
+    renderWithProviders(
+      <DepositStatusModal
+        deposit={deposit}
+        open
+        onClose={vi.fn()}
+        autoOpenDelayMs={1000}
+      />,
+    );
+
+    expect(screen.getByTestId("deposit-status-modal")).toBeInTheDocument();
+    expect(hookState.walletDepositId).toBeUndefined();
   });
 
   it("normalizes deposit status modal currency codes before rendering amounts", () => {

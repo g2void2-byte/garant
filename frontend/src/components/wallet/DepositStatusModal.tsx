@@ -20,6 +20,7 @@ import { usePresence } from "@/lib/animate";
 import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { formatPaymentProvider } from "@/lib/paymentProviders";
 import { formatCurrency, parseDecimalValue } from "@/lib/format";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 import { haptic, openPaymentLink } from "@/lib/tg";
 import type { WalletDepositDto } from "@/api/types";
 
@@ -121,8 +122,10 @@ export function DepositStatusModal({
   const qc = useQueryClient();
   const { mounted, visible } = usePresence(open, 200);
   const initial = deposit ?? null;
-  const query = useWalletDeposit(open ? initial?.id : undefined);
+  const initialDepositId = parsePositiveIntValue(initial?.id);
+  const query = useWalletDeposit(open ? initialDepositId : undefined);
   const current = isValidDeposit(query.data) ? query.data : initial;
+  const currentDepositId = parsePositiveIntValue(current?.id);
   const currentAmountValue = parseDecimalValue(current?.amount);
   const canAutoOpenProvider =
     current?.status === "pending" &&
@@ -134,17 +137,18 @@ export function DepositStatusModal({
   // modal for a different deposit fires the timer again, but a
   // background refetch on the same deposit doesn't reopen the
   // already-shown invoice in the user's browser.
-  const autoOpenedRef = useRef<number | null>(null);
+  const autoOpenedRef = useRef<number | string | null>(null);
   useEffect(() => {
     if (!open || !current?.pay_url || !canAutoOpenProvider) return;
-    if (autoOpenedRef.current === current.id) return;
-    autoOpenedRef.current = current.id;
+    const autoOpenKey = currentDepositId ?? current.pay_url;
+    if (autoOpenedRef.current === autoOpenKey) return;
+    autoOpenedRef.current = autoOpenKey;
     const payUrl = current.pay_url;
     const t = setTimeout(() => {
       openPayUrl(payUrl);
     }, autoOpenDelayMs);
     return () => clearTimeout(t);
-  }, [open, current?.id, current?.pay_url, canAutoOpenProvider, autoOpenDelayMs]);
+  }, [open, currentDepositId, current?.pay_url, canAutoOpenProvider, autoOpenDelayMs]);
 
   // Auto-close shortly after a successful payment so the user sees
   // the "Оплачено" state, the success haptic fires, and then they're

@@ -209,6 +209,7 @@
 - M-237: deal message cache merges now normalize runtime ids before de-duping.
 - M-238: notification cache/read/load-more paths now normalize runtime ids.
 - M-239: admin side-effect cache invalidations now normalize runtime ids before building query keys.
+- M-240: wallet deposit status polling now normalizes runtime deposit ids.
 
 Пункт по card/TRUST/manual fallback flows снят из отчета: это ожидаемое поведение продукта, не defect.
 
@@ -2663,6 +2664,16 @@ Several admin mutation success paths built TanStack Query invalidation keys dire
 Risk: these mutations are admin side-effect surfaces for balances, deal state, reviews, service projections, wallet rows, and audit-adjacent admin views. A successful mutation followed by a stale cache can show admins old balances/statuses and hide the effect of their own action until a broad refetch or navigation reset.
 
 Fix: admin hooks now parse response-sourced ids through the shared positive-id boundary before building invalidation keys, fall back to prefix invalidation when runtime ids are malformed, and keep canonical mutation variables as the source of truth where the target id is already known. Regressions cover numeric-string and malformed ids across deal actions, approvals, services, comments, deposits, withdrawals, and reviews.
+
+### M-240. Wallet deposit status modal trusted runtime deposit ids for polling
+
+Links: `frontend/src/components/wallet/DepositStatusModal.tsx`, regression in `PaymentModals.amounts.test.tsx`.
+
+The wallet deposit status modal received the freshly-created `WalletDepositDto` and passed `deposit.id` directly into `useWalletDeposit`. That hook only enables polling for positive safe integer numbers, so a runtime numeric string id such as `"501"` rendered the modal and payment link but never started status polling. A paid invoice could therefore fail to trigger the modal's paid transition, wallet/me cache refresh, and success navigation until a separate refresh path happened.
+
+Risk: deposit creation is a payment flow. The create response is the only local source used to wire follow-up polling; if a valid numeric id arrives as a string, the user can pay an invoice while the UI remains stuck in pending state.
+
+Fix: `DepositStatusModal` now parses the runtime deposit id through the shared positive-id boundary before calling `useWalletDeposit`, keeps malformed ids from starting a bogus query, and uses a stable auto-open key so numeric-string ids do not break session tracking. Regressions cover numeric-string id normalization and malformed-id polling suppression.
 
 ## Наблюдения без отдельного finding
 
