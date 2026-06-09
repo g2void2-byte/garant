@@ -3988,21 +3988,21 @@ export interface components {
             /** Amount */
             amount: number;
             /** Arbitration Initiator */
-            arbitration_initiator?: string | null;
+            arbitration_initiator?: ("buyer" | "seller" | "other") | null;
             /** Arbitration Reason */
             arbitration_reason?: string | null;
             /** Arbitration Resolution */
-            arbitration_resolution?: string | null;
+            arbitration_resolution?: ("buyer" | "seller") | null;
             /** Arbitration Resolved At */
             arbitration_resolved_at?: string | null;
             /** Arbitration Resolved By */
-            arbitration_resolved_by?: string | null;
+            arbitration_resolved_by?: "admin" | null;
             /** Buyer */
             buyer: string | null;
             /** Buyer Photo Url */
             buyer_photo_url?: string | null;
             /** Cancellation Initiator */
-            cancellation_initiator?: string | null;
+            cancellation_initiator?: ("buyer" | "seller" | "other") | null;
             /** Cancellation Reason */
             cancellation_reason?: string | null;
             /** Cancellation Requested At */
@@ -4033,16 +4033,23 @@ export interface components {
             /**
              * Payment Provider
              * @default cryptobot
+             * @enum {string}
              */
-            payment_provider: string;
-            /** Role */
-            role: string;
+            payment_provider: "cryptobot" | "crystalpay";
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "buyer" | "seller" | "other";
             /** Seller */
             seller: string | null;
             /** Seller Photo Url */
             seller_photo_url?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "cancelled" | "pending_confirmation" | "pending_payment" | "pending_topup" | "in_progress" | "completed" | "arbitration" | "resolved_for_buyer" | "resolved_for_seller" | "pending_cancellation" | "cancelled_for_inactivity";
             /** Topup Deposit Id */
             topup_deposit_id?: number | null;
             topup_invoice?: components["schemas"]["DealTopupInvoiceOut"] | null;
@@ -4095,8 +4102,11 @@ export interface components {
             paid_total: number;
             /** Pay Url */
             pay_url: string;
-            /** Provider */
-            provider: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "cryptobot" | "crystalpay";
             /** Topup Principal */
             topup_principal: number;
             /** Total */
