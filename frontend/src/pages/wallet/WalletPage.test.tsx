@@ -38,6 +38,7 @@ function renderPage() {
 beforeEach(() => {
   mockState.data = undefined;
   mockState.isLoading = false;
+  mockState.me = undefined;
 });
 
 describe("<WalletPage />", () => {
@@ -79,6 +80,36 @@ describe("<WalletPage />", () => {
     renderPage();
     expect(screen.getByText("US Dollar")).toBeInTheDocument();
     expect(screen.getByText(/123\.46 USD/)).toBeInTheDocument();
+  });
+
+  it("renders malformed available balance strings as neutral", () => {
+    mockState.data = [
+      {
+        currency: {
+          id: 1,
+          code: "USD",
+          name: "US Dollar",
+          network: "",
+          icon_url: "",
+          decimals: 2,
+          min_deposit: 1,
+          min_withdraw: 1,
+          kind: "fiat",
+        },
+        amount: "1e2" as unknown as number,
+        locked: 0,
+        total: 100,
+        updated_at: null,
+        amount_str: "1e2",
+        locked_str: "0",
+        total_str: "100",
+      },
+    ];
+    renderPage();
+
+    expect(screen.getByText("\u2014 USD")).toBeInTheDocument();
+    expect(screen.queryByText(/0 USD/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
   });
 
   it("wraps each balance row in a Link to /wallet/<code>", () => {
@@ -161,6 +192,33 @@ describe("<WalletPage />", () => {
     expect(screen.getByText("Пока пусто")).toBeInTheDocument();
   });
 
+  it("hides fiat balance rows with malformed currency codes", () => {
+    mockState.data = [
+      {
+        currency: {
+          id: 1,
+          code: "USD/../admin",
+          name: "Broken Dollar",
+          network: "",
+          icon_url: "",
+          decimals: 2,
+          min_deposit: 1,
+          min_withdraw: 1,
+          kind: "fiat",
+        },
+        amount: 5,
+        locked: 0,
+        total: 5,
+        updated_at: null,
+        amount_str: "5",
+        locked_str: "0",
+        total_str: "5",
+      },
+    ];
+    renderPage();
+    expect(screen.queryByText("Broken Dollar")).not.toBeInTheDocument();
+  });
+
   it('renders the "locked" hint when balance has reserves', () => {
     mockState.data = [
       {
@@ -188,6 +246,62 @@ describe("<WalletPage />", () => {
     expect(screen.getByText(/в заявках/)).toBeInTheDocument();
   });
 
+  it("renders locked hints from numeric fallback when the string mirror is blank", () => {
+    mockState.data = [
+      {
+        currency: {
+          id: 2,
+          code: "USD",
+          name: "US Dollar",
+          network: "",
+          icon_url: "",
+          decimals: 2,
+          min_deposit: 1,
+          min_withdraw: 1,
+          kind: "fiat",
+        },
+        amount: 0.5,
+        locked: 0.1,
+        total: 0.6,
+        updated_at: null,
+        amount_str: "0.5",
+        locked_str: "",
+        total_str: "0.6",
+      },
+    ];
+    renderPage();
+
+    expect(screen.getByText(/\+0\.1 USD/)).toBeInTheDocument();
+    expect(screen.queryByText(/\+0 USD/)).not.toBeInTheDocument();
+  });
+
+  it("does not render the locked hint for malformed runtime locked values", () => {
+    mockState.data = [
+      {
+        currency: {
+          id: 2,
+          code: "USD",
+          name: "US Dollar",
+          network: "",
+          icon_url: "",
+          decimals: 2,
+          min_deposit: 1,
+          min_withdraw: 1,
+          kind: "fiat",
+        },
+        amount: 0.5,
+        locked: "1e1" as unknown as number,
+        total: 10.5,
+        updated_at: null,
+        amount_str: "0.5",
+        locked_str: "1e1",
+        total_str: "10.5",
+      },
+    ];
+    renderPage();
+    expect(screen.queryByText(/РІ Р·Р°СЏРІРєР°С…/)).not.toBeInTheDocument();
+  });
+
   it("renders deposit and withdrawal action tiles", () => {
     mockState.data = [];
     renderPage();
@@ -206,5 +320,15 @@ describe("<WalletPage />", () => {
     expect(
       screen.getByRole("button", { name: /Управление депозитом/ }),
     ).toBeInTheDocument();
+  });
+
+  it("renders malformed trust-deposit balances as neutral", () => {
+    mockState.data = [];
+    mockState.me = { deposit: "1e2" as unknown as number };
+    renderPage();
+
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText("$0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
   });
 });

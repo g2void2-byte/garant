@@ -21,7 +21,7 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,10 +39,13 @@ from ...models import (
 from ...rate_limit import rate_limit
 from ...schemas import (
     AdminCommentItemOut,
+    AdminCommentListOut,
     AdminCommentUpdateIn,
     AdminReviewItemOut,
+    AdminReviewListOut,
     AdminReviewUpsertIn,
     AdminServiceItemOut,
+    AdminServiceListOut,
     AdminServiceUpdateIn,
 )
 from ...services import lock_user_for_rating, recompute_user_rating
@@ -66,6 +69,12 @@ router = APIRouter(
 # serializer kills the N+1.  The single-row paths
 # (create / update / delete) still pass ``None`` and fall back to the
 # old ``session.get`` lookup — one extra round-trip there is cheap.
+
+
+def _audit_decimal(value: object | None) -> str | None:
+    if value is None:
+        return None
+    return str(Decimal(str(value)))
 
 
 async def _users_by_id(session: AsyncSession, ids: set[int]) -> dict[int, User]:
@@ -161,21 +170,27 @@ async def _comment_to_out(
 # --------------------------------------------------------------------- services
 
 
-@router.get("/users/{user_id}/services", response_model=list[AdminServiceItemOut])
+@router.get("/users/{user_id}/services", response_model=AdminServiceListOut)
 async def list_user_services(
     user_id: int,
     _admin: AdminUser,
     session: SessionDep,
-) -> list[AdminServiceItemOut]:
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> AdminServiceListOut:
     user = await session.get(User, user_id)
     if user is None:
         raise HTTPException(404, "Пользователь не найден")
+    stmt = select(Service).where(Service.owner_id == user_id)
+    total = (
+        await session.execute(select(func.count(Service.id)).where(Service.owner_id == user_id))
+    ).scalar_one()
     rows = (
         (
             await session.execute(
-                select(Service)
-                .where(Service.owner_id == user_id)
-                .order_by(Service.created_at.desc())
+                stmt.order_by(Service.created_at.desc(), Service.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
             )
         )
         .scalars()
@@ -184,7 +199,13 @@ async def list_user_services(
     # Audit 3.6 — batch-load the referenced categories so we don't
     # ``await session.get(Category, ...)`` once per service row.
     categories_by_id = await _categories_by_id(session, {s.category_id for s in rows})
-    return [await _service_to_out(session, s, categories_by_id=categories_by_id) for s in rows]
+    items = [await _service_to_out(session, s, categories_by_id=categories_by_id) for s in rows]
+    return AdminServiceListOut(
+        items=items,
+        total=int(total),
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/services/{service_id}", response_model=AdminServiceItemOut)
@@ -201,6 +222,7 @@ async def update_service(
 
     before: dict = {}
     after: dict = {}
+    requested_fields = body.model_fields_set
 
     if body.title is not None and body.title != service.title:
         before["title"] = service.title
@@ -213,17 +235,16 @@ async def update_service(
     # Audit 3.7 — compare ``Decimal`` values directly. The previous
     # ``float(body.price) != float(service.price)`` could collapse
     # last-satoshi differences for amounts > 1e15, surfacing a
-    # false-positive "no change" or a spurious change. The audit-log
-    # ``before`` / ``after`` dicts still serialise as float to match the
-    # wire format used elsewhere (``MoneyDecimal`` → float), but the
-    # *change-detection* now happens on the lossless Decimal value.
+    # false-positive "no change" or a spurious change. Keep the audit
+    # payload Decimal-canonical too; JSON numbers would reintroduce a
+    # lossy IEEE-754 hop in the forensic trail.
     if body.price is not None and body.price != service.price:
-        before["price"] = float(service.price)
-        after["price"] = float(body.price)
+        before["price"] = _audit_decimal(service.price)
+        after["price"] = _audit_decimal(body.price)
         service.price = body.price
     if body.deposit is not None and body.deposit != service.deposit:
-        before["deposit"] = float(service.deposit)
-        after["deposit"] = float(body.deposit)
+        before["deposit"] = _audit_decimal(service.deposit)
+        after["deposit"] = _audit_decimal(body.deposit)
         service.deposit = body.deposit
     if body.views is not None and body.views != service.views:
         before["views"] = service.views
@@ -233,19 +254,19 @@ async def update_service(
         before["deals_count"] = service.deals_count
         after["deals_count"] = body.deals_count
         service.deals_count = body.deals_count
-    if body.clear_rating:
+    clear_rating_requested = body.clear_rating or (
+        "rating_manual" in requested_fields and body.rating_manual is None
+    )
+    if clear_rating_requested:
         if service.rating_manual is not None:
-            before["rating_manual"] = float(service.rating_manual)
+            before["rating_manual"] = _audit_decimal(service.rating_manual)
             after["rating_manual"] = None
             service.rating_manual = None
     elif body.rating_manual is not None:
-        # Audit 3.7 — Decimal-vs-Decimal compare; only convert to
-        # float for the audit payload (which is the wire format).
+        # Audit 3.7 — Decimal-vs-Decimal compare and payload.
         if service.rating_manual != body.rating_manual:
-            before["rating_manual"] = (
-                float(service.rating_manual) if service.rating_manual is not None else None
-            )
-            after["rating_manual"] = float(body.rating_manual)
+            before["rating_manual"] = _audit_decimal(service.rating_manual)
+            after["rating_manual"] = _audit_decimal(body.rating_manual)
             service.rating_manual = body.rating_manual
     if body.status is not None:
         try:
@@ -273,7 +294,15 @@ async def update_service(
             before["status"] = service.status.value
             after["status"] = new_status.value
             service.status = new_status
-    if body.ban_reason is not None and body.ban_reason != service.ban_reason:
+            if (
+                new_status != ServiceStatus.banned
+                and "ban_reason" not in requested_fields
+                and service.ban_reason is not None
+            ):
+                before["ban_reason"] = service.ban_reason
+                after["ban_reason"] = None
+                service.ban_reason = None
+    if "ban_reason" in requested_fields and body.ban_reason != service.ban_reason:
         before["ban_reason"] = service.ban_reason
         after["ban_reason"] = body.ban_reason
         service.ban_reason = body.ban_reason
@@ -328,7 +357,9 @@ async def delete_service(
         "owner_id": service.owner_id,
         "title": service.title,
         "description": service.description,
-        "price": float(service.price),
+        "price": _audit_decimal(service.price),
+        "deposit": _audit_decimal(service.deposit),
+        "rating_manual": _audit_decimal(service.rating_manual),
         "status": service.status.value,
     }
     await session.execute(
@@ -362,21 +393,32 @@ async def delete_service(
 # --------------------------------------------------------------------- reviews
 
 
-@router.get("/users/{user_id}/reviews", response_model=list[AdminReviewItemOut])
+@router.get("/users/{user_id}/reviews", response_model=AdminReviewListOut)
 async def list_user_reviews(
     user_id: int,
     _admin: AdminUser,
     session: SessionDep,
     direction: Annotated[str, Query(pattern="^(received|written)$")] = "received",
-) -> list[AdminReviewItemOut]:
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> AdminReviewListOut:
     user = await session.get(User, user_id)
     if user is None:
         raise HTTPException(404, "Пользователь не найден")
     if direction == "written":
         stmt = select(Review).where(Review.author_id == user_id)
+        count_stmt = select(func.count(Review.id)).where(Review.author_id == user_id)
     else:
         stmt = select(Review).where(Review.target_id == user_id)
-    rows = (await session.execute(stmt.order_by(Review.created_at.desc()))).scalars().all()
+        count_stmt = select(func.count(Review.id)).where(Review.target_id == user_id)
+    total = (await session.execute(count_stmt)).scalar_one()
+    rows = (
+        await session.execute(
+            stmt.order_by(Review.created_at.desc(), Review.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).scalars().all()
     # Audit 3.6 — batch-load referenced users (author + target) so
     # the per-row ``session.get`` in ``_review_to_out`` collapses to
     # a single ``WHERE id IN (...)`` SELECT.
@@ -385,7 +427,13 @@ async def list_user_reviews(
         user_ids.add(r.author_id)
         user_ids.add(r.target_id)
     users_by_id = await _users_by_id(session, user_ids)
-    return [await _review_to_out(session, r, users_by_id=users_by_id) for r in rows]
+    items = [await _review_to_out(session, r, users_by_id=users_by_id) for r in rows]
+    return AdminReviewListOut(
+        items=items,
+        total=int(total),
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/reviews", response_model=AdminReviewItemOut, status_code=201)
@@ -616,21 +664,29 @@ async def delete_review(
 # --------------------------------------------------------------------- comments
 
 
-@router.get("/users/{user_id}/comments", response_model=list[AdminCommentItemOut])
+@router.get("/users/{user_id}/comments", response_model=AdminCommentListOut)
 async def list_user_comments(
     user_id: int,
     _admin: AdminUser,
     session: SessionDep,
-) -> list[AdminCommentItemOut]:
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> AdminCommentListOut:
     user = await session.get(User, user_id)
     if user is None:
         raise HTTPException(404, "Пользователь не найден")
+    stmt = select(ServiceComment).where(ServiceComment.author_id == user_id)
+    total = (
+        await session.execute(
+            select(func.count(ServiceComment.id)).where(ServiceComment.author_id == user_id)
+        )
+    ).scalar_one()
     rows = (
         (
             await session.execute(
-                select(ServiceComment)
-                .where(ServiceComment.author_id == user_id)
-                .order_by(ServiceComment.created_at.desc())
+                stmt.order_by(ServiceComment.created_at.desc(), ServiceComment.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
             )
         )
         .scalars()
@@ -639,24 +695,38 @@ async def list_user_comments(
     # Audit 3.6 — batch-load referenced authors; same one-SELECT-per
     # response shape as ``list_user_reviews`` above.
     users_by_id = await _users_by_id(session, {c.author_id for c in rows})
-    return [await _comment_to_out(session, c, users_by_id=users_by_id) for c in rows]
+    items = [await _comment_to_out(session, c, users_by_id=users_by_id) for c in rows]
+    return AdminCommentListOut(
+        items=items,
+        total=int(total),
+        page=page,
+        page_size=page_size,
+    )
 
 
-@router.get("/services/{service_id}/comments", response_model=list[AdminCommentItemOut])
+@router.get("/services/{service_id}/comments", response_model=AdminCommentListOut)
 async def list_service_comments(
     service_id: int,
     _admin: AdminUser,
     session: SessionDep,
-) -> list[AdminCommentItemOut]:
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> AdminCommentListOut:
     service = await session.get(Service, service_id)
     if service is None:
         raise HTTPException(404, "Услуга не найдена")
+    stmt = select(ServiceComment).where(ServiceComment.service_id == service_id)
+    total = (
+        await session.execute(
+            select(func.count(ServiceComment.id)).where(ServiceComment.service_id == service_id)
+        )
+    ).scalar_one()
     rows = (
         (
             await session.execute(
-                select(ServiceComment)
-                .where(ServiceComment.service_id == service_id)
-                .order_by(ServiceComment.created_at.desc())
+                stmt.order_by(ServiceComment.created_at.desc(), ServiceComment.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
             )
         )
         .scalars()
@@ -665,7 +735,13 @@ async def list_service_comments(
     # Audit 3.6 — batch-load referenced authors so per-row
     # ``session.get(User, ...)`` collapses to a single SELECT.
     users_by_id = await _users_by_id(session, {c.author_id for c in rows})
-    return [await _comment_to_out(session, c, users_by_id=users_by_id) for c in rows]
+    items = [await _comment_to_out(session, c, users_by_id=users_by_id) for c in rows]
+    return AdminCommentListOut(
+        items=items,
+        total=int(total),
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/comments/{comment_id}", response_model=AdminCommentItemOut)
@@ -682,11 +758,15 @@ async def update_comment(
 
     before: dict = {}
     after: dict = {}
+    requested_fields = body.model_fields_set
     if body.text is not None and body.text != comment.text:
         before["text"] = comment.text
         after["text"] = body.text
         comment.text = body.text
-    if body.clear_rating:
+    clear_rating_requested = body.clear_rating or (
+        "rating" in requested_fields and body.rating is None
+    )
+    if clear_rating_requested:
         if comment.rating is not None:
             before["rating"] = comment.rating
             after["rating"] = None

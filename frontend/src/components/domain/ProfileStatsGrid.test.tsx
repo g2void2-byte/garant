@@ -45,6 +45,20 @@ describe("<ProfileStatsGrid />", () => {
     expect(screen.queryByText(/\(0\)/)).not.toBeInTheDocument();
   });
 
+  it("shows decimal-string ratings through the shared rating parser", () => {
+    render(<ProfileStatsGrid user={makeUser({ rating: "4.25" as unknown as number, reviews_count: 0 })} />);
+    expect(screen.getByText("4.3")).toBeInTheDocument();
+  });
+
+  it("does not coerce malformed rating strings into display ratings", () => {
+    render(
+      <ProfileStatsGrid
+        user={makeUser({ rating: "0x5" as unknown as number, reviews_count: 0 })}
+      />,
+    );
+    expect(screen.queryByText("5.0")).not.toBeInTheDocument();
+  });
+
   it("shows 'rating (count)' once at least one review exists", () => {
     render(<ProfileStatsGrid user={makeUser({ rating: 4.2, reviews_count: 12 })} />);
     expect(screen.getByText("4.2 (12)")).toBeInTheDocument();
@@ -67,5 +81,41 @@ describe("<ProfileStatsGrid />", () => {
     expect(screen.getByText("4")).toBeInTheDocument();
     expect(screen.getByText("Арбитражи")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
+  });
+
+  it("renders neutral values for malformed activity counters", () => {
+    render(
+      <ProfileStatsGrid
+        user={makeUser({
+          deals_count: "1e2" as unknown as number,
+          deals_success: "0x10" as unknown as number,
+          deals_failed: -1,
+          deals_arbitrage: Number.NaN,
+          rating: "4.5" as unknown as number,
+          reviews_count: "1e2" as unknown as number,
+        })}
+      />,
+    );
+
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+    expect(screen.queryByText("4.5 (1e2)")).not.toBeInTheDocument();
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("renders neutral values for malformed public money stats", () => {
+    render(
+      <ProfileStatsGrid
+        user={makeUser({
+          deposit: "1e2" as unknown as number,
+          deals_sum: "0x10" as unknown as number,
+          rating: 4.5,
+        })}
+      />,
+    );
+
+    expect(screen.queryByText("$0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2|0x10/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("\u2014").length).toBeGreaterThanOrEqual(2);
   });
 });

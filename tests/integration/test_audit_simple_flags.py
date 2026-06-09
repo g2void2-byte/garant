@@ -141,6 +141,88 @@ async def test_confirm_transfer_bumps_session_epochs(client):
 # ── L-2 — last-admin guard takes the row-lock before counting ───────
 
 
+async def test_confirm_transfer_code_can_only_be_consumed_once(client, monkeypatch):
+    """Two target accounts racing the same transfer code must not both win.
+
+    The losing confirm starts while the winning transaction is paused
+    after it has accepted the code but before it commits the consumed
+    marker. Without a row lock on ``account_transfer_codes`` the loser
+    can keep a stale ``consumed_at=None`` row in its identity map and
+    re-point the source account a second time after the winner commits.
+    """
+    from sqlalchemy import select
+
+    from backend.app import services_account as sa_module
+    from backend.app.db import async_session
+    from backend.app.models import AccountTransferCode, User
+    from backend.app.services_account import confirm_transfer, issue_code
+
+    source_init = signed_init_data(98101, "src_code_once")
+    target_a_init = signed_init_data(98102, "tgt_code_once_a")
+    target_b_init = signed_init_data(98103, "tgt_code_once_b")
+
+    await setup_pin(client, source_init)
+    for init in (target_a_init, target_b_init):
+        resp = await client.get("/api/me", headers=auth_headers(init))
+        assert resp.status_code == 200, resp.text
+
+    async with async_session() as session:
+        source_id = await get_user_id_by_tg(session, 98101)
+        source = await session.get(User, source_id)
+        assert source is not None
+        code, _ = await issue_code(session, source)
+
+    first_reached_clean_check = asyncio.Event()
+    release_first = asyncio.Event()
+    original_has_tradable_data = sa_module._has_tradable_data
+    calls = 0
+
+    async def _pause_first_clean_check(session, user):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            first_reached_clean_check.set()
+            await release_first.wait()
+        return await original_has_tradable_data(session, user)
+
+    monkeypatch.setattr(sa_module, "_has_tradable_data", _pause_first_clean_check)
+
+    async def _confirm(target_tg: int) -> tuple[str, int | str]:
+        async with async_session() as session:
+            target_id = await get_user_id_by_tg(session, target_tg)
+            target = await session.get(User, target_id)
+            assert target is not None
+            try:
+                source_after = await confirm_transfer(session, target, code)
+                return ("ok", int(source_after.tg_user_id))
+            except ValueError as exc:
+                await session.rollback()
+                return ("err", str(exc))
+
+    first = asyncio.create_task(_confirm(98102))
+    await asyncio.wait_for(first_reached_clean_check.wait(), timeout=3)
+    second = asyncio.create_task(_confirm(98103))
+    await asyncio.sleep(0.2)
+    release_first.set()
+
+    results = await asyncio.gather(first, second)
+    ok = [value for status, value in results if status == "ok"]
+    errors = [value for status, value in results if status == "err"]
+    assert ok == [98102]
+    assert len(errors) == 1
+    assert "недействителен" in str(errors[0]) or "истёк" in str(errors[0])
+
+    async with async_session() as session:
+        source = await session.get(User, source_id)
+        assert source is not None
+        assert source.tg_user_id == 98102
+        target_b_id = await get_user_id_by_tg(session, 98103)
+        assert target_b_id != source_id
+        code_row = (await session.execute(select(AccountTransferCode))).scalar_one()
+        assert code_row.consumed_at is not None
+        assert code_row.target_tg_user_id == 98102
+
+
 async def test_last_admin_guard_uses_for_update(client):
     """The admin-set lock is observable via the SQL it emits. We assert
     the helper executes a ``SELECT ... FOR UPDATE`` against the

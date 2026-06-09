@@ -3,7 +3,11 @@ import type { UserCardDto } from "@/api/types";
 import { Logo } from "@/components/layout/Logo";
 import { Avatar } from "@/components/ui/Avatar";
 import { countryFromCode } from "@/lib/countries";
+import { safeUserImageUrl } from "@/lib/mediaLinks";
 import { getTelegramUser } from "@/lib/tg";
+import { parsePositiveIntValue } from "@/lib/routeParams";
+import { normalizeUsernameRef } from "@/lib/usernames";
+import { cn } from "@/lib/cn";
 
 // Keep keys in lockstep with ``UserCardDto.prefix`` on the backend
 // (``backend/app/serializers._common_user_fields``). The ``vip`` entry
@@ -14,6 +18,7 @@ const ROLE_LABEL: Record<NonNullable<UserCardDto["prefix"]>, string> = {
   arbiter: "Арбитр",
   vip: "VIP",
 };
+const UNKNOWN_ROLE_LABEL = "Роль неизвестна";
 
 export function ProfileHeader({ user }: { user: UserCardDto }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -33,8 +38,15 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, [onScroll]);
 
-  const displayName = user.display_name?.trim() || user.username || "—";
-  const roleLabel = user.prefix ? ROLE_LABEL[user.prefix] : "Пользователь";
+  const username = normalizeUsernameRef(user.username);
+  const displayName = user.display_name?.trim() || username || "—";
+  const knownRoleLabel = user.prefix ? ROLE_LABEL[user.prefix] : null;
+  const roleLabel = user.prefix
+    ? knownRoleLabel ?? UNKNOWN_ROLE_LABEL
+    : "Пользователь";
+  const roleClassName = user.prefix && !knownRoleLabel
+    ? "bg-panel-2 text-text-muted"
+    : "bg-accent text-accent-fg";
   const country = countryFromCode(user.country);
   // V12-UI — the avatar circle is sourced from the Telegram user's
   // ``photo_url`` (exposed via ``initDataUnsafe`` for the *current*
@@ -54,8 +66,10 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
   // is exposed on every ``UserCardDto`` via ``user_id``, so the
   // comparison below is stable across rename races.
   const tgUser = getTelegramUser();
-  const isMe = tgUser?.id === user.user_id;
+  const profileTgUserId = parsePositiveIntValue(user.user_id);
+  const isMe = profileTgUserId !== undefined && tgUser?.id === profileTgUserId;
   const avatarSrc = user.photo_url || (isMe ? tgUser?.photo_url : null);
+  const bannerSrc = safeUserImageUrl(user.banner_url);
 
   return (
     <div ref={ref}>
@@ -63,11 +77,22 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
         style={{
           transform: `translateY(${transform.y}px)`,
           opacity: transform.opacity,
-          backgroundImage: user.banner_url ? `url(${user.banner_url})` : undefined,
         }}
         className="relative h-64 mx-4 mt-3 rounded-3xl overflow-hidden bg-gradient-to-br from-accent/20 via-panel-2 to-panel bg-cover bg-center will-change-transform"
       >
-        {!user.banner_url && (
+        {bannerSrc && (
+          <img
+            src={bannerSrc}
+            alt=""
+            aria-hidden="true"
+            data-testid="profile-banner-image"
+            className="absolute inset-0 size-full object-cover"
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+          />
+        )}
+        {!bannerSrc && (
           <div className="absolute inset-0 grid place-items-center">
             <Logo size={96} />
           </div>
@@ -85,15 +110,22 @@ export function ProfileHeader({ user }: { user: UserCardDto }) {
             />
             <div className="min-w-0 flex-1">
               <h1 className="text-xl font-bold leading-tight truncate">{displayName}</h1>
-              <div className="mt-1 text-[13px] text-text-muted truncate">@{user.username}</div>
+              <div className="mt-1 text-[13px] text-text-muted truncate">
+                {username ? `@${username}` : "username не задан"}
+              </div>
               {country && (
                 <div className="mt-0.5 text-[13px] text-text-muted truncate">
                   <span aria-hidden>{country.flag}</span> {country.name}
                 </div>
               )}
-              <div className="mt-1 text-xs text-text-muted">ID: {user.user_id}</div>
+              <div className="mt-1 text-xs text-text-muted">ID: {profileTgUserId ?? "\u2014"}</div>
             </div>
-            <span className="self-start inline-flex items-center px-2.5 py-1 rounded-full bg-accent text-accent-fg text-[11px] font-semibold leading-none shrink-0">
+            <span
+              className={cn(
+                "self-start inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold leading-none shrink-0",
+                roleClassName,
+              )}
+            >
               {roleLabel}
             </span>
           </div>

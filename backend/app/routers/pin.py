@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -75,19 +75,27 @@ class PinStatusOut(BaseModel):
 
 
 class PinSetupIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     pin: str = Field(..., min_length=4, max_length=4)
 
 
 class PinCheckIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     pin: str = Field(..., min_length=4, max_length=4)
 
 
 class PinChangeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     old_pin: str = Field(..., min_length=4, max_length=4)
     new_pin: str = Field(..., min_length=4, max_length=4)
 
 
 class PinResetConfirmIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     code: str = Field(..., min_length=6, max_length=6)
     new_pin: str = Field(..., min_length=4, max_length=4)
 
@@ -556,6 +564,12 @@ async def pin_reset_paid(
         # Admin set the price to 0 — mint the code for free so the
         # paywall modal still works.
         delivered, expires_at = await _mint_and_send_reset_code(user)
+        if not delivered:
+            await session.rollback()
+            raise HTTPException(
+                502,
+                "Не удалось доставить код сброса PIN. Баланс не списан.",
+            )
         await session.commit()
         return PinResetPaidOut(
             delivered=delivered,
@@ -579,6 +593,12 @@ async def pin_reset_paid(
         )
     bal.amount = current - price
     delivered, expires_at = await _mint_and_send_reset_code(user)
+    if not delivered:
+        await session.rollback()
+        raise HTTPException(
+            502,
+            "Не удалось доставить код сброса PIN. Баланс не списан.",
+        )
     await session.commit()
     logger.info(
         "PIN reset paid for user %s: charged %s USD",

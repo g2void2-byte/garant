@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -7,6 +7,16 @@ import type {
   AdminDealDetailDto,
   AdminBalanceSnapshotDto,
 } from "@/api/types";
+
+type MessageDto = {
+  id: number;
+  deal_id: number;
+  sender_id: number;
+  sender_username: string | null;
+  text: string;
+  attachments: unknown[];
+  created_at: string;
+};
 
 /**
  * Tests for `/admin/deals/:id`.
@@ -19,12 +29,15 @@ import type {
 
 const mockState = vi.hoisted(() => ({
   deal: undefined as AdminDealDetailDto | undefined,
+  lastDealId: undefined as number | undefined,
   loading: false,
   me: { id: 999, is_admin: true } as
     | { id: number; is_admin: boolean }
     | undefined,
   shouldRender: true as boolean,
   lastRedirectOpts: undefined as { allowArbiter?: boolean } | undefined,
+  messages: [] as MessageDto[] | undefined,
+  messagesLoading: false,
   release: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   refund: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   split: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
@@ -33,10 +46,15 @@ const mockState = vi.hoisted(() => ({
   arb: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   assign: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
   del: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
+  loadOlder: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
+  sendMessage: { mutateAsync: vi.fn() as ReturnType<typeof vi.fn>, isPending: false },
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
-  useAdminDeal: () => ({ data: mockState.deal, isLoading: mockState.loading }),
+  useAdminDeal: (dealId: number | undefined) => {
+    mockState.lastDealId = dealId;
+    return { data: mockState.deal, isLoading: mockState.loading };
+  },
   useAdminForceRelease: () => mockState.release,
   useAdminForceRefund: () => mockState.refund,
   useAdminSplitDeal: () => mockState.split,
@@ -48,6 +66,10 @@ vi.mock("@/api/admin/hooks", () => ({
 }));
 
 vi.mock("@/api/hooks", () => ({
+  DEAL_MESSAGE_PAGE_SIZE: 50,
+  useDealMessages: () => ({ data: mockState.messages, isLoading: mockState.messagesLoading }),
+  useLoadOlderDealMessages: () => mockState.loadOlder,
+  useSendDealMessage: () => mockState.sendMessage,
   useMe: () => ({ data: mockState.me }),
 }));
 
@@ -59,6 +81,7 @@ vi.mock("@/hooks/useAdminRedirect", () => ({
 }));
 
 const toastSpy = vi.hoisted(() => vi.fn());
+const apiGetSpy = vi.hoisted(() => vi.fn());
 vi.mock("@/components/ui/Toast", () => ({
   useToast: () => ({ show: toastSpy }),
 }));
@@ -71,9 +94,7 @@ vi.mock("@/lib/tg", () => ({
 
 vi.mock("@/api/client", () => ({
   api: {
-    get: () => ({
-      json: async () => ({ items: [] }),
-    }),
+    get: apiGetSpy,
     post: () => ({
       json: async () => ({}),
     }),
@@ -157,12 +178,59 @@ function makeDeal(
   };
 }
 
+function makeMessage(overrides: Partial<MessageDto> = {}): MessageDto {
+  return {
+    id: 1,
+    deal_id: 10,
+    sender_id: 1,
+    sender_username: "buyer",
+    text: "message",
+    attachments: [],
+    created_at: "2026-01-03T00:00:00Z",
+    ...overrides,
+  };
+}
+
+type AdminApproval = NonNullable<AdminDealDetailDto["pending_approvals"]>[number];
+
+function makeApproval(overrides: Partial<AdminApproval> = {}): AdminApproval {
+  return {
+    id: 77,
+    action: "deal.force_release",
+    target_type: "deal",
+    target_id: 10,
+    status: "pending",
+    requested_by_id: 123,
+    approved_by_id: null,
+    executed_by_id: null,
+    currency_code: "USDT",
+    amount: "150.00000000",
+    amount_usd_estimate: "150.00000000",
+    reason: null,
+    payload: null,
+    created_at: "2026-01-04T00:00:00Z",
+    approved_at: null,
+    executed_at: null,
+    rejected_at: null,
+    ...overrides,
+  };
+}
+
+function getLoadOlderButton(): HTMLElement | undefined {
+  return screen
+    .getAllByRole("button")
+    .find((button) => button.className.includes("underline-offset-2"));
+}
+
 beforeEach(() => {
   mockState.deal = undefined;
+  mockState.lastDealId = undefined;
   mockState.loading = false;
   mockState.me = { id: 999, is_admin: true };
   mockState.shouldRender = true;
   mockState.lastRedirectOpts = undefined;
+  mockState.messages = [];
+  mockState.messagesLoading = false;
   mockState.release = { mutateAsync: vi.fn(), isPending: false };
   mockState.refund = { mutateAsync: vi.fn(), isPending: false };
   mockState.split = { mutateAsync: vi.fn(), isPending: false };
@@ -171,7 +239,13 @@ beforeEach(() => {
   mockState.arb = { mutateAsync: vi.fn(), isPending: false };
   mockState.assign = { mutateAsync: vi.fn(), isPending: false };
   mockState.del = { mutateAsync: vi.fn(), isPending: false };
+  mockState.loadOlder = { mutateAsync: vi.fn(), isPending: false };
+  mockState.sendMessage = { mutateAsync: vi.fn(), isPending: false };
   toastSpy.mockClear();
+  apiGetSpy.mockReset();
+  apiGetSpy.mockReturnValue({
+    json: async () => ({ items: [] }),
+  });
 });
 
 describe("<AdminDealDetailPage />", () => {
@@ -187,9 +261,19 @@ describe("<AdminDealDetailPage />", () => {
     expect(mockState.lastRedirectOpts).toEqual({ allowArbiter: true });
   });
 
-  it("renders 'Неверный ID' when :id is not numeric", () => {
-    renderPage("xyz");
-    expect(screen.getByText("Неверный ID.")).toBeInTheDocument();
+  it.each(["xyz", "0", "1e2", "0x10"])(
+    "renders 'Неверный ID' for invalid :id=%s without querying detail",
+    (id) => {
+      renderPage(id);
+      expect(mockState.lastDealId).toBeUndefined();
+      expect(screen.getByText("Неверный ID.")).toBeInTheDocument();
+    },
+  );
+
+  it("passes canonical route ids to useAdminDeal", () => {
+    mockState.deal = makeDeal();
+    renderPage("10");
+    expect(mockState.lastDealId).toBe(10);
   });
 
   it("renders status banner with description + status label", () => {
@@ -197,6 +281,14 @@ describe("<AdminDealDetailPage />", () => {
     renderPage();
     expect(screen.getByText("Buying widgets")).toBeInTheDocument();
     expect(screen.getAllByText("В работе").length).toBeGreaterThan(0);
+  });
+
+  it("renders unknown runtime statuses as neutral labels", () => {
+    mockState.deal = makeDeal({ status: "provider_reconciled" });
+    renderPage();
+
+    expect(screen.getAllByText("Статус неизвестен").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/provider_reconciled/)).not.toBeInTheDocument();
   });
 
   it("renders balance snapshot for buyer + seller cards", () => {
@@ -207,6 +299,84 @@ describe("<AdminDealDetailPage />", () => {
     expect(screen.getByText("Buyer")).toBeInTheDocument();
     expect(screen.getByText("Seller")).toBeInTheDocument();
     expect(screen.getByText("$150.00")).toBeInTheDocument();
+  });
+
+  it("renders string and malformed finance fields without numeric coercion", () => {
+    mockState.deal = makeDeal({
+      amount: "150.5",
+      commission_amount: "1e3",
+      buyer: makeSnap({ user_id: 1, username: "buyer", display_name: "Buyer", amount: "12.3456", locked: "0x10" }),
+    });
+    renderPage();
+    expect(screen.getByText("$150.50")).toBeInTheDocument();
+    expect(screen.getByText("12.3456")).toBeInTheDocument();
+    expect(screen.queryByText("0.00")).not.toBeInTheDocument();
+    expect(screen.queryByText("0.0000")).not.toBeInTheDocument();
+  });
+
+  it("normalizes balance snapshot currency labels before display", () => {
+    mockState.deal = makeDeal({
+      buyer: makeSnap({
+        user_id: 1,
+        username: "buyer",
+        display_name: "Buyer",
+        amount: "12.3456",
+        locked: "1.0000",
+        currency_code: " usd ",
+      }),
+      seller: makeSnap({
+        user_id: 2,
+        username: "seller",
+        display_name: "Seller",
+        amount: "7.0000",
+        locked: "0.5000",
+        currency_code: "../USDT",
+      }),
+    });
+    const { container } = renderPage();
+
+    expect(container.textContent).toContain("12.3456 USD");
+    expect(container.textContent).toContain("7.0000 \u2014");
+    expect(container.textContent).not.toMatch(/ usd /);
+    expect(container.textContent).not.toMatch(/\.\.\/USDT/);
+  });
+
+  it("renders missing snapshot and chat usernames as non-handle labels", () => {
+    mockState.deal = makeDeal({
+      buyer: makeSnap({ user_id: 1, username: null, display_name: "Buyer" }),
+      seller: makeSnap({ user_id: 2, username: null, display_name: "Seller" }),
+    });
+    mockState.messages = [makeMessage({ sender_username: null })];
+    renderPage();
+    expect(screen.getAllByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
+  it("does not double-prefix admin chat usernames with @", () => {
+    mockState.deal = makeDeal();
+    mockState.messages = [makeMessage({ sender_username: "buyer" })];
+    renderPage();
+    expect(screen.getAllByText(/@buyer/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/@@buyer/)).not.toBeInTheDocument();
+  });
+
+  it("renders malformed event and message timestamps as neutral values", () => {
+    mockState.deal = makeDeal({
+      events: [
+        {
+          at: "not-a-date",
+          kind: "created",
+          actor: "buyer",
+          description: "bad timestamp",
+        },
+      ],
+    });
+    mockState.messages = [makeMessage({ created_at: "not-a-date" })];
+    renderPage();
+    expect(
+      screen.getAllByText((_, element) => Boolean(element?.textContent?.includes("\u2014"))).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
   });
 
   it("shows arbitration-danger banner when status=arbitration with reason", () => {
@@ -243,6 +413,114 @@ describe("<AdminDealDetailPage />", () => {
     ).toBeInTheDocument();
   });
 
+  it("disables money-moving admin actions when the deal amount is malformed", () => {
+    mockState.deal = makeDeal({ amount: "1e3" as unknown as string });
+    renderPage();
+
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Принудительное завершение/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Возврат покупателю/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Сплит-выплата/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Открыть арбитраж/i }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /Удалить сделку/i }),
+    ).toBeEnabled();
+  });
+
+  it("renders malformed pending approval amounts as neutral and blocks approval", () => {
+    mockState.deal = makeDeal({
+      pending_approvals: [
+        makeApproval({
+          amount: "1e3",
+          amount_usd_estimate: "0x10",
+        }),
+      ],
+    });
+    renderPage();
+
+    expect(screen.getByText("\u2014 USDT \u00b7 ~\u2014")).toBeInTheDocument();
+    expect(screen.queryByText(/1e3/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "OK" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
+  });
+
+  it("normalizes pending approval currency labels before display", () => {
+    mockState.deal = makeDeal({
+      pending_approvals: [
+        makeApproval({
+          amount: "150.00000000",
+          amount_usd_estimate: "150.00000000",
+          currency_code: "../USDT",
+        }),
+      ],
+    });
+    const { container } = renderPage();
+
+    expect(container.textContent).toContain("150.00000000 \u2014");
+    expect(container.textContent).not.toMatch(/\.\.\/USDT/);
+  });
+
+  it("renders unknown pending approval action and status as neutral labels", () => {
+    mockState.deal = makeDeal({
+      pending_approvals: [
+        makeApproval({
+          action: "deal.provider_reconciled",
+          status: "provider_reconciled",
+        }),
+      ],
+    });
+    const { container } = renderPage();
+
+    expect(container.textContent).toContain("Действие неизвестно");
+    expect(container.textContent).toContain("Статус неизвестен");
+    expect(container.textContent).not.toContain("deal.provider_reconciled");
+    expect(container.textContent).not.toContain("provider_reconciled");
+    expect(screen.queryByRole("button", { name: "OK" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();
+  });
+
+  it("looks up an assigned arbiter through a first-page exact search", async () => {
+    mockState.deal = makeDeal({ status: "arbitration" });
+    mockState.assign.mutateAsync.mockResolvedValue({});
+    apiGetSpy.mockReturnValueOnce({
+      json: async () => ({
+        items: [{ id: 777, username: "arbiter1", is_arbiter: true }],
+      }),
+    });
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(
+      screen.getByRole("button", { name: /\u041d\u0430\u0437\u043d\u0430\u0447\u0438\u0442\u044c/i }),
+    );
+    await user.type(screen.getByPlaceholderText("@arbiter1"), "@arbiter1");
+    const confirmBtns = await screen.findAllByRole("button", {
+      name: /\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044c/i,
+    });
+    await user.click(confirmBtns[confirmBtns.length - 1]);
+
+    await waitFor(() =>
+      expect(apiGetSpy).toHaveBeenCalledWith("api/admin/users", {
+        searchParams: { q: "@arbiter1", page: "1", page_size: "1" },
+      }),
+    );
+    await waitFor(() =>
+      expect(mockState.assign.mutateAsync).toHaveBeenCalledWith({
+        dealId: 10,
+        body: { arbiter_id: 777 },
+      }),
+    );
+  });
+
   it("opens release sheet, fires force-release with reason", async () => {
     mockState.deal = makeDeal();
     mockState.release.mutateAsync.mockResolvedValue({});
@@ -262,11 +540,183 @@ describe("<AdminDealDetailPage />", () => {
     );
   });
 
+  it("uses the canonical route id for admin mutations when payload deal id is malformed", async () => {
+    mockState.deal = makeDeal({ id: "0x10" as unknown as number });
+    mockState.release.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    const { container } = renderPage("10");
+
+    expect(container.textContent).toContain("#\u2014");
+    expect(container.textContent).not.toContain("0x10");
+
+    const releaseButton = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent?.includes("\u041f\u0440\u0438\u043d\u0443\u0434\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0435"));
+    expect(releaseButton).toBeDefined();
+    await user.click(releaseButton!);
+    const confirmBtns = await screen.findAllByRole("button", {
+      name: /\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044c/i,
+    });
+    await user.click(confirmBtns[confirmBtns.length - 1]);
+
+    await waitFor(() =>
+      expect(mockState.release.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ dealId: 10 }),
+      ),
+    );
+  });
+
+  it("blocks pending approval actions for malformed runtime approval ids", () => {
+    mockState.deal = makeDeal({
+      pending_approvals: [
+        makeApproval({ id: "0x4d" as unknown as number }),
+      ],
+    });
+    const { container } = renderPage();
+
+    expect(container.textContent).toContain("#\u2014");
+    expect(container.textContent).not.toContain("0x4d");
+    expect(screen.getByRole("button", { name: "OK" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
+  });
+
+  it("blocks exponent split percent before sending an admin split", async () => {
+    mockState.deal = makeDeal();
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(screen.getByRole("button", { name: /Сплит-выплата/i }));
+    fireEvent.change(await screen.findByRole("spinbutton", { name: /Доля покупателя/i }), {
+      target: { value: "1e2" },
+    });
+    const confirmBtns = screen.getAllByRole("button", { name: /Подтвердить/i });
+    await user.click(confirmBtns[confirmBtns.length - 1]);
+
+    expect(mockState.split.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "Доля покупателя должна быть 0..100" }),
+    );
+  });
+
+  it("blocks malformed arbiter ids returned from admin user search", async () => {
+    mockState.deal = makeDeal({ status: "arbitration" });
+    apiGetSpy.mockReturnValueOnce({
+      json: async () => ({
+        items: [{ id: "0x309", username: "arbiter1", is_arbiter: true }],
+      }),
+    });
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(
+      screen.getByRole("button", { name: /\u041d\u0430\u0437\u043d\u0430\u0447\u0438\u0442\u044c/i }),
+    );
+    await user.type(screen.getByPlaceholderText("@arbiter1"), "@arbiter1");
+    const confirmBtns = await screen.findAllByRole("button", {
+      name: /\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044c/i,
+    });
+    await user.click(confirmBtns[confirmBtns.length - 1]);
+
+    await waitFor(() => expect(apiGetSpy).toHaveBeenCalled());
+    expect(mockState.assign.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "error",
+        title: "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 ID \u0430\u0440\u0431\u0438\u0442\u0440\u0430",
+      }),
+    );
+  });
+
+  it("blocks ambiguous approval ids before force-release", async () => {
+    mockState.deal = makeDeal();
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(
+      screen.getByRole("button", { name: /Принудительное завершение/i }),
+    );
+    fireEvent.change(await screen.findByLabelText("Approval ID"), {
+      target: { value: "0x10" },
+    });
+    const confirmBtns = screen.getAllByRole("button", { name: /Подтвердить/i });
+    await user.click(confirmBtns[confirmBtns.length - 1]);
+
+    expect(mockState.release.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "Неверный Approval ID" }),
+    );
+  });
+
   it("renders the events timeline with all event descriptions", () => {
     mockState.deal = makeDeal();
     renderPage();
     expect(screen.getByText("Создана")).toBeInTheDocument();
     expect(screen.getByText("Запущена")).toBeInTheDocument();
+  });
+
+  it("loads older chat messages through the cursor hook", async () => {
+    mockState.deal = makeDeal();
+    mockState.messages = Array.from({ length: 50 }, (_, index) =>
+      makeMessage({ id: 100 + index, text: `message ${index}` }),
+    );
+    mockState.loadOlder.mutateAsync.mockResolvedValue([
+      makeMessage({ id: 99, text: "older" }),
+    ]);
+    const user = userEvent.setup();
+
+    renderPage();
+    const loadOlderButton = getLoadOlderButton();
+    expect(loadOlderButton).toBeDefined();
+    await user.click(loadOlderButton!);
+
+    await waitFor(() =>
+      expect(mockState.loadOlder.mutateAsync).toHaveBeenCalledWith({ beforeId: 100 }),
+    );
+    await waitFor(() => expect(getLoadOlderButton()).toBeUndefined());
+  });
+
+  it("does not load older chat messages with malformed runtime cursor ids", async () => {
+    mockState.deal = makeDeal();
+    mockState.messages = Array.from({ length: 50 }, (_, index) =>
+      makeMessage({
+        id: (index === 0 ? "0x64" : 101 + index) as unknown as number,
+        text: `message ${index}`,
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderPage();
+    const loadOlderButton = getLoadOlderButton();
+    expect(loadOlderButton).toBeDefined();
+    await user.click(loadOlderButton!);
+
+    expect(mockState.loadOlder.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "error",
+        title: "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 ID \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f",
+      }),
+    );
+    expect(getLoadOlderButton()).toBeUndefined();
+  });
+
+  it("sends admin chat messages through the shared message hook", async () => {
+    mockState.deal = makeDeal();
+    mockState.messages = [makeMessage({ id: 1, text: "existing" })];
+    mockState.sendMessage.mutateAsync.mockResolvedValue(makeMessage({ id: 2, text: "hello" }));
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.type(screen.getByRole("textbox"), "hello");
+    const buttons = screen.getAllByRole("button");
+    await user.click(buttons[buttons.length - 1]);
+
+    await waitFor(() =>
+      expect(mockState.sendMessage.mutateAsync).toHaveBeenCalledWith({
+        text: "hello",
+        attachments: [],
+      }),
+    );
   });
 
   it("disables admin action buttons when status is terminal (completed)", () => {

@@ -290,6 +290,7 @@ async def dispatch_after_commit(
                 "body": notif.body,
                 "payload": ws_payload,
                 "is_read": False,
+                "created_at": notif.created_at.isoformat(),
             },
         },
     )

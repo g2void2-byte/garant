@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import type { DealMessageDto, NotificationCountersDto, NotificationDto } from "@/api/types";
 
 /**
  * Verifies the React Query cache & toast side-effects of the live
@@ -52,6 +53,43 @@ function makeWrapper(client: QueryClient) {
   );
 }
 
+function makeDealMessage(overrides: Partial<DealMessageDto> = {}): DealMessageDto {
+  return {
+    id: 1,
+    deal_id: 42,
+    sender_id: 100,
+    sender_username: "alice",
+    text: "hi",
+    attachments: [],
+    created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeNotification(overrides: Partial<NotificationDto> = {}): NotificationDto {
+  return {
+    id: 1,
+    type: "deals",
+    title: "New deal",
+    body: "Pay attention",
+    payload: {},
+    is_read: false,
+    created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeCounters(overrides: Partial<NotificationCountersDto> = {}): NotificationCountersDto {
+  return {
+    all: 2,
+    deals: 1,
+    deposits: 1,
+    system: 0,
+    unread: 2,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   wsState.capturedHandlers = null;
   wsState.disconnect.mockClear();
@@ -74,18 +112,20 @@ describe("useLiveNotifications", () => {
 
   it("appends incoming deal_message to the cached deal thread", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    qc.setQueryData(["deal", 42, "messages"], [{ id: 1, body: "hi" }]);
+    const first = makeDealMessage({ id: 1, text: "hi" });
+    const second = makeDealMessage({ id: 2, text: "yo" });
+    qc.setQueryData(["deal", 42, "messages"], [first]);
 
     renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
 
     wsState.capturedHandlers!.onEvent({
       event: "deal_message",
-      data: { id: 2, deal_id: 42, body: "yo" },
+      data: second,
     });
 
     expect(qc.getQueryData(["deal", 42, "messages"])).toEqual([
-      { id: 1, body: "hi" },
-      { id: 2, deal_id: 42, body: "yo" },
+      first,
+      second,
     ]);
     expect(hapticSpy).toHaveBeenCalledWith("light");
     expect(toastSpy).not.toHaveBeenCalled();
@@ -93,43 +133,145 @@ describe("useLiveNotifications", () => {
 
   it("de-dupes deal_message by id (no duplicates on reconnect replay)", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    qc.setQueryData(["deal", 5, "messages"], [{ id: 7, body: "hi" }]);
+    const first = makeDealMessage({ id: 7, deal_id: 5, text: "hi" });
+    qc.setQueryData(["deal", 5, "messages"], [first]);
 
     renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
 
     wsState.capturedHandlers!.onEvent({
       event: "deal_message",
-      data: { id: 7, deal_id: 5, body: "duplicate" },
+      data: makeDealMessage({ id: 7, deal_id: 5, text: "duplicate" }),
     });
 
-    expect(qc.getQueryData(["deal", 5, "messages"])).toEqual([
-      { id: 7, body: "hi" },
-    ]);
+    expect(qc.getQueryData(["deal", 5, "messages"])).toEqual([first]);
+  });
+
+  it("de-dupes deal_message replay against cached numeric-string ids", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const first = makeDealMessage({
+      id: "7" as unknown as number,
+      deal_id: 5,
+      text: "hi",
+    });
+    qc.setQueryData(["deal", 5, "messages"], [first]);
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "deal_message",
+      data: makeDealMessage({ id: 7, deal_id: 5, text: "duplicate" }),
+    });
+
+    expect(qc.getQueryData(["deal", 5, "messages"])).toEqual([first]);
   });
 
   it("seeds the deal thread when no messages were cached yet", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
 
+    const first = makeDealMessage({ id: 1, deal_id: 99, text: "first!" });
+
     wsState.capturedHandlers!.onEvent({
       event: "deal_message",
-      data: { id: 1, deal_id: 99, body: "first!" },
+      data: first,
     });
-    expect(qc.getQueryData(["deal", 99, "messages"])).toEqual([
-      { id: 1, deal_id: 99, body: "first!" },
-    ]);
+    expect(qc.getQueryData(["deal", 99, "messages"])).toEqual([first]);
   });
 
-  it("inserts a notification, fires haptic+toast, and invalidates counters", () => {
+  it("de-dupes notification events against cached numeric-string ids", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    qc.setQueryData(["notifications"], [{ id: 1, type: "deals", title: "Old", body: "" }]);
-    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    const first = makeNotification({ id: "7" as unknown as number, title: "cached" });
+    qc.setQueryData(["notifications", { limit: 50 }], [first]);
 
     renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
 
     wsState.capturedHandlers!.onEvent({
       event: "notification",
-      data: { id: 2, type: "deals", title: "New deal", body: "Pay attention" },
+      data: makeNotification({ id: 7, title: "duplicate" }),
+    });
+
+    expect(qc.getQueryData(["notifications", { limit: 50 }])).toEqual([first]);
+  });
+
+  it("ignores malformed deal_message frames instead of poisoning message caches", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const first = makeDealMessage({ id: 1, deal_id: 42, text: "hi" });
+    qc.setQueryData(["deal", 42, "messages"], [first]);
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "deal_message",
+      data: { id: 2, text: "missing fields" },
+    });
+    wsState.capturedHandlers!.onEvent({
+      event: "deal_message",
+      data: { ...makeDealMessage({ id: 3 }), deal_id: "0x2" },
+    });
+    wsState.capturedHandlers!.onEvent({
+      event: "deal_message",
+      data: {
+        ...makeDealMessage({ id: 4 }),
+        attachments: [{ id: 1, url: "/media/a.png" }],
+      },
+    });
+    wsState.capturedHandlers!.onEvent({
+      event: "deal_message",
+      data: {
+        ...makeDealMessage({ id: 5 }),
+        attachments: [
+          {
+            id: 1,
+            kind: "deal",
+            url: "/media/a.png",
+            name: "a.png",
+            size: 1,
+            content_type: "image/png",
+          },
+        ],
+      },
+    });
+    wsState.capturedHandlers!.onEvent({
+      event: "deal_message",
+      data: {
+        ...makeDealMessage({ id: 6 }),
+        attachments: [
+          {
+            id: 1,
+            kind: "deal",
+            url: "javascript:alert(1)",
+            name: "a.png",
+            size: 1,
+            content_type: "image/png",
+            created_at: null,
+          },
+        ],
+      },
+    });
+
+    expect(qc.getQueryData(["deal", 42, "messages"])).toEqual([first]);
+    expect(qc.getQueryData(["deal", undefined, "messages"])).toBeUndefined();
+    expect(hapticSpy).not.toHaveBeenCalled();
+  });
+
+  it("inserts a notification, fires haptic+toast, and invalidates counters", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(["notifications"], [makeNotification({ id: 1, title: "Old", body: "" })]);
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    const incoming = makeNotification({
+      id: 2,
+      type: "deals",
+      title: "New deal",
+      body: "Pay attention",
+      payload: { deal_id: 42 },
+    });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "notification",
+      data: incoming,
     });
 
     const list = qc.getQueryData(["notifications"]) as { id: number }[];
@@ -143,6 +285,10 @@ describe("useLiveNotifications", () => {
     // deals-typed notification also invalidates deals + deal caches.
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deals"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deal"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["wallet"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["users"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["user"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["me"] });
   });
 
   it("uses 'success' kind for deposit notifications and invalidates me/wallet", () => {
@@ -153,7 +299,13 @@ describe("useLiveNotifications", () => {
 
     wsState.capturedHandlers!.onEvent({
       event: "notification",
-      data: { id: 9, type: "deposits", title: "Зачислено", body: "+50 USDT" },
+      data: makeNotification({
+        id: 9,
+        type: "deposits",
+        title: "Зачислено",
+        body: "+50 USDT",
+        payload: null,
+      }),
     });
     expect(toastSpy).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "success", title: "Зачислено" }),
@@ -162,6 +314,29 @@ describe("useLiveNotifications", () => {
     // H-1 — legacy ``qk.payments`` was retired; wallet deposits are
     // surfaced through ``qk.wallet.*`` now.
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["wallet"] });
+  });
+
+  it("ignores malformed notification frames instead of showing forged toasts", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const first = makeNotification({ id: 1, title: "Old", body: "" });
+    qc.setQueryData(["notifications"], [first]);
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "notification",
+      data: { id: 2, type: "deals", title: "Missing fields", body: "" },
+    });
+    wsState.capturedHandlers!.onEvent({
+      event: "notification",
+      data: { ...makeNotification({ id: 3 }), id: "3" },
+    });
+
+    expect(qc.getQueryData(["notifications"])).toEqual([first]);
+    expect(toastSpy).not.toHaveBeenCalled();
+    expect(hapticSpy).not.toHaveBeenCalled();
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["notifications", "counters"] });
   });
 
   it("ignores events without ``data`` or with unknown event names", () => {
@@ -191,6 +366,10 @@ describe("useLiveNotifications", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deal", 77] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deals"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deal"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["wallet"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["users"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["user"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["me"] });
     // No toast / haptic — this is a silent cache-bust, not a user
     // event. The companion ``notification`` event (when the user is
     // also a recipient of a stored notification row) is what fires
@@ -207,10 +386,92 @@ describe("useLiveNotifications", () => {
     renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
 
     wsState.capturedHandlers!.onEvent({ event: "deal.updated", data: {} });
+    wsState.capturedHandlers!.onEvent({
+      event: "deal.updated",
+      data: { deal_id: "77", status: "completed" },
+    });
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deals"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["deal"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["wallet"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["users"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["user"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["me"] });
     expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["deal", undefined] });
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["deal", "77"] });
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["deal", 77] });
+  });
+
+  it("mirrors valid notification.read payloads into local caches", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(["notifications"], [
+      makeNotification({ id: 1, type: "deals" }),
+      makeNotification({ id: 2, type: "deposits" }),
+    ]);
+    qc.setQueryData(["notifications", "counters"], makeCounters());
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "notification.read",
+      data: { ids: [1], all: false },
+    });
+
+    expect(qc.getQueryData(["notifications"])).toEqual([
+      makeNotification({ id: 1, type: "deals", is_read: true }),
+      makeNotification({ id: 2, type: "deposits" }),
+    ]);
+    expect(qc.getQueryData(["notifications", "counters"])).toEqual(
+      makeCounters({ deals: 0, unread: 1 }),
+    );
+  });
+
+  it("does not coerce malformed cached counters while mirroring reads", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const counters = makeCounters({
+      deals: "1e2" as unknown as number,
+      unread: "0x10" as unknown as number,
+    });
+    qc.setQueryData(["notifications"], [makeNotification({ id: 1, type: "deals" })]);
+    qc.setQueryData(["notifications", "counters"], counters);
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "notification.read",
+      data: { ids: [1], all: false },
+    });
+
+    expect(qc.getQueryData(["notifications", "counters"])).toEqual(counters);
+  });
+
+  it("ignores malformed notification.read payloads instead of mutating counters", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const notifications = [
+      makeNotification({ id: 1, type: "deals" }),
+      makeNotification({ id: 2, type: "deposits" }),
+    ];
+    const counters = makeCounters();
+    qc.setQueryData(["notifications"], notifications);
+    qc.setQueryData(["notifications", "counters"], counters);
+
+    renderHook(() => useLiveNotifications(), { wrapper: makeWrapper(qc) });
+
+    wsState.capturedHandlers!.onEvent({
+      event: "notification.read",
+      data: { ids: ["1"], all: false },
+    });
+    wsState.capturedHandlers!.onEvent({
+      event: "notification.read",
+      data: { ids: [0], all: false },
+    });
+    wsState.capturedHandlers!.onEvent({
+      event: "notification.read",
+      data: { all: "true" },
+    });
+
+    expect(qc.getQueryData(["notifications"])).toEqual(notifications);
+    expect(qc.getQueryData(["notifications", "counters"])).toEqual(counters);
   });
 
   it("drops the local PIN token and invalidates pin status on pin.reset (item 8)", () => {

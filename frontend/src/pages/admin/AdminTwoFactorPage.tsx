@@ -130,7 +130,9 @@ export default function AdminTwoFactorPage() {
               <Input
                 inputMode="numeric"
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                pattern="[0-9]{6}"
+                maxLength={6}
                 placeholder="123 456"
               />
             </div>
@@ -167,7 +169,9 @@ export default function AdminTwoFactorPage() {
             <Input
               inputMode="numeric"
               value={disableCode}
-              onChange={(e) => setDisableCode(e.target.value)}
+              onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              pattern="[0-9]{6}"
+              maxLength={6}
               placeholder="123 456"
             />
             <Button

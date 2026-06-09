@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { DealRow } from "./DealRow";
 import type { DealDto } from "@/api/types";
 
@@ -40,6 +41,20 @@ function renderRow(deal: Partial<DealDto> = {}) {
   );
 }
 
+function LocationProbe() {
+  const loc = useLocation();
+  return <span data-testid="path">{loc.pathname}</span>;
+}
+
+function renderRowWithLocation(deal: Partial<DealDto> = {}) {
+  return render(
+    <MemoryRouter>
+      <DealRow deal={{ ...baseDeal, ...deal }} />
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+}
+
 describe("<DealRow />", () => {
   it("renders the deal description and id", () => {
     renderRow();
@@ -47,15 +62,41 @@ describe("<DealRow />", () => {
     expect(screen.getByText("#17")).toBeInTheDocument();
   });
 
-  it("links to the deal detail page", () => {
-    renderRow();
-    // After item 21 the row also renders a "Профиль" deep-link, so
-    // ``getByRole('link')`` returns two matches; pick the row-wrapper
-    // (the deal-detail link) by its ``href`` instead of relying on
-    // there being a single link in the document.
-    const links = screen.getAllByRole("link");
-    const detailLink = links.find((l) => l.getAttribute("href") === "/deals/17");
+  it("opens the deal detail page from the row link", async () => {
+    const user = userEvent.setup();
+    renderRowWithLocation();
+    const detailLink = screen
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href") === null);
+
     expect(detailLink).toBeDefined();
+    await user.click(detailLink!);
+    expect(screen.getByTestId("path").textContent).toBe("/deals/17");
+  });
+
+  it("uses canonical deal routes for decimal-string runtime ids", async () => {
+    const user = userEvent.setup();
+    renderRowWithLocation({ id: "17" as unknown as number });
+
+    const detailLink = screen
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href") === null);
+
+    expect(screen.getByText("#17")).toBeInTheDocument();
+    expect(detailLink).toBeDefined();
+    await user.click(detailLink!);
+    expect(screen.getByTestId("path").textContent).toBe("/deals/17");
+  });
+
+  it("does not build deal routes from malformed runtime ids", () => {
+    renderRowWithLocation({ id: "0x11" as unknown as number });
+
+    expect(screen.getByText("#\u2014")).toBeInTheDocument();
+    expect(screen.queryByText(/0x11/)).not.toBeInTheDocument();
+    const rowLinks = screen
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("href") === null);
+    expect(rowLinks).toHaveLength(0);
   });
 
   it("renders the in-progress status label", () => {
@@ -66,6 +107,13 @@ describe("<DealRow />", () => {
   it("renders the arbitration status label", () => {
     renderRow({ status: "arbitration" });
     expect(screen.getByText("Арбитраж")).toBeInTheDocument();
+  });
+
+  it("renders unknown runtime statuses as a neutral label", () => {
+    renderRow({ status: "provider_reconciled" });
+
+    expect(screen.getByText("Статус неизвестен")).toBeInTheDocument();
+    expect(screen.queryByText("provider_reconciled")).not.toBeInTheDocument();
   });
 
   it("shows the seller from the buyer perspective", () => {
@@ -80,10 +128,39 @@ describe("<DealRow />", () => {
     expect(screen.getByText("Продажа")).toBeInTheDocument();
   });
 
+  it("renders unknown runtime roles as neutral deal rows", () => {
+    renderRow({ role: "auditor", buyer: "alice", seller: "bob" });
+
+    expect(screen.getByText("Контрагент: профиль недоступен")).toBeInTheDocument();
+    expect(screen.getByText("Сделка")).toBeInTheDocument();
+    expect(screen.queryByText("Покупка")).not.toBeInTheDocument();
+    expect(screen.queryByText("Продажа")).not.toBeInTheDocument();
+    const profileLink = screen
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href")?.startsWith("/users/"));
+    expect(profileLink).toBeUndefined();
+  });
+
   it("renders the amount with currency code", () => {
     renderRow({ amount: 250, currency_code: "USDT" });
     expect(screen.getByText("250")).toBeInTheDocument();
     expect(screen.getAllByText("USDT").length).toBeGreaterThan(0);
+  });
+
+  it("does not render malformed runtime currency codes", () => {
+    renderRow({ amount: 250, currency_code: "../USD" });
+
+    expect(screen.getByText("250")).toBeInTheDocument();
+    expect(screen.queryByText(/\.\.\/USD/)).not.toBeInTheDocument();
+  });
+
+  it("renders malformed deal amounts as neutral instead of zero", () => {
+    renderRow({ amount: "1e2" as unknown as number, currency_code: "USDT" });
+
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.getAllByText("USDT").length).toBeGreaterThan(0);
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
   });
 
   it("links the 'Профиль' button to the counterparty profile", () => {
@@ -92,6 +169,34 @@ describe("<DealRow />", () => {
     const profileLink = links.find((l) => l.getAttribute("href") === "/users/bob");
     expect(profileLink).toBeDefined();
     expect(profileLink).toHaveTextContent("Профиль");
+  });
+
+  it("does not let the profile link click bubble into deal navigation", async () => {
+    const user = userEvent.setup();
+    renderRowWithLocation({ role: "buyer", seller: "bob" });
+    const profileLink = screen
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href") === "/users/bob");
+
+    expect(profileLink).toBeDefined();
+    await user.click(profileLink!);
+    expect(screen.getByTestId("path").textContent).toBe("/users/bob");
+  });
+
+  it("does not render @null or a profile link when the counterparty username is missing", () => {
+    renderRow({ role: "buyer", seller: null });
+    expect(screen.getByText("Продавец: профиль недоступен")).toBeInTheDocument();
+    expect(screen.queryByText("@null")).not.toBeInTheDocument();
+    expect(screen.queryByText("Профиль")).not.toBeInTheDocument();
+  });
+
+  it("does not render profile links for unsafe counterparty usernames", () => {
+    renderRow({ role: "buyer", seller: "../admin" });
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+    const profileLink = screen
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href")?.startsWith("/users/"));
+    expect(profileLink).toBeUndefined();
   });
 
   it("renders the counterparty avatar with the seller's photo for a buyer-side row", () => {

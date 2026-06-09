@@ -202,8 +202,8 @@ async def test_pagination_handles_shared_created_at_tie(client):
     assert set(seen) == all_ids
 
 
-async def test_invalid_before_created_at_returns_400(client):
-    """Sanity: a malformed cursor 400s rather than silently
+async def test_invalid_before_created_at_returns_422(client):
+    """Sanity: a malformed cursor 422s rather than silently
     returning the whole list — otherwise a client bug could
     mask a regression in cursor parsing."""
     await _bootstrap(client, tg_user_id=8521, username="notif_bad_cursor")
@@ -213,7 +213,29 @@ async def test_invalid_before_created_at_returns_400(client):
         params={"before_created_at": "not-an-iso-date", "before_id": 1},
         headers=auth_headers(init),
     )
-    assert resp.status_code == 400, resp.text
+    assert resp.status_code == 422, resp.text
+
+
+async def test_half_cursor_returns_422(client):
+    await _bootstrap(client, tg_user_id=8522, username="notif_half_cursor")
+    init = signed_init_data(8522, "notif_half_cursor")
+    resp = await client.get(
+        "/api/notifications",
+        params={"before_created_at": "2026-01-01T00:00:00Z"},
+        headers=auth_headers(init),
+    )
+    assert resp.status_code == 422, resp.text
+
+
+async def test_unknown_notification_type_returns_422(client):
+    await _bootstrap(client, tg_user_id=8523, username="notif_bad_type")
+    init = signed_init_data(8523, "notif_bad_type")
+    resp = await client.get(
+        "/api/notifications",
+        params={"type": "security"},
+        headers=auth_headers(init),
+    )
+    assert resp.status_code == 422, resp.text
 
 
 async def test_first_page_respects_explicit_limit(client):

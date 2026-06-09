@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -80,6 +80,11 @@ vi.mock("@/lib/tg", () => ({
   showBackButton: () => () => {},
 }));
 
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock("@/components/ui/Toast", () => ({
+  useToast: () => ({ show: toastSpy }),
+}));
+
 // ``PinPromptModal`` writes a fresh PIN token to ``localStorage`` on
 // successful check via ``setPinToken``; mock the module so the test
 // doesn't have to manage browser-storage side effects.
@@ -122,13 +127,30 @@ function makeCurrency(over: Partial<CurrencyDto> = {}): CurrencyDto {
   };
 }
 
+function makeBalance(
+  over: Partial<(typeof mockState.balances)[number]> = {},
+): (typeof mockState.balances)[number] {
+  return {
+    currency: makeCurrency(),
+    amount: 100,
+    locked: 0,
+    total: 100,
+    updated_at: null,
+    amount_str: "100.00",
+    locked_str: "0.00",
+    total_str: "100.00",
+    ...over,
+  };
+}
+
 function makeInvoice() {
   return {
     deposit_id: 501,
     pay_url: "https://pay.example/invoice/501",
-    total: "105.25",
-    topup_principal: "100.25",
-    commission: "5.00",
+    total: 105.25,
+    topup_principal: 100.25,
+    commission: 5,
+    paid_total: 0,
     currency_code: "USD",
     provider: "cryptobot",
     expires_at: null,
@@ -177,6 +199,7 @@ function makeTopupResponse(over: Partial<DealDto> = {}): DealCreateWithTopupResp
 
 beforeEach(() => {
   hapticSpy.mockClear();
+  toastSpy.mockClear();
   mockState.createMutation = {
     mutateAsync: vi.fn(),
     isPending: false,
@@ -221,6 +244,16 @@ async function enterPin(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "4" }));
 }
 
+async function submitDealForm(
+  user: ReturnType<typeof userEvent.setup>,
+  amount = "10",
+) {
+  await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
+  await user.type(screen.getByLabelText(/Сумма \(USD\)/), amount);
+  await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
+  await enterPin(user);
+}
+
 describe("<CreateDealPage />", () => {
   it("renders the header and prefills counterparty from ?to=", () => {
     renderPage("/deals/new?to=alice");
@@ -234,11 +267,40 @@ describe("<CreateDealPage />", () => {
     expect(screen.getByLabelText(/Продавец \(username\)/)).toHaveValue("alice");
   });
 
+  it("drops unsafe ?to= seeds before submit", async () => {
+    const user = userEvent.setup();
+    renderPage("/deals/new?to=..%2Fadmin");
+    expect(screen.getByRole("textbox", { name: /username/i })).toHaveValue("");
+
+    await user.type(
+      screen.getByPlaceholderText(/\u0427\u0442\u043e \u043f\u043e\u043a\u0443\u043f\u0430\u0435\u0442\u0435/),
+      "deal description",
+    );
+    await user.type(screen.getByLabelText(/USD/), "10");
+    await user.click(screen.getByRole("button", { name: /\u0421\u043e\u0437\u0434\u0430\u0442\u044c \u0441\u0434\u0435\u043b\u043a\u0443/i }));
+
+    expect(mockState.createMutation.mutateAsync).not.toHaveBeenCalled();
+    expect(hapticSpy).toHaveBeenCalledWith("error");
+  });
+
   it("shows currency dropdown when currencies are loaded", () => {
     renderPage();
     expect(screen.getByText(/Валюта/)).toBeInTheDocument();
     // The default-selected currency label rendered by <Select>:
     expect(screen.getByText(/USD — US Dollar/)).toBeInTheDocument();
+  });
+
+  it("normalizes fiat currency rows before rendering the picker", () => {
+    mockState.currencies = [
+      makeCurrency({ id: 1, code: " usd ", name: "US Dollar" }),
+      makeCurrency({ id: 2, code: "../UAH", name: "Broken" }),
+    ];
+
+    renderPage();
+
+    expect(screen.getByText(/USD — US Dollar/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(" usd ");
+    expect(document.body.textContent).not.toContain("../UAH");
   });
 
   it("hides crypto currencies from the dropdown", () => {
@@ -275,6 +337,25 @@ describe("<CreateDealPage />", () => {
     expect(hapticSpy).toHaveBeenCalledWith("error");
   });
 
+  it.each(["1e2", "0x10"])(
+    "blocks non-plain decimal amount %s before opening the PIN prompt",
+    async (badAmount) => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.clear(screen.getByPlaceholderText(/Что покупаете/));
+      await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
+      fireEvent.change(screen.getByLabelText(/Сумма \(USD\)/), {
+        target: { value: badAmount },
+      });
+      await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
+
+      expect(mockState.createMutation.mutateAsync).not.toHaveBeenCalled();
+      expect(hapticSpy).toHaveBeenCalledWith("error");
+      expect(screen.queryByRole("button", { name: "1" })).not.toBeInTheDocument();
+    },
+  );
+
   it("submits and shows the invoice preview on success", async () => {
     mockState.createMutation.mutateAsync.mockResolvedValue(makeTopupResponse({ id: 77 }));
     const user = userEvent.setup();
@@ -300,9 +381,331 @@ describe("<CreateDealPage />", () => {
       );
     });
     expect(hapticSpy).toHaveBeenCalledWith("success");
-    expect(await screen.findByTestId("topup-invoice-preview")).toBeInTheDocument();
-    expect(screen.getByText("105.25 USD")).toBeInTheDocument();
+    const preview = await screen.findByTestId("topup-invoice-preview");
+    expect(preview).toBeInTheDocument();
+    expect(preview).toHaveTextContent("105.25 USD");
     expect(screen.getAllByRole("button", { name: /Открыть оплату/i })[0]).toBeInTheDocument();
+  });
+
+  it("does not build created-deal actions from malformed runtime ids", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(makeTopupResponse({
+      id: "0x4d" as unknown as number,
+      topup_deposit_id: "0x1f5" as unknown as number,
+      topup_invoice: {
+        ...makeInvoice(),
+        deposit_id: "0x1f5" as unknown as number,
+      },
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
+    await user.type(screen.getByLabelText(/Сумма \(USD\)/), "100.25");
+    await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
+    await enterPin(user);
+
+    const preview = await screen.findByTestId("topup-invoice-preview");
+    expect(preview).toHaveTextContent("#\u2014");
+    expect(preview).not.toHaveTextContent("0x4d");
+    expect(screen.getByRole("button", { name: /Открыть оплату/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /К сделке/i })).toBeDisabled();
+    expect(screen.queryByTestId("deal-detail")).not.toBeInTheDocument();
+  });
+
+  it("does not render malformed invoice row amounts from the create response", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(makeTopupResponse({
+      id: 78,
+      topup_invoice: {
+        ...makeInvoice(),
+        topup_principal: "1e2" as unknown as number,
+        commission: "0x10" as unknown as number,
+      },
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
+    await user.type(screen.getByLabelText(/Сумма \(USD\)/), "100.25");
+    await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
+    await enterPin(user);
+
+    const preview = await screen.findByTestId("topup-invoice-preview");
+    expect(preview).toBeInTheDocument();
+    expect(preview).toHaveTextContent("105.25 USD");
+    expect(screen.getAllByText("— USD")).toHaveLength(2);
+    expect(screen.queryByText("1e2 USD")).not.toBeInTheDocument();
+    expect(screen.queryByText("0x10 USD")).not.toBeInTheDocument();
+  });
+
+  it("normalizes invoice currency codes from the create response", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(makeTopupResponse({
+      id: 79,
+      currency_code: "../USD",
+      topup_invoice: {
+        ...makeInvoice(),
+        currency_code: " usd ",
+      },
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
+    await user.type(screen.getByLabelText(/Сумма \(USD\)/), "100.25");
+    await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
+    await enterPin(user);
+
+    const preview = await screen.findByTestId("topup-invoice-preview");
+    expect(preview).toHaveTextContent("105.25 USD");
+    expect(preview).not.toHaveTextContent("../USD");
+    expect(preview).not.toHaveTextContent(" usd ");
+  });
+
+  it("handles balance-funded deals when the API returns invoice=null", async () => {
+    const balanceFunded = {
+      deal: makeDeal({
+        id: 90,
+        status: "pending_confirmation",
+        commission_paid: true,
+        topup_deposit_id: null,
+        topup_invoice: null,
+      }),
+      invoice: null,
+    } satisfies DealCreateWithTopupResponseDto;
+    mockState.createMutation.mutateAsync.mockResolvedValue(balanceFunded);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByPlaceholderText(/Что покупаете/), "deal description");
+    await user.type(screen.getByLabelText(/Сумма \(USD\)/), "100");
+    await user.click(screen.getByRole("button", { name: /Создать сделку/i }));
+    await enterPin(user);
+
+    expect(await screen.findByTestId("deal-balance-paid")).toBeInTheDocument();
+    expect(screen.queryByTestId("topup-invoice-preview")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Открыть оплату/i })).not.toBeInTheDocument();
+  });
+
+  it("normalizes runtime string commission settings before rendering the preview", async () => {
+    mockState.me = { is_vip: true };
+    mockState.publicSettings = {
+      deal_commission_percent: "2.5",
+      vip_commission_percent: "1e1",
+      auto_withdraw_enabled: false,
+    } as unknown as typeof mockState.publicSettings;
+    mockState.balances = [
+      makeBalance({
+        amount: "100.00" as unknown as number,
+      }),
+    ];
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByLabelText(/Сумма \(USD\)/), "10");
+
+    const preview = await screen.findByTestId("deal-commission-preview");
+    expect(preview).toHaveTextContent("(2.5%)");
+    expect(preview).toHaveTextContent("10.00 USD");
+    expect(preview).toHaveTextContent("0.25 USD");
+    expect(preview).toHaveTextContent("10.25 USD");
+  });
+
+  it("normalizes funded balance currency before create-deal submit", async () => {
+    mockState.currencies = [
+      makeCurrency({ id: 1, code: " usd ", name: "US Dollar" }),
+    ];
+    mockState.balances = [
+      makeBalance({
+        currency: makeCurrency({ id: 1, code: " usd ", name: "US Dollar" }),
+        amount_str: "25.50",
+        total_str: "25.50",
+      }),
+    ];
+    mockState.createMutation.mutateAsync.mockResolvedValue(makeTopupResponse({ id: 90 }));
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Сумма \(USD\)/)).toBeInTheDocument();
+    });
+    const hint = await screen.findByTestId("deal-balance-hint");
+    expect(hint).toHaveTextContent("25.5 USD");
+    expect(hint).not.toHaveTextContent(" usd ");
+
+    await submitDealForm(user);
+
+    await waitFor(() =>
+      expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ currency_code: "USD" }),
+      ),
+    );
+  });
+
+  it("defaults the currency from canonical amount_str when runtime amount is malformed", async () => {
+    mockState.balances = [
+      makeBalance({
+        currency: makeCurrency({ id: 2, code: "UAH", name: "Hryvnia" }),
+        amount: "1e2" as unknown as number,
+        amount_str: "25.50",
+        total_str: "25.50",
+      }),
+    ];
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/\(UAH\)/)).toBeInTheDocument();
+    });
+  });
+
+  it("renders the balance hint from canonical amount_str", async () => {
+    mockState.balances = [
+      makeBalance({
+        amount: "1e2" as unknown as number,
+        amount_str: "25.50",
+        total_str: "25.50",
+      }),
+    ];
+
+    renderPage();
+
+    const hint = await screen.findByTestId("deal-balance-hint");
+    expect(hint).toHaveTextContent("25.5 USD");
+    expect(hint).not.toHaveTextContent("0 USD");
+    expect(hint).not.toHaveTextContent("1e2 USD");
+  });
+
+  it("uses canonical amount_str for Max and balance-funded preview", async () => {
+    mockState.balances = [
+      makeBalance({
+        amount: "1e2" as unknown as number,
+        amount_str: "21.00",
+        total_str: "21.00",
+      }),
+    ];
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /\u041c\u0430\u043a\u0441/ }));
+
+    expect(screen.getByLabelText(/\(USD\)/)).toHaveValue(20);
+    const preview = await screen.findByTestId("deal-commission-preview");
+    expect(preview).toHaveTextContent("20.00 USD");
+    expect(preview).toHaveTextContent("1.00 USD");
+    expect(preview).toHaveTextContent("21.00 USD");
+  });
+
+  it("shows the insufficient-funds alert only for a complete structured error", async () => {
+    mockState.createMutation.mutateAsync.mockRejectedValue(
+      new Error(JSON.stringify({
+        code: "insufficient_funds",
+        message: "Not enough balance",
+        required: "10.00",
+        balance: "1.00",
+        deficit: "9.00",
+        currency_code: "USD",
+      })),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await submitDealForm(user);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("10.00 USD");
+    expect(alert).toHaveTextContent("1.00 USD");
+    expect(alert).toHaveTextContent("9.00 USD");
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "Не хватает 9.00 USD" }),
+    );
+  });
+
+  it("normalizes insufficient-funds currency codes before display", async () => {
+    mockState.createMutation.mutateAsync.mockRejectedValue(
+      new Error(JSON.stringify({
+        code: "insufficient_funds",
+        message: "Not enough balance",
+        required: "10.00",
+        balance: "1.00",
+        deficit: "9.00",
+        currency_code: " usd ",
+      })),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await submitDealForm(user);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("9.00 USD");
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "Не хватает 9.00 USD" }),
+    );
+  });
+
+  it("treats malformed insufficient-funds money as a generic API error", async () => {
+    const payload = {
+      code: "insufficient_funds",
+      message: "Not enough balance",
+      required: "1e2",
+      balance: "0x10",
+      deficit: "9.00",
+      currency_code: "USD",
+    };
+    mockState.createMutation.mutateAsync.mockRejectedValue(new Error(JSON.stringify(payload)));
+    const user = userEvent.setup();
+    renderPage();
+
+    await submitDealForm(user);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "error",
+        title: "Не удалось проверить баланс",
+      }),
+    );
+  });
+
+  it("treats malformed insufficient-funds currency codes as a generic API error", async () => {
+    const payload = {
+      code: "insufficient_funds",
+      message: "Not enough balance",
+      required: "10.00",
+      balance: "1.00",
+      deficit: "9.00",
+      currency_code: "../USD",
+    };
+    mockState.createMutation.mutateAsync.mockRejectedValue(new Error(JSON.stringify(payload)));
+    const user = userEvent.setup();
+    renderPage();
+
+    await submitDealForm(user);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "error",
+        title: "Не удалось проверить баланс",
+      }),
+    );
+  });
+
+  it("treats partial insufficient-funds JSON as a generic API error", async () => {
+    mockState.createMutation.mutateAsync.mockRejectedValue(
+      new Error(JSON.stringify({ code: "insufficient_funds" })),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await submitDealForm(user);
+
+    await waitFor(() => {
+      expect(hapticSpy).toHaveBeenCalledWith("error");
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "error",
+        title: "Не удалось проверить баланс",
+      }),
+    );
   });
 
   it("fires haptic('error') when the API rejects", async () => {

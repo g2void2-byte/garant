@@ -17,6 +17,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   window.localStorage.clear();
 });
 
@@ -45,11 +46,34 @@ describe("useUI store", () => {
     expect(useUI.getState().hideDesignations).toBe(true);
   });
 
+  it("does not throw on import when localStorage reads are blocked", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("blocked", "SecurityError");
+    });
+    const { useUI } = await importUI();
+    expect(useUI.getState().hideDesignations).toBe(false);
+  });
+
   it("setHideDesignations(true) writes '1' to localStorage", async () => {
     const { useUI } = await importUI();
     useUI.getState().setHideDesignations(true);
     expect(window.localStorage.getItem("hideDesignations")).toBe("1");
     expect(useUI.getState().hideDesignations).toBe(true);
+  });
+
+  it("updates in-memory state when localStorage writes are blocked", async () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("blocked", "SecurityError");
+    });
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new DOMException("blocked", "SecurityError");
+    });
+
+    const { useUI } = await importUI();
+    useUI.getState().setHideDesignations(true);
+    expect(useUI.getState().hideDesignations).toBe(true);
+    useUI.getState().setHideDesignations(false);
+    expect(useUI.getState().hideDesignations).toBe(false);
   });
 
   it("setHideDesignations(false) removes the key from localStorage", async () => {

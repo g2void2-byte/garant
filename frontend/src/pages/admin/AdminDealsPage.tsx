@@ -8,30 +8,105 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { useAdminDeals } from "@/api/admin/hooks";
-import { parseDecimal } from "@/lib/format";
+import { parsePositiveIntRouteParam } from "@/lib/routeParams";
 import type { AdminDealListItemDto, AdminListDealsQuery } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import {
+  ADMIN_DEAL_STATUS_LABELS,
+  formatAdminAmount,
+  formatAdminCount,
+  formatAdminCurrencyCode,
+  formatAdminDealStatus,
+  formatAdminId,
+  formatAdminUsername,
+  getAdminTotalPages,
+  parseAdminId,
+} from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "all statuses";
 // the legacy ``"any"`` string is gone from both UI state and the URL.
-const STATUS_LABEL: Record<string, string> = {
-  cancelled: "Отменена",
-  pending_confirmation: "Подтверждение",
-  pending_payment: "Ожидание оплаты",
-  pending_topup: "Ожидание инвойса",
-  in_progress: "В работе",
-  completed: "Завершена",
-  arbitration: "Арбитраж",
-  resolved_for_buyer: "В пользу покупателя",
-  resolved_for_seller: "В пользу продавца",
-  pending_cancellation: "Запрошена отмена",
-  cancelled_for_inactivity: "Отменена по неактивности",
-};
+const FILTERABLE_STATUS_VALUES = [
+  "cancelled",
+  "pending_confirmation",
+  "pending_topup",
+  "in_progress",
+  "completed",
+  "arbitration",
+  "resolved_for_buyer",
+  "resolved_for_seller",
+  "pending_cancellation",
+  "cancelled_for_inactivity",
+] as const;
 
 const STATUSES: Array<{ value: string | null; label: string }> = [
   { value: null, label: "Все" },
-  ...Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label })),
+  ...FILTERABLE_STATUS_VALUES.map((value) => ({
+    value,
+    label: ADMIN_DEAL_STATUS_LABELS[value],
+  })),
 ];
+
+const FILTERABLE_STATUS_SET = new Set<string>(FILTERABLE_STATUS_VALUES);
+const DECIMAL_PARAM_RE = /^\d+(?:\.\d+)?$|^\.\d+$/;
+const CURRENCY_PARAM_RE = /^[A-Z0-9]{1,16}$/;
+
+function parseStatusParam(value: string | null): AdminListDealsQuery["status"] {
+  if (!value || !FILTERABLE_STATUS_SET.has(value)) return undefined;
+  return value as AdminListDealsQuery["status"];
+}
+
+function parsePageParam(value: string | null): number {
+  return parsePositiveIntRouteParam(value ?? undefined) ?? 1;
+}
+
+function parseAmountParam(value: string | null): string | undefined {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed || !DECIMAL_PARAM_RE.test(trimmed)) return undefined;
+  return trimmed;
+}
+
+function normalizeDecimalParts(value: string): { integer: string; fraction: string } {
+  const [rawInteger, rawFraction = ""] = value.split(".");
+  return {
+    integer: rawInteger.replace(/^0+/, "") || "0",
+    fraction: rawFraction.replace(/0+$/, ""),
+  };
+}
+
+function compareDecimalStrings(left: string, right: string): number {
+  const a = normalizeDecimalParts(left);
+  const b = normalizeDecimalParts(right);
+  if (a.integer.length !== b.integer.length) return a.integer.length > b.integer.length ? 1 : -1;
+  if (a.integer !== b.integer) return a.integer > b.integer ? 1 : -1;
+
+  const width = Math.max(a.fraction.length, b.fraction.length);
+  const af = a.fraction.padEnd(width, "0");
+  const bf = b.fraction.padEnd(width, "0");
+  if (af === bf) return 0;
+  return af > bf ? 1 : -1;
+}
+
+function parseAmountRange(minRaw: string | null, maxRaw: string | null) {
+  const min = parseAmountParam(minRaw);
+  const max = parseAmountParam(maxRaw);
+  if (min !== undefined && max !== undefined && compareDecimalStrings(min, max) > 0) {
+    return { min_amount: undefined, max_amount: undefined };
+  }
+  return { min_amount: min, max_amount: max };
+}
+
+function amountRangeError(minRaw: string, maxRaw: string): string | null {
+  const min = parseAmountParam(minRaw);
+  const max = parseAmountParam(maxRaw);
+  return min !== undefined && max !== undefined && compareDecimalStrings(min, max) > 0
+    ? "\u041c\u0438\u043d\u0438\u043c\u0430\u043b\u044c\u043d\u0430\u044f \u0441\u0443\u043c\u043c\u0430 \u043d\u0435 \u043c\u043e\u0436\u0435\u0442 \u0431\u044b\u0442\u044c \u0431\u043e\u043b\u044c\u0448\u0435 \u043c\u0430\u043a\u0441\u0438\u043c\u0430\u043b\u044c\u043d\u043e\u0439"
+    : null;
+}
+
+function parseCurrencyParam(value: string | null): string | undefined {
+  const code = (value ?? "").trim().toUpperCase();
+  return CURRENCY_PARAM_RE.test(code) ? code : undefined;
+}
 
 /**
  * Continental admin deals list.
@@ -50,13 +125,16 @@ export default function AdminDealsPage() {
 
   // Audit L-10 — ``status`` is ``string | undefined``; ``undefined`` is the
   // "no filter" sentinel and translates to an omitted URL param.
-  const status = params.get("status") ?? undefined;
-  const currency = params.get("currency") ?? undefined;
-  const min_amount = params.get("min_amount") ? Number(params.get("min_amount")) : undefined;
-  const max_amount = params.get("max_amount") ? Number(params.get("max_amount")) : undefined;
+  const status = parseStatusParam(params.get("status"));
+  const currency = parseCurrencyParam(params.get("currency"));
+  const { min_amount, max_amount } = parseAmountRange(
+    params.get("min_amount"),
+    params.get("max_amount"),
+  );
   const has_arbitration = params.get("has_arbitration") === "true" || undefined;
   const has_cancel_request = params.get("has_cancel_request") === "true" || undefined;
-  const page = Number(params.get("page") ?? "1") || 1;
+  const page = parsePageParam(params.get("page"));
+  const draftAmountRangeError = amountRangeError(draftMin, draftMax);
 
   const query: AdminListDealsQuery = {
     status,
@@ -80,6 +158,8 @@ export default function AdminDealsPage() {
       // "clear the filter". The legacy ``"any"`` sentinel is gone.
       if (v === undefined || v === null || v === "" || v === false) {
         sp.delete(k);
+      } else if (typeof v === "number" && !Number.isFinite(v)) {
+        sp.delete(k);
       } else {
         sp.set(k, String(v));
       }
@@ -89,8 +169,8 @@ export default function AdminDealsPage() {
   };
 
   const items: AdminDealListItemDto[] = data?.items ?? [];
-  const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / 20));
+  const total = formatAdminCount(data?.total);
+  const totalPages = getAdminTotalPages(data?.total, 20);
 
   return (
     <Page showBack onBack={() => navigate(-1)}>
@@ -178,7 +258,15 @@ export default function AdminDealsPage() {
               className="animate-fadein"
               style={{ animationDelay: `${Math.min(idx, 8) * 30}ms` }}
             >
-              <DealRow deal={deal} onOpen={() => navigate(`/admin/deals/${deal.id}`)} />
+              {(() => {
+                const dealId = parseAdminId(deal.id);
+                return (
+                  <DealRow
+                    deal={deal}
+                    onOpen={dealId !== null ? () => navigate(`/admin/deals/${dealId}`) : undefined}
+                  />
+                );
+              })()}
             </li>
           ))}
         </ul>
@@ -244,6 +332,11 @@ export default function AdminDealsPage() {
               />
             </label>
           </div>
+          {draftAmountRangeError && (
+            <div className="text-xs text-danger" aria-live="polite">
+              {draftAmountRangeError}
+            </div>
+          )}
           <div className="space-y-2">
             <ToggleRow
               label="Только с арбитражем"
@@ -278,11 +371,13 @@ export default function AdminDealsPage() {
             </Button>
             <Button
               fullWidth
+              disabled={draftAmountRangeError !== null}
               onClick={() => {
+                if (draftAmountRangeError) return;
                 update({
-                  currency: draftCurrency || undefined,
-                  min_amount: draftMin ? Number(draftMin) : undefined,
-                  max_amount: draftMax ? Number(draftMax) : undefined,
+                  currency: parseCurrencyParam(draftCurrency),
+                  min_amount: parseAmountParam(draftMin),
+                  max_amount: parseAmountParam(draftMax),
                 });
                 setFilterOpen(false);
               }}
@@ -330,7 +425,7 @@ function ToggleRow({
   );
 }
 
-function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen: () => void }) {
+function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen?: () => void }) {
   const accent =
     deal.status === "arbitration"
       ? "border-danger/40"
@@ -339,30 +434,31 @@ function DealRow({ deal, onOpen }: { deal: AdminDealListItemDto; onOpen: () => v
       : deal.status === "completed" || deal.status === "resolved_for_seller" || deal.status === "resolved_for_buyer"
       ? "border-success/30"
       : "border-border";
+  const currencyCode = formatAdminCurrencyCode(deal.currency_code);
+  const amountDecimals = currencyCode === "USDT" || currencyCode === "USDC" ? 2 : 6;
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      className={`w-full text-left bg-panel rounded-card p-3 flex items-center gap-3 border ${accent} hover:bg-panel-2 transition-colors active:scale-[0.98]`}
+      disabled={!onOpen}
+      className={`w-full text-left bg-panel rounded-card p-3 flex items-center gap-3 border ${accent} hover:bg-panel-2 transition-colors active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100`}
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 text-sm font-semibold">
-          <span>#{deal.id}</span>
+          <span>#{formatAdminId(deal.id)}</span>
           <span className="text-text-muted">·</span>
           <span className="text-text-muted truncate">
-            @{deal.buyer_username ?? "—"} → @{deal.seller_username ?? "—"}
+            {formatAdminUsername(deal.buyer_username)} → {formatAdminUsername(deal.seller_username)}
           </span>
         </div>
         <div className="mt-0.5 text-xs text-text-muted flex items-center gap-2 flex-wrap">
           <span className="font-medium text-text">
-            {parseDecimal(deal.amount).toFixed(
-              deal.currency_code === "USDT" || deal.currency_code === "USDC" ? 2 : 6,
-            )}{" "}
-            {deal.currency_code ?? "USD"}
+            {formatAdminAmount(deal.amount, amountDecimals)}{" "}
+            {currencyCode}
           </span>
           <span>·</span>
-          <span>{STATUS_LABEL[deal.status] ?? deal.status}</span>
+          <span>{formatAdminDealStatus(deal.status)}</span>
           {deal.has_arbitration && (
             <>
               <span>·</span>

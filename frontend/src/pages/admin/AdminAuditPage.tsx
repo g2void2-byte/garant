@@ -8,6 +8,22 @@ import { Input } from "@/components/ui/Input";
 import { useAdminAuditLog } from "@/api/admin/hooks";
 import type { AdminAuditLogDto } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { formatDateTime } from "@/lib/format";
+import { formatAdminCount, formatAdminId, getAdminTotalPages, shouldShowAdminPagination } from "./format";
+
+function parsePositiveIntFilter(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!/^[1-9]\d*$/.test(trimmed)) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+function actorLabel(row: AdminAuditLogDto): string {
+  const username = row.actor_username?.trim();
+  if (username) return `by @${username}`;
+  if (row.actor_id != null) return `by user #${formatAdminId(row.actor_id)}`;
+  return "by system";
+}
 
 export default function AdminAuditPage() {
   const navigate = useNavigate();
@@ -15,12 +31,16 @@ export default function AdminAuditPage() {
   const [actorId, setActorId] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
+  const actorIdFilter = parsePositiveIntFilter(actorId);
   const { data, isLoading } = useAdminAuditLog({
     action: action.trim() || undefined,
-    actor_id: actorId ? Number(actorId) : undefined,
+    actor_id: actorIdFilter,
     page,
     page_size: 50,
   });
+  const total = formatAdminCount(data?.total);
+  const totalPages = data ? getAdminTotalPages(data.total, data.page_size) : 1;
+  const showPagination = data ? shouldShowAdminPagination(data.total, data.page_size) : false;
 
   const __guard = useAdminRedirect();
   if (!__guard.shouldRender) return null;
@@ -29,7 +49,7 @@ export default function AdminAuditPage() {
     <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Аудит"
-        subtitle={data ? `${data.total} событий` : undefined}
+        subtitle={data ? `${total} событий` : undefined}
         right={
           <button
             type="button"
@@ -81,14 +101,14 @@ export default function AdminAuditPage() {
               <div className="flex items-baseline justify-between">
                 <div className="font-mono text-xs text-accent">{row.action}</div>
                 <div className="text-[11px] text-text-muted">
-                  {new Date(row.created_at).toLocaleString()}
+                  {formatDateTime(row.created_at)}
                 </div>
               </div>
               <div className="text-xs text-text-muted mt-1">
-                <span>by @{row.actor_username ?? row.actor_id ?? "system"}</span>
+                <span>{actorLabel(row)}</span>
                 {row.target_type && row.target_id != null && (
                   <span>
-                    {" "}· target: {row.target_type}#{row.target_id}
+                    {" "}· target: {row.target_type}#{formatAdminId(row.target_id)}
                   </span>
                 )}
                 {row.ip && <span> · {row.ip}</span>}
@@ -105,7 +125,7 @@ export default function AdminAuditPage() {
           ))
         )}
       </div>
-      {data && data.total > data.page_size && (
+      {showPagination && (
         <div className="flex items-center justify-center gap-2 mt-2 px-4 pb-4">
           <button
             type="button"
@@ -116,12 +136,12 @@ export default function AdminAuditPage() {
             <History size={12} className="inline mr-1" /> Назад
           </button>
           <span className="text-xs text-text-muted">
-            {page} / {Math.ceil(data.total / data.page_size)}
+            {page} / {totalPages}
           </span>
           <button
             type="button"
             onClick={() => setPage((p) => p + 1)}
-            disabled={page * data.page_size >= data.total}
+            disabled={page >= totalPages}
             className="rounded-button bg-panel px-3 py-1.5 text-sm disabled:opacity-40"
           >
             Вперёд

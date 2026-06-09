@@ -52,6 +52,6 @@ async def list_arbitration_deals(
     )
     if not (user.is_admin or user.is_arbiter):
         stmt = stmt.where(or_(Deal.buyer_id == user.id, Deal.seller_id == user.id))
-    stmt = stmt.order_by(Deal.created_at.desc()).offset(offset).limit(limit)
+    stmt = stmt.order_by(Deal.created_at.desc(), Deal.id.desc()).offset(offset).limit(limit)
     rows = (await session.execute(stmt)).scalars().all()
     return [_deal_out(d, user.id) for d in rows]

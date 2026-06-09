@@ -34,11 +34,15 @@ function notifyTokenChanged() {
   }
 }
 
+function parseExpiryTime(expiresAt: string): number | null {
+  const ts = new Date(expiresAt).getTime();
+  return Number.isFinite(ts) ? ts : null;
+}
+
 export function setPinToken(token: string, expiresAt: string) {
   // Comment 42: reject garbage expiry values that would write a
   // non-expiring (NaN / Infinity) token into localStorage.
-  const ts = new Date(expiresAt).getTime();
-  if (!Number.isFinite(ts)) return;
+  if (parseExpiryTime(expiresAt) === null) return;
   try {
     window.localStorage.setItem(STORAGE_KEY, token);
     window.localStorage.setItem(EXPIRES_KEY, expiresAt);
@@ -63,7 +67,8 @@ export function getPinToken(): string | null {
     const token = window.localStorage.getItem(STORAGE_KEY);
     const expires = window.localStorage.getItem(EXPIRES_KEY);
     if (!token || !expires) return null;
-    if (new Date(expires).getTime() <= Date.now()) {
+    const expiresTs = parseExpiryTime(expires);
+    if (expiresTs === null || expiresTs <= Date.now()) {
       clearPinToken();
       return null;
     }

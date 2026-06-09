@@ -164,15 +164,14 @@ async def update_settings(
         # ``Decimal('7.5') == float(Decimal('7.5'))`` happens to hold,
         # but ``Decimal('0.10') != float(Decimal('0.10'))`` in general
         # because 0.1 has no exact binary repr). The audit-log payload
-        # still keeps the wire-friendly ``float`` shape so the existing
-        # admin-UI ``PayloadPreview`` renders numbers, not quoted
-        # strings, exactly as before.
+        # stores the canonical decimal text so the permanent trail does
+        # not reintroduce the same lossy IEEE-754 hop.
         if isinstance(old, Decimal) or isinstance(new, Decimal):
             old_dec = old if isinstance(old, Decimal) else Decimal(str(old))
             new_dec = new if isinstance(new, Decimal) else Decimal(str(new))
             if old_dec != new_dec:
-                before[key] = float(old_dec)
-                after[key] = float(new_dec)
+                before[key] = str(old_dec)
+                after[key] = str(new_dec)
                 setattr(row, key, new)
                 changed = True
         elif old != new:

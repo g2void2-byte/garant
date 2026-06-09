@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
@@ -11,24 +12,46 @@ import type {
 const serviceState = vi.hoisted(() => ({
   data: undefined as ServiceDetailDto | undefined,
   isLoading: false,
+  lastId: undefined as number | undefined,
 }));
-const commentsState = vi.hoisted(() => ({ data: undefined as ServiceCommentDto[] | undefined }));
+const commentsState = vi.hoisted(() => ({
+  data: undefined as ServiceCommentDto[] | undefined,
+  lastParams: undefined as unknown,
+}));
 const meState = vi.hoisted(() => ({ data: undefined as UserCardDto | undefined }));
+const apiGetMock = vi.hoisted(() => vi.fn());
+const deleteCommentState = vi.hoisted(() => ({
+  mutate: vi.fn() as ReturnType<typeof vi.fn>,
+  mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
+  isPending: false,
+}));
+
+vi.mock("@/api/client", () => ({
+  api: { get: apiGetMock },
+}));
 
 vi.mock("@/api/hooks", () => ({
-  useServiceDetail: () => serviceState,
-  useServiceComments: () => commentsState,
+  buildServiceCommentsSearchParams: (params: { limit?: number; offset?: number }) => {
+    const searchParams: Record<string, string> = {};
+    if (params.limit !== undefined) searchParams.limit = String(params.limit);
+    if (params.offset !== undefined) searchParams.offset = String(params.offset);
+    return searchParams;
+  },
+  useServiceDetail: (id: number | undefined) => {
+    serviceState.lastId = id;
+    return serviceState;
+  },
+  useServiceComments: (_id: number | undefined, params: unknown) => {
+    commentsState.lastParams = params;
+    return { data: commentsState.data };
+  },
   useMe: () => meState,
   useCreateServiceComment: () => ({
     mutate: vi.fn(),
     mutateAsync: vi.fn(),
     isPending: false,
   }),
-  useDeleteServiceComment: () => ({
-    mutate: vi.fn(),
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
+  useDeleteServiceComment: () => deleteCommentState,
 }));
 
 vi.mock("@/lib/tg", () => ({
@@ -102,7 +125,22 @@ function makeUser(overrides: Partial<UserCardDto> = {}): UserCardDto {
   };
 }
 
-function renderAt(id: number) {
+function makeComment(id: number, overrides: Partial<ServiceCommentDto> = {}): ServiceCommentDto {
+  return {
+    id,
+    service_id: 7,
+    author_id: 100 + id,
+    author_username: `commenter${id}`,
+    author_display_name: `Commenter ${id}`,
+    author_photo_url: null,
+    text: `Comment ${id}`,
+    rating: 5,
+    created_at: `2026-01-${String(Math.min(id, 28)).padStart(2, "0")}T00:00:00Z`,
+    ...overrides,
+  };
+}
+
+function renderAt(id: number | string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -116,13 +154,25 @@ function renderAt(id: number) {
 }
 
 beforeEach(() => {
+  apiGetMock.mockReset();
   serviceState.data = undefined;
   serviceState.isLoading = false;
+  serviceState.lastId = undefined;
   commentsState.data = undefined;
+  commentsState.lastParams = undefined;
   meState.data = makeUser();
+  deleteCommentState.mutate.mockReset();
+  deleteCommentState.mutateAsync.mockReset();
+  deleteCommentState.isPending = false;
 });
 
 describe("<ServiceDetailPage />", () => {
+  it("rejects ambiguous route ids before querying the service detail", () => {
+    renderAt("1e2");
+    expect(serviceState.lastId).toBeUndefined();
+    expect(screen.getByText("Услуга не найдена")).toBeInTheDocument();
+  });
+
   it("renders skeletons while loading", () => {
     serviceState.isLoading = true;
     const { container } = renderAt(7);
@@ -141,6 +191,31 @@ describe("<ServiceDetailPage />", () => {
     expect(screen.getByRole("button", { name: /Написать/i })).toBeInTheDocument();
   });
 
+  it("renders string price/rating payloads without crashing", () => {
+    serviceState.data = makeService({
+      price: "1500" as unknown as number,
+      rating_avg: "4.5" as unknown as number,
+      rating_count: 3,
+    });
+    commentsState.data = [];
+
+    renderAt(7);
+
+    expect(screen.getByText("$1.5k+")).toBeInTheDocument();
+    expect(screen.getAllByText("4.5").length).toBeGreaterThan(0);
+  });
+
+  it("does not coerce malformed service price payloads", () => {
+    serviceState.data = makeService({ price: "1e3" as unknown as number });
+    commentsState.data = [];
+
+    renderAt(7);
+
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText("$0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e3/)).not.toBeInTheDocument();
+  });
+
   it("hides 'Сделка/Написать' when viewing one's own service", () => {
     meState.data = makeUser({ username: "bob" });
     serviceState.data = makeService();
@@ -148,6 +223,170 @@ describe("<ServiceDetailPage />", () => {
     renderAt(7);
     expect(screen.queryByRole("button", { name: /Сделка/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Написать/i })).not.toBeInTheDocument();
+  });
+
+  it("filters unsafe service gallery image URLs before rendering", () => {
+    serviceState.data = makeService({
+      photo_urls: [
+        "/media/service/ok.png",
+        "javascript:alert(1)",
+        "/media/../admin/deals",
+      ],
+    });
+    commentsState.data = [];
+    const { container } = renderAt(7);
+
+    const images = Array.from(container.querySelectorAll("img"));
+    expect(images).toHaveLength(1);
+    expect(images[0].getAttribute("src")).toBe("/media/service/ok.png");
+  });
+
+  it("does not build owner links or actions when the owner username is missing", () => {
+    serviceState.data = makeService({
+      owner_username: null,
+      owner: {
+        id: 2,
+        username: null,
+        display_name: "Bob",
+        photo_url: null,
+        rating: 4.8,
+        deals_count: 20,
+        good: 18,
+        bad: 2,
+        is_admin: false,
+        is_arbiter: false,
+      },
+    });
+    commentsState.data = [];
+    renderAt(7);
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+    expect(screen.getByText(/Профиль недоступен/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Bob/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Сделка/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Написать/i })).not.toBeInTheDocument();
+  });
+
+  it("does not build owner links or actions for unsafe owner usernames", () => {
+    serviceState.data = makeService({
+      owner_username: "../admin",
+      owner: {
+        id: 2,
+        username: "../admin",
+        display_name: "Bob",
+        photo_url: null,
+        rating: 4.8,
+        deals_count: 20,
+        good: 18,
+        bad: 2,
+        is_admin: false,
+        is_arbiter: false,
+      },
+    });
+    commentsState.data = [];
+    renderAt(7);
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Bob/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /\u0421\u0434\u0435\u043b\u043a\u0430/i })).not.toBeInTheDocument();
+  });
+
+  it("does not build profile routes for unsafe comment author usernames", () => {
+    serviceState.data = makeService();
+    commentsState.data = [makeComment(1, { author_username: "../admin", author_display_name: "Mallory" })];
+    renderAt(7);
+    expect(screen.getByText("Mallory")).toBeInTheDocument();
+    const unsafeLinks = screen
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("href")?.includes("../admin"));
+    expect(unsafeLinks).toHaveLength(0);
+  });
+
+  it("renders malformed comment ratings as a neutral dash", () => {
+    serviceState.data = makeService();
+    commentsState.data = [makeComment(1, { rating: "1e1" as unknown as number })];
+
+    renderAt(7);
+
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText("1e1")).not.toBeInTheDocument();
+  });
+
+  it("deletes comments with parsed positive ids", () => {
+    meState.data = makeUser({ username: "bob" });
+    serviceState.data = makeService();
+    commentsState.data = [makeComment(5, { author_id: 99 })];
+    renderAt(7);
+
+    screen.getByLabelText("\u0423\u0434\u0430\u043b\u0438\u0442\u044c").click();
+
+    expect(deleteCommentState.mutate).toHaveBeenCalledWith(5);
+  });
+
+  it("does not expose comment delete for malformed runtime comment ids", () => {
+    meState.data = makeUser({ username: "bob" });
+    serviceState.data = makeService();
+    commentsState.data = [
+      makeComment("0x5" as unknown as number, {
+        author_id: 99,
+        author_username: "commenter",
+        author_display_name: "Commenter",
+        text: "Malformed id comment",
+      }),
+    ];
+    renderAt(7);
+
+    expect(screen.queryByLabelText("\u0423\u0434\u0430\u043b\u0438\u0442\u044c")).not.toBeInTheDocument();
+    expect(deleteCommentState.mutate).not.toHaveBeenCalled();
+    expect(screen.queryByText(/0x5/)).not.toBeInTheDocument();
+  });
+
+  it("requests the first comments page", () => {
+    serviceState.data = makeService();
+    commentsState.data = [];
+    renderAt(7);
+    expect(commentsState.lastParams).toEqual({ limit: 50, offset: 0 });
+  });
+
+  it("loads more comments with the backend offset", async () => {
+    serviceState.data = makeService({ comments_count: 51 });
+    commentsState.data = Array.from({ length: 50 }, (_, idx) => makeComment(idx + 1));
+    apiGetMock.mockReturnValue({ json: async () => [makeComment(51)] });
+
+    const user = userEvent.setup();
+    renderAt(7);
+    await user.click(screen.getByRole("button", { name: "Показать еще" }));
+
+    await waitFor(() => expect(apiGetMock).toHaveBeenCalledTimes(1));
+    expect(apiGetMock).toHaveBeenCalledWith("api/services/7/comments", {
+      searchParams: { limit: "50", offset: "50" },
+    });
+  });
+
+  it("does not trust malformed service count fields for stats or comment pagination", () => {
+    serviceState.data = makeService({
+      owner: {
+        id: 2,
+        username: "bob",
+        display_name: "Bob",
+        photo_url: null,
+        rating: 4.8,
+        deals_count: "1e2" as unknown as number,
+        good: 18,
+        bad: 2,
+        is_admin: false,
+        is_arbiter: false,
+      },
+      comments_count: "1e2" as unknown as number,
+      rating_count: "0x10" as unknown as number,
+    });
+    commentsState.data = Array.from({ length: 50 }, (_, idx) => makeComment(idx + 1));
+
+    renderAt(7);
+
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Показать еще" })).not.toBeInTheDocument();
   });
 
   it("renders the rating + comments stat tiles", () => {

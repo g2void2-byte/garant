@@ -23,14 +23,18 @@ const mockState = vi.hoisted(() => ({
   },
   shouldRender: true as boolean,
   lastQueue: "new" as string,
+  lastPage: 1 as number | undefined,
+  lastPageSize: 20 as number | undefined,
   lastRedirectOpts: undefined as
     | { allowArbiter?: boolean; redirectTo?: string }
     | undefined,
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
-  useAdminArbitration: (queue: string) => {
+  useAdminArbitration: (queue: string, page?: number, pageSize?: number) => {
     mockState.lastQueue = queue;
+    mockState.lastPage = page;
+    mockState.lastPageSize = pageSize;
     return { data: mockState.list, isLoading: mockState.loading };
   },
   useAdminClaimArbitration: () => mockState.claimMutation,
@@ -105,6 +109,8 @@ beforeEach(() => {
   };
   mockState.shouldRender = true;
   mockState.lastQueue = "new";
+  mockState.lastPage = 1;
+  mockState.lastPageSize = 20;
   toastSpy.mockClear();
   hapticSpy.mockClear();
 });
@@ -154,6 +160,38 @@ describe("<AdminArbitrationPage />", () => {
     expect(hapticSpy).toHaveBeenCalledWith("light");
   });
 
+  it("renders missing party usernames as non-handle labels", () => {
+    mockState.list = {
+      items: [makeItem({ buyer_username: null, seller_username: null })],
+      counters: { new: 1, in_progress: 0, closed: 0 },
+      queue: "new",
+    };
+    renderPage();
+    expect(screen.getAllByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
+  it("pagination advances beyond the first queue page and resets when tab changes", async () => {
+    mockState.list = {
+      items: [makeItem()],
+      counters: { new: 45, in_progress: 22, closed: 0 },
+      queue: "new",
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.getByText("1 / 3")).toBeInTheDocument();
+    expect(mockState.lastPageSize).toBe(20);
+    await user.click(screen.getByLabelText("\u0412\u043f\u0435\u0440\u0451\u0434"));
+    await waitFor(() => expect(mockState.lastPage).toBe(2));
+
+    await user.click(screen.getByRole("button", { name: /\u0412 \u0440\u0430\u0431\u043e\u0442\u0435/ }));
+    await waitFor(() => {
+      expect(mockState.lastQueue).toBe("in_progress");
+      expect(mockState.lastPage).toBe(1);
+    });
+  });
+
   it("renders deal rows with parties, amount and currency", () => {
     mockState.list = {
       items: [makeItem()],
@@ -166,6 +204,17 @@ describe("<AdminArbitrationPage />", () => {
     expect(screen.getByText(/147\.00 USDT/)).toBeInTheDocument();
   });
 
+  it("renders malformed arbitration amounts as a neutral dash", () => {
+    mockState.list = {
+      items: [makeItem({ amount: "1e3" })],
+      counters: { new: 1, in_progress: 0, closed: 0 },
+      queue: "new",
+    };
+    renderPage();
+    expect(screen.getByText(/\u2014 USDT/)).toBeInTheDocument();
+    expect(screen.queryByText(/0\.00 USDT/)).not.toBeInTheDocument();
+  });
+
   it("renders 'Взять в работу' button on 'new' rows only", () => {
     mockState.list = {
       items: [makeItem()],
@@ -176,6 +225,23 @@ describe("<AdminArbitrationPage />", () => {
     expect(
       screen.getByRole("button", { name: /Взять в работу/ }),
     ).toBeInTheDocument();
+  });
+
+  it("normalizes arbitration currency labels before display", () => {
+    mockState.list = {
+      items: [
+        makeItem({ currency_code: " usdt " }),
+        makeItem({ id: 8, amount: "148.00", currency_code: "../USDT" }),
+      ],
+      counters: { new: 2, in_progress: 0, closed: 0 },
+      queue: "new",
+    };
+    renderPage();
+
+    expect(screen.getByText(/147\.00 USDT/)).toBeInTheDocument();
+    expect(screen.getByText(/148\.00 \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/ usdt /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\.\.\/USDT/)).not.toBeInTheDocument();
   });
 
   it("claim happy path fires mutation, toasts success, switches to in_progress", async () => {
@@ -258,6 +324,31 @@ describe("<AdminArbitrationPage />", () => {
     renderPage();
     await user.click(screen.getByText(/@buyer1/));
     expect(screen.getByTestId("path").textContent).toBe("/admin/deals/7");
+  });
+
+  it("does not open or claim arbitration rows with malformed runtime ids", async () => {
+    mockState.list = {
+      items: [makeItem({ id: "0x7" as unknown as number })],
+      counters: { new: 1, in_progress: 0, closed: 0 },
+      queue: "new",
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    const idText = screen.getByText("#\u2014");
+    expect(idText.closest("button")).toBeDisabled();
+    expect(screen.queryByText(/0x7/)).not.toBeInTheDocument();
+    const claimButton = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent?.includes("Взять") || button.textContent?.includes("Р’Р·"));
+    expect(claimButton).toBeDefined();
+    expect(claimButton).toBeDisabled();
+
+    await user.click(idText);
+    await user.click(claimButton!);
+
+    expect(screen.getByTestId("path").textContent).toBe("/admin/arbitration");
+    expect(mockState.claimMutation.mutateAsync).not.toHaveBeenCalled();
   });
 
   it("'in_progress' tab empty state reads 'Нет активных дел'", async () => {

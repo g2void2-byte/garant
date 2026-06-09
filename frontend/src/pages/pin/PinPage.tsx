@@ -10,6 +10,7 @@ import { PinPad } from "@/components/ui/PinPad";
 import { useToast } from "@/components/ui/Toast";
 import { Logo } from "@/components/layout/Logo";
 import { PinResetPaywallModal } from "@/components/PinResetPaywallModal";
+import { formatCountValue } from "@/lib/format";
 import { setPinToken } from "@/lib/pin";
 import { haptic } from "@/lib/tg";
 
@@ -22,7 +23,9 @@ interface PinPageProps {
 
 function formatLock(locked: string | null): string | null {
   if (!locked) return null;
-  const ms = new Date(locked).getTime() - Date.now();
+  const lockedMs = new Date(locked).getTime();
+  if (!Number.isFinite(lockedMs)) return null;
+  const ms = lockedMs - Date.now();
   if (ms <= 0) return null;
   const minutes = Math.ceil(ms / 60_000);
   return minutes >= 60 ? `${Math.ceil(minutes / 60)} ч` : `${minutes} мин`;
@@ -214,7 +217,9 @@ export default function PinPage({ status, onUnlocked }: PinPageProps) {
           {locked ? (
             <span className="text-danger">Слишком много попыток. Ждите {lockMessage}.</span>
           ) : (
-            <span className="text-text-muted">Осталось попыток: {status.attempts_left}</span>
+            <span className="text-text-muted">
+              Осталось попыток: {formatCountValue(status.attempts_left)}
+            </span>
           )}
           <button
             type="button"

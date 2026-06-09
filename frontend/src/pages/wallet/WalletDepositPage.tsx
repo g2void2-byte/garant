@@ -14,7 +14,12 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
-import { formatCurrency } from "@/lib/format";
+import {
+  normalizeCurrencyCode,
+  normalizeCurrencyCodeRows,
+} from "@/lib/currencyCodes";
+import { formatCurrency, formatCurrencyStrict, parseDecimalValue } from "@/lib/format";
+import { hasPositiveWalletBalance, walletBalanceDecimalInput } from "@/lib/walletAmounts";
 import { haptic, openPaymentLink } from "@/lib/tg";
 import type { WalletDepositDto } from "@/api/types";
 
@@ -54,7 +59,7 @@ export default function WalletDepositPage() {
   // ``?currency=USD``; honour the URL hint so the dropdown lands on
   // the user's preferred fiat code without a manual click.
   const [searchParams] = useSearchParams();
-  const initialCode = (searchParams.get("currency") ?? "").toUpperCase();
+  const initialCode = normalizeCurrencyCode(searchParams.get("currency"));
 
   const [code, setCode] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
@@ -66,7 +71,10 @@ export default function WalletDepositPage() {
   const [modalOpen, setModalOpen] = useState(false);
 
   const fiatCurrencies = useMemo(
-    () => (currencies.data ?? []).filter((c) => (c.kind ?? "crypto") === "fiat"),
+    () =>
+      normalizeCurrencyCodeRows(
+        (currencies.data ?? []).filter((c) => c.kind === "fiat"),
+      ),
     [currencies.data],
   );
   const current = useMemo(
@@ -74,9 +82,10 @@ export default function WalletDepositPage() {
     [fiatCurrencies, code],
   );
   const balance = useMemo(
-    () => balances.data?.find((b) => b.currency.code === code),
+    () => balances.data?.find((b) => normalizeCurrencyCode(b.currency.code) === code),
     [balances.data, code],
   );
+  const balanceAmount = balance ? walletBalanceDecimalInput(balance, "amount") : null;
 
   useEffect(() => {
     if (!code && fiatCurrencies.length) {
@@ -128,12 +137,16 @@ export default function WalletDepositPage() {
       haptic("success");
       setActiveDeposit(dep);
       setModalOpen(true);
+      const depositAmount = parseDecimalValue(dep.amount);
+      const paidCurrencyCode = normalizeCurrencyCode(dep.currency.code) ?? current.code;
       toast.show({
         kind: "success",
         title: "Счёт создан",
-        body: `Оплатите ${formatCurrency(dep.amount, dep.currency.code, current.decimals)} в ${PROVIDER_LABELS[provider]}.`,
+        body: `Оплатите ${formatCurrencyStrict(dep.amount, paidCurrencyCode, current.decimals)} в ${PROVIDER_LABELS[provider]}.`,
       });
-      if (dep.pay_url) openPaymentLink(dep.pay_url);
+      if (dep.pay_url && depositAmount !== null && depositAmount > 0) {
+        openPaymentLink(dep.pay_url);
+      }
     } catch (e: unknown) {
       haptic("error");
       toast.show({
@@ -203,11 +216,11 @@ export default function WalletDepositPage() {
         {current && (
           <div className="text-xs text-text-muted">
             Минимум: {formatCurrency(current.min_deposit, current.code, current.decimals)}
-            {(balance?.amount ?? 0) > 0 && (
+            {hasPositiveWalletBalance(balance, "amount") && balanceAmount !== null && (
               <>
                 {" "}
                 · Доступно:{" "}
-                {formatCurrency(balance!.amount, current.code, current.decimals)}
+                {formatCurrency(balanceAmount, current.code, current.decimals)}
               </>
             )}
           </div>

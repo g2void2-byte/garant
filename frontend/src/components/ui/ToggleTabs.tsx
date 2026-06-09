@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { cn } from "@/lib/cn";
+import { formatCountValue } from "@/lib/format";
 import { haptic } from "@/lib/tg";
 
 export interface ToggleOption<T extends string> {
   value: T;
   label: string;
   icon?: React.ReactNode;
-  count?: number;
+  count?: unknown;
 }
 
 interface ToggleTabsProps<T extends string> {
@@ -75,7 +76,7 @@ export function ToggleTabs<T extends string>({
                     active ? "bg-accent-fg/10 text-accent-fg" : "bg-panel text-text-muted",
                   )}
                 >
-                  {opt.count}
+                  {formatCountValue(opt.count)}
                 </span>
               )}
             </span>

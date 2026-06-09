@@ -238,3 +238,82 @@ async def test_webhook_unknown_invoice_returns_200_ok_false(client):
     assert resp.status_code == 200, resp.text
     payload = resp.json()
     assert payload.get("reason") == "unknown invoice"
+
+
+async def test_webhook_corrected_same_state_payload_is_not_suppressed(client):
+    """A changed Crystalpay payload for the same invoice/state must be
+    processed instead of replaying the first event's cached result.
+
+    Crystalpay signs only by invoice id, so the corrected delivery has
+    the same ``id`` and ``state`` but a different ``amount``. A coarse
+    ``event_id = id:state`` would keep returning the initial amount-
+    mismatch result and leave the deposit pending forever.
+    """
+    from backend.app.config import settings
+    from backend.app.db import async_session
+    from backend.app.models import (
+        Currency,
+        UserBalance,
+        WalletDeposit,
+        WalletDepositProvider,
+        WalletDepositStatus,
+    )
+
+    init_data = signed_init_data(40004, "corrected-cp")
+    await setup_pin(client, init_data)
+
+    async with async_session() as session:
+        user_id = await get_user_id_by_tg(session, 40004)
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
+        dep = WalletDeposit(
+            user_id=user_id,
+            currency_id=usdt.id,
+            amount=10,
+            provider=WalletDepositProvider.crystalpay,
+            provider_invoice_id="cp-corrected-1",
+            pay_url="https://pay/cp-corrected-1",
+            status=WalletDepositStatus.pending,
+        )
+        session.add(dep)
+        await session.commit()
+        dep_id = dep.id
+        currency_id = usdt.id
+
+    base = {
+        "id": "cp-corrected-1",
+        "state": "payed",
+        "currency": "USDT",
+        "signature": _sign("cp-corrected-1", settings.crystalpay_secret),
+    }
+    bad_resp = await client.post(
+        "/api/payments/webhook/crystalpay",
+        json={**base, "amount": "1"},
+    )
+    assert bad_resp.status_code == 200, bad_resp.text
+    assert bad_resp.json().get("reason") == "amount mismatch"
+
+    async with async_session() as session:
+        dep = await session.get(WalletDeposit, dep_id)
+        assert dep is not None
+        assert dep.status == WalletDepositStatus.pending
+
+    fixed_resp = await client.post(
+        "/api/payments/webhook/crystalpay",
+        json={**base, "amount": "10"},
+    )
+    assert fixed_resp.status_code == 200, fixed_resp.text
+    assert fixed_resp.json()["ok"] is True
+
+    async with async_session() as session:
+        dep = await session.get(WalletDeposit, dep_id)
+        assert dep is not None
+        assert dep.status == WalletDepositStatus.paid
+        bal = (
+            await session.execute(
+                select(UserBalance).where(
+                    UserBalance.user_id == user_id,
+                    UserBalance.currency_id == currency_id,
+                )
+            )
+        ).scalar_one()
+        assert float(bal.amount) == 10.0

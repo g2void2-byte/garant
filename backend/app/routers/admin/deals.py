@@ -30,9 +30,9 @@ import logging
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -68,6 +68,7 @@ from ...schemas import (
     AdminDealListItem,
     AdminDealListOut,
     AdminDealSplitIn,
+    CurrencyCodeStr,
     DealMessageOut,
 )
 from ...services_ledger import record_balance_ledger
@@ -219,46 +220,34 @@ def _build_events(deal: Deal) -> list[AdminDealEventItem]:
     return items
 
 
-async def _serialize_message(session: AsyncSession, msg: DealMessage) -> DealMessageOut:
-    # Lazy import to avoid a circular dependency with deal_messages router.
-    from ..deal_messages import _serialize  # type: ignore[attr-defined]
-
-    return await _serialize(session, msg)
-
-
 async def _list_messages(session: AsyncSession, deal_id: int) -> list[DealMessageOut]:
-    """Admin chat transcript — batched media load (Audit M-4).
+    """Latest admin chat transcript page — batched media load.
 
-    Pre-fix this helper called ``_serialize_message`` for every row,
-    which in turn fired one ``SELECT Media WHERE id IN (...)`` *per
-    message* through ``deal_messages._serialize``. An arbitration
-    deal with N messages produced N round-trips on every admin
-    transcript view. The fix mirrors the user-side
-    ``deal_messages.list_messages`` batched pattern: load all media
-    referenced by the whole transcript in a single
-    ``SELECT Media WHERE id IN (... union ...)`` then serialise each
-    row against the pre-built dict.
+    Audit M-37 — the admin deal detail endpoint embeds a small chat
+    preview, not the full transcript. The full history is paged by the
+    shared ``GET /api/deals/{id}/messages`` cursor endpoint that the
+    admin UI also uses for "load older".
     """
     # Lazy import to avoid a circular dependency with deal_messages router.
-    from ..deal_messages import _parse_attachment_ids, _serialize_one
+    from ..deal_messages import _DEFAULT_MESSAGE_PAGE, _parse_attachment_ids, _serialize_one
 
-    rows = (
+    page = (
         (
             await session.execute(
                 select(DealMessage)
                 .where(DealMessage.deal_id == deal_id)
                 .options(selectinload(DealMessage.sender))
-                .order_by(DealMessage.created_at.asc(), DealMessage.id.asc())
+                .order_by(DealMessage.id.desc())
+                .limit(_DEFAULT_MESSAGE_PAGE)
             )
         )
         .scalars()
         .all()
     )
-    # Audit M-4 — collect every attachment id across the whole
-    # transcript in one pass, then issue a single ``WHERE id IN (...)``
-    # SELECT. ``set`` collapses duplicate ids (a media file linked
-    # from multiple messages, which the chat actively allows on the
-    # client) into one DB-side fetch.
+    rows = list(reversed(page))
+    # Audit M-4 — collect every attachment id across the page in one
+    # pass, then issue a single ``WHERE id IN (...)`` SELECT. ``set``
+    # collapses duplicate ids into one DB-side fetch.
     all_media_ids: set[int] = set()
     for msg in rows:
         all_media_ids.update(_parse_attachment_ids(msg.attachments_json))
@@ -599,13 +588,28 @@ async def _dispatch_pending(
 # --------------------------------------------------------------------- listing
 
 
-_STATUS_CHOICES = (
+AdminDealStatusFilter = Literal[
+    "any",
+    "cancelled",
+    "pending_confirmation",
+    "pending_topup",
+    "in_progress",
+    "completed",
+    "arbitration",
+    "resolved_for_buyer",
+    "resolved_for_seller",
+    "pending_cancellation",
+    "cancelled_for_inactivity",
+]
+
+_STATUS_CHOICES: tuple[AdminDealStatusFilter, ...] = (
     "any",
     "cancelled",
     "pending_confirmation",
     # Audit M3 — ``pending_payment`` is reserved in ``DealStatus`` but no
     # transition writes it; dropped from the filter so the admin UI
     # doesn't surface a permanently-empty status bucket.
+    "pending_topup",
     "in_progress",
     "completed",
     "arbitration",
@@ -620,14 +624,17 @@ _STATUS_CHOICES = (
 async def list_deals(
     _admin: AdminUser,
     session: SessionDep,
-    status: Annotated[str, Query()] = "any",
-    currency: Annotated[str | None, Query()] = None,
-    min_amount: Annotated[float | None, Query()] = None,
-    max_amount: Annotated[float | None, Query()] = None,
+    status: Annotated[AdminDealStatusFilter, Query()] = "any",
+    currency: Annotated[
+        CurrencyCodeStr | None,
+        Query(description="Optional currency code filter for admin deal history."),
+    ] = None,
+    min_amount: Annotated[Decimal | None, Query(ge=0)] = None,
+    max_amount: Annotated[Decimal | None, Query(ge=0)] = None,
     has_arbitration: Annotated[bool | None, Query()] = None,
     has_cancel_request: Annotated[bool | None, Query()] = None,
-    buyer_id: Annotated[int | None, Query()] = None,
-    seller_id: Annotated[int | None, Query()] = None,
+    buyer_id: Annotated[int | None, Query(ge=1)] = None,
+    seller_id: Annotated[int | None, Query(ge=1)] = None,
     created_from: Annotated[datetime | None, Query()] = None,
     created_to: Annotated[datetime | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
@@ -646,11 +653,13 @@ async def list_deals(
             raise HTTPException(400, "Неверный статус")  # noqa: B904
     if currency:
         cur = (
-            await session.execute(select(Currency).where(Currency.code == currency.upper()))
+            await session.execute(select(Currency).where(Currency.code == currency))
         ).scalar_one_or_none()
         if cur is None:
             raise HTTPException(404, f"Валюта {currency} не поддерживается")
         filters.append(Deal.currency_id == cur.id)
+    if min_amount is not None and max_amount is not None and min_amount > max_amount:
+        raise HTTPException(422, "min_amount cannot exceed max_amount")
     if min_amount is not None:
         filters.append(Deal.amount >= min_amount)
     if max_amount is not None:
@@ -673,7 +682,11 @@ async def list_deals(
         stmt = stmt.where(where_clause)
         count_stmt = count_stmt.where(where_clause)
 
-    stmt = stmt.order_by(Deal.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    stmt = (
+        stmt.order_by(Deal.created_at.desc(), Deal.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
 
     rows = (await session.execute(stmt)).scalars().all()
     total = int((await session.execute(count_stmt)).scalar_one() or 0)
@@ -686,7 +699,15 @@ async def list_deals(
     )
 
 
-_APPROVAL_STATUS_CHOICES = ("any", "pending", "approved", "executed", "rejected")
+AdminDealApprovalStatusFilter = Literal["any", "pending", "approved", "executed", "rejected"]
+
+_APPROVAL_STATUS_CHOICES: tuple[AdminDealApprovalStatusFilter, ...] = (
+    "any",
+    "pending",
+    "approved",
+    "executed",
+    "rejected",
+)
 
 
 async def _get_approval_or_404(
@@ -715,22 +736,38 @@ async def _get_approval_or_404(
 async def list_deal_approvals(
     _admin: AdminUser,
     session: SessionDep,
-    status: Annotated[str, Query()] = "pending",
-    target_id: Annotated[int | None, Query()] = None,
+    response: Response,
+    status: Annotated[AdminDealApprovalStatusFilter, Query()] = "pending",
+    target_id: Annotated[int | None, Query(ge=1)] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[AdminApprovalOut]:
     if status not in _APPROVAL_STATUS_CHOICES:
         raise HTTPException(400, "Invalid approval status")
+    filters = [AdminApprovalRequest.target_type == "deal"]
+    if status != "any":
+        filters.append(AdminApprovalRequest.status == status)
+    if target_id is not None:
+        filters.append(AdminApprovalRequest.target_id == target_id)
+
+    total = int(
+        (
+            await session.execute(
+                select(func.count()).select_from(AdminApprovalRequest).where(*filters)
+            )
+        ).scalar_one()
+        or 0
+    )
+    response.headers["X-Total-Count"] = str(total)
+
     stmt = (
         select(AdminApprovalRequest)
-        .where(AdminApprovalRequest.target_type == "deal")
+        .where(*filters)
         .options(selectinload(AdminApprovalRequest.currency))
         .order_by(AdminApprovalRequest.created_at.desc(), AdminApprovalRequest.id.desc())
-        .limit(200)
+        .offset(offset)
+        .limit(limit)
     )
-    if status != "any":
-        stmt = stmt.where(AdminApprovalRequest.status == status)
-    if target_id is not None:
-        stmt = stmt.where(AdminApprovalRequest.target_id == target_id)
     rows = (await session.execute(stmt)).scalars().all()
     return [_approval_out(row) for row in rows]
 
@@ -905,7 +942,7 @@ async def _split_locked(
     session: AsyncSession,
     deal: Deal,
     currency: Currency,
-    buyer_percent: float,
+    buyer_percent: Decimal,
 ) -> tuple[Decimal, Decimal, Decimal]:
     """Split the principal between buyer and seller; commission is kept.
 
@@ -917,7 +954,7 @@ async def _split_locked(
     decimals = currency.decimals
     amt = quantize_money(Decimal(str(deal.amount or 0)), decimals)
     locked = amt
-    buyer_share = quantize_money(amt * Decimal(str(buyer_percent)) / Decimal(100), decimals)
+    buyer_share = quantize_money(amt * buyer_percent / Decimal(100), decimals)
     seller_share = amt - buyer_share
 
     # Lock both rows in the same order as ``services_deals._release_to``.
@@ -1203,7 +1240,7 @@ async def split_deal(
 
     before_status = deal.status.value
     locked, buyer_share, seller_share = await _split_locked(
-        session, deal, currency, float(body.buyer_percent)
+        session, deal, currency, body.buyer_percent
     )
     deal.status = (
         DealStatus.resolved_for_buyer
@@ -1429,9 +1466,33 @@ async def delete_deal(
 
     paths_to_delete: list[Path] = []
     if all_media_ids:
+        # ``Media`` rows are owner-scoped, not deal-scoped. A user can
+        # reuse the same uploaded proof in another deal chat, so only
+        # delete files that no remaining message references.
+        still_referenced: set[int] = set()
+        other_messages = (
+            await session.execute(
+                select(DealMessage.attachments_json).where(
+                    DealMessage.deal_id != deal.id,
+                    DealMessage.attachments_json.is_not(None),
+                )
+            )
+        ).scalars()
+        for attachments_json in other_messages:
+            still_referenced.update(
+                mid for mid in _parse_attachment_ids(attachments_json) if mid in all_media_ids
+            )
+            if still_referenced == all_media_ids:
+                break
+
+        media_ids_to_delete = all_media_ids - still_referenced
+    else:
+        media_ids_to_delete = set()
+
+    if media_ids_to_delete:
         media_rows = (
             await session.execute(
-                select(Media).where(Media.id.in_(all_media_ids))
+                select(Media).where(Media.id.in_(media_ids_to_delete))
             )
         ).scalars().all()
 
@@ -1441,7 +1502,7 @@ async def delete_deal(
             file_path = media_root / m.kind / filename
             paths_to_delete.append(file_path)
 
-        await session.execute(Media.__table__.delete().where(Media.id.in_(all_media_ids)))
+        await session.execute(Media.__table__.delete().where(Media.id.in_(media_ids_to_delete)))
 
         def delete_files(paths):
             for p in paths:

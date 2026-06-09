@@ -7,9 +7,12 @@ import { Avatar } from "@/components/ui/Avatar";
 import { BadgePrefix } from "@/components/ui/BadgePrefix";
 import { OnlineDot } from "@/components/ui/OnlineDot";
 import { Button } from "@/components/ui/Button";
-import { dealsLabel } from "@/lib/format";
+import { dealsLabel, formatRatingValue, hasPositiveIntegerValue } from "@/lib/format";
 import { staggerDelay } from "@/lib/animate";
 import { cn } from "@/lib/cn";
+import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
+
+const USER_PICKER_LIMIT = 8;
 
 interface UserPickerProps {
   /** Selected username (without ``@``). ``""`` means "nothing picked". */
@@ -92,10 +95,22 @@ export function UserPicker({
   }, [input, debounceMs]);
 
   // Normalise leading ``@`` so the server receives the bare username.
-  const normalized = useMemo(() => debounced.replace(/^@+/, "").trim(), [debounced]);
-  const { data: users, isLoading } = useUsers(
-    normalized ? { q: normalized, picker: true } : { picker: true },
+  const normalized = useMemo(
+    () => normalizeUsernameRef(debounced.replace(/^@+/, "")) ?? "",
+    [debounced],
   );
+  const usersQuery = useMemo(
+    () => ({
+      ...(normalized ? { q: normalized } : {}),
+      picker: true,
+      limit: USER_PICKER_LIMIT,
+      offset: 0,
+    }),
+    [normalized],
+  );
+  const { data: users, isLoading } = useUsers(usersQuery, {
+    enabled: normalized.length > 0,
+  });
 
   // Close on outside click so the dropdown doesn't linger when the
   // user taps somewhere else on the form.
@@ -112,9 +127,11 @@ export function UserPicker({
   }, [focused]);
 
   function pickUser(u: UserCardDto) {
+    const username = normalizeUsernameRef(u.username) ?? "";
+    if (!username && !onPick) return;
     setSelected(u);
-    setInput(u.username);
-    onChange(u.username);
+    setInput(username);
+    onChange(username);
     onPick?.(u);
     setFocused(false);
   }
@@ -161,7 +178,7 @@ export function UserPicker({
                 setSelected(null);
                 onPick?.(null);
               }
-              onChange(e.target.value.replace(/^@+/, "").trim());
+              onChange(normalizeUsernameRef(e.target.value.replace(/^@+/, "")) ?? "");
             }}
             onFocus={() => setFocused(true)}
             placeholder={placeholder}
@@ -209,26 +226,29 @@ export function UserPicker({
               </div>
             ) : (
               <ul className="py-1.5">
-                {filtered.slice(0, 8).map((u, i) => (
-                  <li
-                    key={u.id}
-                    style={staggerDelay(i, 25, 200)}
-                    className="animate-fade-in-down"
-                  >
+                {filtered.map((u, i) => (
+                  <li key={u.id} style={staggerDelay(i, 25, 200)} className="animate-fade-in-down">
+                    {(() => {
+                      const username = normalizeUsernameRef(u.username);
+                      const canPick = Boolean(username || onPick);
+                      const label = u.display_name?.trim() || username || "—";
+                      return (
                     <button
                       type="button"
                       role="option"
-                      aria-selected={value === u.username}
+                      aria-selected={!!username && value === username}
+                      disabled={!canPick}
                       onClick={() => pickUser(u)}
                       className={cn(
-                        "w-full flex items-center gap-3 px-3 py-2 text-left",
-                        "hover:bg-secondary/60 active:bg-secondary",
-                        "transition-colors",
+                        "w-full flex items-center gap-3 px-3 py-2 text-left transition-colors",
+                        canPick
+                          ? "hover:bg-secondary/60 active:bg-secondary"
+                          : "opacity-60 cursor-not-allowed",
                       )}
                     >
                       <div className="relative shrink-0">
                         <Avatar
-                          name={u.username}
+                          name={label}
                           src={u.photo_url}
                           size={40}
                         />
@@ -240,18 +260,18 @@ export function UserPicker({
                         <div className="flex items-center gap-2">
                           <BadgePrefix prefix={u.prefix} />
                           <span className="font-medium text-[15px] truncate">
-                            {u.display_name?.trim() || u.username}
+                            {label}
                           </span>
                         </div>
                         <div className="text-[12px] text-text-muted truncate">
-                          @{u.username}
+                          {username ? `@${username}` : "username не задан"}
                         </div>
                       </div>
                       <div className="flex flex-col items-end shrink-0 gap-0.5">
                         <span className="inline-flex items-center gap-1 text-accent text-[12px] font-semibold">
                           <Star className="size-3" strokeWidth={2.5} />
-                          {u.reviews_count
-                            ? u.rating.toFixed(1)
+                          {hasPositiveIntegerValue(u.reviews_count)
+                            ? formatRatingValue(u.rating)
                             : "0.0"}
                         </span>
                         <span className="text-[11px] text-text-muted tabular-nums">
@@ -259,6 +279,8 @@ export function UserPicker({
                         </span>
                       </div>
                     </button>
+                      );
+                    })()}
                   </li>
                 ))}
               </ul>
@@ -281,15 +303,18 @@ function SelectedUserCard({
   onChange,
   onStartDeal,
 }: SelectedUserCardProps) {
-  const ratingLabel = user.reviews_count
-    ? user.rating.toFixed(1)
+  const ratingLabel = hasPositiveIntegerValue(user.reviews_count)
+    ? formatRatingValue(user.rating)
     : "0.0";
+  const username = normalizeUsernameRef(user.username);
+  const profilePath = userProfilePath(username);
+  const label = user.display_name?.trim() || username || "—";
 
   return (
     <div className="rounded-card bg-panel border border-accent/50 shadow-glow p-3 animate-fade-in-scale">
       <div className="flex items-center gap-3">
         <div className="relative shrink-0">
-          <Avatar name={user.username} src={user.photo_url} size={48} />
+          <Avatar name={label} src={user.photo_url} size={48} />
           <span className="absolute -bottom-0.5 -right-0.5 ring-2 ring-panel rounded-full">
             <OnlineDot online={user.online} />
           </span>
@@ -298,11 +323,11 @@ function SelectedUserCard({
           <div className="flex items-center gap-2">
             <BadgePrefix prefix={user.prefix} />
             <span className="font-semibold text-[15px] truncate">
-              {user.display_name?.trim() || user.username}
+              {label}
             </span>
           </div>
           <div className="text-[12px] text-text-muted truncate">
-            @{user.username} · {dealsLabel(user.deals_count)} ·
+            {username ? `@${username}` : "username не задан"} · {dealsLabel(user.deals_count)} ·
             <span className="ml-1 inline-flex items-center gap-1 text-accent font-medium">
               <Star className="size-3" strokeWidth={2.5} />
               {ratingLabel}
@@ -319,15 +344,22 @@ function SelectedUserCard({
         </button>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <Link
-          to={`/users/${user.username}`}
-          className="h-10 rounded-button bg-secondary text-text font-medium flex items-center justify-center text-[14px] hover:opacity-90 active:opacity-80 transition"
-        >
-          Профиль
-        </Link>
+        {profilePath ? (
+          <Link
+            to={profilePath}
+            className="h-10 rounded-button bg-secondary text-text font-medium flex items-center justify-center text-[14px] hover:opacity-90 active:opacity-80 transition"
+          >
+            Профиль
+          </Link>
+        ) : (
+          <div className="h-10 rounded-button bg-secondary/60 text-text-muted font-medium flex items-center justify-center text-[14px]">
+            Нет профиля
+          </div>
+        )}
         {onStartDeal ? (
           <Button
             size="md"
+            disabled={!username}
             onClick={() => onStartDeal(user)}
             className="!h-10 !text-[14px]"
           >

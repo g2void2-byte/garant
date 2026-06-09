@@ -16,7 +16,12 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from backend.app.schemas import DealCreate
+from backend.app.schemas import (
+    MAX_CURRENCY_CODE_LEN,
+    MAX_USERNAME_REF_LEN,
+    DealCreate,
+    DealResolveRequest,
+)
 
 
 def _ok(amount):
@@ -33,6 +38,47 @@ def test_deal_create_accepts_one_satoshi() -> None:
 def test_deal_create_accepts_typical_amount() -> None:
     model = _ok(Decimal("12.34"))
     assert model.amount == Decimal("12.34")
+
+
+def test_deal_create_normalizes_counterparty_and_currency_code() -> None:
+    model = DealCreate(
+        counterparty="  @bob-seller_1  ",
+        role="buyer",
+        amount=1,
+        currency_code=" usd ",
+    )
+
+    assert model.counterparty == "bob-seller_1"
+    assert model.currency_code == "USD"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["", "   ", "@", "bad user", "продавец", "x" * (MAX_USERNAME_REF_LEN + 1)],
+)
+def test_deal_create_rejects_invalid_counterparty(bad: str) -> None:
+    with pytest.raises(ValidationError):
+        DealCreate(counterparty=bad, role="buyer", amount=1)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["", "   ", "USD T", "USD-T", "юsd", "X" * (MAX_CURRENCY_CODE_LEN + 1)],
+)
+def test_deal_create_rejects_invalid_currency_code(bad: str) -> None:
+    with pytest.raises(ValidationError):
+        DealCreate(counterparty="bob", role="buyer", amount=1, currency_code=bad)
+
+
+@pytest.mark.parametrize("winner", ["buyer", "seller"])
+def test_deal_resolve_accepts_known_winners(winner: str) -> None:
+    assert DealResolveRequest(winner=winner).winner == winner
+
+
+@pytest.mark.parametrize("bad", ["", " buyer ", "admin", "both"])
+def test_deal_resolve_rejects_unknown_winner(bad: str) -> None:
+    with pytest.raises(ValidationError):
+        DealResolveRequest(winner=bad)
 
 
 @pytest.mark.parametrize(

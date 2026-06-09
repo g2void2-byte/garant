@@ -9,7 +9,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import type { UserCardDto } from "@/api/types";
-import { formatMoney } from "@/lib/format";
+import { formatCountValue, formatMoney, parseNonNegativeIntegerValue, parseRatingValue } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
 type StatTone = "neutral" | "accent" | "success" | "danger" | "warning";
@@ -80,11 +80,12 @@ export function ProfileStatsGrid({ user, onDepositClick }: { user: UserCardDto; 
   // a manually-set rating to surface even when ``reviews_count`` is
   // still 0, so the gate is "we have *something* to show" rather than
   // "we have reviews". The ``(N)`` suffix stays gated on review count.
-  const ratingValue = Number(user.rating) || 0;
-  const hasRating = ratingValue > 0 || user.reviews_count > 0;
-  const ratingLabel = hasRating
-    ? user.reviews_count > 0
-      ? `${ratingValue.toFixed(1)} (${user.reviews_count})`
+  const ratingValue = parseRatingValue(user.rating);
+  const reviewsCount = parseNonNegativeIntegerValue(user.reviews_count);
+  const hasReviews = reviewsCount !== null && reviewsCount > 0;
+  const ratingLabel = ratingValue !== null && (ratingValue > 0 || hasReviews)
+    ? hasReviews
+      ? `${ratingValue.toFixed(1)} (${reviewsCount})`
       : ratingValue.toFixed(1)
     : "—";
   return (
@@ -105,7 +106,7 @@ export function ProfileStatsGrid({ user, onDepositClick }: { user: UserCardDto; 
       <Stat
         icon={<Briefcase className="size-5" />}
         label="Сделок"
-        value={String(user.deals_count)}
+        value={formatCountValue(user.deals_count)}
       />
       <Stat
         icon={<BarChart3 className="size-5" />}
@@ -119,19 +120,19 @@ export function ProfileStatsGrid({ user, onDepositClick }: { user: UserCardDto; 
       <Stat
         icon={<CheckCircle2 className="size-5" />}
         label="Успешных"
-        value={String(user.deals_success ?? 0)}
+        value={formatCountValue(user.deals_success ?? 0)}
         tone="success"
       />
       <Stat
         icon={<XCircle className="size-5" />}
         label="Неуспешных"
-        value={String(user.deals_failed ?? 0)}
+        value={formatCountValue(user.deals_failed ?? 0)}
         tone="danger"
       />
       <Stat
         icon={<AlertTriangle className="size-5" />}
         label="Арбитражи"
-        value={String(user.deals_arbitrage ?? 0)}
+        value={formatCountValue(user.deals_arbitrage ?? 0)}
         tone="warning"
       />
     </div>

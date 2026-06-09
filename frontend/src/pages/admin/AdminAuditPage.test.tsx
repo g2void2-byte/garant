@@ -109,7 +109,7 @@ describe("<AdminAuditPage />", () => {
     expect(screen.getByText(/Причина: spam/)).toBeInTheDocument();
   });
 
-  it("falls back to actor_id when actor_username is null, and to 'system' when actor_id is also null", () => {
+  it("falls back to actor_id without pretending it is a username, and to 'system' when actor_id is also null", () => {
     mockState.list = {
       items: [
         makeRow({ id: 1, actor_username: null, actor_id: 7 }),
@@ -120,8 +120,42 @@ describe("<AdminAuditPage />", () => {
       page_size: 50,
     };
     renderPage();
-    expect(screen.getByText(/by @7/)).toBeInTheDocument();
-    expect(screen.getByText(/by @system/)).toBeInTheDocument();
+    expect(screen.getByText(/by user #7/)).toBeInTheDocument();
+    expect(screen.getByText(/by system/)).toBeInTheDocument();
+    expect(screen.queryByText(/by @7/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/by @system/)).not.toBeInTheDocument();
+  });
+
+  it("renders malformed actor and target ids as neutral identifiers", () => {
+    mockState.list = {
+      items: [
+        makeRow({
+          actor_username: null,
+          actor_id: "1e2" as unknown as number,
+          target_id: "0x10" as unknown as number,
+        }),
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+
+    expect(screen.getByText(/by user #\u2014/)).toBeInTheDocument();
+    expect(screen.getByText(/target: user#\u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2|0x10/)).not.toBeInTheDocument();
+  });
+
+  it("renders malformed created_at as a neutral timestamp", () => {
+    mockState.list = {
+      items: [makeRow({ created_at: "not-a-date" })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
   });
 
   it("renders payload as a truncated JSON block when it has keys", () => {
@@ -207,6 +241,26 @@ describe("<AdminAuditPage />", () => {
     await waitFor(() => expect(mockState.lastQuery.actor_id).toBe(42));
   });
 
+  it("does not send invalid actor_id filters", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+
+    const filterBtn = document
+      .querySelector("svg.lucide-filter, svg.lucide-funnel")
+      ?.closest("button") as HTMLButtonElement;
+    await user.click(filterBtn);
+    fireEvent.change(screen.getByPlaceholderText("actor_id"), {
+      target: { value: "0" },
+    });
+    await waitFor(() => expect(mockState.lastQuery.actor_id).toBeUndefined());
+
+    fireEvent.change(screen.getByPlaceholderText("actor_id"), {
+      target: { value: "abc" },
+    });
+    await waitFor(() => expect(mockState.lastQuery.actor_id).toBeUndefined());
+  });
+
   it("renders pagination when total > page_size and disables 'Назад' on page 1", () => {
     mockState.list = { items: [makeRow()], total: 120, page: 1, page_size: 50 };
     renderPage();
@@ -228,6 +282,20 @@ describe("<AdminAuditPage />", () => {
   it("does NOT render pagination when total <= page_size", () => {
     mockState.list = { items: [makeRow()], total: 1, page: 1, page_size: 50 };
     renderPage();
+    expect(
+      screen.queryByRole("button", { name: /Вперёд/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not coerce malformed totals into pagination", () => {
+    mockState.list = {
+      items: [makeRow()],
+      total: "1e2" as unknown as number,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.queryByText("1e2")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Вперёд/ }),
     ).not.toBeInTheDocument();

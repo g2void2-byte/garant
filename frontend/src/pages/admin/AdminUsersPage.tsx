@@ -5,6 +5,7 @@ import { Page } from "@/components/layout/Page";
 import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { BadgePrefix } from "@/components/ui/BadgePrefix";
+import { Avatar } from "@/components/ui/Avatar";
 import { useAdminUsers } from "@/api/admin/hooks";
 import type {
   AdminListUsersQuery,
@@ -13,6 +14,17 @@ import type {
   AdminUserStatusFilter,
 } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { parsePositiveIntRouteParam } from "@/lib/routeParams";
+import {
+  formatAdminCount,
+  formatAdminId,
+  formatAdminRating,
+  formatAdminUsd,
+  formatAdminUsername,
+  getAdminTotalPages,
+  parseAdminId,
+  shouldShowAdminPagination,
+} from "./format";
 
 // Audit L-10 — ``null`` is the in-component sentinel for "no filter"
 // (replaces the string ``"any"``); the value sent to the API is
@@ -58,7 +70,7 @@ export default function AdminUsersPage() {
 
   const role = parseRoleParam(searchParams.get("role"));
   const status = parseStatusParam(searchParams.get("status"));
-  const page = Number(searchParams.get("page") ?? "1") || 1;
+  const page = parsePositiveIntRouteParam(searchParams.get("page") ?? undefined) ?? 1;
   const q = searchParams.get("q") ?? "";
 
   const query: AdminListUsersQuery = { q, role, status, page, page_size: 20 };
@@ -86,7 +98,7 @@ export default function AdminUsersPage() {
     <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Пользователи"
-        subtitle={data ? `${data.total} всего` : undefined}
+        subtitle={data ? `${formatAdminCount(data.total)} всего` : undefined}
         right={
           <button
             type="button"
@@ -145,16 +157,22 @@ export default function AdminUsersPage() {
                 Никого не найдено
               </p>
             )
-            : data?.items.map((u) => (
-                <UserRow
-                  key={u.id}
-                  user={u}
-                  onClick={() => navigate(`/admin/users/${u.id}`)}
-                />
-              ))}
+            : data?.items.map((u) => {
+                const userId = parseAdminId(u.id);
+                return (
+                  <UserRow
+                    key={u.id}
+                    user={u}
+                    disabled={userId === null}
+                    onClick={() => {
+                      if (userId !== null) navigate(`/admin/users/${userId}`);
+                    }}
+                  />
+                );
+              })}
       </div>
 
-      {data && data.total > data.page_size && (
+      {data && shouldShowAdminPagination(data.total, data.page_size) && (
         <Pagination
           page={data.page}
           total={data.total}
@@ -216,28 +234,33 @@ function FilterRow<T extends string>({
   );
 }
 
-function UserRow({ user, onClick }: { user: AdminUserListItemDto; onClick: () => void }) {
+function UserRow({
+  user,
+  onClick,
+  disabled = false,
+}: {
+  user: AdminUserListItemDto;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full flex items-center gap-3 bg-panel rounded-card p-3 text-left active:scale-[0.98] transition"
+      disabled={disabled}
+      className="w-full flex items-center gap-3 bg-panel rounded-card p-3 text-left active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100"
     >
-      <div className="w-10 h-10 rounded-full bg-panel-2 overflow-hidden flex-shrink-0">
-        {user.photo_url && (
-          <img src={user.photo_url} alt="" className="w-full h-full object-cover" />
-        )}
-      </div>
+      <Avatar name={user.display_name} src={user.photo_url} size={40} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="font-medium truncate">{user.display_name}</span>
           {user.prefix && <BadgePrefix prefix={user.prefix} />}
         </div>
         <div className="text-xs text-text-muted truncate">
-          @{user.username ?? "—"} · tg {user.tg_user_id}
+          {formatAdminUsername(user.username)} · tg {formatAdminId(user.tg_user_id)}
         </div>
         <div className="text-xs text-text-muted">
-          Сделок: {user.deals_total} · ★ {user.rating.toFixed(1)} · Траст ${user.trust_deposit_balance.toFixed(2)}
+          Сделок: {formatAdminCount(user.deals_total)} · ★ {formatAdminRating(user.rating)} · Траст {formatAdminUsd(user.trust_deposit_balance)}
         </div>
       </div>
       <div className="flex flex-col items-end gap-1">
@@ -267,7 +290,7 @@ function Pagination({
   pageSize: number;
   onChange: (next: number) => void;
 }) {
-  const totalPages = Math.ceil(total / pageSize);
+  const totalPages = getAdminTotalPages(total, pageSize);
   return (
     <div className="flex items-center justify-center gap-2 mt-4 px-4">
       <button

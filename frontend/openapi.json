@@ -2,14 +2,17 @@
   "components": {
     "schemas": {
       "Admin2faConfirmIn": {
+        "additionalProperties": false,
         "properties": {
           "code": {
+            "pattern": "^\\d{6}$",
             "title": "Code",
             "type": "string"
           },
           "current_code": {
             "anyOf": [
               {
+                "pattern": "^\\d{6}$",
                 "type": "string"
               },
               {
@@ -19,6 +22,9 @@
             "title": "Current Code"
           },
           "secret": {
+            "maxLength": 64,
+            "minLength": 16,
+            "pattern": "^[A-Z2-7]{16,64}$",
             "title": "Secret",
             "type": "string"
           }
@@ -83,8 +89,10 @@
         "type": "object"
       },
       "Admin2faVerifyIn": {
+        "additionalProperties": false,
         "properties": {
           "code": {
+            "pattern": "^\\d{6}$",
             "title": "Code",
             "type": "string"
           }
@@ -703,11 +711,13 @@
         "type": "object"
       },
       "AdminBroadcastCreateIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /api/admin/broadcasts``.\n\nAudience filters compose with AND. All optional; if every filter is\nomitted the broadcast goes to *every* user.",
         "properties": {
           "audience_active_days": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -754,6 +764,7 @@
           "audience_min_deals": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -1090,6 +1101,7 @@
         "type": "object"
       },
       "AdminCategoryUpsertIn": {
+        "additionalProperties": false,
         "properties": {
           "icon": {
             "default": "",
@@ -1170,7 +1182,39 @@
         "title": "AdminCommentItemOut",
         "type": "object"
       },
+      "AdminCommentListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminCommentItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "AdminCommentListOut",
+        "type": "object"
+      },
       "AdminCommentUpdateIn": {
+        "additionalProperties": false,
         "properties": {
           "clear_rating": {
             "default": false,
@@ -1189,15 +1233,8 @@
             "title": "Rating"
           },
           "text": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text"
+            "title": "Text",
+            "type": "string"
           }
         },
         "title": "AdminCommentUpdateIn",
@@ -1330,8 +1367,12 @@
         "type": "object"
       },
       "AdminCurrencyRateUpsertIn": {
+        "additionalProperties": false,
         "properties": {
           "currency_code": {
+            "maxLength": 16,
+            "minLength": 1,
+            "pattern": "^[A-Z0-9]+$",
             "title": "Currency Code",
             "type": "string"
           },
@@ -1373,6 +1414,7 @@
         "type": "object"
       },
       "AdminCurrencyUpsertIn": {
+        "additionalProperties": false,
         "properties": {
           "address_regex": {
             "anyOf": [
@@ -1386,19 +1428,15 @@
             "title": "Address Regex"
           },
           "code": {
+            "maxLength": 16,
+            "minLength": 1,
+            "pattern": "^[A-Z0-9]+$",
             "title": "Code",
             "type": "string"
           },
           "decimals": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Decimals"
+            "title": "Decimals",
+            "type": "integer"
           },
           "icon_url": {
             "anyOf": [
@@ -1412,30 +1450,16 @@
             "title": "Icon Url"
           },
           "is_active": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Active"
+            "title": "Is Active",
+            "type": "boolean"
           },
           "kind": {
-            "anyOf": [
-              {
-                "enum": [
-                  "crypto",
-                  "fiat"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "enum": [
+              "crypto",
+              "fiat"
             ],
-            "title": "Kind"
+            "title": "Kind",
+            "type": "string"
           },
           "min_deposit": {
             "anyOf": [
@@ -1445,9 +1469,6 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Min Deposit"
@@ -1460,23 +1481,13 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Min Withdraw"
           },
           "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
+            "title": "Name",
+            "type": "string"
           },
           "network": {
             "anyOf": [
@@ -1490,15 +1501,8 @@
             "title": "Network"
           },
           "sort_order": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sort Order"
+            "title": "Sort Order",
+            "type": "integer"
           }
         },
         "required": [
@@ -1610,6 +1614,7 @@
         "type": "object"
       },
       "AdminDealAssignArbiterIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /api/admin/deals/:id/assign-arbiter``.\n\n``arbiter_id`` must reference a user with ``is_arbiter=True`` (admins\nare accepted too). Use ``None`` to clear the assignment.",
         "properties": {
           "arbiter_id": {
@@ -1919,6 +1924,7 @@
         "type": "object"
       },
       "AdminDealForceOut": {
+        "additionalProperties": false,
         "description": "Body for ``POST /api/admin/deals/:id/force-release`` and similar.\n\nOptional ``reason`` is propagated into the audit log and DMs.",
         "properties": {
           "approval_id": {
@@ -2105,6 +2111,7 @@
         "type": "object"
       },
       "AdminDealSplitIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /api/admin/deals/:id/split``.\n\n``buyer_percent`` is the share returned to the buyer; the seller\ngets ``100 - buyer_percent`` of the same locked pot. Commission\nis collected on the platform via the deposit invoice (P10) and\nis *never* refunded \u2014 admin-forced splits operate only on the\nlocked principal.",
         "properties": {
           "approval_id": {
@@ -2260,6 +2267,7 @@
         "type": "object"
       },
       "AdminReasonIn": {
+        "additionalProperties": false,
         "description": "Optional ``{reason}`` body shared by most state-change endpoints.\n\nUser stated reasons are *optional* \u2014 server accepts an empty body.\nA reason is logged verbatim into ``admin_audit_log.reason`` and DMed\nto the affected user.",
         "properties": {
           "reason": {
@@ -2352,8 +2360,40 @@
         "title": "AdminReviewItemOut",
         "type": "object"
       },
+      "AdminReviewListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminReviewItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "AdminReviewListOut",
+        "type": "object"
+      },
       "AdminReviewUpsertIn": {
-        "description": "Body for ``POST /api/admin/reviews`` (create) /\n``POST /api/admin/reviews/:id`` (edit).\n\nFor create, ``target_id`` and ``author_id`` are required. For edit,\nthey are ignored \u2014 only ``rating`` and ``text`` can be changed.",
+        "additionalProperties": false,
+        "description": "Body for ``POST /api/admin/reviews`` (create) /\n``POST /api/admin/reviews/:id`` (edit).\n\nFor create, ``target_id`` and ``author_id`` are required. For edit,\nthey are ignored \u2014 only ``rating`` and ``text`` can be changed.\n``text`` must be provided explicitly; pass an empty string to store\nan intentionally blank review.",
         "properties": {
           "author_id": {
             "anyOf": [
@@ -2393,13 +2433,13 @@
             "title": "Target Id"
           },
           "text": {
-            "default": "",
             "title": "Text",
             "type": "string"
           }
         },
         "required": [
-          "rating"
+          "rating",
+          "text"
         ],
         "title": "AdminReviewUpsertIn",
         "type": "object"
@@ -2504,8 +2544,40 @@
         "title": "AdminServiceItemOut",
         "type": "object"
       },
+      "AdminServiceListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminServiceItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "AdminServiceListOut",
+        "type": "object"
+      },
       "AdminServiceUpdateIn": {
-        "description": "Body for ``POST /api/admin/services/:id``.\n\nEvery field is optional. Negative numeric values are rejected per\nthe spec (counts / deposits cannot be < 0). ``rating_manual`` is\nbounded to 0..5 to match the user rating override; pass ``None``\nexplicitly with ``clear_rating=true`` to remove it.",
+        "additionalProperties": false,
+        "description": "Body for ``POST /api/admin/services/:id``.\n\nEvery field is optional. Negative numeric values are rejected per\nthe spec (counts / deposits cannot be < 0). ``rating_manual`` is\nbounded to 0..5 to match the user rating override; pass ``None``\nexplicitly or set ``clear_rating=true`` to remove it. Non-nullable\nservice columns reject explicit JSON ``null`` instead of silently\ntreating it as an omitted field.",
         "properties": {
           "ban_reason": {
             "anyOf": [
@@ -2524,15 +2596,8 @@
             "type": "boolean"
           },
           "deals_count": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deals Count"
+            "title": "Deals Count",
+            "type": "integer"
           },
           "deposit": {
             "anyOf": [
@@ -2542,23 +2607,13 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Deposit"
           },
           "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
+            "title": "Description",
+            "type": "string"
           },
           "price": {
             "anyOf": [
@@ -2568,9 +2623,6 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Price"
@@ -2591,49 +2643,29 @@
             "title": "Rating Manual"
           },
           "status": {
-            "anyOf": [
-              {
-                "enum": [
-                  "draft",
-                  "active",
-                  "paused",
-                  "banned"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "enum": [
+              "draft",
+              "active",
+              "paused",
+              "banned"
             ],
-            "title": "Status"
+            "title": "Status",
+            "type": "string"
           },
           "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
+            "title": "Title",
+            "type": "string"
           },
           "views": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Views"
+            "title": "Views",
+            "type": "integer"
           }
         },
         "title": "AdminServiceUpdateIn",
         "type": "object"
       },
       "AdminSetRatingIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /admin/users/:id/rating``.\n\n``rating`` is the manual override (0..5 with one decimal). Pass\n``None`` to clear the override and restore the auto-computed rating.",
         "properties": {
           "rating": {
@@ -2652,20 +2684,18 @@
         "type": "object"
       },
       "AdminSetRoleIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /admin/users/:id/role``.\n\nPass any combination of the three role flags. The moderator role\nwas dropped from the spec and is not supported here.",
         "properties": {
           "is_admin": {
-            "default": false,
             "title": "Is Admin",
             "type": "boolean"
           },
           "is_arbiter": {
-            "default": false,
             "title": "Is Arbiter",
             "type": "boolean"
           },
           "is_vip": {
-            "default": false,
             "title": "Is Vip",
             "type": "boolean"
           }
@@ -2674,51 +2704,24 @@
         "type": "object"
       },
       "AdminSetStatsIn": {
-        "description": "Body for ``POST /admin/users/:id/stats``.\n\nEvery field is optional \u2014 only provided keys are applied. Negative\nvalues are rejected because counts/sums don't make sense below\nzero. Rating is *not* part of this schema (see\n:class:`AdminSetRatingIn`) and has no range validation.",
+        "additionalProperties": false,
+        "description": "Body for ``POST /admin/users/:id/stats``.\n\nEvery field is optional \u2014 only provided keys are applied. Negative\nvalues and explicit JSON ``null`` are rejected because counts/sums\ndon't make sense below zero. Rating is *not* part of this schema (see\n:class:`AdminSetRatingIn`) and has no range validation.",
         "properties": {
           "bad": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bad"
+            "title": "Bad",
+            "type": "integer"
           },
           "deals_arbitrage": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deals Arbitrage"
+            "title": "Deals Arbitrage",
+            "type": "integer"
           },
           "deals_failed": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deals Failed"
+            "title": "Deals Failed",
+            "type": "integer"
           },
           "deals_success": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deals Success"
+            "title": "Deals Success",
+            "type": "integer"
           },
           "deals_sum_override": {
             "anyOf": [
@@ -2728,40 +2731,24 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Deals Sum Override"
           },
           "deals_total": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deals Total"
+            "title": "Deals Total",
+            "type": "integer"
           },
           "good": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Good"
+            "title": "Good",
+            "type": "integer"
           }
         },
         "title": "AdminSetStatsIn",
         "type": "object"
       },
       "AdminSetTrustDepositIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /admin/users/:id/trust-deposit``.\n\nSets the user's :attr:`~backend.app.models.User.trust_deposit_balance`\n\u2014 the column rendered as ``deposit`` on the public\n``UserOut`` / ``UserPublicOut`` DTOs.\n\nThe value is *absolute* (the admin types the new total, not a\ndelta); negative values are rejected because the trust deposit\nhas no spend / withdraw path so a negative balance is\nstructurally impossible.",
         "properties": {
           "amount": {
@@ -2873,18 +2860,12 @@
         "type": "object"
       },
       "AdminSettingsUpdateIn": {
-        "description": "Partial update of :class:`AppSettings`.\n\nEvery field is optional. Numeric values must be non-negative\n(commission percentages additionally bounded to ``0..100``).",
+        "additionalProperties": false,
+        "description": "Partial update of :class:`AppSettings`.\n\nEvery field is optional but explicit JSON ``null`` is not accepted:\nsettings columns are non-nullable and ``null`` would otherwise\nsurface as a database integrity error. Numeric values must be\nnon-negative (commission percentages additionally bounded to\n``0..100``).",
         "properties": {
           "auto_withdraw_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Auto Withdraw Enabled"
+            "title": "Auto Withdraw Enabled",
+            "type": "boolean"
           },
           "deal_commission_percent": {
             "anyOf": [
@@ -2894,34 +2875,17 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Deal Commission Percent"
           },
           "faq_stats_badge_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Faq Stats Badge Enabled"
+            "title": "Faq Stats Badge Enabled",
+            "type": "boolean"
           },
           "faq_stats_deals": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Faq Stats Deals"
+            "title": "Faq Stats Deals",
+            "type": "integer"
           },
           "faq_stats_total_usd": {
             "anyOf": [
@@ -2931,89 +2895,37 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Faq Stats Total Usd"
           },
           "faq_stats_users": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Faq Stats Users"
+            "title": "Faq Stats Users",
+            "type": "integer"
           },
           "inactivity_pending_cancellation_days": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inactivity Pending Cancellation Days"
+            "title": "Inactivity Pending Cancellation Days",
+            "type": "integer"
           },
           "inactivity_pending_confirmation_days": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inactivity Pending Confirmation Days"
+            "title": "Inactivity Pending Confirmation Days",
+            "type": "integer"
           },
           "maintenance_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Maintenance Enabled"
+            "title": "Maintenance Enabled",
+            "type": "boolean"
           },
           "maintenance_message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Maintenance Message"
+            "title": "Maintenance Message",
+            "type": "string"
           },
           "max_active_services_per_user": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Active Services Per User"
+            "title": "Max Active Services Per User",
+            "type": "integer"
           },
           "pending_topup_expiry_hours": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pending Topup Expiry Hours"
+            "title": "Pending Topup Expiry Hours",
+            "type": "integer"
           },
           "pin_reset_price_usd": {
             "anyOf": [
@@ -3023,9 +2935,6 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Pin Reset Price Usd"
@@ -3038,9 +2947,6 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Vip Commission Percent"
@@ -3660,6 +3566,7 @@
         "type": "object"
       },
       "AdminWalletAdjustIn": {
+        "additionalProperties": false,
         "description": "Body for ``POST /api/admin/wallets/:user_id/adjust``.\n\n``amount`` is the *delta* in the asset's native unit. Positive values\ncredit, negative debit. ``currency_code`` references the asset; the\nuser-balance row is created if absent.\n\nReason is optional per the user's directive (\"\u0435\u0441\u043b\u0438 \u043d\u0435 \u0443\u043a\u0430\u0437\u044b\u0432\u0430\u044e \u043f\u0440\u043e\u0441\u0442\u043e\n\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u0438\u0440\u0443\u0435\u0442 \u0431\u0430\u043b\u0430\u043d\u0441 \u043a\u0430\u043a \u044f \u0443\u043a\u0430\u0436\u0443\").",
         "properties": {
           "amount": {
@@ -3675,6 +3582,9 @@
             "title": "Amount"
           },
           "currency_code": {
+            "maxLength": 16,
+            "minLength": 1,
+            "pattern": "^[A-Z0-9]+$",
             "title": "Currency Code",
             "type": "string"
           },
@@ -3824,6 +3734,7 @@
         "type": "object"
       },
       "AdminWithdrawalDecisionIn": {
+        "additionalProperties": false,
         "description": "Body for approve/reject + manual mark-sent on a withdrawal.",
         "properties": {
           "action": {
@@ -4017,6 +3928,7 @@
         "type": "object"
       },
       "ClientErrorReport": {
+        "additionalProperties": false,
         "properties": {
           "component_stack": {
             "default": "",
@@ -4108,6 +4020,7 @@
         "type": "object"
       },
       "DealArbitrationRequest": {
+        "additionalProperties": false,
         "properties": {
           "reason": {
             "default": "",
@@ -4119,6 +4032,7 @@
         "type": "object"
       },
       "DealCancelRequest": {
+        "additionalProperties": false,
         "properties": {
           "reason": {
             "default": "",
@@ -4130,6 +4044,7 @@
         "type": "object"
       },
       "DealCreateWithTopup": {
+        "additionalProperties": false,
         "description": "P10 \u2014 input for ``POST /api/deals/with-topup``.\n\nExactly the same shape as :class:`DealCreate` but routed through\nthe commission-via-invoice service entry point. Kept as a separate\nclass so the OpenAPI surface stays explicit; the legacy\n``POST /api/deals`` route now delegates to the same service.",
         "properties": {
           "amount": {
@@ -4207,6 +4122,7 @@
         "type": "object"
       },
       "DealMessageCreate": {
+        "additionalProperties": false,
         "properties": {
           "attachments": {
             "default": [],
@@ -4288,6 +4204,11 @@
           "arbitration_initiator": {
             "anyOf": [
               {
+                "enum": [
+                  "buyer",
+                  "seller",
+                  "other"
+                ],
                 "type": "string"
               },
               {
@@ -4310,6 +4231,10 @@
           "arbitration_resolution": {
             "anyOf": [
               {
+                "enum": [
+                  "buyer",
+                  "seller"
+                ],
                 "type": "string"
               },
               {
@@ -4333,6 +4258,7 @@
           "arbitration_resolved_by": {
             "anyOf": [
               {
+                "const": "admin",
                 "type": "string"
               },
               {
@@ -4366,6 +4292,11 @@
           "cancellation_initiator": {
             "anyOf": [
               {
+                "enum": [
+                  "buyer",
+                  "seller",
+                  "other"
+                ],
                 "type": "string"
               },
               {
@@ -4478,10 +4409,19 @@
           },
           "payment_provider": {
             "default": "cryptobot",
+            "enum": [
+              "cryptobot",
+              "crystalpay"
+            ],
             "title": "Payment Provider",
             "type": "string"
           },
           "role": {
+            "enum": [
+              "buyer",
+              "seller",
+              "other"
+            ],
             "title": "Role",
             "type": "string"
           },
@@ -4508,6 +4448,19 @@
             "title": "Seller Photo Url"
           },
           "status": {
+            "enum": [
+              "cancelled",
+              "pending_confirmation",
+              "pending_payment",
+              "pending_topup",
+              "in_progress",
+              "completed",
+              "arbitration",
+              "resolved_for_buyer",
+              "resolved_for_seller",
+              "pending_cancellation",
+              "cancelled_for_inactivity"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -4549,6 +4502,7 @@
         "type": "object"
       },
       "DealResolveRequest": {
+        "additionalProperties": false,
         "properties": {
           "note": {
             "default": "",
@@ -4556,6 +4510,10 @@
             "type": "string"
           },
           "winner": {
+            "enum": [
+              "buyer",
+              "seller"
+            ],
             "title": "Winner",
             "type": "string"
           }
@@ -4565,6 +4523,24 @@
         ],
         "title": "DealResolveRequest",
         "type": "object"
+      },
+      "DealStatus": {
+        "description": "Deal lifecycle. Values match the Continental reference bundle\n(`pending_confirmation`, `in_progress`, `arbitration`, ...).\n\nTerminal states: ``cancelled``, ``completed``, ``resolved_for_buyer``,\n``resolved_for_seller``, ``cancelled_for_inactivity``.",
+        "enum": [
+          "cancelled",
+          "pending_confirmation",
+          "pending_payment",
+          "in_progress",
+          "completed",
+          "arbitration",
+          "resolved_for_buyer",
+          "resolved_for_seller",
+          "pending_cancellation",
+          "cancelled_for_inactivity",
+          "pending_topup"
+        ],
+        "title": "DealStatus",
+        "type": "string"
       },
       "DealTopupInvoiceOut": {
         "description": "P10 \u2014 deposit-invoice descriptor returned from the with-topup endpoint.\n\nMirrors the shape the frontend already consumes for wallet\ntop-ups (``WalletDepositOut``) but renames the fields to match\nthe spec's vocabulary (``topup_principal`` + ``commission`` +\n``total``).",
@@ -4603,6 +4579,10 @@
             "type": "string"
           },
           "provider": {
+            "enum": [
+              "cryptobot",
+              "crystalpay"
+            ],
             "title": "Provider",
             "type": "string"
           },
@@ -4820,6 +4800,11 @@
             "type": "string"
           },
           "type": {
+            "enum": [
+              "deals",
+              "deposits",
+              "system"
+            ],
             "title": "Type",
             "type": "string"
           }
@@ -4835,6 +4820,15 @@
         ],
         "title": "NotificationOut",
         "type": "object"
+      },
+      "NotificationType": {
+        "enum": [
+          "deals",
+          "deposits",
+          "system"
+        ],
+        "title": "NotificationType",
+        "type": "string"
       },
       "OperationalAlertOut": {
         "properties": {
@@ -4870,6 +4864,7 @@
         "type": "object"
       },
       "PinChangeIn": {
+        "additionalProperties": false,
         "properties": {
           "new_pin": {
             "maxLength": 4,
@@ -4892,6 +4887,7 @@
         "type": "object"
       },
       "PinCheckIn": {
+        "additionalProperties": false,
         "properties": {
           "pin": {
             "maxLength": 4,
@@ -4907,6 +4903,7 @@
         "type": "object"
       },
       "PinResetConfirmIn": {
+        "additionalProperties": false,
         "properties": {
           "code": {
             "maxLength": 6,
@@ -5010,6 +5007,7 @@
         "type": "object"
       },
       "PinSetupIn": {
+        "additionalProperties": false,
         "properties": {
           "pin": {
             "maxLength": 4,
@@ -5085,6 +5083,7 @@
         "type": "object"
       },
       "ReviewCreate": {
+        "additionalProperties": false,
         "properties": {
           "deal_id": {
             "title": "Deal Id",
@@ -5178,6 +5177,7 @@
         "type": "object"
       },
       "ServiceCommentCreate": {
+        "additionalProperties": false,
         "properties": {
           "rating": {
             "anyOf": [
@@ -5275,6 +5275,7 @@
         "type": "object"
       },
       "ServiceCreate": {
+        "additionalProperties": false,
         "properties": {
           "category_slug": {
             "title": "Category Slug",
@@ -5426,8 +5427,13 @@
         "type": "object"
       },
       "ServiceModerationDecision": {
+        "additionalProperties": false,
         "properties": {
           "action": {
+            "enum": [
+              "ban",
+              "unban"
+            ],
             "title": "Action",
             "type": "string"
           },
@@ -5602,31 +5608,18 @@
         "type": "string"
       },
       "ServiceUpdate": {
+        "additionalProperties": false,
         "properties": {
           "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
+            "title": "Description",
+            "type": "string"
           },
           "photo_urls": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Photo Urls"
+            "items": {
+              "type": "string"
+            },
+            "title": "Photo Urls",
+            "type": "array"
           },
           "price": {
             "anyOf": [
@@ -5637,34 +5630,22 @@
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
             "title": "Price"
           },
           "status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "enum": [
+              "draft",
+              "active",
+              "paused"
             ],
-            "title": "Status"
+            "title": "Status",
+            "type": "string"
           },
           "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
+            "title": "Title",
+            "type": "string"
           }
         },
         "title": "ServiceUpdate",
@@ -5728,6 +5709,7 @@
         "type": "object"
       },
       "TransferConfirmIn": {
+        "additionalProperties": false,
         "properties": {
           "code": {
             "maxLength": 32,
@@ -6218,6 +6200,7 @@
         "type": "object"
       },
       "UserUpdate": {
+        "additionalProperties": false,
         "properties": {
           "banner_url": {
             "anyOf": [
@@ -6454,6 +6437,7 @@
         "type": "object"
       },
       "WalletDepositCreateReq": {
+        "additionalProperties": false,
         "properties": {
           "amount": {
             "anyOf": [
@@ -6563,7 +6547,18 @@
         "title": "WalletDepositOut",
         "type": "object"
       },
+      "WalletDepositStatus": {
+        "enum": [
+          "pending",
+          "paid",
+          "expired",
+          "refunded"
+        ],
+        "title": "WalletDepositStatus",
+        "type": "string"
+      },
       "WalletWithdrawCreateReq": {
+        "additionalProperties": false,
         "properties": {
           "address": {
             "anyOf": [
@@ -6599,6 +6594,16 @@
         ],
         "title": "WalletWithdrawCreateReq",
         "type": "object"
+      },
+      "WalletWithdrawStatus": {
+        "enum": [
+          "pending",
+          "approved",
+          "sent",
+          "rejected"
+        ],
+        "title": "WalletWithdrawStatus",
+        "type": "string"
       },
       "WalletWithdrawalOut": {
         "properties": {
@@ -7811,6 +7816,9 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9_.:-]+$",
                   "type": "string"
                 },
                 {
@@ -7827,6 +7835,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -7843,6 +7852,9 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9_:-]+$",
                   "type": "string"
                 },
                 {
@@ -7859,6 +7871,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -9183,23 +9196,41 @@
             "required": false,
             "schema": {
               "default": "any",
+              "enum": [
+                "any",
+                "cancelled",
+                "pending_confirmation",
+                "pending_topup",
+                "in_progress",
+                "completed",
+                "arbitration",
+                "resolved_for_buyer",
+                "resolved_for_seller",
+                "pending_cancellation",
+                "cancelled_for_inactivity"
+              ],
               "title": "Status",
               "type": "string"
             }
           },
           {
+            "description": "Optional currency code filter for admin deal history.",
             "in": "query",
             "name": "currency",
             "required": false,
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 16,
+                  "minLength": 1,
+                  "pattern": "^[A-Z0-9]+$",
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "Optional currency code filter for admin deal history.",
               "title": "Currency"
             }
           },
@@ -9210,7 +9241,12 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 0.0,
                   "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -9226,7 +9262,12 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 0.0,
                   "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -9274,6 +9315,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -9290,6 +9332,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -9443,6 +9486,13 @@
             "required": false,
             "schema": {
               "default": "pending",
+              "enum": [
+                "any",
+                "pending",
+                "approved",
+                "executed",
+                "rejected"
+              ],
               "title": "Status",
               "type": "string"
             }
@@ -9454,6 +9504,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -9461,6 +9512,29 @@
                 }
               ],
               "title": "Target Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
             }
           },
           {
@@ -10428,7 +10502,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/WalletDepositStatus"
                 },
                 {
                   "type": "null"
@@ -10438,18 +10512,23 @@
             }
           },
           {
+            "description": "Optional currency code filter for admin deposit history.",
             "in": "query",
             "name": "currency",
             "required": false,
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 16,
+                  "minLength": 1,
+                  "pattern": "^[A-Z0-9]+$",
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "Optional currency code filter for admin deposit history.",
               "title": "Currency"
             }
           },
@@ -11308,6 +11387,29 @@
             }
           },
           {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -11361,11 +11463,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminCommentItemOut"
-                  },
-                  "title": "Response List Service Comments Api Admin Services  Service Id  Comments Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/AdminCommentListOut"
                 }
               }
             },
@@ -12286,6 +12384,29 @@
             }
           },
           {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -12339,11 +12460,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminCommentItemOut"
-                  },
-                  "title": "Response List User Comments Api Admin Users  User Id  Comments Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/AdminCommentListOut"
                 }
               }
             },
@@ -12794,6 +12911,29 @@
             }
           },
           {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -12847,11 +12987,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminReviewItemOut"
-                  },
-                  "title": "Response List User Reviews Api Admin Users  User Id  Reviews Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/AdminReviewListOut"
                 }
               }
             },
@@ -12989,6 +13125,29 @@
             }
           },
           {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -13042,11 +13201,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminServiceItemOut"
-                  },
-                  "title": "Response List User Services Api Admin Users  User Id  Services Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/AdminServiceListOut"
                 }
               }
             },
@@ -13970,7 +14125,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/WalletWithdrawStatus"
                 },
                 {
                   "type": "null"
@@ -14350,6 +14505,10 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "buyer",
+                    "seller"
+                  ],
                   "type": "string"
                 },
                 {
@@ -14366,13 +14525,40 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/DealStatus"
                 },
                 {
                   "type": "null"
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "description": "Max rows to return.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Row offset for cursorless pagination.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Row offset for cursorless pagination.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
             }
           },
           {
@@ -15664,7 +15850,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/NotificationType"
                 },
                 {
                   "type": "null"
@@ -15681,6 +15867,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "format": "date-time",
                   "type": "string"
                 },
                 {
@@ -16483,6 +16670,23 @@
           },
           {
             "in": "query",
+            "name": "deal_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Deal Id"
+            }
+          },
+          {
+            "in": "query",
             "name": "offset",
             "required": false,
             "schema": {
@@ -17006,6 +17210,19 @@
             }
           },
           {
+            "description": "Row offset for cursorless pagination.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Row offset for cursorless pagination.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -17379,18 +17596,27 @@
             }
           },
           {
+            "description": "Continental top-tab filter",
             "in": "query",
             "name": "filter",
             "required": false,
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "all",
+                    "arbiters",
+                    "admins",
+                    "with_deposit",
+                    "top_rating"
+                  ],
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "Continental top-tab filter",
               "title": "Filter"
             }
           },
@@ -17402,6 +17628,13 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "5.0",
+                    "4.5-4.9",
+                    "4.0-4.4",
+                    "3.5-3.9",
+                    "lt3.5"
+                  ],
                   "type": "string"
                 },
                 {
@@ -17420,6 +17653,12 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "0-10",
+                    "11-50",
+                    "51-100",
+                    "101+"
+                  ],
                   "type": "string"
                 },
                 {
@@ -17438,6 +17677,11 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "5",
+                    "3",
+                    "2"
+                  ],
                   "type": "string"
                 },
                 {
@@ -17456,6 +17700,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "format": "date",
                   "type": "string"
                 },
                 {
@@ -17474,6 +17719,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "format": "date",
                   "type": "string"
                 },
                 {
@@ -17494,6 +17740,33 @@
               "description": "When true, the endpoint is being used as a counterparty picker (e.g. on /deals/new) \u2014 bypass the 'min 1 deal' search gate so brand-new users can still find a counterparty to do their first deal with.",
               "title": "Picker",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Max rows to return. Capped at 200 to protect the DB.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return. Capped at 200 to protect the DB.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Row offset for cursorless pagination.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Row offset for cursorless pagination.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
             }
           },
           {
@@ -17740,6 +18013,52 @@
         "operationId": "list_user_deposits_api_wallet_deposits_get",
         "parameters": [
           {
+            "description": "Optional currency code filter for wallet history.",
+            "in": "query",
+            "name": "currency",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 16,
+                  "minLength": 1,
+                  "pattern": "^[A-Z0-9]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional currency code filter for wallet history.",
+              "title": "Currency"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Row offset for cursorless pagination.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Row offset for cursorless pagination.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -17907,6 +18226,52 @@
       "get": {
         "operationId": "list_user_withdrawals_api_wallet_withdrawals_get",
         "parameters": [
+          {
+            "description": "Optional currency code filter for wallet history.",
+            "in": "query",
+            "name": "currency",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 16,
+                  "minLength": 1,
+                  "pattern": "^[A-Z0-9]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional currency code filter for wallet history.",
+              "title": "Currency"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Row offset for cursorless pagination.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Row offset for cursorless pagination.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
           {
             "in": "header",
             "name": "authorization",

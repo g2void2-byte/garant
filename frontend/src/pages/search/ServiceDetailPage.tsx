@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { HandCoins, MessageSquare, Star, Trash2 } from "lucide-react";
 import { Page } from "@/components/layout/Page";
@@ -10,25 +10,84 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
+  buildServiceCommentsSearchParams,
   useCreateServiceComment,
   useDeleteServiceComment,
   useMe,
   useServiceComments,
   useServiceDetail,
 } from "@/api/hooks";
+import { api } from "@/api/client";
 import type { ServiceCommentDto, ServiceDetailDto } from "@/api/types";
-import { dealsLabel, formatMoney, relativeTime } from "@/lib/format";
+import { dealsLabel, formatCountValue, formatMoney, formatRatingValue, parseNonNegativeIntegerValue, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { openTelegramLink } from "@/lib/tg";
+import { buildTelegramUserUrl } from "@/lib/telegramLinks";
+import { parsePositiveIntRouteParam, parsePositiveIntValue } from "@/lib/routeParams";
+import { safeMediaUrl } from "@/lib/mediaLinks";
+import { createDealPath, normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
+
+const SERVICE_COMMENTS_PAGE_SIZE = 50;
 
 export default function ServiceDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const serviceId = id ? Number(id) : undefined;
-  const { data: service, isLoading } = useServiceDetail(serviceId);
-  const { data: comments } = useServiceComments(serviceId);
+  const serviceId = parsePositiveIntRouteParam(id);
+  const { data: service, isError, isLoading } = useServiceDetail(serviceId);
+  const firstCommentsParams = useMemo(
+    () => ({ limit: SERVICE_COMMENTS_PAGE_SIZE, offset: 0 }),
+    [],
+  );
+  const { data: comments } = useServiceComments(serviceId, firstCommentsParams);
   const { data: me } = useMe();
+  const [commentItems, setCommentItems] = useState<ServiceCommentDto[]>([]);
+  const [commentsReachedEnd, setCommentsReachedEnd] = useState(false);
+  const [loadingMoreComments, setLoadingMoreComments] = useState(false);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
 
-  if (isLoading || !service || !serviceId) {
+  useEffect(() => {
+    const page = comments ?? [];
+    setCommentItems(page);
+    setCommentsReachedEnd(page.length < SERVICE_COMMENTS_PAGE_SIZE);
+    setCommentsError(null);
+  }, [comments, serviceId]);
+
+  const loadMoreComments = async () => {
+    if (!serviceId || loadingMoreComments || commentsReachedEnd) return;
+    setLoadingMoreComments(true);
+    setCommentsError(null);
+    try {
+      const page = await api
+        .get(`api/services/${serviceId}/comments`, {
+          searchParams: buildServiceCommentsSearchParams({
+            limit: SERVICE_COMMENTS_PAGE_SIZE,
+            offset: commentItems.length,
+          }),
+        })
+        .json<ServiceCommentDto[]>();
+      setCommentItems((prev) => [...prev, ...page]);
+      if (page.length < SERVICE_COMMENTS_PAGE_SIZE) setCommentsReachedEnd(true);
+    } catch (e: unknown) {
+      setCommentsError((e as Error)?.message || "Не удалось загрузить еще комментарии");
+    } finally {
+      setLoadingMoreComments(false);
+    }
+  };
+
+  if (!serviceId || isError) {
+    return (
+      <Page showBack>
+        <Header title="Услуга" />
+        <div className="px-4">
+          <EmptyState
+            title="Услуга не найдена"
+            description="Проверьте ссылку или вернитесь к каталогу."
+          />
+        </div>
+      </Page>
+    );
+  }
+
+  if (isLoading) {
     return (
       <Page showBack>
         <Header title="Услуга" />
@@ -41,6 +100,19 @@ export default function ServiceDetailPage() {
     );
   }
 
+  if (!service) {
+    return (
+      <Page showBack>
+        <Header title="Услуга" />
+        <div className="px-4">
+          <EmptyState title="Услуга не найдена" />
+        </div>
+      </Page>
+    );
+  }
+
+  const commentsCount = parseNonNegativeIntegerValue(service.comments_count);
+
   return (
     <Page showBack>
       <Header title="Услуга" />
@@ -52,7 +124,16 @@ export default function ServiceDetailPage() {
         {service.description && <ServiceDescription text={service.description} />}
         <CommentsSection
           serviceId={serviceId}
-          comments={comments ?? []}
+          comments={commentItems}
+          hasMore={
+            !commentsReachedEnd &&
+            commentItems.length >= SERVICE_COMMENTS_PAGE_SIZE &&
+            commentsCount !== null &&
+            commentItems.length < commentsCount
+          }
+          loadingMore={loadingMoreComments}
+          loadMoreError={commentsError}
+          onLoadMore={loadMoreComments}
           isOwner={service.owner?.username === me?.username}
           myId={me?.id}
           isAdmin={Boolean(me?.admin && me.admin > 0)}
@@ -63,10 +144,13 @@ export default function ServiceDetailPage() {
 }
 
 function ServicePhotoGallery({ photos }: { photos: string[] }) {
-  if (!photos.length) return null;
+  const safePhotos = photos
+    .map((url) => safeMediaUrl(url))
+    .filter((url): url is string => Boolean(url));
+  if (!safePhotos.length) return null;
   return (
     <div className="-mx-4 px-4 flex gap-2 overflow-x-auto snap-x snap-mandatory pb-1">
-      {photos.map((url, i) => (
+      {safePhotos.map((url, i) => (
         <div
           key={`${url}-${i}`}
           className="shrink-0 w-[78%] aspect-[4/3] rounded-card overflow-hidden bg-panel-2 snap-center border border-border"
@@ -79,8 +163,7 @@ function ServicePhotoGallery({ photos }: { photos: string[] }) {
 }
 
 function ServiceHeroCard({ service }: { service: ServiceDetailDto }) {
-  const rating =
-    service.rating_avg !== null ? service.rating_avg.toFixed(1) : null;
+  const rating = service.rating_avg !== null ? formatRatingValue(service.rating_avg) : null;
   return (
     <Card className="p-0 overflow-hidden">
       <div className="relative h-32 bg-gradient-to-br from-accent/30 via-panel-2 to-panel flex items-center justify-center">
@@ -117,46 +200,52 @@ function OwnerActions({
   const navigate = useNavigate();
   const owner = service.owner;
   if (!owner) return null;
-  const isSelf = owner.username === myUsername;
+  const ownerUsername = normalizeUsernameRef(owner.username);
+  const ownerProfilePath = userProfilePath(ownerUsername);
+  const ownerDealPath = createDealPath(ownerUsername);
+  const ownerTelegramUrl = buildTelegramUserUrl(ownerUsername);
+  const isSelf = ownerUsername === normalizeUsernameRef(myUsername);
+  const ownerName = owner.display_name || ownerUsername || "Владелец";
+  const ownerMeta = ownerUsername
+    ? `@${ownerUsername} · ${dealsLabel(owner.deals_count)}`
+    : `Профиль недоступен · ${dealsLabel(owner.deals_count)}`;
+  const ownerInfo = (
+    <>
+      <Avatar name={ownerName} src={owner.photo_url} size={48} />
+      <div className="min-w-0">
+        <div className="font-semibold truncate">{ownerName}</div>
+        <div className="text-xs text-text-muted truncate">{ownerMeta}</div>
+      </div>
+    </>
+  );
   return (
     <Card className="p-3">
       <div className="flex items-center gap-3">
-        <Link
-          to={`/users/${owner.username}`}
-          className="flex items-center gap-3 min-w-0 flex-1"
-        >
-          <Avatar
-            name={owner.display_name || owner.username || "?"}
-            src={owner.photo_url}
-            size={48}
-          />
-          <div className="min-w-0">
-            <div className="font-semibold truncate">
-              {owner.display_name || owner.username}
-            </div>
-            <div className="text-xs text-text-muted truncate">
-              @{owner.username} · {dealsLabel(owner.deals_count)}
-            </div>
-          </div>
-        </Link>
+        {ownerProfilePath ? (
+          <Link
+            to={ownerProfilePath}
+            className="flex items-center gap-3 min-w-0 flex-1"
+          >
+            {ownerInfo}
+          </Link>
+        ) : (
+          <div className="flex items-center gap-3 min-w-0 flex-1">{ownerInfo}</div>
+        )}
       </div>
-      {!isSelf && (
+      {!isSelf && ownerDealPath && (
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Button
             variant="primary"
             size="md"
-            onClick={() => navigate(`/create-deal/${owner.username}`)}
+            onClick={() => navigate(ownerDealPath)}
           >
             <HandCoins className="size-4" /> Сделка
           </Button>
           <Button
             variant="secondary"
             size="md"
-            onClick={() =>
-              owner.username
-                ? openTelegramLink(`https://t.me/${owner.username}`)
-                : undefined
-            }
+            disabled={!ownerTelegramUrl}
+            onClick={() => ownerTelegramUrl && openTelegramLink(ownerTelegramUrl)}
           >
             <MessageSquare className="size-4" /> Написать
           </Button>
@@ -167,19 +256,21 @@ function OwnerActions({
 }
 
 function ServiceStatsRow({ service }: { service: ServiceDetailDto }) {
+  const ratingCount = parseNonNegativeIntegerValue(service.rating_count);
+  const commentsCount = parseNonNegativeIntegerValue(service.comments_count);
   const items = [
     {
       label: "Рейтинг",
       value:
-        service.rating_avg !== null ? service.rating_avg.toFixed(1) : "—",
-      hint: service.rating_count
-        ? `${service.rating_count} оценок`
+        service.rating_avg !== null ? formatRatingValue(service.rating_avg) : "—",
+      hint: ratingCount !== null && ratingCount > 0
+        ? `${ratingCount} оценок`
         : "нет оценок",
     },
     {
       label: "Комментарии",
-      value: String(service.comments_count),
-      hint: service.comments_count ? "за всё время" : "пока пусто",
+      value: formatCountValue(service.comments_count),
+      hint: commentsCount !== null && commentsCount > 0 ? "за всё время" : "пока пусто",
     },
   ];
   return (
@@ -211,12 +302,20 @@ function ServiceDescription({ text }: { text: string }) {
 function CommentsSection({
   serviceId,
   comments,
+  hasMore,
+  loadingMore,
+  loadMoreError,
+  onLoadMore,
   isOwner,
   myId,
   isAdmin,
 }: {
   serviceId: number;
   comments: ServiceCommentDto[];
+  hasMore: boolean;
+  loadingMore: boolean;
+  loadMoreError: string | null;
+  onLoadMore: () => void;
   isOwner: boolean;
   myId?: number;
   isAdmin: boolean;
@@ -245,6 +344,12 @@ function CommentsSection({
           />
         ))
       )}
+      {hasMore && (
+        <Button onClick={onLoadMore} disabled={loadingMore} className="w-full">
+          {loadingMore ? "Загружаю..." : "Показать еще"}
+        </Button>
+      )}
+      {loadMoreError && <div className="text-xs text-danger text-center">{loadMoreError}</div>}
     </div>
   );
 }
@@ -338,7 +443,7 @@ function CommentComposer({ serviceId }: { serviceId: number }) {
 
 function CommentRow({
   serviceId,
-  comment,
+  comment: rawComment,
   canDelete,
 }: {
   serviceId: number;
@@ -346,6 +451,13 @@ function CommentRow({
   canDelete: boolean;
 }) {
   const del = useDeleteServiceComment(serviceId);
+  const comment = {
+    ...rawComment,
+    author_username: normalizeUsernameRef(rawComment.author_username),
+  };
+  const authorPath = userProfilePath(comment.author_username);
+  const ratingLabel = comment.rating !== null ? formatRatingValue(comment.rating) : null;
+  const commentId = parsePositiveIntValue(comment.id);
   return (
     <Card className="p-3">
       <div className="flex items-start gap-3">
@@ -357,19 +469,15 @@ function CommentRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <Link
-              to={
-                comment.author_username
-                  ? `/users/${comment.author_username}`
-                  : "#"
-              }
+              to={authorPath ?? "#"}
               className="font-semibold text-sm truncate hover:text-accent"
             >
               {comment.author_display_name || comment.author_username || "—"}
             </Link>
-            {comment.rating !== null && (
+            {ratingLabel !== null && (
               <span className="inline-flex items-center gap-0.5 text-accent text-xs font-bold">
                 <Star className="size-3 fill-current" />
-                {comment.rating}
+                {ratingLabel}
               </span>
             )}
             <span className="ml-auto text-[11px] text-text-muted">
@@ -382,10 +490,10 @@ function CommentRow({
             </div>
           )}
         </div>
-        {canDelete && (
+        {canDelete && commentId !== undefined && (
           <button
             type="button"
-            onClick={() => del.mutate(comment.id)}
+            onClick={() => del.mutate(commentId)}
             disabled={del.isPending}
             className="text-text-muted hover:text-danger p-1 -mr-1"
             aria-label="Удалить"

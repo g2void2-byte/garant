@@ -61,6 +61,11 @@ vi.mock("@/lib/tg", () => ({
   showBackButton: () => () => {},
 }));
 
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock("@/components/ui/Toast", () => ({
+  useToast: () => ({ show: toastSpy }),
+}));
+
 const navigateSpy = vi.hoisted(() => vi.fn());
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>(
@@ -74,11 +79,11 @@ vi.mock("react-router-dom", async () => {
 
 import WalletDepositPage from "./WalletDepositPage";
 
-function renderPage() {
+function renderPage(initialEntry = "/wallet/deposit") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <WalletDepositPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -118,10 +123,25 @@ function makeDeposit(over: Partial<WalletDepositDto> = {}): WalletDepositDto {
   };
 }
 
+function makeBalance(over: Partial<WalletBalanceDto> = {}): WalletBalanceDto {
+  return {
+    currency: makeCurrency(),
+    amount: 10,
+    locked: 0,
+    total: 10,
+    updated_at: null,
+    amount_str: "10",
+    locked_str: "0",
+    total_str: "10",
+    ...over,
+  };
+}
+
 beforeEach(() => {
   hapticSpy.mockClear();
   openTelegramLinkSpy.mockClear();
   openExternalLinkSpy.mockClear();
+  toastSpy.mockClear();
   navigateSpy.mockClear();
   mockState.currenciesLoading = false;
   mockState.currencies = [
@@ -166,11 +186,65 @@ describe("<WalletDepositPage />", () => {
     expect(screen.getByText(/Минимум: 5 USD/)).toBeInTheDocument();
   });
 
+  it("does not show available balance from malformed runtime amounts", () => {
+    mockState.balances = [
+      makeBalance({
+        amount: "1e2" as unknown as number,
+        amount_str: "1e2",
+      }),
+    ];
+    renderPage();
+
+    expect(screen.queryByText(/Доступно/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
+  it("renders available balance from canonical string mirrors", () => {
+    mockState.balances = [
+      makeBalance({
+        amount: "1e2" as unknown as number,
+        amount_str: "25.5",
+      }),
+    ];
+    renderPage();
+
+    expect(screen.getByText(/Доступно:/)).toBeInTheDocument();
+    expect(screen.getByText(/25\.5 USD/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it("hides crypto currencies from the dropdown", () => {
     renderPage();
     // Tether (kind='crypto') is filtered out; only fiat rows remain.
     expect(screen.queryByText(/Tether/)).not.toBeInTheDocument();
     expect(screen.getByText(/US Dollar · USD/)).toBeInTheDocument();
+  });
+
+  it("hides malformed fiat currency rows and submits normalized codes", async () => {
+    mockState.currencies = [
+      makeCurrency({ id: 1, code: "USD/../admin", name: "Broken Dollar" }),
+      makeCurrency({ id: 2, code: " uah ", name: "Hryvnia", min_deposit: 50 }),
+    ];
+    mockState.createMutation.mutateAsync.mockResolvedValue(
+      makeDeposit({ currency: makeCurrency({ code: "UAH", name: "Hryvnia" }) }),
+    );
+    const user = userEvent.setup();
+    renderPage("/wallet/deposit?currency=USD%2F..%2Fadmin");
+
+    expect(screen.queryByText(/Broken Dollar/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/Hryvnia · UAH/)).toBeInTheDocument();
+
+    const amount = screen.getByDisplayValue("50") as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: "75" } });
+    await user.click(screen.getByRole("button", { name: /Пополнить баланс/ }));
+
+    await waitFor(() => {
+      expect(mockState.createMutation.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "UAH",
+        amount: "75",
+        provider: "cryptobot",
+      });
+    });
   });
 
   it("renders a loading skeleton while currencies are loading", () => {
@@ -223,6 +297,28 @@ describe("<WalletDepositPage />", () => {
     vi.useRealTimers();
   });
 
+  it("normalizes deposit response currency codes in the success toast", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(
+      makeDeposit({ currency: makeCurrency({ code: " usd " }), amount: 10 }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    const amount = screen.getByDisplayValue("5") as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: "10" } });
+    await user.click(screen.getByRole("button", { name: /Пополнить баланс/ }));
+
+    await waitFor(() => {
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "success",
+          body: expect.stringContaining("10 USD"),
+        }),
+      );
+    });
+    const successToast = toastSpy.mock.calls.find(([toast]) => toast.kind === "success")?.[0];
+    expect(successToast?.body).not.toContain(" usd ");
+  });
+
   it("submits provider='crystalpay' and surfaces the Crystalpay invoice via openExternalLink", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mockState.createMutation.mutateAsync.mockResolvedValue(
@@ -255,6 +351,29 @@ describe("<WalletDepositPage />", () => {
     );
     expect(openTelegramLinkSpy).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it("does not open the payment link when the create response amount is malformed", async () => {
+    mockState.createMutation.mutateAsync.mockResolvedValue(
+      makeDeposit({
+        pay_url: "https://t.me/CryptoBot?start=bad-amount",
+        amount: "1e2" as unknown as number,
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    const amount = screen.getByDisplayValue("5") as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: "10" } });
+    await user.click(screen.getByRole("button", {
+      name: /\u041f\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u044c \u0431\u0430\u043b\u0430\u043d\u0441/,
+    }));
+
+    await waitFor(() => {
+      expect(mockState.createMutation.mutateAsync).toHaveBeenCalled();
+    });
+    expect(screen.getByTestId("deposit-status-modal")).toBeInTheDocument();
+    expect(openTelegramLinkSpy).not.toHaveBeenCalled();
+    expect(openExternalLinkSpy).not.toHaveBeenCalled();
   });
 
   it("error path: surfaces server error via haptic('error')", async () => {

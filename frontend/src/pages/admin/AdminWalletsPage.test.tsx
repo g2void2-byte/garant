@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
   AdminCurrencyDto,
+  AdminCurrencyRateDto,
   AdminWalletListDto,
 } from "@/api/types";
 
@@ -21,6 +22,7 @@ const mockState = vi.hoisted(() => ({
   list: undefined as AdminWalletListDto | undefined,
   loading: false,
   currencies: [] as AdminCurrencyDto[],
+  rates: [] as AdminCurrencyRateDto[],
   adjust: {
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
@@ -31,16 +33,16 @@ const mockState = vi.hoisted(() => ({
   },
   shouldRender: true as boolean,
   lastAdjustUserId: undefined as number | undefined,
-  lastWalletsQuery: undefined as { q?: string; page?: number } | undefined,
+  lastWalletsQuery: undefined as { q?: string; page?: number; page_size?: number } | undefined,
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
-  useAdminWallets: (q: { q?: string; page?: number }) => {
+  useAdminWallets: (q: { q?: string; page?: number; page_size?: number }) => {
     mockState.lastWalletsQuery = q;
     return { data: mockState.list, isLoading: mockState.loading };
   },
   useAdminCurrencies: () => ({ data: mockState.currencies }),
-  useAdminCurrencyRates: () => ({ data: [] }),
+  useAdminCurrencyRates: () => ({ data: mockState.rates }),
   useAdminUpsertCurrencyRate: () => mockState.upsertRate,
   useAdminAdjustBalance: (userId: number) => {
     mockState.lastAdjustUserId = userId;
@@ -133,6 +135,8 @@ beforeEach(() => {
       min_withdraw: 10,
       is_active: true,
       sort_order: 0,
+      address_regex: "",
+      kind: "crypto",
     },
     {
       id: 2,
@@ -145,10 +149,13 @@ beforeEach(() => {
       min_withdraw: 1,
       is_active: true,
       sort_order: 1,
+      address_regex: "",
+      kind: "crypto",
     },
   ];
   mockState.adjust = { mutateAsync: vi.fn(), isPending: false };
   mockState.upsertRate = { mutateAsync: vi.fn(), isPending: false };
+  mockState.rates = [];
   mockState.shouldRender = true;
   mockState.lastAdjustUserId = undefined;
   mockState.lastWalletsQuery = undefined;
@@ -174,6 +181,18 @@ describe("<AdminWalletsPage />", () => {
     expect(screen.getByText("Ничего не найдено")).toBeInTheDocument();
   });
 
+  it("renders malformed list totals as a neutral dash", () => {
+    mockState.list = {
+      items: [],
+      total: "1e2" as unknown as number,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText(/\u2014 пользователей/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it("renders rows with non-zero balances and 'лок.' annotation", () => {
     mockState.list = {
       items: [makeUserBalance()],
@@ -187,6 +206,54 @@ describe("<AdminWalletsPage />", () => {
     expect(screen.getByText(/100\.00/)).toBeInTheDocument();
     expect(screen.getByText(/\(\+5\.00 лок\.\)/)).toBeInTheDocument();
     expect(screen.queryByText("TON")).not.toBeInTheDocument();
+  });
+
+  it("normalizes wallet balance currency labels before display", async () => {
+    const base = makeUserBalance();
+    mockState.list = {
+      items: [
+        {
+          ...base,
+          balances: [
+            { ...base.balances[0], currency_code: " usdt " },
+            { ...base.balances[1], amount: "2", total: "2", currency_code: "../TON" },
+          ],
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    const user = userEvent.setup();
+    const { container } = renderPage();
+
+    expect(container.textContent).toContain("USDT");
+    expect(container.textContent).toContain("\u2014");
+    expect(container.textContent).not.toMatch(/ usdt /);
+    expect(container.textContent).not.toMatch(/\.\.\/TON/);
+
+    await user.click(screen.getByText("Alice"));
+    expect(container.textContent).not.toMatch(/\.\.\/TON/);
+  });
+
+  it("renders malformed wallet amounts as neutral values", () => {
+    const base = makeUserBalance();
+    mockState.list = {
+      items: [
+        {
+          ...base,
+          total_usd_estimate: "1500.5",
+          balances: [{ ...base.balances[0], amount: "1e2", locked: "0", total: "1" }],
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText("USD estimate: $1500.50")).toBeInTheDocument();
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText(/0\.00/)).not.toBeInTheDocument();
   });
 
   it("shows 'Балансов нет' placeholder when all balances are zero", () => {
@@ -211,6 +278,161 @@ describe("<AdminWalletsPage />", () => {
     expect(screen.getByText("Alice")).toBeInTheDocument();
   });
 
+  it("keeps balances visible when total is malformed but amount is valid", () => {
+    const base = makeUserBalance();
+    mockState.list = {
+      items: [
+        {
+          ...base,
+          balances: [{ ...base.balances[0], amount: "25", locked: "0", total: "1e2" }],
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+
+    expect(screen.getByText("USDT")).toBeInTheDocument();
+    expect(screen.getByText(/25\.00/)).toBeInTheDocument();
+    expect(screen.queryByText("Р‘Р°Р»Р°РЅСЃРѕРІ РЅРµС‚")).not.toBeInTheDocument();
+  });
+
+  it("uses malformed-total visible balances as the default adjust currency", async () => {
+    const base = makeUserBalance();
+    mockState.list = {
+      items: [
+        {
+          ...base,
+          balances: [
+            { ...base.balances[1], currency_code: "TON", amount: "2", locked: "0", total: "1e2" },
+          ],
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    mockState.adjust.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByText("Alice"));
+    const amountInput = await screen.findByPlaceholderText(/напр\. -25/);
+    fireEvent.change(amountInput, { target: { value: "5" } });
+    await user.click(screen.getByRole("button", { name: /Применить/ }));
+
+    await waitFor(() =>
+      expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ currency_code: "TON", amount: "5" }),
+      ),
+    );
+  });
+
+  it("normalizes the default adjust currency before submitting", async () => {
+    const base = makeUserBalance();
+    mockState.list = {
+      items: [
+        {
+          ...base,
+          balances: [
+            { ...base.balances[1], currency_code: " ton ", amount: "2", locked: "0", total: "2" },
+          ],
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    mockState.adjust.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByText("Alice"));
+    const amountInput = await screen.findByPlaceholderText(/напр\. -25/);
+    fireEvent.change(amountInput, { target: { value: "5" } });
+    await user.click(screen.getByRole("button", { name: /Применить/ }));
+
+    await waitFor(() =>
+      expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ currency_code: "TON", amount: "5" }),
+      ),
+    );
+  });
+
+  it("normalizes catalog currency chips before adjust mutations", async () => {
+    mockState.currencies = [
+      mockState.currencies[0],
+      { ...mockState.currencies[1], code: " ton " },
+    ];
+    mockState.list = {
+      items: [makeUserBalance()],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    mockState.adjust.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByText("Alice"));
+    await user.click(await screen.findByRole("button", { name: "TON" }));
+    const amountInput = await screen.findByPlaceholderText(/напр\. -25/);
+    fireEvent.change(amountInput, { target: { value: "5" } });
+    await user.click(screen.getByRole("button", { name: /Применить/ }));
+
+    await waitFor(() =>
+      expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ currency_code: "TON", amount: "5" }),
+      ),
+    );
+  });
+
+  it("renders missing wallet username as a non-handle label", () => {
+    mockState.list = {
+      items: [{ ...makeUserBalance(), username: null }],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/)).toBeInTheDocument();
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
+  it("shows every non-zero balance in the adjust sheet when the row preview is capped", async () => {
+    const base = makeUserBalance();
+    const balances = [
+      base.balances[0],
+      { ...base.balances[0], currency_id: 2, currency_code: "TON", amount: "2", locked: "0", total: "2" },
+      { ...base.balances[0], currency_id: 3, currency_code: "ETH", amount: "3", locked: "0", total: "3" },
+      { ...base.balances[0], currency_id: 4, currency_code: "LTC", amount: "4", locked: "0", total: "4" },
+      {
+        ...base.balances[0],
+        currency_id: 5,
+        currency_code: "BTC",
+        decimals: 8,
+        amount: "0.25",
+        locked: "0",
+        total: "0.25",
+      },
+    ];
+    mockState.list = {
+      items: [{ ...base, balances }],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    const user = userEvent.setup();
+
+    renderPage();
+    expect(screen.queryByText("BTC")).not.toBeInTheDocument();
+    await user.click(screen.getByText("Alice"));
+
+    expect(await screen.findByText("BTC")).toBeInTheDocument();
+    expect(screen.getByText("0.25000000")).toBeInTheDocument();
+  });
+
   it("typing search + Enter triggers a refetch with trimmed q", async () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
     renderPage();
@@ -218,6 +440,25 @@ describe("<AdminWalletsPage />", () => {
     fireEvent.change(input, { target: { value: "  alice  " } });
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(mockState.lastWalletsQuery?.q).toBe("alice"));
+  });
+
+  it("pagination advances beyond page one and search resets back to the first page", async () => {
+    mockState.list = { items: [makeUserBalance()], total: 80, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    expect(mockState.lastWalletsQuery?.page_size).toBe(50);
+    await user.click(screen.getByLabelText("\u0412\u043f\u0435\u0440\u0451\u0434"));
+    await waitFor(() => expect(mockState.lastWalletsQuery?.page).toBe(2));
+
+    const input = screen.getByPlaceholderText("@username");
+    fireEvent.change(input, { target: { value: "  alice  " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => {
+      expect(mockState.lastWalletsQuery?.q).toBe("alice");
+      expect(mockState.lastWalletsQuery?.page).toBe(1);
+    });
   });
 
   it("clicking a row opens the adjust sheet and 'Применить' is disabled at first", async () => {
@@ -236,6 +477,25 @@ describe("<AdminWalletsPage />", () => {
     expect(mockState.lastAdjustUserId).toBe(11);
     const apply = screen.getByRole("button", { name: "Применить" });
     expect(apply).toBeDisabled();
+  });
+
+  it("blocks exponent or hex wallet adjustment amounts", async () => {
+    mockState.list = {
+      items: [makeUserBalance()],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByText("Alice"));
+
+    const amountInput = await screen.findByPlaceholderText(/напр\. -25/);
+    fireEvent.change(amountInput, { target: { value: "1e2" } });
+
+    expect(screen.getByText("Введите ненулевую сумму без экспоненты")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Применить" })).toBeDisabled();
+    expect(mockState.adjust.mutateAsync).not.toHaveBeenCalled();
   });
 
   it("entering an amount + 'Применить' fires adjust mutation with parsed values", async () => {
@@ -259,7 +519,7 @@ describe("<AdminWalletsPage />", () => {
     await waitFor(() =>
       expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith({
         currency_code: "USDT",
-        amount: 25,
+        amount: "25",
         reason: "refund",
       }),
     );
@@ -268,7 +528,7 @@ describe("<AdminWalletsPage />", () => {
     );
   });
 
-  it("'Списать' shortcut flips a positive amount to negative", async () => {
+  it("'Списать' shortcut flips a positive amount to negative without rounding", async () => {
     mockState.list = {
       items: [makeUserBalance()],
       total: 1,
@@ -281,9 +541,9 @@ describe("<AdminWalletsPage />", () => {
     const amountInput = (await screen.findByPlaceholderText(
       /напр\. -25/,
     )) as HTMLInputElement;
-    fireEvent.change(amountInput, { target: { value: "10" } });
+    fireEvent.change(amountInput, { target: { value: "0.123456789123456789" } });
     await user.click(screen.getByRole("button", { name: /Списать/ }));
-    await waitFor(() => expect(amountInput.value).toBe("-10"));
+    await waitFor(() => expect(amountInput.value).toBe("-0.123456789123456789"));
   });
 
   it("currency chip click switches the active currency for the mutation", async () => {
@@ -303,8 +563,111 @@ describe("<AdminWalletsPage />", () => {
     await user.click(screen.getByRole("button", { name: "Применить" }));
     await waitFor(() =>
       expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({ currency_code: "TON", amount: 5 }),
+        expect.objectContaining({ currency_code: "TON", amount: "5" }),
       ),
+    );
+  });
+
+  it("sends precise wallet adjustment decimals as strings", async () => {
+    mockState.list = {
+      items: [makeUserBalance()],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    mockState.adjust.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByText("Alice"));
+
+    const amountInput = await screen.findByPlaceholderText(/напр\. -25/);
+    fireEvent.change(amountInput, { target: { value: "0.123456789123456789" } });
+    await user.click(screen.getByRole("button", { name: "Применить" }));
+
+    await waitFor(() =>
+      expect(mockState.adjust.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          currency_code: "USDT",
+          amount: "0.123456789123456789",
+        }),
+      ),
+    );
+  });
+
+  it("blocks ambiguous USD rate inputs", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "USD" }));
+    const rateInput = await screen.findByLabelText("USD rate for USDT");
+    fireEvent.change(rateInput, { target: { value: "0x10" } });
+
+    expect(screen.getByText("Введите положительное число без экспоненты")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save rate" })).toBeDisabled();
+    expect(mockState.upsertRate.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("renders malformed USD-rate observed_at as a neutral timestamp", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.rates = [
+      {
+        currency_id: 1,
+        currency_code: "USDT",
+        usd_rate: "1.00",
+        source: "manual",
+        observed_at: "not-a-date",
+      },
+    ];
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "USD" }));
+
+    expect(await screen.findByText(/Last observed: \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+  });
+
+  it("saves USD rates as exact decimal strings", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.upsertRate.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "USD" }));
+    const rateInput = await screen.findByLabelText("USD rate for USDT");
+    fireEvent.change(rateInput, { target: { value: "0.123456789123456789" } });
+    await user.click(screen.getByRole("button", { name: "Save rate" }));
+
+    await waitFor(() =>
+      expect(mockState.upsertRate.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "USDT",
+        usd_rate: "0.123456789123456789",
+        source: "manual",
+      }),
+    );
+  });
+
+  it("normalizes catalog currency codes before USD-rate upserts", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.currencies = [
+      { ...mockState.currencies[0], code: " usdt " },
+    ];
+    mockState.upsertRate.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "USD" }));
+    const rateInput = await screen.findByLabelText("USD rate for USDT");
+    fireEvent.change(rateInput, { target: { value: "1.2345" } });
+    await user.click(screen.getByRole("button", { name: "Save rate" }));
+
+    await waitFor(() =>
+      expect(mockState.upsertRate.mutateAsync).toHaveBeenCalledWith({
+        currency_code: "USDT",
+        usd_rate: "1.2345",
+        source: "manual",
+      }),
     );
   });
 });

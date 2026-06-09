@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ShieldOff, MessageSquareWarning } from "lucide-react";
 import { LOCKOUT_EVENT, type LockoutDetail } from "@/api/client";
 import { openTelegramLink } from "@/lib/tg";
+import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 
 /**
  * Item 24 — global lockout gate.
@@ -42,12 +43,10 @@ export function BannedGate({ children }: { children: React.ReactNode }) {
 
   function contactAdmin() {
     if (!lockout?.admin_username) return;
-    const text = encodeURIComponent(
-      `Здравствуйте! Мой аккаунт ${isBanned ? "заблокирован" : "заморожен"}. Прошу уточнить причину${
-        lockout.reason ? ` (${lockout.reason})` : ""
-      } и возможность разбана.`,
-    );
-    openTelegramLink(`https://t.me/${lockout.admin_username}?text=${text}`);
+    const reason = lockout.reason ? ` (${lockout.reason})` : "";
+    const text = `Здравствуйте! Мой аккаунт ${isBanned ? "заблокирован" : "заморожен"}. Прошу уточнить причину${reason} и возможность разбана.`;
+    const url = buildTelegramUserUrl(lockout.admin_username, { text });
+    if (url) openTelegramLink(url);
   }
 
   return (

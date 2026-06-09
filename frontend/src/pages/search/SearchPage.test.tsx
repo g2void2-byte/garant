@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { UserCardDto } from "@/api/types";
@@ -39,11 +40,29 @@ const meState = vi.hoisted(() => ({
 const mockState = vi.hoisted(() => ({
   data: undefined as UserCardDto[] | undefined,
   isLoading: false,
+  lastParams: undefined as Record<string, unknown> | undefined,
+}));
+
+const apiMock = vi.hoisted(() => ({
+  get: vi.fn(),
+}));
+
+vi.mock("@/api/client", () => ({
+  api: apiMock,
 }));
 
 vi.mock("@/api/hooks", () => ({
-  useUsers: () => mockState,
+  useUsers: (params: Record<string, unknown>) => {
+    mockState.lastParams = params;
+    return mockState;
+  },
   useMe: () => meState,
+  buildUsersSearchParams: (params: Record<string, unknown>) =>
+    Object.fromEntries(
+      Object.entries(params)
+        .filter(([, value]) => value !== undefined && value !== "")
+        .map(([key, value]) => [key, String(value)]),
+    ),
 }));
 
 import SearchPage from "./SearchPage";
@@ -63,6 +82,8 @@ function renderPage() {
 beforeEach(() => {
   mockState.data = undefined;
   mockState.isLoading = false;
+  mockState.lastParams = undefined;
+  apiMock.get.mockReset();
   meState.data = makeUser({ id: 100, deals_count: 5, is_admin: false });
   meState.isLoading = false;
   useUI.setState({ searchMode: "users" });
@@ -98,11 +119,124 @@ describe("<SearchPage />", () => {
     expect(screen.getByText("Bob")).toBeInTheDocument();
   });
 
+  it("renders string rating/deposit values in user rows without crashing", () => {
+    mockState.data = [
+      makeUser({
+        id: 6,
+        username: "runtime",
+        display_name: "Runtime Payload",
+        rating: "4.5" as unknown as number,
+        reviews_count: 2,
+        deposit: "1500" as unknown as number,
+      }),
+    ];
+    renderPage();
+    expect(screen.getAllByText("4.5").length).toBeGreaterThan(0);
+    expect(screen.getByText("$1.5k+")).toBeInTheDocument();
+  });
+
+  it("does not coerce malformed user deposit values in result rows", () => {
+    mockState.data = [
+      makeUser({
+        id: 8,
+        username: "runtime-money",
+        display_name: "Runtime Money",
+        deposit: "0x10" as unknown as number,
+      }),
+    ];
+
+    renderPage();
+
+    const row = screen.getByTestId("search-user-runtime-money");
+    expect(within(row).getByText("\u2014")).toBeInTheDocument();
+    expect(within(row).queryByText("$0")).not.toBeInTheDocument();
+    expect(within(row).queryByText(/0x10/)).not.toBeInTheDocument();
+  });
+
+  it("does not coerce malformed row count fields into user metadata", () => {
+    mockState.data = [
+      makeUser({
+        id: 7,
+        username: "runtime-counts",
+        display_name: "Runtime Counts",
+        rating: "4.5" as unknown as number,
+        reviews_count: "1e2" as unknown as number,
+        deals_count: "1e2" as unknown as number,
+      }),
+    ];
+
+    renderPage();
+
+    const row = screen.getByTestId("search-user-runtime-counts");
+    expect(screen.getByText("Runtime Counts")).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+    expect(within(row).queryByText("4.5")).not.toBeInTheDocument();
+    expect(within(row).getByText("0.0")).toBeInTheDocument();
+    expect(within(row).getByText(/— сделок/)).toBeInTheDocument();
+  });
+
+  it("does not build a profile navigation row for a user without username", () => {
+    mockState.data = [makeUser({ id: 3, username: null, display_name: "No Username" })];
+    renderPage();
+    expect(screen.getByText("No Username")).toBeInTheDocument();
+    expect(screen.getByText(/username не задан/)).toBeInTheDocument();
+    expect(screen.getByTestId("search-user-3")).toBeDisabled();
+    expect(screen.queryByText("@null")).not.toBeInTheDocument();
+  });
+
+  it("does not build profile navigation for unsafe usernames", () => {
+    mockState.data = [makeUser({ id: 4, username: "../admin", display_name: "Unsafe" })];
+    renderPage();
+    expect(screen.getByText("Unsafe")).toBeInTheDocument();
+    expect(screen.getByTestId("search-user-4")).toBeDisabled();
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+  });
+
+  it("loads the next user-search page by offset", async () => {
+    mockState.data = Array.from({ length: 50 }, (_, index) =>
+      makeUser({
+        id: index + 1,
+        username: `user${index}`,
+        display_name: `User ${index}`,
+      }),
+    );
+    apiMock.get.mockReturnValue({
+      json: async () => [makeUser({ id: 51, username: "user50", display_name: "User 50" })],
+    });
+    const user = userEvent.setup();
+
+    renderPage();
+
+    expect(mockState.lastParams).toEqual(expect.objectContaining({ limit: 50, offset: 0 }));
+    expect(screen.getByText("User 49")).toBeInTheDocument();
+    const buttons = screen.getAllByRole("button");
+    await user.click(buttons[buttons.length - 1]);
+
+    expect(await screen.findByText("User 50")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(apiMock.get).toHaveBeenCalledWith("api/users", {
+        searchParams: expect.objectContaining({ limit: "50", offset: "50" }),
+      }),
+    );
+  });
+
   it("offers the filter toggle and the filter sheet button", () => {
     mockState.data = [];
     renderPage();
     expect(screen.getByRole("button", { name: /Открыть фильтры/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Услуги" })).toBeInTheDocument();
+  });
+
+  it("does not offer the retired moderator prefix filter", async () => {
+    mockState.data = [];
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: /Открыть фильтры/i }));
+
+    expect(screen.queryByRole("button", { name: "Модератор" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Администратор" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Арбитр" })).toBeInTheDocument();
   });
 
   it("renders security warning overlay when user has 0 deals and is not admin", () => {
@@ -113,6 +247,16 @@ describe("<SearchPage />", () => {
     renderPage();
     expect(screen.getByText("Поиск ограничен")).toBeInTheDocument();
     expect(screen.getByText(/В целях безопасности и защиты от спама/)).toBeInTheDocument();
+    expect(screen.queryByText("Alice")).not.toBeInTheDocument();
+  });
+
+  it("keeps the security gate closed for string zero deal counts", () => {
+    meState.data = makeUser({ id: 100, deals_count: "0" as unknown as number, is_admin: false });
+    mockState.data = [
+      makeUser({ id: 1, username: "alice", display_name: "Alice" }),
+    ];
+    renderPage();
+    expect(screen.getByText("Поиск ограничен")).toBeInTheDocument();
     expect(screen.queryByText("Alice")).not.toBeInTheDocument();
   });
 

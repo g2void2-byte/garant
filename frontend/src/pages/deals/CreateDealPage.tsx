@@ -1,4 +1,4 @@
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import type { DealCreateWithTopupResponseDto } from "@/api/types";
 import { Page } from "@/components/layout/Page";
@@ -17,11 +17,20 @@ import {
   usePublicSettings,
   useWalletBalances,
 } from "@/api/hooks";
-import { formatCurrency } from "@/lib/format";
+import {
+  parseDecimalValue,
+  resolveDisplayDecimals,
+} from "@/lib/format";
 import { haptic } from "@/lib/tg";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
-
-const DECIMAL_RE = /^\d+(?:\.\d{1,18})?$|^\.\d{1,18}$/;
+import { parsePositiveDecimalInput } from "@/lib/formNumbers";
+import { normalizeCurrencyCode, normalizeCurrencyCodeRows } from "@/lib/currencyCodes";
+import { parsePositiveIntValue } from "@/lib/routeParams";
+import { normalizeUsernameRef } from "@/lib/usernames";
+import {
+  formatWalletBalanceCurrency,
+  parseWalletBalanceDecimal,
+} from "@/lib/walletAmounts";
 
 // Item 18 — backend can return a structured ``insufficient_funds``
 // payload on the create-deal 400. The ky ``beforeError`` hook
@@ -36,14 +45,61 @@ interface InsufficientFundsDetail {
   currency_code: string | null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isInsufficientFundsDetail(value: unknown): value is InsufficientFundsDetail {
+  if (!isRecord(value) || value.code !== "insufficient_funds") return false;
+  return (
+    typeof value.message === "string" &&
+    typeof value.required === "string" &&
+    typeof value.balance === "string" &&
+    typeof value.deficit === "string" &&
+    (typeof value.currency_code === "string" || value.currency_code === null)
+  );
+}
+
+function parseInsufficientMoney(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  const parsed = parseDecimalValue(trimmed);
+  return parsed !== null && parsed >= 0 ? trimmed : null;
+}
+
+function isInsufficientFundsPayloadError(err: unknown): boolean {
+  const raw = (err as Error | undefined)?.message;
+  if (!raw) return false;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRecord(parsed) && parsed.code === "insufficient_funds";
+  } catch {
+    return false;
+  }
+}
+
 function parseInsufficientFunds(err: unknown): InsufficientFundsDetail | null {
   const raw = (err as Error | undefined)?.message;
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as Partial<InsufficientFundsDetail>;
-    if (parsed && parsed.code === "insufficient_funds") {
-      return parsed as InsufficientFundsDetail;
-    }
+    const parsed: unknown = JSON.parse(raw);
+    if (!isInsufficientFundsDetail(parsed)) return null;
+    const required = parseInsufficientMoney(parsed.required);
+    const balance = parseInsufficientMoney(parsed.balance);
+    const deficit = parseInsufficientMoney(parsed.deficit);
+    const currencyCode =
+      parsed.currency_code === null
+        ? null
+        : normalizeCurrencyCode(parsed.currency_code);
+    if (required === null || balance === null || deficit === null) return null;
+    if (parsed.currency_code !== null && currencyCode === null) return null;
+    return {
+      ...parsed,
+      required,
+      balance,
+      deficit,
+      currency_code: currencyCode,
+    };
   } catch {
     /* not JSON — fall through to generic error path */
   }
@@ -61,17 +117,41 @@ function InvoiceRow({
   currency: string;
   strong?: boolean;
 }) {
+  const currencyCode = normalizeCurrencyCode(currency) ?? "USD";
+  const parsedValue = parseDecimalValue(value);
+  const displayValue =
+    parsedValue !== null && parsedValue >= 0
+      ? typeof value === "string"
+        ? value.trim()
+        : value
+      : "—";
+
   return (
     <div className={"flex items-center justify-between " + (strong ? "font-semibold" : "")}>
       <span>{label}</span>
-      <span>{value} {currency}</span>
+      <span>{displayValue} {currencyCode}</span>
     </div>
   );
+}
+
+function invoiceRequiresPayment(
+  invoice: DealCreateWithTopupResponseDto["invoice"],
+): invoice is NonNullable<DealCreateWithTopupResponseDto["invoice"]> {
+  if (!invoice) return false;
+  return parsePositiveDecimalInput(String(invoice.total)) !== null;
+}
+
+const DEFAULT_DEAL_COMMISSION_PERCENT = 5;
+
+function parseCommissionPercent(value: string | number | null | undefined): number | null {
+  const parsed = parseDecimalValue(value);
+  return parsed !== null && parsed >= 0 && parsed <= 100 ? parsed : null;
 }
 
 export default function CreateDealPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const { username: routeUsername } = useParams<{ username: string }>();
   const create = useCreateDealWithTopup();
   const toast = useToast();
   const { data: currencies } = useCurrencies({ kind: "fiat" });
@@ -85,7 +165,9 @@ export default function CreateDealPage() {
   // we mirror the backend default (5%) so the very first paint still
   // shows a sane "Итого" line instead of a flash of nothing.
   const { data: publicSettings } = usePublicSettings();
-  const [counterparty, setCounterparty] = useState(params.get("to") ?? "");
+  const [counterparty, setCounterparty] = useState(
+    normalizeUsernameRef(params.get("to") ?? routeUsername) ?? "",
+  );
   // Audit C1 — deals can only be initiated by the buyer (the side
   // whose balance gets locked into escrow). The "I'm the seller" tab
   // was removed because it let the caller freeze a victim's balance
@@ -112,15 +194,17 @@ export default function CreateDealPage() {
   // fiat balance — the dropdown therefore surfaces only fiat
   // currencies (UAH/RUB/USD). Crypto rows stay in the DB for the
   // historical ledger but are hidden from the create-deal picker.
+  const fiatCurrencies = useMemo(
+    () => normalizeCurrencyCodeRows((currencies ?? []).filter((c) => c.kind === "fiat")),
+    [currencies],
+  );
   const currencyOptions = useMemo(
     () =>
-      (currencies ?? [])
-        .filter((c) => (c.kind ?? "crypto") === "fiat")
-        .map((c) => ({
-          value: c.code,
-          label: `${c.code} — ${c.name}`,
-        })),
-    [currencies],
+      fiatCurrencies.map((c) => ({
+        value: c.code,
+        label: `${c.code} — ${c.name}`,
+      })),
+    [fiatCurrencies],
   );
 
   // Bug-11a — first-paint default: pick whichever fiat balance is
@@ -128,9 +212,12 @@ export default function CreateDealPage() {
   // change to the dropdown is sticky.
   useEffect(() => {
     if (currencyDefaulted || !balances || balances.length === 0) return;
-    const funded = balances.find((b) => b.amount > 0);
+    const funded = balances.find((b) => {
+      const amount = parseWalletBalanceDecimal(b, "amount");
+      return amount !== null && amount > 0 && normalizeCurrencyCode(b.currency.code) !== null;
+    });
     if (funded) {
-      setCurrencyCode(funded.currency.code);
+      setCurrencyCode(normalizeCurrencyCode(funded.currency.code) ?? "USD");
     }
     setCurrencyDefaulted(true);
   }, [balances, currencyDefaulted]);
@@ -139,36 +226,57 @@ export default function CreateDealPage() {
   // used to render the "На балансе" + "Итого" preview block. Both can
   // be ``undefined`` while data loads; the JSX below tolerates that.
   const activeBalance = useMemo(
-    () => (balances ?? []).find((b) => b.currency.code === currencyCode),
+    () => (balances ?? []).find((b) => normalizeCurrencyCode(b.currency.code) === currencyCode),
     [balances, currencyCode],
   );
   const commissionPercent = useMemo(() => {
-    if (!publicSettings) return 5;
+    const dealPercent =
+      parseCommissionPercent(publicSettings?.deal_commission_percent) ??
+      DEFAULT_DEAL_COMMISSION_PERCENT;
+    const vipPercent = parseCommissionPercent(publicSettings?.vip_commission_percent);
     if (
       me?.is_vip === true &&
-      publicSettings.vip_commission_percent >= 0
+      vipPercent !== null
     ) {
-      return publicSettings.vip_commission_percent;
+      return vipPercent;
     }
-    return publicSettings.deal_commission_percent;
+    return dealPercent;
   }, [publicSettings, me]);
   const parsedAmount = useMemo(() => {
-    const value = parseFloat(sum);
-    return Number.isFinite(value) && value > 0 ? value : 0;
+    return parsePositiveDecimalInput(sum) ?? 0;
   }, [sum]);
-  const decimals = activeBalance?.currency.decimals ?? 2;
+  const activeBalanceAmount = parseWalletBalanceDecimal(activeBalance, "amount") ?? 0;
+  const activeBalanceCurrencyCode =
+    normalizeCurrencyCode(activeBalance?.currency.code) ?? currencyCode;
+  const decimals = resolveDisplayDecimals(
+    activeBalanceCurrencyCode,
+    activeBalance?.currency.decimals,
+  );
   const commissionAmount = parsedAmount * (commissionPercent / 100);
   const totalFromBalance = parsedAmount + commissionAmount;
   const balanceCoversFull =
-    !!activeBalance && activeBalance.amount >= totalFromBalance && parsedAmount > 0;
+    !!activeBalance && activeBalanceAmount >= totalFromBalance && parsedAmount > 0;
+  const createdInvoiceCurrencyCode =
+    created && invoiceRequiresPayment(created.invoice)
+      ? normalizeCurrencyCode(created.invoice.currency_code) ??
+        normalizeCurrencyCode(created.deal.currency_code) ??
+        "USD"
+      : "USD";
+  const createdDealId = created ? parsePositiveIntValue(created.deal.id) : undefined;
+  const createdInvoiceDepositId =
+    created && invoiceRequiresPayment(created.invoice)
+      ? parsePositiveIntValue(created.invoice.deposit_id)
+      : undefined;
+  const canOpenCreatedDeal = createdDealId !== undefined;
+  const canOpenCreatedInvoice = canOpenCreatedDeal && createdInvoiceDepositId !== undefined;
 
   function validate(): boolean {
     const amount = sum.trim();
+    const safeCounterparty = normalizeUsernameRef(counterparty);
     if (
-      !counterparty ||
+      !safeCounterparty ||
       !description ||
-      !DECIMAL_RE.test(amount) ||
-      /^0+(?:\.0+)?$/.test(amount)
+      parsePositiveDecimalInput(amount) === null
     ) {
       haptic("error");
       return false;
@@ -178,10 +286,15 @@ export default function CreateDealPage() {
 
   async function submitDeal() {
     const amount = sum.trim();
+    const safeCounterparty = normalizeUsernameRef(counterparty);
+    if (!safeCounterparty) {
+      haptic("error");
+      return;
+    }
     setInsufficient(null);
     try {
       const deal = await create.mutateAsync({
-        counterparty,
+        counterparty: safeCounterparty,
         role: "buyer",
         amount,
         description,
@@ -190,21 +303,22 @@ export default function CreateDealPage() {
       });
       setCreated(deal);
       haptic("success");
-      // Bug-11b/d — when the balance fully covers the deal the
-      // backend returns ``topup.total == 0`` and routes the deal
-      // straight to ``pending_confirmation``. The toast string
+      // M-28: when the balance fully covers the deal the backend
+      // returns ``invoice: null`` and routes the deal straight to
+      // ``pending_confirmation``. The toast string
       // distinguishes the two outcomes so the user knows whether
       // they still need to pay an invoice.
-      const total = parseFloat(String(deal.invoice.total));
-      const paidFromBalance = Number.isFinite(total) && total <= 0;
-      if (paidFromBalance) {
+      if (!invoiceRequiresPayment(deal.invoice)) {
         toast.show({
           kind: "success",
           title: "Сделка создана — оплата с баланса",
         });
       } else {
         toast.show({ kind: "success", title: "Инвойс создан" });
-        setInvoiceModalOpen(true);
+        setInvoiceModalOpen(
+          parsePositiveIntValue(deal.deal.id) !== undefined &&
+          parsePositiveIntValue(deal.invoice.deposit_id) !== undefined,
+        );
       }
     } catch (e: unknown) {
       haptic("error");
@@ -219,7 +333,9 @@ export default function CreateDealPage() {
       }
       toast.show({
         kind: "error",
-        title: (e as Error)?.message || "Не удалось создать сделку",
+        title: isInsufficientFundsPayloadError(e)
+          ? "Не удалось проверить баланс"
+          : (e as Error)?.message || "Не удалось создать сделку",
       });
     } finally {
       // Bug-11c — the PIN modal already self-closes on
@@ -246,7 +362,7 @@ export default function CreateDealPage() {
           label="Продавец (username)"
           placeholder="@username или ID"
           value={counterparty}
-          onChange={setCounterparty}
+          onChange={(value) => setCounterparty(normalizeUsernameRef(value) ?? "")}
         />
         {currencyOptions.length > 0 && (
           <div className="space-y-1">
@@ -276,20 +392,21 @@ export default function CreateDealPage() {
           >
             <span>
               На балансе:{" "}
-              {formatCurrency(
-                activeBalance.amount,
-                activeBalance.currency.code,
+              {formatWalletBalanceCurrency(
+                activeBalance,
+                "amount",
+                activeBalanceCurrencyCode,
                 activeBalance.currency.decimals,
               )}
             </span>
-            {activeBalance.amount > 0 && (
+            {activeBalanceAmount > 0 && (
               <button
                 type="button"
                 className="text-accent underline"
                 onClick={() => {
                   const maxDealAmount = Math.max(
                     0,
-                    activeBalance.amount / (1 + commissionPercent / 100),
+                    activeBalanceAmount / (1 + commissionPercent / 100),
                   );
                   setSum(maxDealAmount.toFixed(decimals));
                 }}
@@ -307,17 +424,17 @@ export default function CreateDealPage() {
             <InvoiceRow
               label="Сумма сделки"
               value={parsedAmount.toFixed(decimals)}
-              currency={activeBalance.currency.code}
+              currency={activeBalanceCurrencyCode}
             />
             <InvoiceRow
               label={`Комиссия (${commissionPercent % 1 ? commissionPercent.toFixed(1) : commissionPercent.toFixed(0)}%)`}
               value={commissionAmount.toFixed(decimals)}
-              currency={activeBalance.currency.code}
+              currency={activeBalanceCurrencyCode}
             />
             <InvoiceRow
               label={balanceCoversFull ? "Итого с баланса" : "Итого"}
               value={totalFromBalance.toFixed(decimals)}
-              currency={activeBalance.currency.code}
+              currency={activeBalanceCurrencyCode}
               strong
             />
             {balanceCoversFull ? (
@@ -395,14 +512,11 @@ export default function CreateDealPage() {
           </div>
         )}
         {created && (() => {
-          // Bug-11b/d — when the balance covered everything the
-          // backend returns ``topup_principal == 0`` and
-          // ``total == 0``. Skip the invoice block and show a
+          // M-28 — when the balance covered everything the backend
+          // returns ``invoice: null``. Skip the invoice block and show a
           // "paid from balance" confirmation instead so the user
-          // doesn't get sent to a zero-value pay-url.
-          const totalNum = parseFloat(String(created.invoice.total));
-          const paidFromBalance = Number.isFinite(totalNum) && totalNum <= 0;
-          if (paidFromBalance) {
+          // doesn't get sent into a non-existent pay-url branch.
+          if (!invoiceRequiresPayment(created.invoice)) {
             return (
               <div
                 className="rounded-card border border-success/40 bg-success/10 p-4 space-y-3"
@@ -410,7 +524,7 @@ export default function CreateDealPage() {
               >
                 <div>
                   <div className="text-sm font-semibold text-success">
-                    Сделка #{created.deal.id} создана
+                    Сделка #{createdDealId ?? "\u2014"} создана
                   </div>
                   <div className="text-xs text-text-muted">
                     Сумма и комиссия списаны с баланса. Сделка ждёт подтверждения продавцом.
@@ -418,7 +532,10 @@ export default function CreateDealPage() {
                 </div>
                 <Button
                   type="button"
-                  onClick={() => navigate(`/deals/${created.deal.id}`)}
+                  disabled={!canOpenCreatedDeal}
+                  onClick={() => {
+                    if (createdDealId !== undefined) navigate(`/deals/${createdDealId}`);
+                  }}
                 >
                   К сделке
                 </Button>
@@ -429,25 +546,27 @@ export default function CreateDealPage() {
           // compact "Оплатите инвойс #N" card that reopens it. The
           // modal itself handles polling, auto-open, and auto-navigate
           // — this card just gives the user a way back in.
+          const invoice = created.invoice;
           return (
             <div
               className="rounded-card border border-accent/40 bg-accent/10 p-4 space-y-3"
               data-testid="topup-invoice-preview"
             >
               <div>
-                <div className="text-sm font-semibold text-accent">Инвойс #{created.deal.id} ждёт оплаты</div>
+                <div className="text-sm font-semibold text-accent">Инвойс #{createdDealId ?? "\u2014"} ждёт оплаты</div>
                 <div className="text-xs text-text-muted">
                   Когда платёж пройдёт, сделка откроется автоматически.
                 </div>
               </div>
               <div className="space-y-1 text-sm">
-                <InvoiceRow label="Недостающая сумма" value={created.invoice.topup_principal} currency={created.invoice.currency_code} />
-                <InvoiceRow label="Комиссия" value={created.invoice.commission} currency={created.invoice.currency_code} />
-                <InvoiceRow label="Итого" value={created.invoice.total} currency={created.invoice.currency_code} strong />
+                <InvoiceRow label="Недостающая сумма" value={invoice.topup_principal} currency={createdInvoiceCurrencyCode} />
+                <InvoiceRow label="Комиссия" value={invoice.commission} currency={createdInvoiceCurrencyCode} />
+                <InvoiceRow label="Итого" value={invoice.total} currency={createdInvoiceCurrencyCode} strong />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   type="button"
+                  disabled={!canOpenCreatedInvoice}
                   onClick={() => setInvoiceModalOpen(true)}
                 >
                   Открыть оплату
@@ -455,7 +574,10 @@ export default function CreateDealPage() {
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => navigate(`/deals/${created.deal.id}`)}
+                  disabled={!canOpenCreatedDeal}
+                  onClick={() => {
+                    if (createdDealId !== undefined) navigate(`/deals/${createdDealId}`);
+                  }}
                 >
                   К сделке
                 </Button>
@@ -481,15 +603,20 @@ export default function CreateDealPage() {
         title="Подтвердите PIN"
         subtitle="Введите PIN, чтобы создать сделку"
       />
-      {created && invoiceModalOpen && created.invoice.pay_url && (
+      {created &&
+        invoiceModalOpen &&
+        invoiceRequiresPayment(created.invoice) &&
+        createdDealId !== undefined &&
+        createdInvoiceDepositId !== undefined &&
+        created.invoice.pay_url && (
         <DealInvoiceModal
           open={invoiceModalOpen}
           onClose={() => setInvoiceModalOpen(false)}
-          dealId={created.deal.id}
-          depositId={created.invoice.deposit_id}
+          dealId={createdDealId}
+          depositId={createdInvoiceDepositId}
           payUrl={created.invoice.pay_url}
           amount={created.invoice.total}
-          currencyCode={created.deal.currency_code ?? "USD"}
+          currencyCode={createdInvoiceCurrencyCode}
           provider={created.deal.payment_provider ?? "cryptobot"}
           canPay={true}
           successTitle="Сделка создана"

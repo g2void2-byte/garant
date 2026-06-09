@@ -38,6 +38,7 @@
 import type {
   AdminListDealsQuery,
   AdminListUsersQuery,
+  NotificationType,
 } from "./types";
 
 // Local param shapes for namespaces whose query types aren't exported
@@ -69,6 +70,13 @@ export interface AdminAuditQueryKey {
   actor_id?: number;
   target_type?: string;
   target_id?: number;
+  since?: string;
+  until?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface AdminUserContentQueryKey {
   page?: number;
   page_size?: number;
 }
@@ -78,6 +86,8 @@ export interface ServicesQueryKey {
   q?: string;
   owner?: string;
   status?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export interface UsersQueryKey {
@@ -88,11 +98,39 @@ export interface UsersQueryKey {
   status?: string;
   reg_from?: string;
   reg_to?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export interface DealsQueryKey {
   role?: string;
   status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface NotificationsQueryKey {
+  type?: NotificationType;
+  before_created_at?: string;
+  before_id?: number;
+  limit?: number;
+}
+
+export interface WalletHistoryQueryKey {
+  currency?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ServiceCommentsQueryKey {
+  limit?: number;
+  offset?: number;
+}
+
+export interface ReviewsQueryKey {
+  limit?: number;
+  offset?: number;
+  deal_id?: number;
 }
 
 export const qk = {
@@ -118,8 +156,10 @@ export const qk = {
   service: {
     all: () => ["service"] as const,
     detail: (id: number | undefined) => ["service", id] as const,
-    comments: (id: number | undefined) =>
-      ["service", id, "comments"] as const,
+    comments: (id: number | undefined, params?: ServiceCommentsQueryKey) =>
+      params
+        ? (["service", id, "comments", params] as const)
+        : (["service", id, "comments"] as const),
   },
   users: {
     all: () => ["users"] as const,
@@ -141,15 +181,14 @@ export const qk = {
   },
   reviews: {
     all: () => ["reviews"] as const,
-    forUser: (username: string | undefined) =>
-      ["reviews", username] as const,
+    forUser: (username: string | undefined, params?: ReviewsQueryKey) =>
+      params
+        ? (["reviews", username, params] as const)
+        : (["reviews", username] as const),
   },
   notifications: {
     all: () => ["notifications"] as const,
-    // ``type ?? "all"`` mirrors the original useNotifications hook so
-    // a caller that omits the filter still hits the same cache slot.
-    list: (type: string | undefined) =>
-      ["notifications", type ?? "all"] as const,
+    list: (params: NotificationsQueryKey) => ["notifications", params] as const,
     detail: (id: number | undefined) =>
       ["notifications", "detail", id] as const,
     counters: () => ["notifications", "counters"] as const,
@@ -181,10 +220,16 @@ export const qk = {
     balances: () => ["wallet", "balances"] as const,
     balancesByKind: (kind: "fiat" | "crypto") =>
       ["wallet", "balances", kind] as const,
-    deposits: () => ["wallet", "deposits"] as const,
+    deposits: (params?: WalletHistoryQueryKey) =>
+      params
+        ? (["wallet", "deposits", params] as const)
+        : (["wallet", "deposits"] as const),
     deposit: (id: number | undefined) =>
       ["wallet", "deposit", id] as const,
-    withdrawals: () => ["wallet", "withdrawals"] as const,
+    withdrawals: (params?: WalletHistoryQueryKey) =>
+      params
+        ? (["wallet", "withdrawals", params] as const)
+        : (["wallet", "withdrawals"] as const),
   },
   arbitration: {
     deals: () => ["arbitration", "deals"] as const,
@@ -208,6 +253,8 @@ export const qk = {
       all: () => ["admin", "user-services"] as const,
       forUser: (id: number | undefined) =>
         ["admin", "user-services", id] as const,
+      list: (id: number | undefined, params: AdminUserContentQueryKey) =>
+        ["admin", "user-services", id, params] as const,
     },
     userReviews: {
       all: () => ["admin", "user-reviews"] as const,
@@ -215,11 +262,18 @@ export const qk = {
         ["admin", "user-reviews", id] as const,
       forUserDirection: (id: number | undefined, direction: string) =>
         ["admin", "user-reviews", id, direction] as const,
+      list: (
+        id: number | undefined,
+        direction: string,
+        params: AdminUserContentQueryKey,
+      ) => ["admin", "user-reviews", id, direction, params] as const,
     },
     userComments: {
       all: () => ["admin", "user-comments"] as const,
       forUser: (id: number | undefined) =>
         ["admin", "user-comments", id] as const,
+      list: (id: number | undefined, params: AdminUserContentQueryKey) =>
+        ["admin", "user-comments", id, params] as const,
     },
     userWallet: {
       all: () => ["admin", "user-wallet"] as const,

@@ -10,6 +10,7 @@ import {
   usePinStatus,
   useRequestPinReset,
 } from "@/api/hooks";
+import { formatCountValue, parseNonNegativeIntegerValue } from "@/lib/format";
 import { setPinToken } from "@/lib/pin";
 import { haptic } from "@/lib/tg";
 
@@ -26,6 +27,7 @@ export default function PinResetPage() {
   const [code, setCode] = useState("");
   const [pin, setPin] = useState("");
   const [memo, setMemo] = useState("");
+  const attemptsLeft = parseNonNegativeIntegerValue(pinStatus.data?.attempts_left);
 
   const startReset = async () => {
     try {
@@ -147,9 +149,9 @@ export default function PinResetPage() {
               placeholder="000000"
               className="w-full text-center text-2xl tracking-[0.5em] bg-panel border border-border rounded-button py-3 outline-none focus:border-accent"
             />
-            {typeof pinStatus.data?.attempts_left === "number" && (
+            {attemptsLeft !== null && (
               <p className="text-text-muted text-xs" data-testid="pin-reset-attempts-left">
-                Осталось попыток: {pinStatus.data.attempts_left}
+                Осталось попыток: {formatCountValue(attemptsLeft)}
               </p>
             )}
             <Button variant="primary" fullWidth disabled={code.length !== 6} onClick={onCodeContinue}>

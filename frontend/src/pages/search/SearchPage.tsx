@@ -18,22 +18,28 @@ import {
 } from "@/components/domain/SearchFilterSheet";
 import { ActiveFilterChips } from "@/components/domain/ActiveFilterChips";
 import { useUI } from "@/stores/ui";
-import { useMe, useUsers } from "@/api/hooks";
+import { buildUsersSearchParams, useMe, useUsers, type UsersQueryParams } from "@/api/hooks";
+import { api } from "@/api/client";
 import { staggerDelay } from "@/lib/animate";
-import { dealsLabel, formatMoney } from "@/lib/format";
+import { dealsLabel, formatMoney, formatRatingValue, hasPositiveIntegerValue, parseNonNegativeIntegerValue } from "@/lib/format";
 import { countryFromCode } from "@/lib/countries";
 import { cn } from "@/lib/cn";
 import type { UserCardDto } from "@/api/types";
 import { Search as SearchIcon, SlidersHorizontal, Star } from "lucide-react";
 import { MOCK_USERS } from "./mockData";
 import { SearchGateOverlay } from "./SearchGateOverlay";
+import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
+
+type UserSearchFilter = NonNullable<UsersQueryParams["filter"]>;
 
 const FILTER_OPTIONS = [
   { value: "all", label: "Все" },
   { value: "arbiters", label: "Арбитры" },
   { value: "with_deposit", label: "С депозитом" },
   { value: "top_rating", label: "Топ рейтинг" },
-];
+] satisfies Array<{ value: UserSearchFilter; label: string }>;
+
+const USER_SEARCH_PAGE_SIZE = 50;
 
 export default function SearchPage() {
   const navigate = useNavigate();
@@ -41,9 +47,13 @@ export default function SearchPage() {
   const setMode = useUI((s) => s.setSearchMode);
 
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState<UserSearchFilter>("all");
   const [filters, setFilters] = useState<SearchFilters>({});
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [users, setUsers] = useState<UserCardDto[]>([]);
+  const [reachedEnd, setReachedEnd] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
   // Live-search debounce: avoid hitting ``/api/users?q=…`` on every
   // keystroke. 250 ms mirrors :class:`UserPicker` which the plan
@@ -67,8 +77,47 @@ export default function SearchPage() {
     [debouncedQ, filter, filters],
   );
   const { data: me, isLoading: meLoading } = useMe();
-  const isGated = me !== undefined && me.deals_count === 0 && !me.is_admin;
-  const { data: users, isLoading } = useUsers(queryParams, { enabled: me !== undefined && !isGated });
+  const meDealsCount = me ? parseNonNegativeIntegerValue(me.deals_count) : null;
+  const isGated = me !== undefined && !me.is_admin && (meDealsCount === null || meDealsCount === 0);
+  const firstPageParams = useMemo(
+    () => ({ ...queryParams, limit: USER_SEARCH_PAGE_SIZE, offset: 0 }),
+    [queryParams],
+  );
+  const { data: usersPage, isLoading } = useUsers(firstPageParams, {
+    enabled: me !== undefined && !isGated,
+  });
+
+  useEffect(() => {
+    const page = usersPage ?? [];
+    setUsers(page);
+    setReachedEnd(page.length < USER_SEARCH_PAGE_SIZE);
+    setLoadMoreError(null);
+  }, [usersPage]);
+
+  const loadMoreUsers = async () => {
+    if (loadingMore || reachedEnd) return;
+    setLoadingMore(true);
+    setLoadMoreError(null);
+    try {
+      const page = await api
+        .get("api/users", {
+          searchParams: buildUsersSearchParams({
+            ...queryParams,
+            limit: USER_SEARCH_PAGE_SIZE,
+            offset: users.length,
+          }),
+        })
+        .json<UserCardDto[]>();
+      setUsers((prev) => [...prev, ...page]);
+      if (page.length < USER_SEARCH_PAGE_SIZE) {
+        setReachedEnd(true);
+      }
+    } catch (e: unknown) {
+      setLoadMoreError((e as Error)?.message || "Не удалось загрузить еще пользователей");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const showSkeleton = meLoading || (!me && !isGated) || isLoading;
 
@@ -153,32 +202,43 @@ export default function SearchPage() {
                 </div>
                 <SearchGateOverlay message="В целях безопасности и защиты от спама детальный поиск пользователей доступен только участникам, совершившим хотя бы 1 сделку." />
               </div>
-            ) : !users || users.length === 0 ? (
+            ) : users.length === 0 ? (
               <EmptyState
                 icon={<SearchIcon className="size-6" />}
                 title="Никого не найдено"
                 description="Попробуйте другой запрос или фильтр"
               />
             ) : (
-              <div
-                role="listbox"
-                aria-label="Результаты поиска пользователей"
-                className={cn(
-                  "rounded-card bg-panel border border-border shadow-pop overflow-hidden",
-                  "animate-fade-in-down",
+              <>
+                <div
+                  role="listbox"
+                  aria-label="Результаты поиска пользователей"
+                  className={cn(
+                    "rounded-card bg-panel border border-border shadow-pop overflow-hidden",
+                    "animate-fade-in-down",
+                  )}
+                >
+                  <ul className="py-1.5">
+                    {users.map((u, i) => {
+                      const profilePath = userProfilePath(u.username);
+                      return (
+                        <SearchUserRow
+                          key={u.id}
+                          user={u}
+                          index={i}
+                          onPick={() => profilePath && navigate(profilePath)}
+                        />
+                      );
+                    })}
+                  </ul>
+                </div>
+                {!reachedEnd && users.length >= USER_SEARCH_PAGE_SIZE && (
+                  <Button onClick={loadMoreUsers} disabled={loadingMore} className="w-full">
+                    {loadingMore ? "Загружаю..." : "Показать еще"}
+                  </Button>
                 )}
-              >
-                <ul className="py-1.5">
-                  {users.map((u, i) => (
-                    <SearchUserRow
-                      key={u.id}
-                      user={u}
-                      index={i}
-                      onPick={() => navigate(`/users/${u.username}`)}
-                    />
-                  ))}
-                </ul>
-              </div>
+                {loadMoreError && <div className="text-xs text-danger text-center">{loadMoreError}</div>}
+              </>
             )}
           </>
         )}
@@ -221,7 +281,9 @@ function SearchUserRow({
   onPick: () => void;
 }) {
   const country = countryFromCode(user.country);
-  const ratingLabel = user.reviews_count ? user.rating.toFixed(1) : "0.0";
+  const ratingLabel = hasPositiveIntegerValue(user.reviews_count) ? formatRatingValue(user.rating) : "0.0";
+  const username = normalizeUsernameRef(user.username);
+  const displayName = user.display_name?.trim() || username || "—";
   return (
     <li
       style={staggerDelay(index, 35, 280)}
@@ -232,14 +294,17 @@ function SearchUserRow({
         role="option"
         aria-selected={false}
         onClick={onPick}
-        data-testid={`search-user-${user.username}`}
+        disabled={!username}
+        data-testid={`search-user-${username ?? user.id}`}
         className={cn(
           "w-full flex items-center gap-3 px-3 py-2 text-left",
-          "hover:bg-secondary/60 active:bg-secondary transition-colors",
+          username
+            ? "hover:bg-secondary/60 active:bg-secondary transition-colors"
+            : "opacity-60 cursor-not-allowed transition-colors",
         )}
       >
         <div className="relative shrink-0">
-          <Avatar name={user.username} src={user.photo_url} size={44} />
+          <Avatar name={displayName} src={user.photo_url} size={44} />
           <span className="absolute -bottom-0.5 -right-0.5 ring-2 ring-panel rounded-full">
             <OnlineDot online={user.online} />
           </span>
@@ -248,7 +313,7 @@ function SearchUserRow({
           <div className="flex items-center gap-2">
             <BadgePrefix prefix={user.prefix} />
             <span className="font-medium text-[15px] truncate">
-              {user.display_name?.trim() || user.username}
+              {displayName}
             </span>
             {country && (
               <span
@@ -261,7 +326,7 @@ function SearchUserRow({
             )}
           </div>
           <div className="text-[12px] text-text-muted truncate">
-            @{user.username} · {dealsLabel(user.deals_count)}
+            {username ? `@${username}` : "username не задан"} · {dealsLabel(user.deals_count)}
           </div>
         </div>
         <div className="flex flex-col items-end shrink-0 gap-0.5">

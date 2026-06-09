@@ -173,7 +173,9 @@ async def list_services(
         description="Row offset for cursorless pagination.",
     ),
 ):
-    if not user.is_admin and (user.deals_total or 0) == 0:
+    target_owner_self = bool(owner and owner == (user.username or ""))
+
+    if not (user.is_admin or target_owner_self) and (user.deals_total or 0) == 0:
         raise HTTPException(403, "Минимум 1 сделка для поиска")
 
     # R7/H-12 \u2014 always join ``Service.owner`` so we have a single
@@ -195,8 +197,6 @@ async def list_services(
         fts_rank = func.ts_rank(Service.search_vector, tsq)
     if owner:
         stmt = stmt.where(User.username == owner)
-
-    target_owner_self = owner and owner == (user.username or "")
 
     if status is not None:
         # only owner-of-listing and admins can ask for non-active rows.
@@ -345,7 +345,9 @@ async def list_service_comments(
     service_id: int,
     user: CurrentUser,
     session: SessionDep,
+    response: Response,
     limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0, description="Row offset for cursorless pagination."),
 ):
     service = await session.get(Service, service_id)
     if not service:
@@ -362,10 +364,17 @@ async def list_service_comments(
         and not (user.is_admin or service.owner_id == user.id)
     ):
         raise HTTPException(404, "Услуга не найдена")
+    total = (
+        await session.execute(
+            select(func.count(ServiceComment.id)).where(ServiceComment.service_id == service.id)
+        )
+    ).scalar_one()
+    response.headers["X-Total-Count"] = str(int(total))
     stmt = (
         select(ServiceComment)
         .where(ServiceComment.service_id == service.id)
-        .order_by(ServiceComment.created_at.desc())
+        .order_by(ServiceComment.created_at.desc(), ServiceComment.id.desc())
+        .offset(offset)
         .limit(limit)
     )
     result = await session.execute(stmt)
@@ -458,6 +467,14 @@ async def update_service(
 
     if service.status == ServiceStatus.banned and not user.is_admin:
         raise HTTPException(403, "Услуга заблокирована администрацией")
+
+    explicit_null_fields = [
+        field
+        for field in ("title", "description", "price", "status", "photo_urls")
+        if field in body.model_fields_set and getattr(body, field) is None
+    ]
+    if explicit_null_fields:
+        raise HTTPException(422, "Field cannot be null")
 
     if body.title is not None:
         title = body.title.strip()

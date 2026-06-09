@@ -2831,6 +2831,17 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** AdminCommentListOut */
+        AdminCommentListOut: {
+            /** Items */
+            items: components["schemas"]["AdminCommentItemOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
         /** AdminCommentUpdateIn */
         AdminCommentUpdateIn: {
             /**
@@ -2841,7 +2852,7 @@ export interface components {
             /** Rating */
             rating?: number | null;
             /** Text */
-            text?: string | null;
+            text?: string;
         };
         /** AdminCurrencyOut */
         AdminCurrencyOut: {
@@ -2917,23 +2928,26 @@ export interface components {
             /** Code */
             code: string;
             /** Decimals */
-            decimals?: number | null;
+            decimals?: number;
             /** Icon Url */
             icon_url?: string | null;
             /** Is Active */
-            is_active?: boolean | null;
-            /** Kind */
-            kind?: ("crypto" | "fiat") | null;
+            is_active?: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind?: "crypto" | "fiat";
             /** Min Deposit */
-            min_deposit?: number | string | null;
+            min_deposit?: number | string;
             /** Min Withdraw */
-            min_withdraw?: number | string | null;
+            min_withdraw?: number | string;
             /** Name */
-            name?: string | null;
+            name?: string;
             /** Network */
             network?: string | null;
             /** Sort Order */
-            sort_order?: number | null;
+            sort_order?: number;
         };
         /**
          * AdminDashboardOut
@@ -3230,6 +3244,17 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** AdminReviewListOut */
+        AdminReviewListOut: {
+            /** Items */
+            items: components["schemas"]["AdminReviewItemOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
         /**
          * AdminReviewUpsertIn
          * @description Body for ``POST /api/admin/reviews`` (create) /
@@ -3237,6 +3262,8 @@ export interface components {
          *
          *     For create, ``target_id`` and ``author_id`` are required. For edit,
          *     they are ignored — only ``rating`` and ``text`` can be changed.
+         *     ``text`` must be provided explicitly; pass an empty string to store
+         *     an intentionally blank review.
          */
         AdminReviewUpsertIn: {
             /** Author Id */
@@ -3247,10 +3274,7 @@ export interface components {
             rating: number;
             /** Target Id */
             target_id?: number | null;
-            /**
-             * Text
-             * @default
-             */
+            /** Text */
             text: string;
         };
         /** AdminServiceItemOut */
@@ -3287,6 +3311,17 @@ export interface components {
             /** Views */
             views: number;
         };
+        /** AdminServiceListOut */
+        AdminServiceListOut: {
+            /** Items */
+            items: components["schemas"]["AdminServiceItemOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
         /**
          * AdminServiceUpdateIn
          * @description Body for ``POST /api/admin/services/:id``.
@@ -3294,7 +3329,9 @@ export interface components {
          *     Every field is optional. Negative numeric values are rejected per
          *     the spec (counts / deposits cannot be < 0). ``rating_manual`` is
          *     bounded to 0..5 to match the user rating override; pass ``None``
-         *     explicitly with ``clear_rating=true`` to remove it.
+         *     explicitly or set ``clear_rating=true`` to remove it. Non-nullable
+         *     service columns reject explicit JSON ``null`` instead of silently
+         *     treating it as an omitted field.
          */
         AdminServiceUpdateIn: {
             /** Ban Reason */
@@ -3305,21 +3342,24 @@ export interface components {
              */
             clear_rating: boolean;
             /** Deals Count */
-            deals_count?: number | null;
+            deals_count?: number;
             /** Deposit */
-            deposit?: number | string | null;
+            deposit?: number | string;
             /** Description */
-            description?: string | null;
+            description?: string;
             /** Price */
-            price?: number | string | null;
+            price?: number | string;
             /** Rating Manual */
             rating_manual?: number | string | null;
-            /** Status */
-            status?: ("draft" | "active" | "paused" | "banned") | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status?: "draft" | "active" | "paused" | "banned";
             /** Title */
-            title?: string | null;
+            title?: string;
             /** Views */
-            views?: number | null;
+            views?: number;
         };
         /**
          * AdminSetRatingIn
@@ -3340,46 +3380,37 @@ export interface components {
          *     was dropped from the spec and is not supported here.
          */
         AdminSetRoleIn: {
-            /**
-             * Is Admin
-             * @default false
-             */
-            is_admin: boolean;
-            /**
-             * Is Arbiter
-             * @default false
-             */
-            is_arbiter: boolean;
-            /**
-             * Is Vip
-             * @default false
-             */
-            is_vip: boolean;
+            /** Is Admin */
+            is_admin?: boolean;
+            /** Is Arbiter */
+            is_arbiter?: boolean;
+            /** Is Vip */
+            is_vip?: boolean;
         };
         /**
          * AdminSetStatsIn
          * @description Body for ``POST /admin/users/:id/stats``.
          *
          *     Every field is optional — only provided keys are applied. Negative
-         *     values are rejected because counts/sums don't make sense below
-         *     zero. Rating is *not* part of this schema (see
+         *     values and explicit JSON ``null`` are rejected because counts/sums
+         *     don't make sense below zero. Rating is *not* part of this schema (see
          *     :class:`AdminSetRatingIn`) and has no range validation.
          */
         AdminSetStatsIn: {
             /** Bad */
-            bad?: number | null;
+            bad?: number;
             /** Deals Arbitrage */
-            deals_arbitrage?: number | null;
+            deals_arbitrage?: number;
             /** Deals Failed */
-            deals_failed?: number | null;
+            deals_failed?: number;
             /** Deals Success */
-            deals_success?: number | null;
+            deals_success?: number;
             /** Deals Sum Override */
-            deals_sum_override?: number | string | null;
+            deals_sum_override?: number | string;
             /** Deals Total */
-            deals_total?: number | null;
+            deals_total?: number;
             /** Good */
-            good?: number | null;
+            good?: number;
         };
         /**
          * AdminSetTrustDepositIn
@@ -3435,38 +3466,41 @@ export interface components {
          * AdminSettingsUpdateIn
          * @description Partial update of :class:`AppSettings`.
          *
-         *     Every field is optional. Numeric values must be non-negative
-         *     (commission percentages additionally bounded to ``0..100``).
+         *     Every field is optional but explicit JSON ``null`` is not accepted:
+         *     settings columns are non-nullable and ``null`` would otherwise
+         *     surface as a database integrity error. Numeric values must be
+         *     non-negative (commission percentages additionally bounded to
+         *     ``0..100``).
          */
         AdminSettingsUpdateIn: {
             /** Auto Withdraw Enabled */
-            auto_withdraw_enabled?: boolean | null;
+            auto_withdraw_enabled?: boolean;
             /** Deal Commission Percent */
-            deal_commission_percent?: number | string | null;
+            deal_commission_percent?: number | string;
             /** Faq Stats Badge Enabled */
-            faq_stats_badge_enabled?: boolean | null;
+            faq_stats_badge_enabled?: boolean;
             /** Faq Stats Deals */
-            faq_stats_deals?: number | null;
+            faq_stats_deals?: number;
             /** Faq Stats Total Usd */
-            faq_stats_total_usd?: number | string | null;
+            faq_stats_total_usd?: number | string;
             /** Faq Stats Users */
-            faq_stats_users?: number | null;
+            faq_stats_users?: number;
             /** Inactivity Pending Cancellation Days */
-            inactivity_pending_cancellation_days?: number | null;
+            inactivity_pending_cancellation_days?: number;
             /** Inactivity Pending Confirmation Days */
-            inactivity_pending_confirmation_days?: number | null;
+            inactivity_pending_confirmation_days?: number;
             /** Maintenance Enabled */
-            maintenance_enabled?: boolean | null;
+            maintenance_enabled?: boolean;
             /** Maintenance Message */
-            maintenance_message?: string | null;
+            maintenance_message?: string;
             /** Max Active Services Per User */
-            max_active_services_per_user?: number | null;
+            max_active_services_per_user?: number;
             /** Pending Topup Expiry Hours */
-            pending_topup_expiry_hours?: number | null;
+            pending_topup_expiry_hours?: number;
             /** Pin Reset Price Usd */
-            pin_reset_price_usd?: number | string | null;
+            pin_reset_price_usd?: number | string;
             /** Vip Commission Percent */
-            vip_commission_percent?: number | string | null;
+            vip_commission_percent?: number | string;
         };
         /** AdminSystemStatusOut */
         AdminSystemStatusOut: {
@@ -3954,21 +3988,21 @@ export interface components {
             /** Amount */
             amount: number;
             /** Arbitration Initiator */
-            arbitration_initiator?: string | null;
+            arbitration_initiator?: ("buyer" | "seller" | "other") | null;
             /** Arbitration Reason */
             arbitration_reason?: string | null;
             /** Arbitration Resolution */
-            arbitration_resolution?: string | null;
+            arbitration_resolution?: ("buyer" | "seller") | null;
             /** Arbitration Resolved At */
             arbitration_resolved_at?: string | null;
             /** Arbitration Resolved By */
-            arbitration_resolved_by?: string | null;
+            arbitration_resolved_by?: "admin" | null;
             /** Buyer */
             buyer: string | null;
             /** Buyer Photo Url */
             buyer_photo_url?: string | null;
             /** Cancellation Initiator */
-            cancellation_initiator?: string | null;
+            cancellation_initiator?: ("buyer" | "seller" | "other") | null;
             /** Cancellation Reason */
             cancellation_reason?: string | null;
             /** Cancellation Requested At */
@@ -3999,16 +4033,23 @@ export interface components {
             /**
              * Payment Provider
              * @default cryptobot
+             * @enum {string}
              */
-            payment_provider: string;
-            /** Role */
-            role: string;
+            payment_provider: "cryptobot" | "crystalpay";
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "buyer" | "seller" | "other";
             /** Seller */
             seller: string | null;
             /** Seller Photo Url */
             seller_photo_url?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "cancelled" | "pending_confirmation" | "pending_payment" | "pending_topup" | "in_progress" | "completed" | "arbitration" | "resolved_for_buyer" | "resolved_for_seller" | "pending_cancellation" | "cancelled_for_inactivity";
             /** Topup Deposit Id */
             topup_deposit_id?: number | null;
             topup_invoice?: components["schemas"]["DealTopupInvoiceOut"] | null;
@@ -4020,9 +4061,22 @@ export interface components {
              * @default
              */
             note: string;
-            /** Winner */
-            winner: string;
+            /**
+             * Winner
+             * @enum {string}
+             */
+            winner: "buyer" | "seller";
         };
+        /**
+         * DealStatus
+         * @description Deal lifecycle. Values match the Continental reference bundle
+         *     (`pending_confirmation`, `in_progress`, `arbitration`, ...).
+         *
+         *     Terminal states: ``cancelled``, ``completed``, ``resolved_for_buyer``,
+         *     ``resolved_for_seller``, ``cancelled_for_inactivity``.
+         * @enum {string}
+         */
+        DealStatus: "cancelled" | "pending_confirmation" | "pending_payment" | "in_progress" | "completed" | "arbitration" | "resolved_for_buyer" | "resolved_for_seller" | "pending_cancellation" | "cancelled_for_inactivity" | "pending_topup";
         /**
          * DealTopupInvoiceOut
          * @description P10 — deposit-invoice descriptor returned from the with-topup endpoint.
@@ -4048,8 +4102,11 @@ export interface components {
             paid_total: number;
             /** Pay Url */
             pay_url: string;
-            /** Provider */
-            provider: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "cryptobot" | "crystalpay";
             /** Topup Principal */
             topup_principal: number;
             /** Total */
@@ -4166,9 +4223,17 @@ export interface components {
             } | null;
             /** Title */
             title: string;
-            /** Type */
-            type: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "deals" | "deposits" | "system";
         };
+        /**
+         * NotificationType
+         * @enum {string}
+         */
+        NotificationType: "deals" | "deposits" | "system";
         /** OperationalAlertOut */
         OperationalAlertOut: {
             /** Count */
@@ -4396,8 +4461,11 @@ export interface components {
         };
         /** ServiceModerationDecision */
         ServiceModerationDecision: {
-            /** Action */
-            action: string;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "ban" | "unban";
             /**
              * Reason
              * @default
@@ -4466,15 +4534,18 @@ export interface components {
         /** ServiceUpdate */
         ServiceUpdate: {
             /** Description */
-            description?: string | null;
+            description?: string;
             /** Photo Urls */
-            photo_urls?: string[] | null;
+            photo_urls?: string[];
             /** Price */
-            price?: number | string | null;
-            /** Status */
-            status?: string | null;
+            price?: number | string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status?: "draft" | "active" | "paused";
             /** Title */
-            title?: string | null;
+            title?: string;
         };
         /** SupportPersonOut */
         SupportPersonOut: {
@@ -4810,6 +4881,11 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * WalletDepositStatus
+         * @enum {string}
+         */
+        WalletDepositStatus: "pending" | "paid" | "expired" | "refunded";
         /** WalletWithdrawCreateReq */
         WalletWithdrawCreateReq: {
             /** Address */
@@ -4819,6 +4895,11 @@ export interface components {
             /** Currency Code */
             currency_code: string;
         };
+        /**
+         * WalletWithdrawStatus
+         * @enum {string}
+         */
+        WalletWithdrawStatus: "pending" | "approved" | "sent" | "rejected";
         /** WalletWithdrawalOut */
         WalletWithdrawalOut: {
             /** Address */
@@ -5838,10 +5919,11 @@ export interface operations {
     list_deals_api_admin_deals_get: {
         parameters: {
             query?: {
-                status?: string;
+                status?: "any" | "cancelled" | "pending_confirmation" | "pending_topup" | "in_progress" | "completed" | "arbitration" | "resolved_for_buyer" | "resolved_for_seller" | "pending_cancellation" | "cancelled_for_inactivity";
+                /** @description Optional currency code filter for admin deal history. */
                 currency?: string | null;
-                min_amount?: number | null;
-                max_amount?: number | null;
+                min_amount?: number | string | null;
+                max_amount?: number | string | null;
                 has_arbitration?: boolean | null;
                 has_cancel_request?: boolean | null;
                 buyer_id?: number | null;
@@ -5884,8 +5966,10 @@ export interface operations {
     list_deal_approvals_api_admin_deals_approvals_get: {
         parameters: {
             query?: {
-                status?: string;
+                status?: "any" | "pending" | "approved" | "executed" | "rejected";
                 target_id?: number | null;
+                limit?: number;
+                offset?: number;
             };
             header?: {
                 authorization?: string | null;
@@ -6261,7 +6345,8 @@ export interface operations {
     list_deposits_api_admin_deposits_get: {
         parameters: {
             query?: {
-                status?: string | null;
+                status?: components["schemas"]["WalletDepositStatus"] | null;
+                /** @description Optional currency code filter for admin deposit history. */
                 currency?: string | null;
                 q?: string | null;
                 page?: number;
@@ -6567,7 +6652,10 @@ export interface operations {
     };
     list_service_comments_api_admin_services__service_id__comments_get: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
             header?: {
                 authorization?: string | null;
                 "X-Totp-Code"?: string | null;
@@ -6586,7 +6674,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminCommentItemOut"][];
+                    "application/json": components["schemas"]["AdminCommentListOut"];
                 };
             };
             /** @description Validation Error */
@@ -6929,7 +7017,10 @@ export interface operations {
     };
     list_user_comments_api_admin_users__user_id__comments_get: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
             header?: {
                 authorization?: string | null;
                 "X-Totp-Code"?: string | null;
@@ -6948,7 +7039,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminCommentItemOut"][];
+                    "application/json": components["schemas"]["AdminCommentListOut"];
                 };
             };
             /** @description Validation Error */
@@ -7122,6 +7213,8 @@ export interface operations {
         parameters: {
             query?: {
                 direction?: string;
+                page?: number;
+                page_size?: number;
             };
             header?: {
                 authorization?: string | null;
@@ -7141,7 +7234,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminReviewItemOut"][];
+                    "application/json": components["schemas"]["AdminReviewListOut"];
                 };
             };
             /** @description Validation Error */
@@ -7196,7 +7289,10 @@ export interface operations {
     };
     list_user_services_api_admin_users__user_id__services_get: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
             header?: {
                 authorization?: string | null;
                 "X-Totp-Code"?: string | null;
@@ -7215,7 +7311,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminServiceItemOut"][];
+                    "application/json": components["schemas"]["AdminServiceListOut"];
                 };
             };
             /** @description Validation Error */
@@ -7569,7 +7665,7 @@ export interface operations {
     list_withdrawals_api_admin_withdrawals_get: {
         parameters: {
             query?: {
-                status?: string | null;
+                status?: components["schemas"]["WalletWithdrawStatus"] | null;
                 q?: string | null;
                 page?: number;
                 page_size?: number;
@@ -7729,8 +7825,12 @@ export interface operations {
     list_deals_api_deals_get: {
         parameters: {
             query?: {
-                role?: string | null;
-                status?: string | null;
+                role?: ("buyer" | "seller") | null;
+                status?: components["schemas"]["DealStatus"] | null;
+                /** @description Max rows to return. */
+                limit?: number;
+                /** @description Row offset for cursorless pagination. */
+                offset?: number;
             };
             header?: {
                 authorization?: string | null;
@@ -8378,7 +8478,7 @@ export interface operations {
     list_notifications_api_notifications_get: {
         parameters: {
             query?: {
-                type?: string | null;
+                type?: components["schemas"]["NotificationType"] | null;
                 /** @description ISO-8601 timestamp from the last seen notification. */
                 before_created_at?: string | null;
                 /** @description Id from the last seen notification (must accompany before_created_at). */
@@ -8850,6 +8950,7 @@ export interface operations {
             query: {
                 user: string;
                 limit?: number;
+                deal_id?: number | null;
                 offset?: number;
             };
             header?: {
@@ -9098,6 +9199,8 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                /** @description Row offset for cursorless pagination. */
+                offset?: number;
             };
             header?: {
                 authorization?: string | null;
@@ -9328,19 +9431,24 @@ export interface operations {
         parameters: {
             query?: {
                 q?: string | null;
-                filter?: string | null;
+                /** @description Continental top-tab filter */
+                filter?: ("all" | "arbiters" | "admins" | "with_deposit" | "top_rating") | null;
                 /** @description Continental rating bucket */
-                rating?: string | null;
+                rating?: ("5.0" | "4.5-4.9" | "4.0-4.4" | "3.5-3.9" | "lt3.5") | null;
                 /** @description Continental deals bucket */
-                deals?: string | null;
+                deals?: ("0-10" | "11-50" | "51-100" | "101+") | null;
                 /** @description Continental prefix tier */
-                status?: string | null;
+                status?: ("5" | "3" | "2") | null;
                 /** @description ISO date (YYYY-MM-DD) */
                 reg_from?: string | null;
                 /** @description ISO date (YYYY-MM-DD) */
                 reg_to?: string | null;
                 /** @description When true, the endpoint is being used as a counterparty picker (e.g. on /deals/new) — bypass the 'min 1 deal' search gate so brand-new users can still find a counterparty to do their first deal with. */
                 picker?: boolean;
+                /** @description Max rows to return. Capped at 200 to protect the DB. */
+                limit?: number;
+                /** @description Row offset for cursorless pagination. */
+                offset?: number;
             };
             header?: {
                 authorization?: string | null;
@@ -9469,7 +9577,13 @@ export interface operations {
     };
     list_user_deposits_api_wallet_deposits_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional currency code filter for wallet history. */
+                currency?: string | null;
+                limit?: number;
+                /** @description Row offset for cursorless pagination. */
+                offset?: number;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -9568,7 +9682,13 @@ export interface operations {
     };
     list_user_withdrawals_api_wallet_withdrawals_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional currency code filter for wallet history. */
+                currency?: string | null;
+                limit?: number;
+                /** @description Row offset for cursorless pagination. */
+                offset?: number;
+            };
             header?: {
                 authorization?: string | null;
             };

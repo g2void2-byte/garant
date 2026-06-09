@@ -30,13 +30,17 @@ const mockState = vi.hoisted(() => ({
     isPending: false,
   },
   shouldRender: true as boolean,
+  lastBroadcastsQuery: undefined as { page?: number; page_size?: number } | undefined,
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
-  useAdminBroadcasts: () => ({
-    data: mockState.list,
-    isLoading: mockState.loading,
-  }),
+  useAdminBroadcasts: (params: { page?: number; page_size?: number } = {}) => {
+    mockState.lastBroadcastsQuery = params;
+    return {
+      data: mockState.list,
+      isLoading: mockState.loading,
+    };
+  },
   useAdminBroadcastPreview: () => mockState.preview,
   useAdminCreateBroadcast: () => mockState.create,
   useAdminDeleteBroadcast: () => mockState.del,
@@ -110,6 +114,7 @@ beforeEach(() => {
   mockState.preview = { mutateAsync: vi.fn(), isPending: false };
   mockState.create = { mutateAsync: vi.fn(), isPending: false };
   mockState.shouldRender = true;
+  mockState.lastBroadcastsQuery = undefined;
   toastSpy.mockClear();
 });
 
@@ -146,6 +151,43 @@ describe("<AdminBroadcastsPage />", () => {
     expect(screen.getByText(/доставлено 480/)).toBeInTheDocument();
   });
 
+  it("renders malformed broadcast totals as neutral dashes", () => {
+    mockState.list = {
+      items: [
+        makeRow({
+          total_recipients: "1e2" as unknown as number,
+          delivered_count: "0x10" as unknown as number,
+        }),
+      ],
+      total: "1e2" as unknown as number,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+
+    expect(screen.getByText(/\u2014 всего/)).toBeInTheDocument();
+    expect(screen.getByText(/\u2014 получателей/)).toBeInTheDocument();
+    expect(screen.getByText(/доставлено \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+  });
+
+  it("pagination advances beyond the first broadcasts page", async () => {
+    mockState.list = {
+      items: [makeRow()],
+      total: 80,
+      page: 1,
+      page_size: 50,
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    expect(mockState.lastBroadcastsQuery?.page_size).toBe(50);
+    await user.click(screen.getByLabelText("\u0412\u043f\u0435\u0440\u0451\u0434"));
+    await waitFor(() => expect(mockState.lastBroadcastsQuery?.page).toBe(2));
+  });
+
   it("delete row with confirm fires mutation and toasts success", async () => {
     mockState.list = {
       items: [makeRow()],
@@ -168,6 +210,39 @@ describe("<AdminBroadcastsPage />", () => {
       expect.objectContaining({ kind: "info", title: "Удалено" }),
     );
     confirmSpy.mockRestore();
+  });
+
+  it("normalizes string broadcast ids before delete mutation", async () => {
+    mockState.list = {
+      items: [makeRow({ id: "7" as unknown as number })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    mockState.del.mutateAsync.mockResolvedValue({});
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByLabelText("Удалить"));
+    await waitFor(() =>
+      expect(mockState.del.mutateAsync).toHaveBeenCalledWith(7),
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it("does not expose delete for malformed broadcast ids", () => {
+    mockState.list = {
+      items: [makeRow({ id: "0x7" as unknown as number })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+
+    renderPage();
+
+    expect(screen.queryByLabelText("Удалить")).not.toBeInTheDocument();
+    expect(mockState.del.mutateAsync).not.toHaveBeenCalled();
   });
 
   it("delete row aborted by confirm dialog does NOT fire mutation", async () => {
@@ -214,6 +289,52 @@ describe("<AdminBroadcastsPage />", () => {
     expect(send).toBeDisabled();
   });
 
+  it("blocks preview/send when all delivery channels are disabled", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hello" },
+    });
+    await user.click(screen.getAllByRole("switch")[0]);
+
+    expect(screen.getByText("Выберите хотя бы один канал доставки")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Предпросмотр" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
+    expect(mockState.preview.mutateAsync).not.toHaveBeenCalled();
+    expect(mockState.create.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("blocks invalid language before preview/send and normalizes valid tags", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.preview.mutateAsync.mockResolvedValueOnce({ total_recipients: 7 });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hello" },
+    });
+    const languageInput = screen.getByPlaceholderText("ru");
+    fireEvent.change(languageInput, { target: { value: "ru_RU" } });
+
+    expect(screen.getByText("Используйте латиницу, цифры и дефис")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Предпросмотр" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
+
+    fireEvent.change(languageInput, { target: { value: "PT-BR" } });
+    await user.click(screen.getByRole("button", { name: "Предпросмотр" }));
+
+    await waitFor(() => {
+      const body = mockState.preview.mutateAsync.mock.calls[0]?.[0] as
+        | AdminBroadcastCreateBody
+        | undefined;
+      expect(body?.audience_language).toBe("pt-br");
+    });
+  });
+
   it("'Предпросмотр' calls preview mutation and shows recipient count", async () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
     mockState.preview.mutateAsync.mockResolvedValueOnce({
@@ -237,6 +358,67 @@ describe("<AdminBroadcastsPage />", () => {
     expect(
       await screen.findByText(/Будет отправлено: 1337/),
     ).toBeInTheDocument();
+  });
+
+  it("renders malformed preview recipient counts as a neutral dash", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.preview.mutateAsync.mockResolvedValueOnce({
+      total_recipients: "1e2" as unknown as number,
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hello" },
+    });
+    await user.click(screen.getByRole("button", { name: "Предпросмотр" }));
+
+    expect(await screen.findByText(/Будет отправлено: \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
+  it("blocks invalid numeric audience filters before preview/send", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hi" },
+    });
+    fireEvent.change(screen.getByLabelText("active days"), {
+      target: { value: "1.5" },
+    });
+
+    expect(screen.getByText("Введите целое число 0 или больше")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Предпросмотр" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
+    expect(mockState.preview.mutateAsync).not.toHaveBeenCalled();
+    expect(mockState.create.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("sends numeric audience filters as safe integers", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.preview.mutateAsync.mockResolvedValueOnce({ total_recipients: 7 });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hi" },
+    });
+    fireEvent.change(screen.getByLabelText("active days"), { target: { value: "30" } });
+    fireEvent.change(screen.getByLabelText("minimum deals"), { target: { value: "5" } });
+    await user.click(screen.getByRole("button", { name: "Предпросмотр" }));
+
+    await waitFor(() => {
+      const body = mockState.preview.mutateAsync.mock.calls[0]?.[0] as
+        | AdminBroadcastCreateBody
+        | undefined;
+      expect(body?.audience_active_days).toBe(30);
+      expect(body?.audience_min_deals).toBe(5);
+    });
   });
 
   it("'Отправить' happy path calls create, toasts success, closes sheet", async () => {
@@ -268,6 +450,31 @@ describe("<AdminBroadcastsPage />", () => {
         body: "42 получателей",
       }),
     );
+  });
+
+  it("renders malformed create recipient counts as a neutral dash in toast", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
+    mockState.create.mutateAsync.mockResolvedValueOnce({
+      total_recipients: "0x10" as unknown as number,
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Новая" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
+      target: { value: "Hi" },
+    });
+    await user.click(screen.getByRole("button", { name: /Отправить/ }));
+
+    await waitFor(() => {
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "success",
+          title: "Отправлено",
+          body: "\u2014 получателей",
+        }),
+      );
+    });
   });
 
   it("'Отправить' failure shows an error toast", async () => {
@@ -341,6 +548,19 @@ describe("<AdminBroadcastsPage />", () => {
       screen.getByText(/начинаться с https:\/\/ или tg:\/\//),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Предпросмотр" })).toBeDisabled();
+
+    fireEvent.change(deeplinkInput, {
+      target: { value: "https://t.me@evil.example/garant" },
+    });
+    expect(
+      screen.getByText(/начинаться с https:\/\/ или tg:\/\//),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
+
+    fireEvent.change(deeplinkInput, {
+      target: { value: "tg://" },
+    });
     expect(screen.getByRole("button", { name: "Предпросмотр" })).toBeDisabled();
 
     // ``https://`` is accepted.

@@ -1,13 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { ArrowDownToLine, History } from "lucide-react";
 import {
+  buildWalletHistorySearchParams,
   useCreateWalletDeposit,
   useCurrencies,
   useWalletBalances,
   useWalletDeposits,
   useWalletWithdrawals,
 } from "@/api/hooks";
+import { api } from "@/api/client";
+import type { WalletDepositDto, WalletWithdrawalDto } from "@/api/types";
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/Button";
@@ -15,15 +18,30 @@ import { Input } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ToggleTabs } from "@/components/ui/ToggleTabs";
 import { useToast } from "@/components/ui/Toast";
-import { formatCurrency, relativeTime } from "@/lib/format";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
+import {
+  formatCurrency,
+  formatCurrencyStrict,
+  parseDateTimeMs,
+  parseDecimalValue,
+  relativeTime,
+} from "@/lib/format";
+import {
+  formatWalletBalanceCurrency,
+  hasPositiveWalletBalance,
+} from "@/lib/walletAmounts";
+import { formatPaymentProvider } from "@/lib/paymentProviders";
 import { haptic, openPaymentLink } from "@/lib/tg";
 
 type Tab = "deposit" | "history";
+
+const WALLET_HISTORY_PAGE_SIZE = 50;
 
 const DEPOSIT_STATUS_TEXT: Record<string, string> = {
   pending: "Ожидание",
   paid: "Зачислено",
   expired: "Истёк",
+  refunded: "Возврат",
 };
 
 const WITHDRAW_STATUS_TEXT: Record<string, string> = {
@@ -37,35 +55,119 @@ const STATUS_TONE: Record<string, string> = {
   pending: "text-warning",
   paid: "text-success",
   expired: "text-text-muted",
+  refunded: "text-text-muted",
   approved: "text-success",
   sent: "text-success",
   rejected: "text-danger",
 };
 
+const UNKNOWN_HISTORY_STATUS = "Статус неизвестен";
+
 export default function WalletCurrencyPage() {
   const { code = "" } = useParams<{ code: string }>();
-  const upper = code.toUpperCase();
+  const routeCurrencyCode = normalizeCurrencyCode(code);
+  const upper = routeCurrencyCode ?? "";
+  const headerTitle = routeCurrencyCode ?? "\u0412\u0430\u043b\u044e\u0442\u0430";
 
   const currencies = useCurrencies();
   const balances = useWalletBalances();
-  const deposits = useWalletDeposits();
-  const withdrawals = useWalletWithdrawals();
-
   const currency = useMemo(
-    () => currencies.data?.find((c) => c.code === upper),
-    [currencies.data, upper],
+    () =>
+      routeCurrencyCode
+        ? currencies.data?.find((c) => normalizeCurrencyCode(c.code) === routeCurrencyCode)
+        : undefined,
+    [currencies.data, routeCurrencyCode],
   );
   const balance = useMemo(
-    () => balances.data?.find((b) => b.currency.code === upper),
-    [balances.data, upper],
+    () =>
+      routeCurrencyCode
+        ? balances.data?.find((b) => normalizeCurrencyCode(b.currency.code) === routeCurrencyCode)
+        : undefined,
+    [balances.data, routeCurrencyCode],
   );
+  const historyEnabled = !!currency && (currency.kind ?? "crypto") === "fiat";
+  const historyParams = useMemo(
+    () => ({ currency: upper, limit: WALLET_HISTORY_PAGE_SIZE, offset: 0 }),
+    [upper],
+  );
+  const deposits = useWalletDeposits(historyParams, { enabled: historyEnabled });
+  const withdrawals = useWalletWithdrawals(historyParams, { enabled: historyEnabled });
+  const [depositItems, setDepositItems] = useState<WalletDepositDto[]>([]);
+  const [withdrawalItems, setWithdrawalItems] = useState<WalletWithdrawalDto[]>([]);
+  const [depositsReachedEnd, setDepositsReachedEnd] = useState(false);
+  const [withdrawalsReachedEnd, setWithdrawalsReachedEnd] = useState(false);
+  const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const [tab, setTab] = useState<Tab>("deposit");
+
+  useEffect(() => {
+    const page = deposits.data ?? [];
+    setDepositItems(page);
+    setDepositsReachedEnd(page.length < WALLET_HISTORY_PAGE_SIZE);
+    setHistoryError(null);
+  }, [deposits.data]);
+
+  useEffect(() => {
+    const page = withdrawals.data ?? [];
+    setWithdrawalItems(page);
+    setWithdrawalsReachedEnd(page.length < WALLET_HISTORY_PAGE_SIZE);
+    setHistoryError(null);
+  }, [withdrawals.data]);
+
+  const loadMoreHistory = async () => {
+    if (!routeCurrencyCode) return;
+    if (loadingMoreHistory || (depositsReachedEnd && withdrawalsReachedEnd)) return;
+    setLoadingMoreHistory(true);
+    setHistoryError(null);
+    try {
+      const tasks: Promise<void>[] = [];
+      if (!depositsReachedEnd) {
+        tasks.push(
+          api
+            .get("api/wallet/deposits", {
+              searchParams: buildWalletHistorySearchParams({
+                currency: routeCurrencyCode,
+                limit: WALLET_HISTORY_PAGE_SIZE,
+                offset: depositItems.length,
+              }),
+            })
+            .json<WalletDepositDto[]>()
+            .then((page) => {
+              setDepositItems((prev) => [...prev, ...page]);
+              if (page.length < WALLET_HISTORY_PAGE_SIZE) setDepositsReachedEnd(true);
+            }),
+        );
+      }
+      if (!withdrawalsReachedEnd) {
+        tasks.push(
+          api
+            .get("api/wallet/withdrawals", {
+              searchParams: buildWalletHistorySearchParams({
+                currency: routeCurrencyCode,
+                limit: WALLET_HISTORY_PAGE_SIZE,
+                offset: withdrawalItems.length,
+              }),
+            })
+            .json<WalletWithdrawalDto[]>()
+            .then((page) => {
+              setWithdrawalItems((prev) => [...prev, ...page]);
+              if (page.length < WALLET_HISTORY_PAGE_SIZE) setWithdrawalsReachedEnd(true);
+            }),
+        );
+      }
+      await Promise.all(tasks);
+    } catch (e: unknown) {
+      setHistoryError((e as Error)?.message || "Не удалось загрузить еще операций");
+    } finally {
+      setLoadingMoreHistory(false);
+    }
+  };
 
   if (currencies.isLoading || balances.isLoading) {
     return (
       <Page showBack>
-        <Header title={upper} />
+        <Header title={headerTitle} />
         <div className="px-4 space-y-2">
           <Skeleton className="h-24 w-full rounded-card" />
           <Skeleton className="h-12 w-full rounded-2xl" />
@@ -75,10 +177,10 @@ export default function WalletCurrencyPage() {
     );
   }
 
-  if (!currency) {
+  if (!routeCurrencyCode || !currency) {
     return (
       <Page showBack>
-        <Header title={upper} />
+        <Header title={headerTitle} />
         <div className="px-4 text-text-muted text-sm">Валюта не поддерживается.</div>
       </Page>
     );
@@ -100,11 +202,11 @@ export default function WalletCurrencyPage() {
         <div className="bg-panel border border-border rounded-card p-4">
           <div className="text-sm text-text-muted">Доступно</div>
           <div className="mt-1 text-3xl font-bold text-accent">
-            {formatCurrency(balance?.amount ?? 0, currency.code, currency.decimals)}
+            {formatWalletBalanceCurrency(balance, "amount", upper, currency.decimals)}
           </div>
-          {(balance?.locked ?? 0) > 0 && (
+          {hasPositiveWalletBalance(balance, "locked") && (
             <div className="text-xs text-text-muted mt-1">
-              в заявках: {formatCurrency(balance!.locked, currency.code, currency.decimals)}
+              в заявках: {formatWalletBalanceCurrency(balance, "locked", upper, currency.decimals)}
             </div>
           )}
         </div>
@@ -119,17 +221,19 @@ export default function WalletCurrencyPage() {
         />
 
         {tab === "deposit" && (
-          <DepositForm currencyCode={currency.code} minDeposit={currency.min_deposit} decimals={currency.decimals} />
+          <DepositForm currencyCode={upper} minDeposit={currency.min_deposit} decimals={currency.decimals} />
         )}
         {tab === "history" && (
           <HistoryList
-            currencyCode={currency.code}
+            currencyCode={upper}
             decimals={currency.decimals}
             depositsLoading={deposits.isLoading || withdrawals.isLoading}
-            deposits={deposits.data?.filter((d) => d.currency.code === currency.code) ?? []}
-            withdrawals={
-              withdrawals.data?.filter((w) => w.currency.code === currency.code) ?? []
-            }
+            deposits={depositItems}
+            withdrawals={withdrawalItems}
+            hasMore={!depositsReachedEnd || !withdrawalsReachedEnd}
+            loadingMore={loadingMoreHistory}
+            loadMoreError={historyError}
+            onLoadMore={loadMoreHistory}
           />
         )}
       </div>
@@ -160,11 +264,15 @@ function DepositForm({
     try {
       const dep = await create.mutateAsync({ currency_code: currencyCode, amount: value });
       haptic("success");
-      if (dep.pay_url) openPaymentLink(dep.pay_url);
+      const depositAmount = parseDecimalValue(dep.amount);
+      if (dep.pay_url && depositAmount !== null && depositAmount > 0) {
+        openPaymentLink(dep.pay_url);
+      }
+      const paidCurrencyCode = normalizeCurrencyCode(dep.currency.code) ?? currencyCode;
       toast.show({
         kind: "success",
         title: "Счёт создан",
-        body: `Оплатите ${formatCurrency(dep.amount, dep.currency.code, decimals)} в CryptoBot.`,
+        body: `Оплатите ${formatCurrencyStrict(dep.amount, paidCurrencyCode, decimals)} в CryptoBot.`,
       });
     } catch (e: unknown) {
       haptic("error");
@@ -204,26 +312,20 @@ function HistoryList({
   depositsLoading,
   deposits,
   withdrawals,
+  hasMore,
+  loadingMore,
+  loadMoreError,
+  onLoadMore,
 }: {
   currencyCode: string;
   decimals: number;
   depositsLoading: boolean;
-  deposits: {
-    id: number;
-    amount: number;
-    status: string;
-    created_at: string;
-    pay_url: string;
-    provider: string;
-  }[];
-  withdrawals: {
-    id: number;
-    amount: number;
-    address: string | null;
-    status: string;
-    created_at: string;
-    admin_note: string;
-  }[];
+  deposits: WalletDepositDto[];
+  withdrawals: WalletWithdrawalDto[];
+  hasMore: boolean;
+  loadingMore: boolean;
+  loadMoreError: string | null;
+  onLoadMore: () => void;
 }) {
   type Row = {
     key: string;
@@ -238,32 +340,47 @@ function HistoryList({
     provider?: string;
   };
 
+  const compareRowsByCreatedAt = (a: Row, b: Row): number => {
+    const aMs = parseDateTimeMs(a.created_at);
+    const bMs = parseDateTimeMs(b.created_at);
+    if (aMs === bMs) return 0;
+    if (aMs === null) return 1;
+    if (bMs === null) return -1;
+    return bMs - aMs;
+  };
+
   const rows: Row[] = [
-    ...deposits.map<Row>((d) => ({
-      key: `d-${d.id}`,
-      kind: "deposit",
-      title: "Пополнение",
-      subtitle: DEPOSIT_STATUS_TEXT[d.status] ?? d.status,
-      amount: d.amount,
-      sign: 1,
-      status: d.status,
-      created_at: d.created_at,
-      pay_url: d.status === "pending" ? d.pay_url : undefined,
-      provider: d.provider,
-    })),
-    ...withdrawals.map<Row>((w) => ({
-      key: `w-${w.id}`,
-      kind: "withdraw",
-      title: "Вывод",
-      subtitle: [WITHDRAW_STATUS_TEXT[w.status] ?? w.status, w.admin_note]
-        .filter(Boolean)
-        .join(" · "),
-      amount: w.amount,
-      sign: -1,
-      status: w.status,
-      created_at: w.created_at,
-    })),
-  ].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+    ...deposits.map<Row>((d) => {
+      const status = typeof d.status === "string" ? d.status : "";
+      return {
+        key: `d-${d.id}`,
+        kind: "deposit",
+        title: "Пополнение",
+        subtitle: DEPOSIT_STATUS_TEXT[status] ?? UNKNOWN_HISTORY_STATUS,
+        amount: d.amount,
+        sign: 1,
+        status,
+        created_at: d.created_at,
+        pay_url: status === "pending" ? d.pay_url : undefined,
+        provider: d.provider,
+      };
+    }),
+    ...withdrawals.map<Row>((w) => {
+      const status = typeof w.status === "string" ? w.status : "";
+      return {
+        key: `w-${w.id}`,
+        kind: "withdraw",
+        title: "Вывод",
+        subtitle: [WITHDRAW_STATUS_TEXT[status] ?? UNKNOWN_HISTORY_STATUS, w.admin_note]
+          .filter(Boolean)
+          .join(" · "),
+        amount: w.amount,
+        sign: -1,
+        status,
+        created_at: w.created_at,
+      };
+    }),
+  ].sort(compareRowsByCreatedAt);
 
   if (depositsLoading) {
     return (
@@ -284,47 +401,68 @@ function HistoryList({
 
   return (
     <div className="space-y-2">
-      {rows.map((r) => (
-        <div key={r.key} className="bg-panel border border-border rounded-card p-3 flex items-center justify-between">
-          <div className="min-w-0">
-            <div className="font-semibold truncate flex items-center gap-2">
-              <span>{r.title}</span>
-              {r.kind === "deposit" && r.provider && (
-                <span
-                  className="inline-flex items-center rounded-full border border-border bg-bg px-2 py-[1px] text-[10px] font-medium uppercase text-text-muted"
-                  data-testid={`deposit-provider-${r.provider}`}
+      {rows.map((r) => {
+        const parsedAmount = parseDecimalValue(r.amount);
+        const amountText =
+          parsedAmount !== null && parsedAmount >= 0
+            ? `${r.sign === 1 ? "+" : "-"}${formatCurrency(r.amount, currencyCode, decimals)}`
+            : formatCurrencyStrict(r.amount, currencyCode, decimals);
+        const canOpenPayment = !!r.pay_url && parsedAmount !== null && parsedAmount > 0;
+        const providerTestId =
+          r.provider === "cryptobot" || r.provider === "crystalpay"
+            ? r.provider
+            : "unknown";
+        return (
+          <div
+            key={r.key}
+            data-testid={`wallet-history-row-${r.key}`}
+            className="bg-panel border border-border rounded-card p-3 flex items-center justify-between"
+          >
+            <div className="min-w-0">
+              <div className="font-semibold truncate flex items-center gap-2">
+                <span>{r.title}</span>
+                {r.kind === "deposit" && r.provider && (
+                  <span
+                    className="inline-flex items-center rounded-full border border-border bg-bg px-2 py-[1px] text-[10px] font-medium uppercase text-text-muted"
+                    data-testid={`deposit-provider-${providerTestId}`}
+                  >
+                    {formatPaymentProvider(r.provider)}
+                  </span>
+                )}
+              </div>
+              <div className={`text-xs ${STATUS_TONE[r.status] ?? "text-text-muted"}`}>
+                {r.subtitle}
+              </div>
+              <div className="text-[11px] text-text-muted mt-0.5">
+                {relativeTime(r.created_at)}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className={`font-semibold ${r.sign === 1 ? "text-success" : "text-text"}`}>
+                {amountText}
+              </div>
+              {canOpenPayment && (
+                <Link
+                  to="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    openPaymentLink(r.pay_url!);
+                  }}
+                  className="text-accent text-xs underline"
                 >
-                  {r.provider === "crystalpay" ? "Crystalpay" : "CryptoBot"}
-                </span>
+                  Оплатить
+                </Link>
               )}
             </div>
-            <div className={`text-xs ${STATUS_TONE[r.status] ?? "text-text-muted"}`}>
-              {r.subtitle}
-            </div>
-            <div className="text-[11px] text-text-muted mt-0.5">
-              {relativeTime(r.created_at)}
-            </div>
           </div>
-          <div className="text-right">
-            <div className={`font-semibold ${r.sign === 1 ? "text-success" : "text-text"}`}>
-              {r.sign === 1 ? "+" : "-"}
-              {formatCurrency(r.amount, currencyCode, decimals)}
-            </div>
-            {r.pay_url && (
-              <Link
-                to="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  openPaymentLink(r.pay_url!);
-                }}
-                className="text-accent text-xs underline"
-              >
-                Оплатить
-              </Link>
-            )}
-          </div>
-        </div>
-      ))}
+        );
+      })}
+      {hasMore && rows.length >= WALLET_HISTORY_PAGE_SIZE && (
+        <Button onClick={onLoadMore} disabled={loadingMore} className="w-full">
+          {loadingMore ? "Загружаю..." : "Показать еще"}
+        </Button>
+      )}
+      {loadMoreError && <div className="text-xs text-danger text-center">{loadMoreError}</div>}
     </div>
   );
 }

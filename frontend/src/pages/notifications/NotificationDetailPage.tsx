@@ -11,6 +11,7 @@ import {
   useNotification,
 } from "@/api/hooks";
 import { relativeTime } from "@/lib/format";
+import { parsePositiveIntRouteParam, parsePositiveIntValue } from "@/lib/routeParams";
 
 const ICONS = {
   deals: Briefcase,
@@ -36,27 +37,25 @@ const TITLES = {
 export default function NotificationDetailPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const numericId = Number(id);
-  const { data, isLoading, isError } = useNotification(
-    Number.isFinite(numericId) ? numericId : undefined,
-  );
+  const numericId = parsePositiveIntRouteParam(id);
+  const { data, isLoading, isError } = useNotification(numericId);
   const markRead = useMarkNotificationRead();
 
   useEffect(() => {
-    if (data && !data.is_read) {
-      markRead.mutate(data.id);
+    if (data && !data.is_read && numericId !== undefined) {
+      markRead.mutate(numericId);
     }
-  }, [data, markRead]);
+  }, [data, markRead, numericId]);
 
   const dealRef = useMemo(() => {
     if (!data) return null;
     const payloadId =
       typeof data.payload === "object" && data.payload && "deal_id" in data.payload
-        ? Number((data.payload as { deal_id: unknown }).deal_id)
-        : NaN;
-    if (Number.isFinite(payloadId) && payloadId > 0) return payloadId;
+        ? parsePositiveIntValue((data.payload as { deal_id: unknown }).deal_id)
+        : undefined;
+    if (payloadId !== undefined) return payloadId;
     const match = /#(\d+)/.exec(data.body || "");
-    return match ? Number(match[1]) : null;
+    return match ? parsePositiveIntRouteParam(match[1]) ?? null : null;
   }, [data]);
 
   if (isLoading) {

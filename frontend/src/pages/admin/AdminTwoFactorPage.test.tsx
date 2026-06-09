@@ -135,7 +135,7 @@ describe("<AdminTwoFactorPage />", () => {
     );
   });
 
-  it("confirm button stays disabled until the code is 6+ digits", async () => {
+  it("confirm button stays disabled until the code has 6 digits", async () => {
     mockState.setupMutation.mutateAsync.mockResolvedValue({
       secret: "ABCDEFGHIJKLMNOP",
       otpauth_url: "otpauth://totp/garant:admin?secret=ABC",
@@ -152,6 +152,22 @@ describe("<AdminTwoFactorPage />", () => {
     expect(confirm).toBeDisabled();
     fireEvent.change(codeInput, { target: { value: "123456" } });
     expect(confirm).not.toBeDisabled();
+  });
+
+  it("enable input keeps only the first 6 digits", async () => {
+    mockState.setupMutation.mutateAsync.mockResolvedValue({
+      secret: "ABCDEFGHIJKLMNOP",
+      otpauth_url: "otpauth://totp/garant:admin?secret=ABC",
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: /Включить 2FA/ }));
+    const codeInput = await screen.findByPlaceholderText("123 456");
+
+    fireEvent.change(codeInput, { target: { value: "12 34abc5678" } });
+
+    expect(codeInput).toHaveValue("123456");
   });
 
   it("confirm passes secret + code and toasts on success", async () => {
@@ -188,7 +204,7 @@ describe("<AdminTwoFactorPage />", () => {
     expect(disableBtn).toBeDisabled();
 
     const codeInput = screen.getByPlaceholderText("123 456");
-    fireEvent.change(codeInput, { target: { value: "111222" } });
+    fireEvent.change(codeInput, { target: { value: "111 2227" } });
     await user.click(screen.getByRole("button", { name: "Отключить" }));
     await waitFor(() =>
       expect(mockState.disableMutation.mutateAsync).toHaveBeenCalledWith({

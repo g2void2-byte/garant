@@ -30,16 +30,17 @@ async def update_me(body: UserUpdate, user: CurrentUser, session: SessionDep):
     # to index. Free-text values (``display_name``, ``description``,
     # ``photo_url`` …) are deliberately NOT in ``extra``.
     touched: list[str] = []
+    requested_fields = body.model_fields_set
     if body.display_name is not None:
         user.display_name = body.display_name
         touched.append("display_name")
     if body.description is not None:
         user.description = body.description
         touched.append("description")
-    if body.banner_url is not None:
+    if "banner_url" in requested_fields:
         user.banner_url = body.banner_url or None
         touched.append("banner_url")
-    if body.photo_url is not None:
+    if "photo_url" in requested_fields:
         user.photo_url = body.photo_url or None
         touched.append("photo_url")
     if body.forums is not None:
@@ -85,13 +86,13 @@ async def update_me(body: UserUpdate, user: CurrentUser, session: SessionDep):
     if body.is_hidden_profile is not None:
         user.is_hidden_profile = body.is_hidden_profile
         touched.append("is_hidden_profile")
-    if body.country is not None:
+    if "country" in requested_fields:
         # ``UserUpdate._country_ok`` normalises ``""`` to ``None`` and
         # upper-cases the alpha-2 code; here we just persist whatever
         # the validator returned. ``None`` clears the stored country.
         user.country = body.country
         touched.append("country")
-    if body.display_currency_code is not None:
+    if "display_currency_code" in requested_fields:
         # Items 13/15 — the validator already normalised the string
         # (uppercased, ASCII, ≤8 chars). Enforce the closed set of
         # *active fiat* currencies here so a malformed wire value or
@@ -99,7 +100,7 @@ async def update_me(body: UserUpdate, user: CurrentUser, session: SessionDep):
         # the user with an unrenderable preference. ``""`` already
         # mapped to ``None`` via the schema validator, which clears the
         # column (UI falls back to USD).
-        if body.display_currency_code == "":  # pragma: no cover - validator normalises
+        if body.display_currency_code is None:
             user.display_currency_code = None
         else:
             row = (

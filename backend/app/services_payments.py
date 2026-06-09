@@ -190,6 +190,22 @@ async def handle_invoice_paid(session: AsyncSession, payload: dict[str, Any]) ->
         # without crediting twice.
         if wallet.status == WalletDepositStatus.paid:
             return {"ok": True, "already_paid": True, "kind": "wallet"}
+        if wallet.status == WalletDepositStatus.refunded:
+            # A refunded deposit is an admin reversal of a previously
+            # credited invoice. CryptoBot may still send a later paid
+            # delivery with a fresh update id; treating that like a
+            # missed webhook would silently undo the refund and credit
+            # the user's balance again.
+            logger.error(
+                "CryptoBot paid webhook for refunded deposit id=%s",
+                wallet.id,
+                extra={
+                    "event": "cryptobot.webhook.paid_on_refunded",
+                    "deposit_id": wallet.id,
+                    "provider_invoice_id": provider_id,
+                },
+            )
+            return {"ok": False, "reason": "deposit not pending"}
         # Audit L-9 — defensive equality check between the reported
         # ``payload["amount"]`` and the deposit row's
         # ``wallet.amount``. We don't *trust* the provider to never

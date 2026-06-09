@@ -1,14 +1,35 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import math
+import posixpath
 import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
-from pydantic import BaseModel, Field, PlainSerializer, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
+from pydantic.json_schema import SkipJsonSchema
+
+from .money import MONEY_SCALE
+
+
+def _reject_explicit_null_value(v: object) -> object:
+    if v is None:
+        raise ValueError("Field cannot be null")
+    return v
 
 
 def _validate_https_or_media_url(v: str, *, what: str, max_len: int = 1024) -> str:
@@ -55,25 +76,86 @@ def _validate_https_or_media_url(v: str, *, what: str, max_len: int = 1024) -> s
             raise ValueError(f"{what} содержит недопустимые символы")
     if v.startswith("/media/"):
         # Backend-served path — fine, no scheme to validate.
-        return v
+        return _validate_media_path_url(v, what=what)
     parsed = urlparse(v)
     if parsed.scheme.lower() != "https":
         raise ValueError(f"{what} должен быть https:// ссылкой")
-    host = (parsed.netloc or "").lower()
-    if not host:
+    if not parsed.hostname:
         raise ValueError(f"{what} должен содержать хост")
     # Reject userinfo (``user@host``) — Telegram's link preview will
     # cheerfully render ``https://example.com@evil.com/`` as
     # ``example.com``, which the user will trust. Strip-and-reject.
-    if "@" in host:
+    if parsed.username or parsed.password or "@" in parsed.netloc:
         raise ValueError(f"{what} не может содержать userinfo")
+    try:
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"{what} has invalid URL port") from exc
     return v
+
+
+def _validate_media_path_url(v: str, *, what: str) -> str:
+    """Validate same-origin media paths before they reach ``<img src>``."""
+    parsed = urlparse(v)
+    if parsed.scheme or parsed.netloc or parsed.params or parsed.fragment:
+        raise ValueError(f"{what} must be a relative /media/ path")
+    path = parsed.path
+    if not path.startswith("/media/"):
+        raise ValueError(f"{what} must be a /media/ path")
+    decoded_path = unquote(path)
+    if decoded_path != path:
+        raise ValueError(f"{what} cannot contain URL-encoded path segments")
+    if "\x00" in decoded_path or "\\" in decoded_path or "//" in decoded_path:
+        raise ValueError(f"{what} has invalid media path")
+    normalised = posixpath.normpath(decoded_path)
+    if normalised != decoded_path or not normalised.startswith("/media/"):
+        raise ValueError(f"{what} has invalid media path")
+    return v
+
+
+def _validate_https_or_tg_url(v: str, *, what: str, max_len: int = 256) -> str:
+    """Validate admin-authored links used in Telegram HTML anchors."""
+    v = v.strip()
+    if not v:
+        raise ValueError(f"{what} не может быть пустой")
+    if len(v) > max_len:
+        raise ValueError(f"{what} слишком длинная (≤{max_len})")
+    for ch in v:
+        if ord(ch) < 0x20 or ch in (" ", "\\", "\x7f"):
+            raise ValueError(f"{what} содержит недопустимые символы")
+    parsed = urlparse(v)
+    scheme = parsed.scheme.lower()
+    if scheme == "https":
+        host = parsed.netloc or ""
+        if not host or "@" in host:
+            raise ValueError(f"{what} должна быть корректной https:// ссылкой без userinfo")
+        return v
+    if scheme == "tg":
+        if not parsed.netloc:
+            raise ValueError(f"{what} должна быть корректной tg:// ссылкой")
+        return v
+    raise ValueError(f"{what} должна начинаться с https:// или tg://")
 
 
 # H-1: internal calculations use ``Decimal`` for precision, but the
 # JSON wire format emits a plain number (``float``) so the frontend
 # (JavaScript) can consume values without a string→number parse step.
 MoneyDecimal = Annotated[Decimal, PlainSerializer(lambda v: float(v), return_type=float)]
+DealStatusWire = Literal[
+    "cancelled",
+    "pending_confirmation",
+    "pending_payment",
+    "pending_topup",
+    "in_progress",
+    "completed",
+    "arbitration",
+    "resolved_for_buyer",
+    "resolved_for_seller",
+    "pending_cancellation",
+    "cancelled_for_inactivity",
+]
+DealRoleWire = Literal["buyer", "seller", "other"]
+PaymentProviderWire = Literal["cryptobot", "crystalpay"]
 
 # ── Users ──────────────────────────────────────────────
 
@@ -306,6 +388,8 @@ class UserPublicOut(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     display_name: str | None = None
     description: str | None = None
     banner_url: str | None = None
@@ -334,6 +418,18 @@ class UserUpdate(BaseModel):
     # PATCH ``/api/me`` handler verifies the code points at an active
     # ``Currency`` row with ``kind == 'fiat'``.
     display_currency_code: str | None = None
+
+    @field_validator(
+        "dm_deals",
+        "dm_deposits",
+        "dm_system",
+        "is_anonymous_deals",
+        "is_hidden_profile",
+        mode="before",
+    )
+    @classmethod
+    def _optional_bool_ok(cls, v: object) -> bool | None:
+        return _validate_optional_bool(v, what="Флаг профиля")
 
     @field_validator("photo_url")
     @classmethod
@@ -435,6 +531,15 @@ class CategoryOut(BaseModel):
 
 
 MAX_SERVICE_PHOTOS = 6
+MAX_SERVICE_TITLE_LEN = 256
+MAX_CATEGORY_SLUG_LEN = 64
+MAX_USERNAME_REF_LEN = 64
+MAX_CURRENCY_CODE_LEN = 16
+CURRENCY_CODE_PATTERN = r"^[A-Z0-9]+$"
+MAX_TOTP_SECRET_LEN = 64
+MIN_TOTP_SECRET_LEN = 16
+TOTP_CODE_PATTERN = r"^\d{6}$"
+TOTP_SECRET_PATTERN = rf"^[A-Z2-7]{{{MIN_TOTP_SECRET_LEN},{MAX_TOTP_SECRET_LEN}}}$"
 
 # Maximum length for user-supplied free-form description fields
 # (services, deals). Matches the existing cap on the admin-side
@@ -481,6 +586,137 @@ def _reject_non_finite_money(v: Decimal | float | int | None) -> Decimal | None:
     return v
 
 
+def _validate_service_title(v: str | None) -> str | None:
+    if v is None:
+        return v
+    v = v.strip()
+    if not v:
+        raise ValueError("Service title cannot be empty")
+    if len(v) > MAX_SERVICE_TITLE_LEN:
+        raise ValueError(f"Service title is too long (<={MAX_SERVICE_TITLE_LEN})")
+    return v
+
+
+def _validate_category_slug(v: str) -> str:
+    v = v.strip().lower()
+    if not v:
+        raise ValueError("Category slug cannot be empty")
+    if len(v) > MAX_CATEGORY_SLUG_LEN:
+        raise ValueError(f"Category slug is too long (<={MAX_CATEGORY_SLUG_LEN})")
+    return v
+
+
+def _validate_username_ref(v: str, *, what: str = "username") -> str:
+    v = (v or "").strip().lstrip("@").strip()
+    if not v:
+        raise ValueError(f"{what} cannot be empty")
+    if len(v) > MAX_USERNAME_REF_LEN:
+        raise ValueError(f"{what} is too long (<={MAX_USERNAME_REF_LEN})")
+    if not v.isascii() or any(not (ch.isalnum() or ch in {"_", "-"}) for ch in v):
+        raise ValueError(f"{what} contains invalid characters")
+    return v
+
+
+def validate_currency_code(v: str, *, max_len: int = MAX_CURRENCY_CODE_LEN) -> str:
+    v = (v or "").strip().upper()
+    if not v:
+        raise ValueError("Currency code cannot be empty")
+    if len(v) > max_len or not v.isascii() or not v.isalnum():
+        raise ValueError(f"Currency code must be <= {max_len} ASCII alphanumeric characters")
+    return v
+
+
+CurrencyCodeStr = Annotated[
+    str,
+    StringConstraints(
+        min_length=1,
+        max_length=MAX_CURRENCY_CODE_LEN,
+        pattern=CURRENCY_CODE_PATTERN,
+    ),
+    BeforeValidator(validate_currency_code),
+]
+
+
+def _validate_currency_code(v: str, *, max_len: int = MAX_CURRENCY_CODE_LEN) -> str:
+    return validate_currency_code(v, max_len=max_len)
+
+
+def _validate_totp_secret(v: object) -> str:
+    if not isinstance(v, str):
+        raise ValueError("Некорректный секрет")
+    secret = v.upper().strip().replace(" ", "")
+    if not secret or len(secret) < MIN_TOTP_SECRET_LEN or len(secret) > MAX_TOTP_SECRET_LEN:
+        raise ValueError("Некорректный секрет")
+    if not re.fullmatch(TOTP_SECRET_PATTERN, secret):
+        raise ValueError("Некорректный секрет")
+    try:
+        pad = (-len(secret)) % 8
+        base64.b32decode(secret + "=" * pad, casefold=True)
+    except (binascii.Error, ValueError):
+        raise ValueError("Некорректный секрет") from None
+    return secret
+
+
+def _validate_totp_code(v: object) -> str:
+    if not isinstance(v, str):
+        raise ValueError("Код должен состоять из 6 цифр")
+    code = v.strip()
+    if not code.isdigit() or len(code) != 6:
+        raise ValueError("Код должен состоять из 6 цифр")
+    return code
+
+
+def _validate_optional_positive_int_id(v: object, *, what: str = "ID") -> object:
+    if v is None:
+        return v
+    if isinstance(v, bool) or not isinstance(v, int):
+        raise ValueError(f"{what} должен быть целым числом")
+    if v <= 0:
+        raise ValueError(f"{what} должен быть положительным числом")
+    return v
+
+
+def _validate_optional_int(v: object, *, what: str = "Значение") -> int | None:
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, int):
+        raise ValueError(f"{what} должно быть целым числом")
+    return v
+
+
+def _validate_optional_non_negative_int(v: object, *, what: str = "Значение") -> int | None:
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, int):
+        raise ValueError(f"{what} должно быть целым числом")
+    if v < 0:
+        raise ValueError(f"{what} не может быть отрицательным")
+    return v
+
+
+def _validate_bool(v: object, *, what: str = "Флаг") -> bool:
+    if not isinstance(v, bool):
+        raise ValueError(f"{what} должен быть boolean")
+    return v
+
+
+def _validate_optional_bool(v: object, *, what: str = "Флаг") -> bool | None:
+    if v is None:
+        return None
+    return _validate_bool(v, what=what)
+
+
+def _validate_optional_finite_number(v: object, *, what: str = "Значение") -> float | None:
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, int | float | Decimal):
+        raise ValueError(f"{what} должен быть числом")
+    result = float(v)
+    if not math.isfinite(result):
+        raise ValueError(f"{what} должен быть конечным числом")
+    return result
+
+
 def _validate_service_photos(v: list[str] | None) -> list[str] | None:
     # V12-UI — gatekeep the photo list (length + each entry's scheme)
     # in one place so both ``ServiceCreate`` and ``ServiceUpdate``
@@ -501,11 +737,7 @@ def _validate_service_photos(v: list[str] | None) -> list[str] | None:
         s = (entry or "").strip()
         if not s:
             continue
-        if len(s) > 1024:
-            raise ValueError("Слишком длинная ссылка на фото")
-        low = s.lower()
-        if not (low.startswith("https://") or low.startswith("/media/")):
-            raise ValueError("Фото должно быть https:// или /media/... ссылкой")
+        s = _validate_https_or_media_url(s, what="Фото", max_len=1024)
         if s in seen:
             continue
         seen.add(s)
@@ -527,6 +759,8 @@ class ServiceOut(BaseModel):
 
 
 class ServiceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     category_slug: str
     title: str
     description: str = ""
@@ -536,6 +770,19 @@ class ServiceCreate(BaseModel):
     # ``False``).
     price: Decimal = Field(default=Decimal(0), ge=0)
     photo_urls: list[str] = Field(default_factory=list)
+
+    @field_validator("category_slug")
+    @classmethod
+    def _category_slug_ok(cls, v: str) -> str:
+        return _validate_category_slug(v)
+
+    @field_validator("title")
+    @classmethod
+    def _title_ok(cls, v: str) -> str:
+        title = _validate_service_title(v)
+        if title is None:
+            raise ValueError("Service title cannot be empty")
+        return title
 
     @field_validator("price")
     @classmethod
@@ -555,17 +802,27 @@ class ServiceCreate(BaseModel):
 
 
 class ServiceUpdate(BaseModel):
-    title: str | None = None
-    description: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | SkipJsonSchema[None] = None
+    description: str | SkipJsonSchema[None] = None
     # L-2: same finiteness/non-negative guard as ``ServiceCreate.price``.
-    price: Decimal | None = Field(default=None, ge=0)
-    status: str | None = None  # draft / active / paused (banned only via admin)
-    photo_urls: list[str] | None = None
+    price: Annotated[Decimal, Field(ge=0)] | SkipJsonSchema[None] = None
+    status: Literal["draft", "active", "paused"] | SkipJsonSchema[None] = None
+    photo_urls: list[str] | SkipJsonSchema[None] = None
+
+    @field_validator("title")
+    @classmethod
+    def _title_ok(cls, v: str | None) -> str | None:
+        return _validate_service_title(v)
 
     @field_validator("price")
     @classmethod
     def _price_finite(cls, v: Decimal | float | None) -> Decimal | None:
-        return _reject_non_finite_money(v)
+        result = _reject_non_finite_money(v)
+        if result is not None and result < 0:
+            raise ValueError("Price cannot be negative")
+        return result
 
     @field_validator("description")
     @classmethod
@@ -579,8 +836,15 @@ class ServiceUpdate(BaseModel):
 
 
 class ServiceModerationDecision(BaseModel):
-    action: str  # "ban" | "unban"
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["ban", "unban"]
     reason: str = ""
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_ok(cls, v: str) -> str:
+        return _validate_description(v) or ""
 
 
 class ServiceOwnerOut(BaseModel):
@@ -606,6 +870,8 @@ class ServiceDetailOut(ServiceOut):
 
 
 class ServiceCommentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     text: str = ""
     rating: int | None = None
 
@@ -615,6 +881,15 @@ class ServiceCommentCreate(BaseModel):
         v = v.strip()
         if len(v) > 1024:
             raise ValueError("Комментарий слишком длинный (≤1024)")
+        return v
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def _rating_strict_int(cls, v: object) -> object:
+        if v is None:
+            return v
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError("Оценка должна быть целым числом")
         return v
 
     @field_validator("rating")
@@ -643,6 +918,8 @@ class ServiceCommentOut(BaseModel):
 
 
 class DealCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     counterparty: str
     # Audit C1 — ``Literal["buyer"]`` so the caller of ``POST /api/deals``
     # is always the buyer (the side whose balance gets debited into the
@@ -666,6 +943,16 @@ class DealCreate(BaseModel):
     # escrow flow. ``"cryptobot"`` keeps legacy clients (no
     # ``payment_provider`` on the wire) backwards-compatible.
     payment_provider: Literal["cryptobot", "crystalpay"] = "cryptobot"
+
+    @field_validator("counterparty")
+    @classmethod
+    def _counterparty_ok(cls, v: str) -> str:
+        return _validate_username_ref(v, what="counterparty")
+
+    @field_validator("currency_code")
+    @classmethod
+    def _currency_code_ok(cls, v: str) -> str:
+        return _validate_currency_code(v)
 
     @field_validator("amount")
     @classmethod
@@ -705,7 +992,7 @@ class DealTopupInvoiceOut(BaseModel):
     commission: MoneyDecimal
     paid_total: MoneyDecimal = Decimal("0")
     currency_code: str
-    provider: str
+    provider: PaymentProviderWire
     expires_at: datetime | None = None
 
 
@@ -729,6 +1016,8 @@ class DealCreateWithTopupOut(BaseModel):
 
 
 class DealCancelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     reason: str = ""
 
     @field_validator("reason")
@@ -742,6 +1031,8 @@ class DealCancelRequest(BaseModel):
 
 
 class DealArbitrationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     reason: str = ""
 
     @field_validator("reason")
@@ -751,15 +1042,10 @@ class DealArbitrationRequest(BaseModel):
 
 
 class DealResolveRequest(BaseModel):
-    winner: str  # "buyer" or "seller"
-    note: str = ""
+    model_config = ConfigDict(extra="forbid")
 
-    @field_validator("winner")
-    @classmethod
-    def winner_valid(cls, v: str) -> str:
-        if v not in ("buyer", "seller"):
-            raise ValueError("winner должен быть 'buyer' или 'seller'")
-        return v
+    winner: Literal["buyer", "seller"]
+    note: str = ""
 
     @field_validator("note")
     @classmethod
@@ -776,10 +1062,10 @@ class DealOut(BaseModel):
     buyer_photo_url: str | None = None
     seller_photo_url: str | None = None
     description: str
-    status: str
+    status: DealStatusWire
     confirm_buyer: bool
     confirm_seller: bool
-    role: str
+    role: DealRoleWire
     created_at: datetime | None
     # PR-3 — multi-currency + state-machine extras.
     currency_code: str | None = None
@@ -787,18 +1073,18 @@ class DealOut(BaseModel):
     commission_amount: MoneyDecimal | None = None
     in_progress_at: datetime | None = None
     completed_at: datetime | None = None
-    cancellation_initiator: str | None = None
+    cancellation_initiator: DealRoleWire | None = None
     cancellation_reason: str | None = None
     cancellation_requested_at: datetime | None = None
-    arbitration_initiator: str | None = None
+    arbitration_initiator: DealRoleWire | None = None
     arbitration_reason: str | None = None
-    arbitration_resolved_by: str | None = None
-    arbitration_resolution: str | None = None
+    arbitration_resolved_by: Literal["admin"] | None = None
+    arbitration_resolution: Literal["buyer", "seller"] | None = None
     arbitration_resolved_at: datetime | None = None
     # Persisted upstream invoice provider chosen by the buyer at
     # deal-create time. Surfaced on the wire so the deal detail page
     # can render the right provider badge without an extra lookup.
-    payment_provider: str = "cryptobot"
+    payment_provider: PaymentProviderWire = "cryptobot"
     # P10 — commission-via-invoice flow.
     topup_deposit_id: int | None = None
     commission_paid: bool = False
@@ -830,6 +1116,8 @@ class MediaOut(BaseModel):
 
 
 class DealMessageCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     text: str = ""
     attachments: list[int] = []
 
@@ -845,6 +1133,23 @@ class DealMessageCreate(BaseModel):
     def _attachments_len(cls, v: list[int]) -> list[int]:
         if len(v) > 10:
             raise ValueError("Не больше 10 вложений за сообщение")
+        if any(mid <= 0 for mid in v):
+            raise ValueError("ID вложений должны быть положительными числами")
+        return v
+
+    @field_validator("attachments", mode="before")
+    @classmethod
+    def _attachments_strict_ints(cls, v: object) -> object:
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            raise ValueError("attachments должен быть списком ID")
+        for item in v:
+            # JSON bools and strings used to be coerced by Pydantic
+            # (``true`` -> media id 1, ``"1"`` -> media id 1). Keep
+            # attachment references as explicit integer primary keys.
+            if isinstance(item, bool) or not isinstance(item, int):
+                raise ValueError("ID вложений должны быть целыми числами")
         return v
 
 
@@ -859,10 +1164,33 @@ class DealMessageOut(BaseModel):
 
 
 class ReviewCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     target_username: str
     rating: int
     text: str = ""
     deal_id: int
+
+    @field_validator("target_username")
+    @classmethod
+    def _target_username_ok(cls, v: str) -> str:
+        return _validate_username_ref(v, what="target_username")
+
+    @field_validator("deal_id", mode="before")
+    @classmethod
+    def _deal_id_strict_positive(cls, v: object) -> object:
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError("ID сделки должен быть целым числом")
+        if v <= 0:
+            raise ValueError("ID сделки должен быть положительным числом")
+        return v
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def _rating_strict_int(cls, v: object) -> object:
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError("Рейтинг должен быть целым числом")
+        return v
 
     @field_validator("rating")
     @classmethod
@@ -894,7 +1222,7 @@ class ReviewOut(BaseModel):
 
 class NotificationOut(BaseModel):
     id: int
-    type: str
+    type: Literal["deals", "deposits", "system"]
     title: str
     body: str
     payload: dict | None
@@ -976,6 +1304,8 @@ class WalletBalanceOut(BaseModel):
 
 
 class WalletDepositCreateReq(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     currency_code: str
     amount: Decimal
     # Routing tag for ``services_wallet.create_deposit_invoice``.
@@ -993,6 +1323,11 @@ class WalletDepositCreateReq(BaseModel):
     # which API the invoice is created on and which webhook URL the
     # user pays through.
     provider: Literal["cryptobot", "crystalpay"] = "cryptobot"
+
+    @field_validator("currency_code")
+    @classmethod
+    def _currency_code_ok(cls, v: str) -> str:
+        return _validate_currency_code(v)
 
     @field_validator("amount")
     @classmethod
@@ -1024,6 +1359,8 @@ class WalletDepositOut(BaseModel):
 
 
 class WalletWithdrawCreateReq(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     currency_code: str
     amount: Decimal
     # Optional for the current CryptoBot Transfer payout model: the
@@ -1031,6 +1368,11 @@ class WalletWithdrawCreateReq(BaseModel):
     # Legacy clients may still send an address; the service sanitises it
     # and applies the currency regex when one is configured.
     address: str | None = None
+
+    @field_validator("currency_code")
+    @classmethod
+    def _currency_code_ok(cls, v: str) -> str:
+        return _validate_currency_code(v)
 
     @field_validator("amount")
     @classmethod
@@ -1203,6 +1545,8 @@ class AdminReasonIn(BaseModel):
     to the affected user.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     reason: str | None = None
 
     @field_validator("reason")
@@ -1225,9 +1569,16 @@ class AdminSetRoleIn(BaseModel):
     was dropped from the spec and is not supported here.
     """
 
-    is_admin: bool = False
-    is_arbiter: bool = False
-    is_vip: bool = False
+    model_config = ConfigDict(extra="forbid")
+
+    is_admin: bool | SkipJsonSchema[None] = None
+    is_arbiter: bool | SkipJsonSchema[None] = None
+    is_vip: bool | SkipJsonSchema[None] = None
+
+    @field_validator("is_admin", "is_arbiter", "is_vip", mode="before")
+    @classmethod
+    def _role_flag_ok(cls, v: object) -> bool:
+        return _validate_bool(v, what="Флаг роли")
 
 
 class AdminSetRatingIn(BaseModel):
@@ -1237,7 +1588,14 @@ class AdminSetRatingIn(BaseModel):
     ``None`` to clear the override and restore the auto-computed rating.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     rating: float | None = None
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def _rating_number(cls, v: object) -> float | None:
+        return _validate_optional_finite_number(v, what="Рейтинг")
 
     @field_validator("rating")
     @classmethod
@@ -1253,22 +1611,24 @@ class AdminSetStatsIn(BaseModel):
     """Body for ``POST /admin/users/:id/stats``.
 
     Every field is optional — only provided keys are applied. Negative
-    values are rejected because counts/sums don't make sense below
-    zero. Rating is *not* part of this schema (see
+    values and explicit JSON ``null`` are rejected because counts/sums
+    don't make sense below zero. Rating is *not* part of this schema (see
     :class:`AdminSetRatingIn`) and has no range validation.
     """
 
-    deals_total: int | None = None
-    deals_success: int | None = None
-    deals_failed: int | None = None
-    deals_arbitrage: int | None = None
-    good: int | None = None
-    bad: int | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    deals_total: int | SkipJsonSchema[None] = None
+    deals_success: int | SkipJsonSchema[None] = None
+    deals_failed: int | SkipJsonSchema[None] = None
+    deals_arbitrage: int | SkipJsonSchema[None] = None
+    good: int | SkipJsonSchema[None] = None
+    bad: int | SkipJsonSchema[None] = None
     # Admin-editable "сумма сделок" — surfaced as ``deals_sum`` on the
     # public/private user DTOs. ``Decimal`` to match the rest of the
     # money columns (Numeric(28, 8)); negative values rejected by the
     # validator below.
-    deals_sum_override: Decimal | None = None
+    deals_sum_override: Decimal | SkipJsonSchema[None] = None
 
     @field_validator(
         "deals_total",
@@ -1277,12 +1637,16 @@ class AdminSetStatsIn(BaseModel):
         "deals_arbitrage",
         "good",
         "bad",
+        mode="before",
     )
     @classmethod
-    def _non_negative_int(cls, v: int | None) -> int | None:
-        if v is not None and v < 0:
-            raise ValueError("Значение не может быть отрицательным")
-        return v
+    def _non_negative_int(cls, v: object) -> int | None:
+        return _validate_optional_non_negative_int(_reject_explicit_null_value(v))
+
+    @field_validator("deals_sum_override", mode="before")
+    @classmethod
+    def _reject_null_deals_sum_override(cls, v: object) -> object:
+        return _reject_explicit_null_value(v)
 
     @field_validator("deals_sum_override")
     @classmethod
@@ -1304,6 +1668,8 @@ class AdminSetTrustDepositIn(BaseModel):
     has no spend / withdraw path so a negative balance is
     structurally impossible.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     amount: Decimal
     reason: str | None = None
@@ -1485,8 +1851,15 @@ class AdminDealForceOut(BaseModel):
     Optional ``reason`` is propagated into the audit log and DMs.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     reason: str | None = None
     approval_id: int | None = None
+
+    @field_validator("approval_id", mode="before")
+    @classmethod
+    def _approval_id_strict_positive(cls, v: object) -> object:
+        return _validate_optional_positive_int_id(v, what="ID заявки")
 
     @field_validator("reason")
     @classmethod
@@ -1511,9 +1884,16 @@ class AdminDealSplitIn(BaseModel):
     locked principal.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     buyer_percent: Decimal
     reason: str | None = None
     approval_id: int | None = None
+
+    @field_validator("approval_id", mode="before")
+    @classmethod
+    def _approval_id_strict_positive(cls, v: object) -> object:
+        return _validate_optional_positive_int_id(v, what="ID заявки")
 
     @field_validator("buyer_percent")
     @classmethod
@@ -1531,7 +1911,14 @@ class AdminDealAssignArbiterIn(BaseModel):
     are accepted too). Use ``None`` to clear the assignment.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     arbiter_id: int | None = None
+
+    @field_validator("arbiter_id", mode="before")
+    @classmethod
+    def _arbiter_id_strict_positive(cls, v: object) -> object:
+        return _validate_optional_positive_int_id(v, what="ID арбитра")
 
 
 # ── Admin: arbitration queue (PR-B) ────────────────────
@@ -1569,25 +1956,55 @@ class AdminServiceItemOut(BaseModel):
     created_at: datetime
 
 
+class AdminServiceListOut(BaseModel):
+    items: list[AdminServiceItemOut]
+    total: int
+    page: int
+    page_size: int
+
+
 class AdminServiceUpdateIn(BaseModel):
     """Body for ``POST /api/admin/services/:id``.
 
     Every field is optional. Negative numeric values are rejected per
     the spec (counts / deposits cannot be < 0). ``rating_manual`` is
     bounded to 0..5 to match the user rating override; pass ``None``
-    explicitly with ``clear_rating=true`` to remove it.
+    explicitly or set ``clear_rating=true`` to remove it. Non-nullable
+    service columns reject explicit JSON ``null`` instead of silently
+    treating it as an omitted field.
     """
 
-    title: str | None = None
-    description: str | None = None
-    price: Decimal | None = None
-    deposit: Decimal | None = None
-    views: int | None = None
-    deals_count: int | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | SkipJsonSchema[None] = None
+    description: str | SkipJsonSchema[None] = None
+    price: Decimal | SkipJsonSchema[None] = None
+    deposit: Decimal | SkipJsonSchema[None] = None
+    views: int | SkipJsonSchema[None] = None
+    deals_count: int | SkipJsonSchema[None] = None
     rating_manual: Decimal | None = None
     clear_rating: bool = False
-    status: Literal["draft", "active", "paused", "banned"] | None = None
+    status: Literal["draft", "active", "paused", "banned"] | SkipJsonSchema[None] = None
     ban_reason: str | None = None
+
+    @field_validator(
+        "title",
+        "description",
+        "price",
+        "deposit",
+        "views",
+        "deals_count",
+        "status",
+        mode="before",
+    )
+    @classmethod
+    def _reject_noop_null(cls, v: object) -> object:
+        return _reject_explicit_null_value(v)
+
+    @field_validator("clear_rating", mode="before")
+    @classmethod
+    def _clear_rating_ok(cls, v: object) -> bool:
+        return _validate_bool(v, what="Флаг очистки рейтинга")
 
     @field_validator("title")
     @classmethod
@@ -1620,12 +2037,10 @@ class AdminServiceUpdateIn(BaseModel):
             raise ValueError("Значение не может быть отрицательным")
         return d
 
-    @field_validator("views", "deals_count")
+    @field_validator("views", "deals_count", mode="before")
     @classmethod
-    def _non_negative_int(cls, v: int | None) -> int | None:
-        if v is not None and v < 0:
-            raise ValueError("Значение не может быть отрицательным")
-        return v
+    def _non_negative_int(cls, v: object) -> int | None:
+        return _validate_optional_non_negative_int(v)
 
     @field_validator("rating_manual")
     @classmethod
@@ -1636,6 +2051,18 @@ class AdminServiceUpdateIn(BaseModel):
         if d < 0 or d > 5:
             raise ValueError("Рейтинг должен быть в диапазоне 0..5")
         return d.quantize(Decimal("0.1"))
+
+    @field_validator("ban_reason")
+    @classmethod
+    def _ban_reason_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if len(v) > 500:
+            raise ValueError("Причина бана слишком длинная (≤500)")
+        return v
 
 
 class AdminReviewItemOut(BaseModel):
@@ -1650,19 +2077,42 @@ class AdminReviewItemOut(BaseModel):
     created_at: datetime
 
 
+class AdminReviewListOut(BaseModel):
+    items: list[AdminReviewItemOut]
+    total: int
+    page: int
+    page_size: int
+
+
 class AdminReviewUpsertIn(BaseModel):
     """Body for ``POST /api/admin/reviews`` (create) /
     ``POST /api/admin/reviews/:id`` (edit).
 
     For create, ``target_id`` and ``author_id`` are required. For edit,
     they are ignored — only ``rating`` and ``text`` can be changed.
+    ``text`` must be provided explicitly; pass an empty string to store
+    an intentionally blank review.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     target_id: int | None = None
     author_id: int | None = None
     deal_id: int | None = None
     rating: int
-    text: str = ""
+    text: str
+
+    @field_validator("target_id", "author_id", "deal_id", mode="before")
+    @classmethod
+    def _strict_positive_ids(cls, v: object) -> object:
+        return _validate_optional_positive_int_id(v)
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def _rating_strict_int(cls, v: object) -> object:
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError("Рейтинг должен быть целым числом")
+        return v
 
     @field_validator("rating")
     @classmethod
@@ -1689,10 +2139,29 @@ class AdminCommentItemOut(BaseModel):
     created_at: datetime
 
 
+class AdminCommentListOut(BaseModel):
+    items: list[AdminCommentItemOut]
+    total: int
+    page: int
+    page_size: int
+
+
 class AdminCommentUpdateIn(BaseModel):
-    text: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    text: str | SkipJsonSchema[None] = None
     rating: int | None = None
     clear_rating: bool = False
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def _reject_noop_text_null(cls, v: object) -> object:
+        return _reject_explicit_null_value(v)
+
+    @field_validator("clear_rating", mode="before")
+    @classmethod
+    def _clear_rating_ok(cls, v: object) -> bool:
+        return _validate_bool(v, what="Флаг очистки рейтинга")
 
     @field_validator("text")
     @classmethod
@@ -1704,6 +2173,15 @@ class AdminCommentUpdateIn(BaseModel):
             raise ValueError("Комментарий не может быть пустым")
         if len(v) > 1024:
             raise ValueError("Комментарий слишком длинный (≤1024)")
+        return v
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def _rating_strict_int(cls, v: object) -> object:
+        if v is None:
+            return v
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError("Оценка должна быть целым числом")
         return v
 
     @field_validator("rating")
@@ -1780,17 +2258,16 @@ class AdminWalletAdjustIn(BaseModel):
     корректирует баланс как я укажу").
     """
 
-    currency_code: str
+    model_config = ConfigDict(extra="forbid")
+
+    currency_code: CurrencyCodeStr
     amount: Decimal
     reason: str | None = None
 
     @field_validator("currency_code")
     @classmethod
     def _code_ok(cls, v: str) -> str:
-        v = (v or "").strip().upper()
-        if not v or len(v) > 16:
-            raise ValueError("Некорректный код валюты")
-        return v
+        return _validate_currency_code(v)
 
     @field_validator("amount")
     @classmethod
@@ -1827,7 +2304,9 @@ class AdminCurrencyRateOut(BaseModel):
 
 
 class AdminCurrencyRateUpsertIn(BaseModel):
-    currency_code: str
+    model_config = ConfigDict(extra="forbid")
+
+    currency_code: CurrencyCodeStr
     usd_rate: Decimal
     source: str = "manual"
     observed_at: datetime | None = None
@@ -1835,10 +2314,7 @@ class AdminCurrencyRateUpsertIn(BaseModel):
     @field_validator("currency_code")
     @classmethod
     def _rate_code_ok(cls, v: str) -> str:
-        v = (v or "").strip().upper()
-        if not v or len(v) > 16:
-            raise ValueError("Invalid currency code")
-        return v
+        return _validate_currency_code(v)
 
     @field_validator("usd_rate")
     @classmethod
@@ -1908,6 +2384,8 @@ class AdminWithdrawalListOut(BaseModel):
 class AdminWithdrawalDecisionIn(BaseModel):
     """Body for approve/reject + manual mark-sent on a withdrawal."""
 
+    model_config = ConfigDict(extra="forbid")
+
     action: Literal["approve", "reject", "mark_sent"]
     note: str | None = None
 
@@ -1961,34 +2439,63 @@ class AdminSettingsOut(BaseModel):
 class AdminSettingsUpdateIn(BaseModel):
     """Partial update of :class:`AppSettings`.
 
-    Every field is optional. Numeric values must be non-negative
-    (commission percentages additionally bounded to ``0..100``).
+    Every field is optional but explicit JSON ``null`` is not accepted:
+    settings columns are non-nullable and ``null`` would otherwise
+    surface as a database integrity error. Numeric values must be
+    non-negative (commission percentages additionally bounded to
+    ``0..100``).
     """
 
-    deal_commission_percent: Decimal | None = None
-    vip_commission_percent: Decimal | None = None
-    inactivity_pending_confirmation_days: int | None = None
-    inactivity_pending_cancellation_days: int | None = None
-    max_active_services_per_user: int | None = None
-    maintenance_enabled: bool | None = None
-    maintenance_message: str | None = None
-    auto_withdraw_enabled: bool | None = None
-    pending_topup_expiry_hours: int | None = None
-    pin_reset_price_usd: Decimal | None = None
-    faq_stats_badge_enabled: bool | None = None
-    faq_stats_users: int | None = None
-    faq_stats_deals: int | None = None
-    faq_stats_total_usd: Decimal | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    deal_commission_percent: Decimal | SkipJsonSchema[None] = None
+    vip_commission_percent: Decimal | SkipJsonSchema[None] = None
+    inactivity_pending_confirmation_days: int | SkipJsonSchema[None] = None
+    inactivity_pending_cancellation_days: int | SkipJsonSchema[None] = None
+    max_active_services_per_user: int | SkipJsonSchema[None] = None
+    maintenance_enabled: bool | SkipJsonSchema[None] = None
+    maintenance_message: str | SkipJsonSchema[None] = None
+    auto_withdraw_enabled: bool | SkipJsonSchema[None] = None
+    pending_topup_expiry_hours: int | SkipJsonSchema[None] = None
+    pin_reset_price_usd: Decimal | SkipJsonSchema[None] = None
+    faq_stats_badge_enabled: bool | SkipJsonSchema[None] = None
+    faq_stats_users: int | SkipJsonSchema[None] = None
+    faq_stats_deals: int | SkipJsonSchema[None] = None
+    faq_stats_total_usd: Decimal | SkipJsonSchema[None] = None
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _reject_explicit_null(cls, v: object) -> object:
+        if v is None:
+            raise ValueError("РџРѕР»Рµ РЅРµ РјРѕР¶РµС‚ Р±С‹С‚СЊ null")
+        return v
 
     @field_validator(
-        "deal_commission_percent",
-        "vip_commission_percent",
+        "maintenance_enabled",
+        "auto_withdraw_enabled",
+        "faq_stats_badge_enabled",
+        mode="before",
     )
     @classmethod
-    def _commission_ok(cls, v: Decimal | float | None) -> Decimal | None:
-        if v is None:
-            return v
-        d = Decimal(str(v)) if isinstance(v, float) else v
+    def _optional_bool_ok(cls, v: object) -> bool | None:
+        return _validate_optional_bool(v, what="Флаг настройки")
+
+    @field_validator("deal_commission_percent")
+    @classmethod
+    def _deal_commission_ok(cls, v: Decimal | float | int | None) -> Decimal | None:
+        d = _reject_non_finite_money(v)
+        if d is None:
+            return None
+        if d < 0 or d > 100:
+            raise ValueError("Обычная комиссия должна быть в диапазоне 0..100")
+        return d.quantize(Decimal("0.01"))
+
+    @field_validator("vip_commission_percent")
+    @classmethod
+    def _commission_ok(cls, v: Decimal | float | int | None) -> Decimal | None:
+        d = _reject_non_finite_money(v)
+        if d is None:
+            return None
         if d < -1 or d > 100:
             raise ValueError("Комиссия должна быть в диапазоне -1..100")
         return d.quantize(Decimal("0.01"))
@@ -1998,14 +2505,23 @@ class AdminSettingsUpdateIn(BaseModel):
         "inactivity_pending_cancellation_days",
         "max_active_services_per_user",
         "pending_topup_expiry_hours",
+        "faq_stats_users",
+        "faq_stats_deals",
+        mode="before",
     )
     @classmethod
-    def _int_ok(cls, v: int | None) -> int | None:
-        if v is None:
-            return v
-        if v < 0:
+    def _int_ok(cls, v: object) -> int | None:
+        return _validate_optional_non_negative_int(v)
+
+    @field_validator("faq_stats_total_usd")
+    @classmethod
+    def _faq_stats_total_usd_ok(cls, v: Decimal | float | int | None) -> Decimal | None:
+        d = _reject_non_finite_money(v)
+        if d is None:
+            return None
+        if d < 0:
             raise ValueError("Значение не может быть отрицательным")
-        return v
+        return d
 
     @field_validator("maintenance_message")
     @classmethod
@@ -2022,9 +2538,9 @@ class AdminSettingsUpdateIn(BaseModel):
     @field_validator("pin_reset_price_usd")
     @classmethod
     def _price_ok(cls, v: Decimal | float | int | None) -> Decimal | None:
-        if v is None:
-            return v
-        d = Decimal(str(v))
+        d = _reject_non_finite_money(v)
+        if d is None:
+            return None
         if d < 0:
             raise ValueError("Цена не может быть отрицательной")
         return d
@@ -2041,6 +2557,8 @@ class AdminCategoryOut(BaseModel):
 
 
 class AdminCategoryUpsertIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     slug: str
     name: str
     icon: str = ""
@@ -2106,11 +2624,13 @@ class AdminCurrencyOut(BaseModel):
 
 
 class AdminCurrencyUpsertIn(BaseModel):
-    code: str
-    name: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    code: CurrencyCodeStr
+    name: str | SkipJsonSchema[None] = None
     network: str | None = None
     icon_url: str | None = None
-    decimals: int | None = None
+    decimals: int | SkipJsonSchema[None] = None
     # Audit §13.7.2 — ``Decimal`` end-to-end so an admin who enters
     # ``0.123456789012345678`` doesn't silently lose precision through
     # a float64 round-trip on the way into the ``Numeric(28, 8)`` DB
@@ -2118,10 +2638,10 @@ class AdminCurrencyUpsertIn(BaseModel):
     # the *input* side is already ``Decimal`` (pydantic v2 coerces JSON
     # numbers natively); ``Decimal | None`` keeps the contract symmetric
     # with ``ServiceUpdate.price``.
-    min_deposit: Decimal | None = None
-    min_withdraw: Decimal | None = None
-    is_active: bool | None = None
-    sort_order: int | None = None
+    min_deposit: Decimal | SkipJsonSchema[None] = None
+    min_withdraw: Decimal | SkipJsonSchema[None] = None
+    is_active: bool | SkipJsonSchema[None] = None
+    sort_order: int | SkipJsonSchema[None] = None
     # Audit §13.7.3 — allow the admin to set the per-currency address
     # regex through the upsert endpoint instead of relying on the
     # ``d9f1c3a8e205_currencies_address_regex`` back-fill migration +
@@ -2134,23 +2654,64 @@ class AdminCurrencyUpsertIn(BaseModel):
     # ``"crypto"`` (default) or ``"fiat"``. Admin-editable so a
     # newly-added asset can be classified without an out-of-band
     # SQL update.
-    kind: Literal["crypto", "fiat"] | None = None
+    kind: Literal["crypto", "fiat"] | SkipJsonSchema[None] = None
+
+    @field_validator("is_active", mode="before")
+    @classmethod
+    def _is_active_ok(cls, v: object) -> bool | None:
+        return _validate_optional_bool(v, what="Флаг активности валюты")
 
     @field_validator("code")
     @classmethod
     def _code_ok(cls, v: str) -> str:
-        v = (v or "").strip().upper()
-        if not v or len(v) > 16:
-            raise ValueError("Некорректный код валюты")
+        return _validate_currency_code(v)
+
+    @field_validator("name")
+    @classmethod
+    def _name_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("Название валюты не может быть пустым")
+        if len(v) > 64:
+            raise ValueError("Название валюты слишком длинное (≤64)")
         return v
+
+    @field_validator("network")
+    @classmethod
+    def _network_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if len(v) > 32:
+            raise ValueError("Сеть валюты слишком длинная (≤32)")
+        return v
+
+    @field_validator("icon_url")
+    @classmethod
+    def _icon_url_ok(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return v
+        return _validate_https_or_media_url(v, what="Иконка валюты", max_len=1024)
+
+    @field_validator("decimals", mode="before")
+    @classmethod
+    def _decimals_strict_int(cls, v: object) -> int | None:
+        return _validate_optional_int(v, what="decimals")
+
+    @field_validator("sort_order", mode="before")
+    @classmethod
+    def _sort_order_strict_int(cls, v: object) -> int | None:
+        return _validate_optional_int(v, what="sort_order")
 
     @field_validator("decimals")
     @classmethod
     def _decimals_ok(cls, v: int | None) -> int | None:
         if v is None:
             return v
-        if v < 0 or v > 18:
-            raise ValueError("decimals должно быть 0..18")
+        if v < 0 or v > MONEY_SCALE:
+            raise ValueError(f"decimals должно быть 0..{MONEY_SCALE}")
         return v
 
     @field_validator("min_deposit", "min_withdraw")
@@ -2260,12 +2821,14 @@ class AdminBroadcastCreateIn(BaseModel):
     omitted the broadcast goes to *every* user.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     title: str = ""
     body: str
     deeplink: str | None = None
     audience_role: Literal["admin", "arbiter", "vip", "regular"] | None = None
-    audience_active_days: int | None = None
-    audience_min_deals: int | None = None
+    audience_active_days: Annotated[int | None, Field(ge=0)] = None
+    audience_min_deals: Annotated[int | None, Field(ge=0)] = None
     # A-6 — temporal + language cohort filters. See ``Broadcast`` model
     # docstring for semantics; validators below enforce ordering /
     # length so the admin composer can't smuggle a 1 MiB language tag
@@ -2276,6 +2839,11 @@ class AdminBroadcastCreateIn(BaseModel):
     dispatch_inapp: bool = True
     dispatch_dm: bool = False
     scheduled_at: datetime | None = None
+
+    @field_validator("dispatch_inapp", "dispatch_dm", mode="before")
+    @classmethod
+    def _dispatch_flag_ok(cls, v: object) -> bool:
+        return _validate_bool(v, what="Флаг отправки")
 
     @field_validator("title")
     @classmethod
@@ -2302,8 +2870,6 @@ class AdminBroadcastCreateIn(BaseModel):
         v = v.strip()
         if not v:
             return None
-        if len(v) > 256:
-            raise ValueError("Ссылка слишком длинная (≤256)")
         # M-12: the broadcast DM flow used to ``html.escape`` this
         # value before appending it to the message body, which
         # rewrote any ``?a=1&b=2`` query string into
@@ -2313,19 +2879,12 @@ class AdminBroadcastCreateIn(BaseModel):
         # tag (with attribute escaping only) downstream. Allowed
         # schemes mirror the public ForumOut URL validator
         # (``https://``) plus ``tg://`` for in-app deep links.
-        low = v.lower()
-        if not (low.startswith("https://") or low.startswith("tg://")):
-            raise ValueError("Ссылка должна начинаться с https:// или tg://")
-        return v
+        return _validate_https_or_tg_url(v, what="Ссылка", max_len=256)
 
-    @field_validator("audience_active_days", "audience_min_deals")
+    @field_validator("audience_active_days", "audience_min_deals", mode="before")
     @classmethod
-    def _int_ok(cls, v: int | None) -> int | None:
-        if v is None:
-            return v
-        if v < 0:
-            raise ValueError("Значение не может быть отрицательным")
-        return v
+    def _int_ok(cls, v: object) -> int | None:
+        return _validate_optional_non_negative_int(v)
 
     @field_validator("audience_language")
     @classmethod
@@ -2343,12 +2902,15 @@ class AdminBroadcastCreateIn(BaseModel):
         # Telegram tags are alphanumerics + ``-`` only; reject anything
         # else so an admin can't drop a SQL fragment into the filter.
         for ch in v:
-            if not (ch.isalnum() or ch == "-"):
+            if not (ch.isascii() and (ch.isalnum() or ch == "-")):
                 raise ValueError("Языковой код содержит недопустимые символы")
         return v
 
     @model_validator(mode="after")
     def _validate_audience_window(self) -> AdminBroadcastCreateIn:
+        if not self.dispatch_inapp and not self.dispatch_dm:
+            raise ValueError("Нужно выбрать хотя бы один канал доставки")
+
         # A-6 — guard the obvious caller mistake (``created_after`` past
         # ``created_before``) at the edge. The audience-builder would
         # otherwise quietly emit ``0`` recipients and the admin would
@@ -2458,40 +3020,37 @@ class Admin2faSetupOut(BaseModel):
 
 
 class Admin2faConfirmIn(BaseModel):
-    secret: str
-    code: str
+    model_config = ConfigDict(extra="forbid")
+
+    secret: str = Field(
+        min_length=MIN_TOTP_SECRET_LEN,
+        max_length=MAX_TOTP_SECRET_LEN,
+        pattern=TOTP_SECRET_PATTERN,
+    )
+    code: str = Field(pattern=TOTP_CODE_PATTERN)
     # Review pass 3 — when rotating an already-enabled 2FA, the caller
     # must prove ownership of the *current* secret by also sending its
     # code. Without this, a stolen admin session could silently swap
     # the 2FA secret to one the attacker controls. Optional on first
     # enrolment (no previous secret to verify).
-    current_code: str | None = None
+    current_code: str | None = Field(default=None, pattern=TOTP_CODE_PATTERN)
 
-    @field_validator("secret")
+    @field_validator("secret", mode="before")
     @classmethod
-    def _secret_ok(cls, v: str) -> str:
-        v = (v or "").strip()
-        if not v or len(v) < 16 or len(v) > 64:
-            raise ValueError("Некорректный секрет")
-        return v
+    def _secret_ok(cls, v: object) -> str:
+        return _validate_totp_secret(v)
 
-    @field_validator("code")
+    @field_validator("code", mode="before")
     @classmethod
-    def _code_ok(cls, v: str) -> str:
-        v = (v or "").strip()
-        if not v.isdigit() or len(v) not in (6, 8):
-            raise ValueError("Код должен состоять из 6 или 8 цифр")
-        return v
+    def _code_ok(cls, v: object) -> str:
+        return _validate_totp_code(v)
 
-    @field_validator("current_code")
+    @field_validator("current_code", mode="before")
     @classmethod
-    def _current_code_ok(cls, v: str | None) -> str | None:
+    def _current_code_ok(cls, v: object) -> str | None:
         if v is None:
-            return v
-        v = v.strip()
-        if not v.isdigit() or len(v) not in (6, 8):
-            raise ValueError("Код должен состоять из 6 или 8 цифр")
-        return v
+            return None
+        return _validate_totp_code(v)
 
 
 class Admin2faStatusOut(BaseModel):
@@ -2499,15 +3058,14 @@ class Admin2faStatusOut(BaseModel):
 
 
 class Admin2faVerifyIn(BaseModel):
-    code: str
+    model_config = ConfigDict(extra="forbid")
 
-    @field_validator("code")
+    code: str = Field(pattern=TOTP_CODE_PATTERN)
+
+    @field_validator("code", mode="before")
     @classmethod
-    def _code_ok(cls, v: str) -> str:
-        v = (v or "").strip()
-        if not v.isdigit() or len(v) not in (6, 8):
-            raise ValueError("Код должен состоять из 6 или 8 цифр")
-        return v
+    def _code_ok(cls, v: object) -> str:
+        return _validate_totp_code(v)
 
 
 class Admin2faSessionOut(BaseModel):

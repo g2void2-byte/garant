@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
@@ -47,7 +47,13 @@ from ...schemas import (
     AdminWithdrawalOut,
 )
 from ...services_ledger import record_balance_ledger
-from ...services_wallet import is_cryptopay_configured
+from ...services_wallet import (
+    clear_withdrawal_auto_send_in_progress,
+    is_cryptopay_configured,
+    mark_withdrawal_auto_send_failed,
+    mark_withdrawal_auto_send_in_progress,
+    withdrawal_auto_send_in_progress,
+)
 from ...sql_filters import escape_like_wildcards
 from ...time_utils import utcnow
 
@@ -85,7 +91,7 @@ def _to_out(w: WalletWithdrawal, c: Currency | None, u: User | None) -> AdminWit
 async def list_withdrawals(
     _admin: AdminUser,
     session: SessionDep,
-    status: str | None = Query(None),
+    status: Annotated[WalletWithdrawStatus | None, Query()] = None,
     q: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
@@ -111,7 +117,7 @@ async def list_withdrawals(
 
     rows = (
         await session.execute(
-            stmt.order_by(WalletWithdrawal.created_at.desc())
+            stmt.order_by(WalletWithdrawal.created_at.desc(), WalletWithdrawal.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
@@ -169,6 +175,9 @@ async def decide_withdrawal(
     if not user:
         raise HTTPException(404, "Пользователь не найден")
 
+    if body.action in ("approve", "reject", "mark_sent") and withdrawal_auto_send_in_progress(w):
+        raise HTTPException(409, "Авто-отправка вывода уже выполняется")
+
     # A9-M-2 — every branch below stages its user-facing notification
     # row before commit (atomic with the status flip + balance write)
     # and dispatches WS/DM after commit so a rolled-back decision
@@ -211,7 +220,7 @@ async def decide_withdrawal(
             # can pick it up with the existing ``mark_sent`` path
             # (CryptoBot will dedupe via ``spend_id``).
             w.status = WalletWithdrawStatus.approved
-            w.admin_note = body.note or ""
+            w.admin_note = mark_withdrawal_auto_send_in_progress(body.note or "")
             await session.commit()
 
             # Phase 2: CryptoBot HTTP call WITHOUT any DB locks held.
@@ -294,10 +303,9 @@ async def decide_withdrawal(
                     )
                 ).scalar_one_or_none()
                 if w_locked is not None:
-                    err_tag = f"[auto-send failed] {e}"[:500]
-                    existing = (w_locked.admin_note or "").strip()
-                    w_locked.admin_note = (
-                        f"{existing}\n{err_tag}".strip() if existing else err_tag
+                    w_locked.admin_note = mark_withdrawal_auto_send_failed(
+                        w_locked.admin_note,
+                        e,
                     )
                 await log_admin_action(
                     session,
@@ -327,6 +335,7 @@ async def decide_withdrawal(
                     select(WalletWithdrawal)
                     .where(WalletWithdrawal.id == withdrawal_id)
                     .with_for_update()
+                    .execution_options(populate_existing=True)
                 )
             ).scalar_one_or_none()
             if w_locked is None:
@@ -364,6 +373,7 @@ async def decide_withdrawal(
                             UserBalance.currency_id == w_locked.currency_id,
                         )
                         .with_for_update()
+                        .execution_options(populate_existing=True)
                     )
                 ).scalar_one_or_none()
                 if bal is not None:
@@ -385,6 +395,9 @@ async def decide_withdrawal(
                         provider_event_id=str(transfer_id) if transfer_id is not None else None,
                     )
                 w_locked.status = WalletWithdrawStatus.sent
+                w_locked.admin_note = clear_withdrawal_auto_send_in_progress(
+                    w_locked.admin_note,
+                )
                 w_locked.processed_at = utcnow()
                 _dst = w_locked.address or "в @CryptoBot"
                 notif, ws_payload = await notifier.insert(
@@ -537,7 +550,7 @@ async def decide_withdrawal(
                 meta={"admin_id": admin.id, "manual": True},
             )
         w.status = WalletWithdrawStatus.sent
-        w.admin_note = body.note or w.admin_note
+        w.admin_note = clear_withdrawal_auto_send_in_progress(body.note or w.admin_note)
         w.processed_at = utcnow()
         if currency and user:
             _dst = w.address or "в @CryptoBot"

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -18,13 +18,24 @@ import type { UserCardDto } from "@/api/types";
 
 const mockState = vi.hoisted(() => ({
   reviews: [] as unknown[],
+  reviewsTotal: undefined as unknown,
   reviewsLoading: false,
   services: [] as unknown[],
+  servicesTotal: undefined as unknown,
   servicesLoading: false,
   comments: [] as unknown[],
+  commentsTotal: undefined as unknown,
   commentsLoading: false,
   users: [] as UserCardDto[],
   usersLoading: false,
+  lastReviewsQuery: undefined as
+    | {
+        userId: number | undefined;
+        direction: "received" | "written";
+        page?: number;
+        page_size?: number;
+      }
+    | undefined,
   createReview: {
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
@@ -56,16 +67,38 @@ const mockState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
-  useAdminUserReviews: () => ({
-    data: mockState.reviews,
-    isLoading: mockState.reviewsLoading,
-  }),
+  useAdminUserReviews: (
+    userId: number | undefined,
+    direction: "received" | "written" = "received",
+    params: { page?: number; page_size?: number } = {},
+  ) => {
+    mockState.lastReviewsQuery = { userId, direction, ...params };
+    return {
+      data: {
+        items: mockState.reviews,
+        total: mockState.reviewsTotal ?? mockState.reviews.length,
+        page: params.page ?? 1,
+        page_size: params.page_size ?? 20,
+      },
+      isLoading: mockState.reviewsLoading,
+    };
+  },
   useAdminUserServices: () => ({
-    data: mockState.services,
+      data: {
+        items: mockState.services,
+        total: mockState.servicesTotal ?? mockState.services.length,
+        page: 1,
+        page_size: 20,
+      },
     isLoading: mockState.servicesLoading,
   }),
   useAdminUserComments: () => ({
-    data: mockState.comments,
+      data: {
+        items: mockState.comments,
+        total: mockState.commentsTotal ?? mockState.comments.length,
+        page: 1,
+        page_size: 20,
+      },
     isLoading: mockState.commentsLoading,
   }),
   useAdminCreateReview: () => mockState.createReview,
@@ -87,7 +120,7 @@ vi.mock("@/components/ui/Toast", () => ({
   ToastProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-import { ReviewsSection } from "./UserContentSections";
+import { CommentsSection, ReviewsSection, ServicesSection } from "./UserContentSections";
 
 function makeUser(overrides: Partial<UserCardDto> = {}): UserCardDto {
   return {
@@ -115,6 +148,54 @@ function makeUser(overrides: Partial<UserCardDto> = {}): UserCardDto {
   };
 }
 
+function makeReview(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    deal_id: null,
+    author_id: 7,
+    author_username: "buyer1",
+    target_id: 42,
+    target_username: "seller1",
+    rating: 5,
+    text: "ok",
+    created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeComment(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 11,
+    service_id: 55,
+    author_id: 42,
+    author_username: "seller1",
+    rating: 5,
+    text: "nice",
+    created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeService(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 21,
+    owner_id: 42,
+    category_id: 2,
+    category_slug: "design",
+    title: "Logo design",
+    description: "Service description",
+    price: 10,
+    status: "active",
+    ban_reason: null,
+    views: 12,
+    deals_count: 3,
+    deposit: 0,
+    rating_manual: 4.5,
+    created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 function renderSection(userId = 42) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -126,16 +207,333 @@ function renderSection(userId = 42) {
   );
 }
 
+function renderCommentsSection(userId = 42) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <CommentsSection userId={userId} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+function renderServicesSection(userId = 42) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <ServicesSection userId={userId} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 beforeEach(() => {
   mockState.reviews = [];
+  mockState.reviewsTotal = undefined;
   mockState.reviewsLoading = false;
+  mockState.services = [];
+  mockState.servicesTotal = undefined;
+  mockState.servicesLoading = false;
+  mockState.comments = [];
+  mockState.commentsTotal = undefined;
+  mockState.commentsLoading = false;
   mockState.users = [];
   mockState.usersLoading = false;
+  mockState.lastReviewsQuery = undefined;
   mockState.createReview.mutateAsync.mockReset().mockResolvedValue({});
+  mockState.updateReview.mutateAsync.mockReset().mockResolvedValue({});
+  mockState.deleteReview.mutateAsync.mockReset().mockResolvedValue({});
+  mockState.updateService.mutateAsync.mockReset().mockResolvedValue({});
+  mockState.deleteService.mutateAsync.mockReset().mockResolvedValue({});
+  mockState.updateComment.mutateAsync.mockReset().mockResolvedValue({});
+  mockState.deleteComment.mutateAsync.mockReset().mockResolvedValue({});
   toastSpy.mockReset();
 });
 
+describe("<ServicesSection />", () => {
+  it("renders malformed service totals as a neutral dash", () => {
+    mockState.servicesTotal = "1e2";
+
+    renderServicesSection(42);
+
+    expect(screen.getByText(/\(\u2014\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [/Цена/i, "1e2"],
+    [/Просмотры/i, "1e2"],
+  ])("blocks non-plain numeric service field %s before updating", async (label, value) => {
+    const user = userEvent.setup();
+    mockState.services = [makeService()];
+    const { container } = renderServicesSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+
+    const input = await screen.findByRole("spinbutton", { name: label });
+    fireEvent.change(input, { target: { value } });
+
+    const save = screen.getByRole("button", { name: "Сохранить" });
+    expect(save).toBeDisabled();
+    expect(mockState.updateService.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("renders string service prices without crashing", () => {
+    mockState.services = [makeService({ price: "15.25" })];
+
+    renderServicesSection(42);
+
+    expect(screen.getByText("15.25 $")).toBeInTheDocument();
+  });
+
+  it("renders malformed service row counters and ratings as neutral values", () => {
+    mockState.services = [
+      makeService({
+        deals_count: "0x10",
+        rating_manual: "1e2",
+      }),
+    ];
+
+    const { container } = renderServicesSection(42);
+
+    expect(container.textContent).toContain("\u2014");
+    expect(container.textContent).not.toMatch(/0x10|1e2/);
+  });
+
+  it("renders unknown service statuses as neutral labels", () => {
+    mockState.services = [makeService({ status: "provider_reconciled" })];
+
+    const { container } = renderServicesSection(42);
+
+    expect(container.textContent).toContain("Статус неизвестен");
+    expect(container.textContent).not.toContain("provider_reconciled");
+  });
+
+  it("does not submit a normalized default status when editing a service with unknown runtime status", async () => {
+    const user = userEvent.setup();
+    mockState.services = [makeService({ status: "provider_reconciled" })];
+    const { container } = renderServicesSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+
+    const inputs = await screen.findAllByRole("spinbutton");
+    fireEvent.change(inputs[0], { target: { value: "11.25" } });
+    await user.click(screen.getByRole("button", {
+      name: "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c",
+    }));
+
+    await waitFor(() =>
+      expect(mockState.updateService.mutateAsync).toHaveBeenCalledWith({
+        serviceId: 21,
+        body: { price: "11.25" },
+      }),
+    );
+  });
+
+  it("normalizes string service ids before updating", async () => {
+    const user = userEvent.setup();
+    mockState.services = [makeService({ id: "21" })];
+    const { container } = renderServicesSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+
+    const inputs = await screen.findAllByRole("spinbutton");
+    fireEvent.change(inputs[0], { target: { value: "12.5" } });
+    const save = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent === "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c");
+    expect(save).toBeDefined();
+    await user.click(save!);
+
+    await waitFor(() =>
+      expect(mockState.updateService.mutateAsync).toHaveBeenCalledWith({
+        serviceId: 21,
+        body: { price: "12.5" },
+      }),
+    );
+  });
+
+  it("blocks malformed service ids before updating", async () => {
+    const user = userEvent.setup();
+    mockState.services = [makeService({ id: "0x15" })];
+    const { container } = renderServicesSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+
+    const inputs = await screen.findAllByRole("spinbutton");
+    fireEvent.change(inputs[0], { target: { value: "12.5" } });
+    const save = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent === "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c");
+    expect(save).toBeDisabled();
+    expect(mockState.updateService.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("submits service decimal fields as exact strings", async () => {
+    const user = userEvent.setup();
+    mockState.services = [makeService()];
+    const { container } = renderServicesSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+
+    const inputs = await screen.findAllByRole("spinbutton");
+    fireEvent.change(inputs[0], {
+      target: { value: "0.123456789123456789" },
+    });
+    fireEvent.change(inputs[1], {
+      target: { value: "0.987654321987654321" },
+    });
+    fireEvent.change(inputs[4], {
+      target: { value: "4.123456789123456789" },
+    });
+    const save = screen
+      .getAllByRole("button")
+      .find((button) => button.textContent === "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c");
+    expect(save).toBeDefined();
+    await user.click(save!);
+
+    await waitFor(() =>
+      expect(mockState.updateService.mutateAsync).toHaveBeenCalledWith({
+        serviceId: 21,
+        body: {
+          price: "0.123456789123456789",
+          deposit: "0.987654321987654321",
+          rating_manual: "4.123456789123456789",
+        },
+      }),
+    );
+  });
+});
+
+describe("<CommentsSection />", () => {
+  it("renders malformed comment totals as a neutral dash", () => {
+    mockState.commentsTotal = "0x10";
+
+    renderCommentsSection(42);
+
+    expect(screen.getByText(/\(\u2014\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+  });
+
+  it("renders malformed comment ratings as a neutral dash", () => {
+    mockState.comments = [makeComment({ rating: "0x10" })];
+
+    const { container } = renderCommentsSection(42);
+
+    expect(container.textContent).toContain("\u2014/5");
+    expect(container.textContent).not.toMatch(/0x10/);
+  });
+
+  it("formats malformed comment service ids and blocks malformed comment ids", async () => {
+    const user = userEvent.setup();
+    mockState.comments = [makeComment({ id: "0x0b", service_id: "0x37" })];
+    const { container } = renderCommentsSection(42);
+
+    expect(container.textContent).toContain("#\u2014");
+    expect(container.textContent).not.toMatch(/0x0b|0x37/);
+
+    const edit = container.querySelector("button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+    const textArea = await screen.findByRole("textbox", { name: /^Текст$/ });
+    await user.type(textArea, " updated");
+    const buttons = screen.getAllByRole("button");
+    expect(buttons[buttons.length - 1]).toBeDisabled();
+    expect(mockState.updateComment.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("blocks rating 0 before updating a comment because the backend accepts 1..5", async () => {
+    const user = userEvent.setup();
+    mockState.comments = [makeComment()];
+    const { container } = renderCommentsSection(42);
+
+    const edit = container.querySelector("button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+    const ratingInput = await screen.findByRole("spinbutton", { name: /Рейтинг 1\.\.5/i });
+    await user.clear(ratingInput);
+    await user.type(ratingInput, "0");
+    const buttons = screen.getAllByRole("button");
+    await user.click(buttons[buttons.length - 1]);
+
+    expect(mockState.updateComment.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
+    );
+  });
+
+  it.each(["1.5", "1e0"])(
+    "blocks non-integer comment rating %s before updating",
+    async (badRating) => {
+      const user = userEvent.setup();
+      mockState.comments = [makeComment()];
+      const { container } = renderCommentsSection(42);
+
+      const edit = container.querySelector("button[aria-label]") as HTMLButtonElement | null;
+      expect(edit).not.toBeNull();
+      await user.click(edit!);
+      const ratingInput = await screen.findByRole("spinbutton", { name: /Рейтинг 1\.\.5/i });
+      fireEvent.change(ratingInput, { target: { value: badRating } });
+      const buttons = screen.getAllByRole("button");
+      await user.click(buttons[buttons.length - 1]);
+
+      expect(mockState.updateComment.mutateAsync).not.toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
+      );
+    },
+  );
+});
+
 describe("<ReviewsSection /> · Новый отзыв sheet", () => {
+  it("renders malformed review totals as a neutral dash", () => {
+    mockState.reviewsTotal = "1e2";
+
+    renderSection(42);
+
+    expect(screen.getByText(/\(\u2014\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
+  it("does not rewind review pages from malformed totals", async () => {
+    const user = userEvent.setup();
+    mockState.reviews = [makeReview()];
+    mockState.reviewsTotal = 45;
+    renderSection(42);
+
+    await user.click(
+      screen.getByRole("button", { name: "\u0412\u043f\u0435\u0440\u0451\u0434" }),
+    );
+    await waitFor(() => {
+      expect(mockState.lastReviewsQuery?.page).toBe(2);
+    });
+
+    mockState.reviews = [];
+    mockState.reviewsTotal = "1e2";
+    await user.click(
+      screen.getByRole("button", { name: "\u0412\u043f\u0435\u0440\u0451\u0434" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "\u0412\u043f\u0435\u0440\u0451\u0434" })).not.toBeInTheDocument();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockState.lastReviewsQuery?.page).toBe(3);
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it("opens the sheet with a UserPicker for the author", async () => {
     const user = userEvent.setup();
     renderSection();
@@ -198,7 +596,7 @@ describe("<ReviewsSection /> · Новый отзыв sheet", () => {
 
       // Fill the remaining fields and submit.
       const ratingInput = screen.getByRole("spinbutton", {
-        name: /Рейтинг 0\.\.5/i,
+        name: /Рейтинг 1\.\.5/i,
       });
       await user.clear(ratingInput);
       await user.type(ratingInput, "4");
@@ -219,4 +617,192 @@ describe("<ReviewsSection /> · Новый отзыв sheet", () => {
       });
     },
   );
+
+  it("blocks malformed picked author ids before creating a review", async () => {
+    const user = userEvent.setup();
+    mockState.users = [makeUser({ id: "0x7" as unknown as number, username: "buyer1" })];
+    renderSection(42);
+
+    await user.click(screen.getByRole("button", { name: /\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043e\u0442\u0437\u044b\u0432/i }));
+    await user.type(screen.getByRole("textbox", { name: /^\u0410\u0432\u0442\u043e\u0440$/ }), "buyer1");
+    await user.click(await screen.findByRole("option", { name: /buyer1/i }));
+    await user.click(screen.getByRole("button", { name: "\u0421\u043e\u0437\u0434\u0430\u0442\u044c" }));
+
+    expect(mockState.createReview.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 ID \u0430\u0432\u0442\u043e\u0440\u0430" }),
+    );
+  });
+
+  it("blocks rating 0 before creating a review because the backend accepts 1..5", async () => {
+    const user = userEvent.setup();
+    mockState.users = [makeUser({ id: 7, username: "buyer1" })];
+    renderSection(42);
+
+    await user.click(screen.getByRole("button", { name: /Добавить отзыв/i }));
+    await user.type(screen.getByRole("textbox", { name: /^Автор$/ }), "buyer1");
+    await user.click(await screen.findByRole("option", { name: /buyer1/i }));
+    const ratingInput = screen.getByRole("spinbutton", { name: /Рейтинг 1\.\.5/i });
+    await user.clear(ratingInput);
+    await user.type(ratingInput, "0");
+    const buttons = screen.getAllByRole("button");
+    await user.click(buttons[buttons.length - 1]);
+
+    expect(mockState.createReview.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
+    );
+  });
+
+  it.each(["1.5", "1e0"])(
+    "blocks non-integer rating %s before creating a review",
+    async (badRating) => {
+      const user = userEvent.setup();
+      mockState.users = [makeUser({ id: 7, username: "buyer1" })];
+      renderSection(42);
+
+      await user.click(screen.getByRole("button", { name: /Добавить отзыв/i }));
+      await user.type(screen.getByRole("textbox", { name: /^Автор$/ }), "buyer1");
+      await user.click(await screen.findByRole("option", { name: /buyer1/i }));
+      const ratingInput = screen.getByRole("spinbutton", { name: /Рейтинг 1\.\.5/i });
+      fireEvent.change(ratingInput, { target: { value: badRating } });
+      await user.click(screen.getByRole("button", { name: "Создать" }));
+
+      expect(mockState.createReview.mutateAsync).not.toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
+      );
+    },
+  );
+
+  it("renders missing review usernames as non-handle labels", () => {
+    mockState.reviews = [makeReview({ author_username: null, target_username: null })];
+    renderSection(42);
+    expect(screen.getAllByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
+  it("renders malformed review ratings as a neutral dash", () => {
+    mockState.reviews = [makeReview({ rating: "1e2" })];
+
+    const { container } = renderSection(42);
+
+    expect(container.textContent).toContain("\u2014/5");
+    expect(container.textContent).not.toMatch(/1e2/);
+  });
+
+  it("blocks rating 0 before updating a review because the backend accepts 1..5", async () => {
+    const user = userEvent.setup();
+    mockState.reviews = [makeReview()];
+    const { container } = renderSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+    const ratingInput = await screen.findByRole("spinbutton", { name: /Рейтинг 1\.\.5/i });
+    await user.clear(ratingInput);
+    await user.type(ratingInput, "0");
+    const buttons = screen.getAllByRole("button");
+    await user.click(buttons[buttons.length - 1]);
+
+    expect(mockState.updateReview.mutateAsync).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
+    );
+  });
+
+  it("normalizes string review ids before updating", async () => {
+    const user = userEvent.setup();
+    mockState.reviews = [makeReview({ id: "7" })];
+    const { container } = renderSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+    const ratingInput = await screen.findByRole("spinbutton", { name: /\u0420\u0435\u0439\u0442\u0438\u043d\u0433 1\.\.5/i });
+    await user.clear(ratingInput);
+    await user.type(ratingInput, "4");
+    const buttons = screen.getAllByRole("button");
+    await user.click(buttons[buttons.length - 1]);
+
+    await waitFor(() =>
+      expect(mockState.updateReview.mutateAsync).toHaveBeenCalledWith({
+        reviewId: 7,
+        body: { rating: 4, text: "ok" },
+      }),
+    );
+  });
+
+  it("blocks malformed review ids before updating", async () => {
+    const user = userEvent.setup();
+    mockState.reviews = [makeReview({ id: "0x7" })];
+    const { container } = renderSection(42);
+
+    const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+    expect(edit).not.toBeNull();
+    await user.click(edit!);
+    const ratingInput = await screen.findByRole("spinbutton", { name: /\u0420\u0435\u0439\u0442\u0438\u043d\u0433 1\.\.5/i });
+    await user.clear(ratingInput);
+    await user.type(ratingInput, "4");
+    const buttons = screen.getAllByRole("button");
+    expect(buttons[buttons.length - 1]).toBeDisabled();
+    expect(mockState.updateReview.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it.each(["1.5", "1e0"])(
+    "blocks non-integer rating %s before updating a review",
+    async (badRating) => {
+      const user = userEvent.setup();
+      mockState.reviews = [makeReview()];
+      const { container } = renderSection(42);
+
+      const edit = container.querySelector("li button[aria-label]") as HTMLButtonElement | null;
+      expect(edit).not.toBeNull();
+      await user.click(edit!);
+      const ratingInput = await screen.findByRole("spinbutton", { name: /Рейтинг 1\.\.5/i });
+      fireEvent.change(ratingInput, { target: { value: badRating } });
+      const buttons = screen.getAllByRole("button");
+      await user.click(buttons[buttons.length - 1]);
+
+      expect(mockState.updateReview.mutateAsync).not.toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "error", title: "Рейтинг 1..5" }),
+      );
+    },
+  );
+
+  it("requests paged review data and resets the page when direction changes", async () => {
+    const user = userEvent.setup();
+    mockState.reviews = [makeReview()];
+    mockState.reviewsTotal = 45;
+    renderSection(42);
+
+    expect(mockState.lastReviewsQuery).toEqual({
+      userId: 42,
+      direction: "received",
+      page: 1,
+      page_size: 20,
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: "\u0412\u043f\u0435\u0440\u0451\u0434" }),
+    );
+
+    await waitFor(() => {
+      expect(mockState.lastReviewsQuery?.page).toBe(2);
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: "\u041d\u0430\u043f\u0438\u0441\u0430\u043d\u043e" }),
+    );
+
+    await waitFor(() => {
+      expect(mockState.lastReviewsQuery).toEqual({
+        userId: 42,
+        direction: "written",
+        page: 1,
+        page_size: 20,
+      });
+    });
+  });
 });

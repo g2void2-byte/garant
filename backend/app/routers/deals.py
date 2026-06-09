@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy import func, or_, select
 
 from ..admin_guard import TotpOrArbiterUser
@@ -17,7 +18,9 @@ from ..schemas import (
     DealCreateWithTopupOut,
     DealOut,
     DealResolveRequest,
+    DealRoleWire,
     DealTopupInvoiceOut,
+    PaymentProviderWire,
 )
 from ..services_deals import (
     accept_cancel,
@@ -33,6 +36,25 @@ from ..services_deals import (
 )
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
+
+
+def _payment_provider_for(value: object) -> PaymentProviderWire:
+    provider = getattr(value, "value", value) or "cryptobot"
+    if provider == "cryptobot":
+        return "cryptobot"
+    if provider == "crystalpay":
+        return "crystalpay"
+    raise ValueError(f"unknown payment provider: {provider!r}")
+
+
+def _resolution_for(value: str | None) -> Literal["buyer", "seller"] | None:
+    if value is None:
+        return None
+    if value == "buyer":
+        return "buyer"
+    if value == "seller":
+        return "seller"
+    raise ValueError(f"unknown arbitration resolution: {value!r}")
 
 
 def _topup_invoice_from_deposit(
@@ -54,9 +76,7 @@ def _topup_invoice_from_deposit(
         commission=commission,
         paid_total=paid_total,
         currency_code=deposit.currency.code if deposit.currency else "",
-        provider=(
-            deposit.provider.value if hasattr(deposit.provider, "value") else str(deposit.provider)
-        ),
+        provider=_payment_provider_for(deposit.provider),
         expires_at=None,
     )
 
@@ -67,7 +87,7 @@ def _deal_out(
     *,
     topup_invoice: DealTopupInvoiceOut | None = None,
 ) -> DealOut:
-    role = "buyer" if deal.buyer_id == user_id else "seller"
+    role = _role_for(deal, user_id) or "other"
     currency_code = deal.currency.code if deal.currency else None
 
     return DealOut(
@@ -95,9 +115,9 @@ def _deal_out(
         arbitration_initiator=_role_for(deal, deal.arbitration_initiator_id),
         arbitration_reason=deal.arbitration_reason,
         arbitration_resolved_by=("admin" if deal.arbitration_resolved_by is not None else None),
-        arbitration_resolution=deal.arbitration_resolution,
+        arbitration_resolution=_resolution_for(deal.arbitration_resolution),
         arbitration_resolved_at=deal.arbitration_resolved_at,
-        payment_provider=deal.payment_provider or "cryptobot",
+        payment_provider=_payment_provider_for(deal.payment_provider),
         topup_deposit_id=deal.topup_deposit_id,
         commission_paid=bool(deal.commission_paid),
         topup_invoice=topup_invoice,
@@ -131,7 +151,7 @@ async def _hydrate_topup_invoice(session, deal: Deal) -> DealTopupInvoiceOut | N
     return _topup_invoice_from_deposit(deal, deposit, paid_total=paid_total)
 
 
-def _role_for(deal: Deal, user_id: int | None) -> str | None:
+def _role_for(deal: Deal, user_id: int | None) -> DealRoleWire | None:
     if user_id is None:
         return None
     if user_id == deal.buyer_id:
@@ -190,22 +210,27 @@ async def _get_locked(session, deal_id: int) -> Deal:
 
 @router.get("", response_model=list[DealOut])
 async def list_deals(
+    response: Response,
     user: CurrentUser,
     session: SessionDep,
-    role: str | None = Query(None),
-    status: str | None = Query(None),
+    role: Literal["buyer", "seller"] | None = Query(None),
+    status: DealStatus | None = Query(None),
+    limit: int = Query(100, ge=1, le=200, description="Max rows to return."),
+    offset: int = Query(0, ge=0, description="Row offset for cursorless pagination."),
 ):
     stmt = select(Deal).where(or_(Deal.buyer_id == user.id, Deal.seller_id == user.id))
     if role == "buyer":
         stmt = select(Deal).where(Deal.buyer_id == user.id)
     elif role == "seller":
         stmt = select(Deal).where(Deal.seller_id == user.id)
-    if status:
-        try:
-            stmt = stmt.where(Deal.status == DealStatus(status))
-        except ValueError:
-            pass
-    stmt = stmt.order_by(Deal.created_at.desc())
+    if status is not None:
+        stmt = stmt.where(Deal.status == status)
+    total = (
+        await session.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))
+    ).scalar_one()
+    response.headers["X-Total-Count"] = str(total)
+
+    stmt = stmt.order_by(Deal.created_at.desc(), Deal.id.desc()).offset(offset).limit(limit)
     result = await session.execute(stmt)
     deals = result.scalars().all()
     # Batch-load the top-up deposits in a single ``WHERE id IN (...)``

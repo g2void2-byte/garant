@@ -269,7 +269,12 @@ async def crystalpay_webhook(request: Request, session: SessionDep):
         )
         raise HTTPException(401, "Bad signature")
 
-    event_id = f"{invoice_id_str or raw_event_id(raw)}:{body.get('state') or 'unknown'}"
+    # Crystalpay does not provide a stable per-delivery update id, so
+    # use the raw body hash as the dedupe key. ``invoice_id:state`` is
+    # too coarse: a first ``payed`` delivery with a bad/missing amount
+    # would cache ``amount mismatch`` and suppress a later corrected
+    # ``payed`` payload for the same invoice.
+    event_id = raw_event_id(raw)
     event, duplicate = await acquire_webhook_event(
         session,
         provider="crystalpay",

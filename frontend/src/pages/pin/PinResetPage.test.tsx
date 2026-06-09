@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { PinTokenDto } from "@/api/types";
+import type { PinStatusDto, PinTokenDto } from "@/api/types";
 
 /**
  * Tests for the standalone `/pin/reset` flow (from settings).
@@ -24,12 +24,13 @@ const mockState = vi.hoisted(() => ({
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
   },
+  pinStatusData: { attempts_left: 3 } as Partial<PinStatusDto> | undefined,
 }));
 
 vi.mock("@/api/hooks", () => ({
   useRequestPinReset: () => mockState.requestReset,
   useConfirmPinReset: () => mockState.confirmReset,
-  usePinStatus: () => ({ data: { attempts_left: 3 }, isLoading: false }),
+  usePinStatus: () => ({ data: mockState.pinStatusData, isLoading: false }),
 }));
 
 const setPinTokenSpy = vi.hoisted(() => vi.fn());
@@ -79,6 +80,7 @@ async function clickDigits(
 beforeEach(() => {
   mockState.requestReset = { mutateAsync: vi.fn(), isPending: false };
   mockState.confirmReset = { mutateAsync: vi.fn(), isPending: false };
+  mockState.pinStatusData = { attempts_left: 3 };
   setPinTokenSpy.mockClear();
   toastSpy.mockClear();
 });
@@ -142,6 +144,17 @@ describe("<PinResetPage />", () => {
     expect(input.value).toBe("123456");
     const cont = screen.getByRole("button", { name: "Продолжить" });
     expect(cont).not.toBeDisabled();
+  });
+
+  it("hides malformed attempts_left values on the code step", async () => {
+    mockState.requestReset.mutateAsync.mockResolvedValue({ delivered: true });
+    mockState.pinStatusData = { attempts_left: Number.NaN };
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Запросить код" }));
+    expect(await screen.findByText("Введите код")).toBeInTheDocument();
+    expect(screen.queryByTestId("pin-reset-attempts-left")).not.toBeInTheDocument();
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
   });
 
   it("happy path: code → matching new pins → confirmReset → navigate", async () => {

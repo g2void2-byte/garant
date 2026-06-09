@@ -27,6 +27,7 @@ Six items from §2.B of audit-status-v10, all confined to
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from unittest.mock import patch
 
@@ -143,6 +144,33 @@ def test_v5_c_2_cache_ttl_is_short():
     was flipped on.
     """
     assert maintenance_module._TTL_SECONDS == 5.0
+
+
+def test_v5_c_2_cache_lock_is_event_loop_local(monkeypatch):
+    """The maintenance cache lock must survive pytest's per-test loops.
+
+    A contended module-level ``asyncio.Lock`` binds to its first event
+    loop. Full-suite CI later reused the imported app in another loop
+    and crashed inside the middleware with "lock is bound to a
+    different event loop". Two contended refreshes in two fresh loops
+    reproduce that old failure deterministically.
+    """
+
+    async def _slow_load() -> tuple[bool, str]:
+        await asyncio.sleep(0)
+        return False, ""
+
+    async def _contended_refresh() -> None:
+        maintenance_module.invalidate_cache()
+        await asyncio.gather(
+            maintenance_module._get_maintenance(),
+            maintenance_module._get_maintenance(),
+        )
+
+    monkeypatch.setattr(maintenance_module, "_load_from_db", _slow_load)
+
+    asyncio.run(_contended_refresh())
+    asyncio.run(_contended_refresh())
 
 
 # ── V5-C-3 — ``/api/auth/`` is not unconditionally allow-listed ──────────

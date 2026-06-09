@@ -36,6 +36,16 @@ interface BannerCropModalProps {
   onApply: (cropped: File) => Promise<void> | void;
 }
 
+const ZOOM_INPUT_RE = /^(?:\d+(?:\.\d+)?|\.\d+)$/;
+
+export function parseBannerZoomInput(raw: string, fallback: number): number {
+  const value = raw.trim();
+  if (!ZOOM_INPUT_RE.test(value)) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(3, Math.max(1, parsed));
+}
+
 export function BannerCropModal({
   open,
   file,
@@ -138,7 +148,7 @@ export function BannerCropModal({
               max={3}
               step={0.01}
               value={zoom}
-              onChange={(e) => setZoom(parseFloat(e.target.value))}
+              onChange={(e) => setZoom((current) => parseBannerZoomInput(e.target.value, current))}
               aria-label="Масштаб"
               className="flex-1"
             />

@@ -1,6 +1,7 @@
 import { Bell, Briefcase, Headphones, Search, User } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/cn";
+import { parseNonNegativeIntegerValue } from "@/lib/format";
 import { haptic } from "@/lib/tg";
 import { useNotificationCounters } from "@/api/hooks";
 
@@ -24,7 +25,7 @@ export function BottomNav() {
     (tab) => location.pathname === tab.to || location.pathname.startsWith(`${tab.to}/`),
   )?.to;
   const { data: counters } = useNotificationCounters();
-  const unread = counters?.unread ?? 0;
+  const unread = parseNonNegativeIntegerValue(counters?.unread) ?? 0;
 
   return (
     <nav

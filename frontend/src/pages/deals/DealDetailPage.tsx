@@ -13,6 +13,7 @@ import {
 import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Sheet } from "@/components/ui/Sheet";
 import { Textarea } from "@/components/ui/Textarea";
@@ -25,11 +26,16 @@ import {
   useMe,
   useReviews,
 } from "@/api/hooks";
-import { formatAmount, relativeTime } from "@/lib/format";
-import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
+import { formatAmount, formatDateTime, parseDecimalValue, relativeTime } from "@/lib/format";
+import { haptic, openTelegramLink } from "@/lib/tg";
+import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 import { DealInvoiceModal } from "@/components/wallet/DealInvoiceModal";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
+import { parsePositiveIntRouteParam, parsePositiveIntValue } from "@/lib/routeParams";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
+import { formatPaymentProvider } from "@/lib/paymentProviders";
+import { normalizeUsernameRef, userProfilePath } from "@/lib/usernames";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   cancelled: { text: "Отменена", cls: "text-danger" },
@@ -45,6 +51,8 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   cancelled_for_inactivity: { text: "Отменена за неактивность", cls: "text-danger" },
 };
 
+const UNKNOWN_DEAL_STATUS = "Статус неизвестен";
+
 type WinnerSide = "buyer" | "seller";
 
 function TopupInvoiceRow({
@@ -55,13 +63,22 @@ function TopupInvoiceRow({
 }: {
   label: string;
   value: string | number;
-  currency: string;
+  currency?: string;
   strong?: boolean;
 }) {
+  const currencyCode = currency ? normalizeCurrencyCode(currency) ?? "USD" : null;
+  const displayValue = currency
+    ? (() => {
+        const parsedValue = parseDecimalValue(value);
+        if (parsedValue === null || parsedValue < 0) return "—";
+        return typeof value === "string" ? value.trim() : value;
+      })()
+    : value;
+
   return (
     <div className={"flex items-center justify-between " + (strong ? "font-semibold" : "")}>
       <span>{label}</span>
-      <span>{value} {currency}</span>
+      <span>{displayValue}{currencyCode ? ` ${currencyCode}` : ""}</span>
     </div>
   );
 }
@@ -69,8 +86,8 @@ function TopupInvoiceRow({
 export default function DealDetailPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const dealId = Number(id);
-  const { data: deal, isLoading } = useDeal(dealId);
+  const dealId = parsePositiveIntRouteParam(id);
+  const { data: deal, isError, isLoading } = useDeal(dealId);
   const { data: me } = useMe();
   const toast = useToast();
 
@@ -96,11 +113,37 @@ export default function DealDetailPage() {
   const [reviewText, setReviewText] = useState("");
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
 
-  const otherUser = deal && (deal.role === "buyer" ? deal.seller : deal.buyer);
-  const { data: existingReviews } = useReviews(otherUser ?? undefined);
+  const rawOtherUser = deal
+    ? deal.role === "buyer"
+      ? deal.seller
+      : deal.role === "seller"
+        ? deal.buyer
+        : null
+    : null;
+  const otherUser = normalizeUsernameRef(rawOtherUser);
+  const otherProfilePath = userProfilePath(otherUser);
+  const otherTelegramUrl = buildTelegramUserUrl(otherUser);
+  const existingReviewParams: { deal_id?: number; limit: number } = { limit: 1 };
+  if (deal && dealId) existingReviewParams.deal_id = dealId;
+  const { data: existingReviews } = useReviews(
+    otherUser ?? undefined,
+    existingReviewParams,
+  );
   const createReview = useCreateReview();
 
-  if (isLoading || !deal) {
+  if (!dealId || isError) {
+    return (
+      <Page showBack>
+        <Header title="Сделка" />
+        <EmptyState
+          title="Сделка не найдена"
+          description="Проверьте ссылку или вернитесь к списку сделок."
+        />
+      </Page>
+    );
+  }
+
+  if (isLoading) {
     return (
       <Page showBack>
         <div className="p-4 space-y-3">
@@ -111,22 +154,53 @@ export default function DealDetailPage() {
     );
   }
 
+  if (!deal) {
+    return (
+      <Page showBack>
+        <Header title="Сделка" />
+        <EmptyState title="Сделка не найдена" />
+      </Page>
+    );
+  }
+
   const statusInfo =
-    STATUS_LABEL[deal.status] ?? { text: deal.status, cls: "text-text-muted" };
+    STATUS_LABEL[deal.status] ?? { text: UNKNOWN_DEAL_STATUS, cls: "text-text-muted" };
   const amount = deal.amount;
-  const currency = deal.currency_code ?? "USD";
-  const isParticipant = deal.role === "buyer" || deal.role === "seller";
+  const currency = normalizeCurrencyCode(deal.currency_code) ?? "USD";
+  const commissionAmount = parseDecimalValue(deal.commission_amount);
+  const isBuyerRole = deal.role === "buyer";
+  const isSellerRole = deal.role === "seller";
+  const isParticipant = isBuyerRole || isSellerRole;
+  const counterpartyLabel = isBuyerRole
+    ? "Продавец"
+    : isSellerRole
+      ? "Покупатель"
+      : "Контрагент";
+  const counterpartyText = otherUser ? `@${otherUser}` : "Контрагент недоступен";
   const isAdmin = !!me && (me.prefix === "admin" || me.prefix === "arbiter");
   const cancelByOther =
+    isParticipant &&
     deal.cancellation_initiator &&
     deal.cancellation_initiator !== deal.role &&
     deal.cancellation_initiator !== "other";
-  const cancelByMe = deal.cancellation_initiator === deal.role;
-  const alreadyReviewed = !!existingReviews?.some(
-    (r) => r.deal_id === deal.id && me && r.author_username === me.username,
-  );
+  const cancelByMe = isParticipant && deal.cancellation_initiator === deal.role;
+  const alreadyReviewed =
+    !!me &&
+    !!existingReviews?.some(
+      (r) => parsePositiveIntValue(r.deal_id) === dealId && r.author_username === me.username,
+    );
 
-  const canOpenInvoice = deal.role === "buyer" && deal.status === "pending_topup";
+  const topupInvoiceTotal = parseDecimalValue(deal.topup_invoice?.total);
+  const topupInvoiceDepositId = parsePositiveIntValue(deal.topup_invoice?.deposit_id);
+  const topupInvoiceCurrency =
+    normalizeCurrencyCode(deal.topup_invoice?.currency_code) ?? currency;
+  const canOpenInvoice =
+    deal.role === "buyer" &&
+    deal.status === "pending_topup" &&
+    !!deal.topup_invoice &&
+    topupInvoiceDepositId !== undefined &&
+    topupInvoiceTotal !== null &&
+    topupInvoiceTotal > 0;
   const showPaidInvoiceState = deal.status !== "pending_topup" && !!deal.topup_invoice;
 
   const handle = async (
@@ -225,7 +299,7 @@ export default function DealDetailPage() {
         target_username: otherUser,
         rating,
         text: reviewText,
-        deal_id: deal.id,
+        deal_id: dealId,
       });
       haptic("success");
       toast.show({ kind: "success", title: "Отзыв опубликован" });
@@ -241,6 +315,7 @@ export default function DealDetailPage() {
   };
 
   const canReview =
+    !!otherUser &&
     isParticipant &&
     (deal.status === "completed" ||
       deal.status === "resolved_for_buyer" ||
@@ -248,18 +323,22 @@ export default function DealDetailPage() {
 
   return (
     <Page showBack>
-      <Header title={`Сделка #${deal.id}`} subtitle={statusInfo.text} />
+      <Header title={`Сделка #${dealId}`} subtitle={statusInfo.text} />
       <div className="px-4 space-y-3">
         <div className="bg-panel border border-border rounded-card p-4 space-y-2">
           <div className="text-sm text-text-muted">
-            {deal.role === "buyer" ? "Продавец" : "Покупатель"}
+            {counterpartyLabel}
           </div>
-          <button
-            onClick={() => otherUser && navigate(`/users/${otherUser}`)}
-            className="text-lg font-semibold text-accent active:opacity-80"
-          >
-            @{otherUser}
-          </button>
+          {otherProfilePath ? (
+            <button
+              onClick={() => navigate(otherProfilePath)}
+              className="text-lg font-semibold text-accent active:opacity-80"
+            >
+              {counterpartyText}
+            </button>
+          ) : (
+            <div className="text-lg font-semibold text-text-muted">{counterpartyText}</div>
+          )}
           <div className="text-2xl font-bold text-accent">
             {formatAmount(amount, currency)} {currency}
           </div>
@@ -284,11 +363,11 @@ export default function DealDetailPage() {
             <span>Комиссия оплачена</span>
             <span className="font-semibold">{deal.commission_paid ? "Да" : "Нет"}</span>
           </div>
-          {deal.commission_amount !== null && deal.commission_amount > 0 && (
+          {commissionAmount !== null && commissionAmount > 0 && (
             <div className="flex items-center justify-between text-sm">
               <span>Размер комиссии</span>
               <span>
-                {formatAmount(deal.commission_amount, currency)} {currency}
+                {formatAmount(commissionAmount, currency)} {currency}
               </span>
             </div>
           )}
@@ -298,28 +377,33 @@ export default function DealDetailPage() {
           <div className="rounded-card border border-border bg-card/80 p-4 space-y-3">
             {(() => {
               const topupInvoice = deal.topup_invoice;
+              const paidTotal = parseDecimalValue(topupInvoice?.paid_total);
               return (
                 <>
                   <div className="text-sm text-text-muted">
                     {deal.role === "buyer"
                       ? `Оплатите инвойс, чтобы сделка активировалась`
-                      : `Ожидайте подтверждение сделки от @${otherUser}`}
+                      : otherUser
+                        ? `Ожидайте подтверждение сделки от @${otherUser}`
+                        : `Ожидайте подтверждение сделки контрагентом`}
                   </div>
                   {topupInvoice && (
                     <div className="space-y-2">
-                      <TopupInvoiceRow label="Провайдер" value={topupInvoice.provider === "crystalpay" ? "Crystal Pay" : "CryptoBot"} currency={topupInvoice.currency_code} />
-                      {topupInvoice.paid_total && Number(topupInvoice.paid_total) > 0 && (
-                        <TopupInvoiceRow label="Уже оплачено" value={topupInvoice.paid_total} currency={topupInvoice.currency_code} />
+                      <TopupInvoiceRow label="Провайдер" value={formatPaymentProvider(topupInvoice.provider)} />
+                      {paidTotal !== null && paidTotal > 0 && (
+                        <TopupInvoiceRow label="Уже оплачено" value={topupInvoice.paid_total} currency={topupInvoiceCurrency} />
                       )}
-                      <TopupInvoiceRow label="К оплате сейчас" value={topupInvoice.total} currency={topupInvoice.currency_code} strong />
+                      <TopupInvoiceRow label="К оплате сейчас" value={topupInvoice.total} currency={topupInvoiceCurrency} strong />
                       {topupInvoice.expires_at && (
-                        <TopupInvoiceRow label="Истекает" value={new Date(topupInvoice.expires_at).toLocaleString()} currency={topupInvoice.currency_code} />
+                        <TopupInvoiceRow label="Истекает" value={formatDateTime(topupInvoice.expires_at)} />
                       )}
                     </div>
                   )}
                   {deal.role === "buyer" && topupInvoice ? (
                     <div className="flex gap-2">
-                      <Button onClick={() => openPaymentLink(topupInvoice.pay_url)}>Открыть оплату</Button>
+                      {canOpenInvoice && (
+                        <Button onClick={() => setInvoiceModalOpen(true)}>Открыть оплату</Button>
+                      )}
                       <Button
                         variant="danger"
                         onClick={cancelPendingTopup}
@@ -344,22 +428,22 @@ export default function DealDetailPage() {
           </div>
         )}
 
-        {invoiceModalOpen && deal.topup_invoice && canOpenInvoice && (
+        {invoiceModalOpen && deal.topup_invoice && canOpenInvoice && topupInvoiceDepositId !== undefined && (
           <DealInvoiceModal
             open={invoiceModalOpen}
             onClose={() => setInvoiceModalOpen(false)}
-            dealId={deal.id}
-            depositId={deal.topup_invoice.deposit_id}
+            dealId={dealId}
+            depositId={topupInvoiceDepositId}
             payUrl={deal.topup_invoice.pay_url}
             amount={deal.topup_invoice.total}
-            currencyCode={deal.topup_invoice.currency_code}
+            currencyCode={topupInvoiceCurrency}
             provider={deal.topup_invoice.provider}
             canPay={canOpenInvoice}
             successTitle="Сделка создана"
             successBody="Платёж прошёл. Сейчас откроем сделку."
-            onSuccess={(dealId) => {
+            onSuccess={(paidDealId) => {
               setInvoiceModalOpen(false);
-              navigate(`/deals/${dealId}`, { replace: true });
+              navigate(`/deals/${paidDealId}`, { replace: true });
             }}
           />
         )}
@@ -403,7 +487,9 @@ export default function DealDetailPage() {
           )}
           {deal.status === "pending_confirmation" && deal.role === "buyer" && (
             <div className="col-span-2 bg-panel border border-border rounded-card p-3 text-sm text-text-muted text-center">
-              Ожидаем подтверждения от @{otherUser}
+              {otherUser
+                ? `Ожидаем подтверждения от @${otherUser}`
+                : "Ожидаем подтверждения от контрагента"}
             </div>
           )}
 
@@ -419,7 +505,9 @@ export default function DealDetailPage() {
           )}
           {deal.status === "in_progress" && deal.role === "seller" && (
             <div className="col-span-2 bg-panel border border-border rounded-card p-3 text-sm text-text-muted text-center">
-              Ожидаем подтверждения исполнения от @{otherUser}
+              {otherUser
+                ? `Ожидаем подтверждения исполнения от @${otherUser}`
+                : "Ожидаем подтверждения исполнения от контрагента"}
             </div>
           )}
           {deal.status === "in_progress" && isParticipant && (
@@ -516,14 +604,15 @@ export default function DealDetailPage() {
             <Button
               variant="ghost"
               className="col-span-2"
-              onClick={() => openTelegramLink(`https://t.me/${otherUser}`)}
+              disabled={!otherTelegramUrl}
+              onClick={() => otherTelegramUrl && openTelegramLink(otherTelegramUrl)}
             >
               <MessageSquare className="size-4" /> Написать @{otherUser}
             </Button>
           )}
         </div>
 
-        {isParticipant && <DealChatPanel dealId={deal.id} />}
+        {isParticipant && <DealChatPanel dealId={dealId} />}
       </div>
 
       <Sheet
@@ -625,7 +714,7 @@ export default function DealDetailPage() {
       <Sheet
         open={reviewOpen}
         onClose={() => setReviewOpen(false)}
-        title={`Отзыв на @${otherUser}`}
+        title={otherUser ? `Отзыв на @${otherUser}` : "Отзыв"}
       >
         <div className="space-y-3">
           <div>

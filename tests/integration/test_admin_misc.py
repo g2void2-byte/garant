@@ -10,11 +10,12 @@ and at least one edge-case assertion.
 from __future__ import annotations
 
 from datetime import timedelta
+from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from backend.app.auth_2fa import generate_secret, totp_now
-from backend.app.db import async_session
+from backend.app.db import async_session, get_engine
 from backend.app.models import (
     AdminAuditLog,
     AppSettings,
@@ -60,18 +61,27 @@ async def test_settings_patch_persists_and_audits(client):
     admin_init, _ = await _make_admin(client, tg=1)
     resp = await client.patch(
         "/api/admin/settings",
-        json={"deal_commission_percent": 7.5, "auto_withdraw_enabled": True},
+        json={
+            "deal_commission_percent": 7.5,
+            "auto_withdraw_enabled": True,
+            "pin_reset_price_usd": "0.12345678",
+            "faq_stats_total_usd": "123456789.12345678",
+        },
         headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["deal_commission_percent"] == 7.5
     assert resp.json()["auto_withdraw_enabled"] is True
+    assert Decimal(str(resp.json()["pin_reset_price_usd"])) == Decimal("0.12345678")
+    assert Decimal(str(resp.json()["faq_stats_total_usd"])) == Decimal("123456789.12345678")
 
     async with async_session() as session:
         s = (
             await session.execute(select(AppSettings).order_by(AppSettings.id).limit(1))
         ).scalar_one()
         assert float(s.deal_commission_percent) == 7.5
+        assert s.pin_reset_price_usd == Decimal("0.12345678")
+        assert s.faq_stats_total_usd == Decimal("123456789.12345678")
         audits = (
             (
                 await session.execute(
@@ -82,6 +92,30 @@ async def test_settings_patch_persists_and_audits(client):
             .all()
         )
         assert len(audits) == 1
+        payload = audits[0].payload
+        assert payload is not None
+        assert payload["after"]["pin_reset_price_usd"] == "0.12345678"
+        assert payload["after"]["faq_stats_total_usd"] == "123456789.12345678"
+
+
+async def test_settings_patch_rejects_explicit_null_before_db_write(client):
+    admin_init, _ = await _make_admin(client, tg=1)
+
+    resp = await client.patch(
+        "/api/admin/settings",
+        json={"maintenance_message": None},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+
+    assert resp.status_code == 422, resp.text
+
+    async with async_session() as session:
+        audits = (
+            await session.execute(
+                select(AdminAuditLog).where(AdminAuditLog.action == "settings.update")
+            )
+        ).scalars().all()
+        assert audits == []
 
 
 async def test_settings_patch_rbac(client):
@@ -246,6 +280,79 @@ async def test_broadcasts_preview_and_send(client):
     async with async_session() as session:
         rows = (await session.execute(select(Broadcast))).scalars().all()
         assert len(rows) == 1
+
+
+async def test_broadcasts_count_inapp_delivery_when_dm_fails(client, monkeypatch):
+    import backend.app.routers.admin.broadcasts as broadcasts_mod
+
+    sent_dm_targets: list[int] = []
+
+    async def failed_dm(tg_user_id: int, _text: str) -> bool:
+        sent_dm_targets.append(tg_user_id)
+        return False
+
+    monkeypatch.setattr(broadcasts_mod, "bot_send_dm", failed_dm)
+
+    admin_init, _ = await _make_admin(client, tg=11)
+    await _bootstrap(client, tg_user_id=12, username="broadcast_recipient")
+
+    send = await client.post(
+        "/api/admin/broadcasts",
+        json={
+            "body": "Hello",
+            "audience_role": "regular",
+            "dispatch_inapp": True,
+            "dispatch_dm": True,
+        },
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert send.status_code == 200, send.text
+    payload = send.json()
+    assert payload["total_recipients"] == 1
+    assert payload["delivered_count"] == 1
+    assert payload["failed_count"] == 0
+    assert sent_dm_targets == [12]
+
+
+async def test_broadcasts_page_recipient_ids_in_chunks(client, monkeypatch):
+    import backend.app.routers.admin.broadcasts as broadcasts_mod
+
+    admin_init, _ = await _make_admin(client, tg=1)
+    for tg_user_id in range(2, 7):
+        await _bootstrap(client, tg_user_id=tg_user_id, username=f"chunk_{tg_user_id}")
+
+    monkeypatch.setattr(broadcasts_mod, "_CHUNK_SIZE", 2)
+    id_page_selects: list[str] = []
+
+    def before_cursor_execute(_conn, _cursor, statement, _parameters, _context, _executemany):
+        normalized = " ".join(statement.lower().split())
+        if (
+            normalized.startswith("select users.id from users")
+            and "order by users.id" in normalized
+        ):
+            id_page_selects.append(normalized)
+
+    engine = get_engine()
+    event.listen(engine.sync_engine, "before_cursor_execute", before_cursor_execute)
+    try:
+        send = await client.post(
+            "/api/admin/broadcasts",
+            json={
+                "body": "Hello",
+                "audience_role": "regular",
+                "dispatch_inapp": True,
+                "dispatch_dm": False,
+            },
+            headers=with_totp(auth_headers(admin_init)),
+        )
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", before_cursor_execute)
+
+    assert send.status_code == 200, send.text
+    assert send.json()["total_recipients"] >= 5
+    assert len(id_page_selects) >= 3
+    assert all(" limit " in statement for statement in id_page_selects)
+    assert all("users.id <=" in statement for statement in id_page_selects)
 
 
 async def test_broadcasts_audience_filter_role(client):
@@ -798,6 +905,21 @@ async def test_audit_log_lists_actions(client):
     assert resp.status_code == 200, resp.text
     assert resp.json()["total"] == 1
     assert resp.json()["items"][0]["action"] == "settings.update"
+
+
+async def test_audit_log_rejects_malformed_filters(client):
+    admin_init, _ = await _make_admin(client, tg=11)
+    headers = auth_headers(admin_init)
+
+    for params in (
+        {"actor_id": 0},
+        {"target_id": 0},
+        {"action": "settings update"},
+        {"target_type": "user profile"},
+        {"since": "2026-02-02T00:00:00", "until": "2026-02-01T00:00:00"},
+    ):
+        resp = await client.get("/api/admin/audit", params=params, headers=headers)
+        assert resp.status_code == 422, (params, resp.text)
 
 
 async def test_audit_log_rbac(client):

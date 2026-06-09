@@ -116,7 +116,27 @@ _DB_ERROR_LOG_INTERVAL_SECONDS = 60.0
 _db_error_log_state: dict[str, float | int] = {"next_emit_at": 0.0, "suppressed": 0}
 
 _cache: tuple[float, bool, str] | None = None
-_cache_lock = asyncio.Lock()
+_cache_lock: asyncio.Lock | None = None
+_cache_lock_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _get_cache_lock() -> asyncio.Lock:
+    """Return an event-loop-local lock for cache refreshes.
+
+    Pytest and some ASGI test clients run the same imported app across
+    multiple event loops. A module-level ``asyncio.Lock`` can bind to
+    whichever loop first has contention, then raise ``RuntimeError``
+    when another loop later contends on it. Production workers still
+    get one lock per loop; cross-loop refreshes may duplicate one DB
+    read, which is preferable to sharing asyncio primitives across
+    incompatible loops.
+    """
+    global _cache_lock, _cache_lock_loop
+    loop = asyncio.get_running_loop()
+    if _cache_lock is None or _cache_lock_loop is not loop:
+        _cache_lock = asyncio.Lock()
+        _cache_lock_loop = loop
+    return _cache_lock
 
 
 def invalidate_cache() -> None:
@@ -200,7 +220,7 @@ async def _get_maintenance() -> tuple[bool, str]:
     cached = _cache
     if cached is not None and cached[0] > now:
         return cached[1], cached[2]
-    async with _cache_lock:
+    async with _get_cache_lock():
         cached = _cache
         if cached is not None and cached[0] > time.monotonic():
             return cached[1], cached[2]

@@ -114,6 +114,48 @@ describe("<AdminSystemPage />", () => {
     expect(screen.getByText(/Версия: 1\.2\.3/)).toBeInTheDocument();
   });
 
+  it("renders string and malformed system numeric fields without crashing", () => {
+    mockState.data = makeStatus({
+      db_latency_ms: "1.25" as unknown as number,
+      redis_latency_ms: "1e1" as unknown as number,
+      uptime_seconds: "not-a-number" as unknown as number,
+    });
+    renderPage();
+
+    expect(screen.getByText("1.3ms")).toBeInTheDocument();
+    expect(screen.getAllByText("\u2014").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/10\.0ms/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+  });
+
+  it("renders malformed started_at as a neutral timestamp", () => {
+    mockState.data = makeStatus({ started_at: "not-a-date" });
+    renderPage();
+    expect(
+      screen.getAllByText((_, element) => Boolean(element?.textContent?.includes("(с \u2014)"))).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+  });
+
+  it("renders malformed operational alert counts as neutral values", () => {
+    mockState.data = makeStatus({
+      alerts: [
+        {
+          name: "usd_rates_missing",
+          severity: "warning",
+          count: "1e2" as unknown as number,
+          detail: "Missing USD rates",
+        },
+      ],
+    });
+
+    const { container } = renderPage();
+
+    expect(screen.getByText("Operational alerts")).toBeInTheDocument();
+    expect(container.textContent).toContain("usd_rates_missing · \u2014");
+    expect(container.textContent).not.toMatch(/1e2/);
+  });
+
   it("renders danger detail when redis is not configured", () => {
     mockState.data = makeStatus({
       redis_ok: false,

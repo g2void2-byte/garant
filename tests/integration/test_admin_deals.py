@@ -23,6 +23,7 @@ from sqlalchemy import select
 
 from backend.app.db import async_session
 from backend.app.models import (
+    AdminApprovalRequest,
     AdminAuditLog,
     Currency,
     Deal,
@@ -30,7 +31,9 @@ from backend.app.models import (
     DealStatus,
     User,
     UserBalance,
+    WalletLedgerEntry,
 )
+from backend.app.time_utils import utcnow
 from tests.helpers import (
     auth_headers,
     credit_balance,
@@ -141,6 +144,28 @@ async def test_admin_deals_list(client):
 
 async def test_admin_deals_filter_by_status(client):
     deal_id, *_ = await _make_deal(client)
+    buyer_init = signed_init_data(2011, "admin_topup_buyer")
+    seller_init = signed_init_data(2012, "admin_topup_seller")
+    await client.get("/api/me", headers=auth_headers(buyer_init))
+    await client.get("/api/me", headers=auth_headers(seller_init))
+
+    async with async_session() as session:
+        buyer_id = await get_user_id_by_tg(session, 2011)
+        seller_id = await get_user_id_by_tg(session, 2012)
+        usdt = (await session.execute(select(Currency).where(Currency.code == "USDT"))).scalar_one()
+        pending_topup = Deal(
+            buyer_id=buyer_id,
+            seller_id=seller_id,
+            description="pending topup admin filter",
+            status=DealStatus.pending_topup,
+            currency_id=usdt.id,
+            amount=Decimal("42"),
+            commission_amount=Decimal("2.10"),
+        )
+        session.add(pending_topup)
+        await session.flush()
+        pending_topup_id = pending_topup.id
+        await session.commit()
     admin_init = await _make_admin(client)
 
     resp = await client.get("/api/admin/deals?status=cancelled", headers=auth_headers(admin_init))
@@ -150,6 +175,18 @@ async def test_admin_deals_filter_by_status(client):
     resp = await client.get("/api/admin/deals?status=in_progress", headers=auth_headers(admin_init))
     assert resp.status_code == 200
     assert any(item["id"] == deal_id for item in resp.json()["items"])
+
+    resp = await client.get(
+        "/api/admin/deals?status=pending_topup", headers=auth_headers(admin_init)
+    )
+    assert resp.status_code == 200
+    assert any(item["id"] == pending_topup_id for item in resp.json()["items"])
+    assert all(item["status"] == "pending_topup" for item in resp.json()["items"])
+
+    resp = await client.get(
+        "/api/admin/deals?status=pending_payment", headers=auth_headers(admin_init)
+    )
+    assert resp.status_code == 422
 
 
 async def test_admin_deal_detail_balance_snapshot(client):
@@ -167,6 +204,65 @@ async def test_admin_deal_detail_balance_snapshot(client):
     # ``UserBalance.locked``.
     assert Decimal(detail["buyer"]["locked"]) == Decimal("100")
     assert any(ev["kind"] == "in_progress" for ev in detail["events"])
+
+
+async def test_admin_deal_detail_embeds_latest_message_page(client):
+    deal_id, *_ = await _make_deal(client)
+    async with async_session() as session:
+        deal = await session.get(Deal, deal_id)
+        assert deal is not None
+        rows = [
+            DealMessage(
+                deal_id=deal_id,
+                sender_id=deal.buyer_id,
+                text=f"admin detail seed {index}",
+            )
+            for index in range(60)
+        ]
+        session.add_all(rows)
+        await session.commit()
+        inserted_ids = [row.id for row in rows]
+
+    admin_init = await _make_admin(client)
+    resp = await client.get(f"/api/admin/deals/{deal_id}", headers=auth_headers(admin_init))
+    assert resp.status_code == 200, resp.text
+    messages = resp.json()["messages"]
+    assert len(messages) == 50
+    assert [msg["id"] for msg in messages] == inserted_ids[-50:]
+    assert messages[0]["text"] == "admin detail seed 10"
+    assert messages[-1]["text"] == "admin detail seed 59"
+
+
+async def test_admin_deal_approvals_list_paginates_and_exposes_total(client):
+    admin_init = await _make_admin(client, tg_id=9042, username="approval_admin")
+    target_id = 9042001
+
+    async with async_session() as session:
+        created_at = utcnow()
+        approvals = [
+            AdminApprovalRequest(
+                action="deal.force_release",
+                target_type="deal",
+                target_id=target_id,
+                status="pending",
+                created_at=created_at,
+                payload={"idx": idx},
+            )
+            for idx in range(205)
+        ]
+        session.add_all(approvals)
+        await session.flush()
+        expected_ids = [approvals[4].id, approvals[3].id, approvals[2].id]
+        await session.commit()
+
+    resp = await client.get(
+        "/api/admin/deals/approvals",
+        params={"target_id": target_id, "limit": 3, "offset": 200},
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 200, resp.text
+    assert int(resp.headers["X-Total-Count"]) == 205
+    assert [row["id"] for row in resp.json()] == expected_ids
 
 
 # ── force-release / refund / split ─────────────────────────────────────────
@@ -247,6 +343,48 @@ async def test_admin_split_deal(client):
     # 60% to buyer, 40% to seller; commission (5) retained by platform
     assert Decimal(detail["buyer"]["amount"]) >= Decimal("60")
     assert Decimal(detail["seller"]["amount"]) == Decimal("40")
+
+
+async def test_admin_split_preserves_decimal_percent_in_ledger(client):
+    deal_id, *_ = await _make_deal(client)
+    admin_init = await _make_admin(client)
+    resp = await client.post(
+        f"/api/admin/deals/{deal_id}/split",
+        json={"buyer_percent": "33.30", "reason": "decimal split"},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+
+    async with async_session() as session:
+        entries = (
+            await session.execute(
+                select(WalletLedgerEntry)
+                .where(
+                    WalletLedgerEntry.source_type == "deal",
+                    WalletLedgerEntry.source_id == deal_id,
+                    WalletLedgerEntry.event_type.in_(
+                        ("admin_deal.split.buyer", "admin_deal.split.seller")
+                    ),
+                )
+                .order_by(WalletLedgerEntry.event_type.asc())
+            )
+        ).scalars().all()
+
+    assert {entry.event_type for entry in entries} == {
+        "admin_deal.split.buyer",
+        "admin_deal.split.seller",
+    }
+    by_type = {entry.event_type: entry for entry in entries}
+    assert by_type["admin_deal.split.buyer"].meta == {"buyer_percent": "33.30"}
+    assert by_type["admin_deal.split.seller"].meta == {"buyer_percent": "33.30"}
+    assert Decimal(by_type["admin_deal.split.buyer"].amount_delta) == Decimal("33.30")
+    assert Decimal(by_type["admin_deal.split.seller"].amount_delta) == Decimal("66.70")
+
+    [audit] = await _audit_rows("deal.split")
+    assert audit.payload is not None
+    assert audit.payload["buyer_percent"] == "33.30"
+    assert audit.payload["buyer_share"] == "33.30"
+    assert audit.payload["seller_share"] == "66.70"
 
 
 async def test_admin_split_percent_out_of_range(client):

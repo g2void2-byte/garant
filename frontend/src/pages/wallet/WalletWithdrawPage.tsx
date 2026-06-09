@@ -19,8 +19,14 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { usePresence } from "@/lib/animate";
 import { cn } from "@/lib/cn";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
 import { formatCurrency } from "@/lib/format";
 import { haptic, openTelegramLink } from "@/lib/tg";
+import { buildTelegramUserUrl } from "@/lib/telegramLinks";
+import {
+  parseWalletBalanceDecimal,
+  walletBalanceDecimalInput,
+} from "@/lib/walletAmounts";
 
 type WithdrawMethod = "cryptobot" | "card";
 
@@ -56,7 +62,7 @@ export default function WalletWithdrawPage() {
   // Item 13 — ProfilePage's "Вывести" CTA can hint at a preferred
   // currency code via ``?currency=USD``; we honour it on first paint.
   const [searchParams] = useSearchParams();
-  const initialCode = (searchParams.get("currency") ?? "").toUpperCase();
+  const initialCode = normalizeCurrencyCode(searchParams.get("currency"));
 
   const [method, setMethod] = useState<WithdrawMethod>("cryptobot");
   const [cardOpen, setCardOpen] = useState(false);
@@ -65,7 +71,33 @@ export default function WalletWithdrawPage() {
   const [amount, setAmount] = useState<string>("");
 
   const eligible = useMemo(
-    () => (balances.data ?? []).filter((b) => b.amount > 0),
+    () => {
+      const seen = new Set<string>();
+      return (balances.data ?? []).flatMap((b) => {
+        const normalizedCode = normalizeCurrencyCode(b.currency.code);
+        const amount = parseWalletBalanceDecimal(b, "amount");
+        const amountInput = walletBalanceDecimalInput(b, "amount");
+        if (
+          b.currency.kind !== "fiat" ||
+          !normalizedCode ||
+          seen.has(normalizedCode) ||
+          amount === null ||
+          amount <= 0 ||
+          amountInput === null
+        ) {
+          return [];
+        }
+        seen.add(normalizedCode);
+        return [
+          {
+            ...b,
+            amount,
+            amount_str: amountInput,
+            currency: { ...b.currency, code: normalizedCode },
+          },
+        ];
+      });
+    },
     [balances.data],
   );
   const current = useMemo(
@@ -348,12 +380,13 @@ function MethodTile({ icon, label, active, onClick }: MethodTileProps) {
 interface CardWithdrawModalProps {
   open: boolean;
   onClose: () => void;
-  admins: { username: string }[];
+  admins: { username: string | null }[];
 }
 
 function CardWithdrawModal({ open, onClose, admins }: CardWithdrawModalProps) {
   const { mounted, visible } = usePresence(open, 220);
   const adminUsername = admins[0]?.username;
+  const adminContactUrl = buildTelegramUserUrl(adminUsername);
 
   useEffect(() => {
     if (!open) return;
@@ -365,9 +398,9 @@ function CardWithdrawModal({ open, onClose, admins }: CardWithdrawModalProps) {
   }, [open, onClose]);
 
   function writeAdmin() {
-    if (!adminUsername) return;
+    if (!adminContactUrl) return;
     haptic("medium");
-    openTelegramLink(`https://t.me/${adminUsername}`);
+    openTelegramLink(adminContactUrl);
     onClose();
   }
 
@@ -441,13 +474,13 @@ function CardWithdrawModal({ open, onClose, admins }: CardWithdrawModalProps) {
             <Button
               size="md"
               onClick={writeAdmin}
-              disabled={!adminUsername}
+              disabled={!adminContactUrl}
               className="!h-11"
             >
               Написать админу
             </Button>
           </div>
-          {!adminUsername && (
+          {!adminContactUrl && (
             <p className="mt-3 text-[12px] text-danger">
               Контакт администратора пока недоступен. Попробуйте позже.
             </p>

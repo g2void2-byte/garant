@@ -35,7 +35,7 @@ from decimal import Decimal
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -277,6 +277,7 @@ async def list_users(
 ) -> AdminUserListOut:
     stmt = select(User)
     count_stmt = select(func.count()).select_from(User)
+    exact_match_priority = None
 
     if q:
         q_clean = q.strip().lstrip("@")
@@ -289,6 +290,18 @@ async def list_users(
             conditions.append(User.tg_user_id == int(q_clean))
         stmt = stmt.where(or_(*conditions))
         count_stmt = count_stmt.where(or_(*conditions))
+        if q_clean:
+            q_lower = q_clean.lower()
+            exact_conditions: list[Any] = [
+                func.lower(User.username) == q_lower,
+                func.lower(User.display_name) == q_lower,
+            ]
+            if q_clean.isdigit():
+                exact_conditions.append(User.tg_user_id == int(q_clean))
+            # Admin user search feeds exact username lookups in deal arbitration.
+            # Keep exact hits on the first page even when many newer partial
+            # matches share the same substring.
+            exact_match_priority = case((or_(*exact_conditions), 0), else_=1)
 
     role_filter = {
         "admin": User.is_admin.is_(True),
@@ -310,14 +323,17 @@ async def list_users(
         count_stmt = count_stmt.where(status_filter)
 
     order_clause = {
-        "created_desc": User.created_at.desc(),
-        "created_asc": User.created_at.asc(),
+        "created_desc": (User.created_at.desc(), User.id.desc()),
+        "created_asc": (User.created_at.asc(), User.id.asc()),
         "rating": (
             func.coalesce(User.rating_manual, 0).desc(),
             User.good.desc(),
+            User.id.desc(),
         ),
-        "deals": User.deals_total.desc(),
+        "deals": (User.deals_total.desc(), User.id.desc()),
     }[sort]
+    if exact_match_priority is not None:
+        stmt = stmt.order_by(exact_match_priority)
     if isinstance(order_clause, tuple):
         stmt = stmt.order_by(*order_clause)
     else:
@@ -358,11 +374,12 @@ async def ban_user(
 
     # Idempotent — re-banning a banned user only updates the reason if
     # provided; never writes a duplicate audit row in that case.
+    reason_requested = "reason" in body.model_fields_set
     changed = False
     if not target.is_banned:
         target.is_banned = True
         changed = True
-    if body.reason is not None and target.ban_reason != body.reason:
+    if reason_requested and target.ban_reason != body.reason:
         target.ban_reason = body.reason
         changed = True
 
@@ -419,11 +436,12 @@ async def freeze_user(
     target = await _get_user_or_404(session, user_id)
     await _ensure_not_self(admin, target)
 
+    reason_requested = "reason" in body.model_fields_set
     changed = False
     if not target.is_frozen:
         target.is_frozen = True
         changed = True
-    if body.reason is not None and target.freeze_reason != body.reason:
+    if reason_requested and target.freeze_reason != body.reason:
         target.freeze_reason = body.reason
         changed = True
 
@@ -620,9 +638,23 @@ async def set_role(
     """
     target = await _get_user_or_404(session, user_id)
 
-    will_change_admin = target.is_admin != body.is_admin
-    will_change_arbiter = target.is_arbiter != body.is_arbiter
-    will_change_vip = target.is_vip != body.is_vip
+    requested_fields = body.model_fields_set
+    if not requested_fields:
+        raise HTTPException(400, "Нет изменений")
+
+    before = {
+        "is_admin": target.is_admin,
+        "is_arbiter": target.is_arbiter,
+        "is_vip": target.is_vip,
+    }
+    after = before.copy()
+    for field in ("is_admin", "is_arbiter", "is_vip"):
+        if field in requested_fields:
+            after[field] = getattr(body, field)
+
+    will_change_admin = before["is_admin"] != after["is_admin"]
+    will_change_arbiter = before["is_arbiter"] != after["is_arbiter"]
+    will_change_vip = before["is_vip"] != after["is_vip"]
     if admin.id == target.id and (will_change_admin or will_change_arbiter or will_change_vip):
         # Self-demotion is the only "self" action that is special-cased
         # because it can lock the caller out. The arbiter / VIP self-flips
@@ -631,7 +663,7 @@ async def set_role(
         # second admin signing off.
         raise HTTPException(400, "Запрещено менять собственные роли")
 
-    if will_change_admin and not body.is_admin:
+    if will_change_admin and not after["is_admin"]:
         await _ensure_not_last_admin(session, target)
 
     # Audit M-2 — compare before/after BEFORE touching ``target`` so a
@@ -642,21 +674,11 @@ async def set_role(
     # which is a fragile invariant to rely on. This matches the
     # ``set_rating`` shape directly below, which checks first then
     # writes.
-    before = {
-        "is_admin": target.is_admin,
-        "is_arbiter": target.is_arbiter,
-        "is_vip": target.is_vip,
-    }
-    after = {
-        "is_admin": body.is_admin,
-        "is_arbiter": body.is_arbiter,
-        "is_vip": body.is_vip,
-    }
     if before == after:
         return _to_detail(target, has_pin=await _has_pin(target))
-    target.is_admin = body.is_admin
-    target.is_arbiter = body.is_arbiter
-    target.is_vip = body.is_vip
+    target.is_admin = after["is_admin"]
+    target.is_arbiter = after["is_arbiter"]
+    target.is_vip = after["is_vip"]
 
     await _audit_and_notify(
         session=session,

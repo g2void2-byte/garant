@@ -4,12 +4,26 @@ import type { ServiceDto } from "@/api/types";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { staggerDelay } from "@/lib/animate";
+import { normalizeUsernameRef } from "@/lib/usernames";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 
 const STATUS_BADGE: Record<string, { text: string; cls: string }> = {
   draft: { text: "Черновик", cls: "bg-panel-2 text-text-muted" },
   paused: { text: "На паузе", cls: "bg-panel-2 text-text-muted" },
   banned: { text: "Заблокировано", cls: "bg-danger/15 text-danger" },
 };
+
+const UNKNOWN_SERVICE_STATUS_BADGE = {
+  text: "Статус неизвестен",
+  cls: "bg-panel-2 text-text-muted",
+};
+
+function getServiceStatusBadge(status: unknown): { text: string; cls: string } | null {
+  if (status === "active") return null;
+  return typeof status === "string"
+    ? STATUS_BADGE[status] ?? UNKNOWN_SERVICE_STATUS_BADGE
+    : UNKNOWN_SERVICE_STATUS_BADGE;
+}
 
 export function ServiceCard({
   service,
@@ -20,14 +34,28 @@ export function ServiceCard({
   index?: number;
   rightSlot?: React.ReactNode;
 }) {
-  const badge = STATUS_BADGE[service.status];
+  const badge = getServiceStatusBadge(service.status);
+  const serviceId = parsePositiveIntValue(service.id);
+  const ownerUsername = normalizeUsernameRef(service.owner_username);
+  const ownerLabel = ownerUsername
+    ? `@${ownerUsername}`
+    : "Владелец недоступен";
+  const serviceRoute = serviceId !== undefined ? `/services/${serviceId}` : "#";
   return (
     <div
       className="bg-panel border border-border rounded-card p-3 animate-fadein"
       style={staggerDelay(index)}
     >
       <div className="flex items-start gap-3">
-        <Link to={`/services/${service.id}`} className="flex-1 min-w-0">
+        <Link
+          to={serviceRoute}
+          aria-disabled={serviceId === undefined}
+          onClick={serviceId === undefined ? (event) => event.preventDefault() : undefined}
+          className={cn(
+            "flex-1 min-w-0",
+            serviceId === undefined && "cursor-not-allowed opacity-70",
+          )}
+        >
           <div className="flex items-center gap-2">
             <div className="text-[11px] uppercase tracking-wide text-text-muted">
               {service.category.name}
@@ -48,7 +76,7 @@ export function ServiceCard({
             <div className="mt-1 text-sm text-text-muted line-clamp-2">{service.description}</div>
           )}
           <div className="mt-2 flex items-center gap-2 text-xs text-text-muted">
-            <span>@{service.owner_username}</span>
+            <span>{ownerLabel}</span>
             <span>·</span>
             <span className="text-accent font-semibold">{formatMoney(service.price)}</span>
           </div>

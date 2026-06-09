@@ -63,7 +63,7 @@ export function TotpGate() {
 
   async function submit() {
     const trimmed = code.trim();
-    if (!/^\d{6,8}$/.test(trimmed)) {
+    if (!/^\d{6}$/.test(trimmed)) {
       toast.show({
         kind: "error",
         title: "Введите код 2FA",
@@ -103,10 +103,10 @@ export function TotpGate() {
         <Input
           inputMode="numeric"
           autoComplete="one-time-code"
-          pattern="[0-9]{6,8}"
-          maxLength={8}
+          pattern="[0-9]{6}"
+          maxLength={6}
           value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
           placeholder="123456"
           aria-label="Код 2FA"
         />

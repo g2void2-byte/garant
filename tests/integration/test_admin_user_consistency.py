@@ -204,6 +204,78 @@ async def test_user_can_set_display_currency_code(client):
     assert me.json()["display_currency_code"] == "UAH"
 
 
+async def test_user_can_clear_nullable_profile_fields(client):
+    """``PATCH /api/me`` treats explicit null/empty values as clears.
+
+    Omitted fields remain no-ops, but keys that are present with
+    ``null`` must not be collapsed into the same branch as omitted keys.
+    """
+    init = signed_init_data(11, "clearable")
+    await _bootstrap(client, tg_user_id=11, username="clearable")
+
+    resp = await client.patch(
+        "/api/me",
+        json={
+            "banner_url": "/media/banner/current.png",
+            "photo_url": "https://cdn.example.test/avatar.png",
+            "country": "us",
+            "display_currency_code": "uah",
+        },
+        headers=auth_headers(init),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["banner_url"] == "/media/banner/current.png"
+    assert body["photo_url"] == "https://cdn.example.test/avatar.png"
+    assert body["country"] == "US"
+    assert body["display_currency_code"] == "UAH"
+
+    resp = await client.patch(
+        "/api/me",
+        json={"description": "unchanged nullable fields"},
+        headers=auth_headers(init),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["banner_url"] == "/media/banner/current.png"
+    assert body["photo_url"] == "https://cdn.example.test/avatar.png"
+    assert body["country"] == "US"
+    assert body["display_currency_code"] == "UAH"
+
+    resp = await client.patch(
+        "/api/me",
+        json={
+            "banner_url": None,
+            "photo_url": None,
+            "country": None,
+            "display_currency_code": None,
+        },
+        headers=auth_headers(init),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["banner_url"] is None
+    assert body["photo_url"] is None
+    assert body["country"] is None
+    assert body["display_currency_code"] is None
+
+    resp = await client.patch(
+        "/api/me",
+        json={"country": "de", "display_currency_code": "rub"},
+        headers=auth_headers(init),
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.patch(
+        "/api/me",
+        json={"country": "", "display_currency_code": ""},
+        headers=auth_headers(init),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["country"] is None
+    assert resp.json()["display_currency_code"] is None
+
+
 async def test_user_display_currency_rejects_crypto(client):
     """The closed set is ``Currency.kind == 'fiat'``; a crypto code is
     rejected with a 400 so a stale frontend can't strand the column

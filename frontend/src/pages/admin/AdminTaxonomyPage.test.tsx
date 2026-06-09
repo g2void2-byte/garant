@@ -114,6 +114,8 @@ function makeCurrency(
     min_withdraw: 10,
     is_active: true,
     sort_order: 0,
+    address_regex: "",
+    kind: "crypto",
     ...overrides,
   };
 }
@@ -166,6 +168,22 @@ describe("<AdminTaxonomyPage />", () => {
     expect(screen.queryByText("Games")).not.toBeInTheDocument();
   });
 
+  it("renders malformed currency limits as neutral values", () => {
+    mockState.categories = [makeCategory()];
+    mockState.currencies = [
+      makeCurrency({
+        min_deposit: "1e2" as unknown as number,
+        min_withdraw: "0x10" as unknown as number,
+      }),
+    ];
+
+    const { container } = renderPage("/admin/taxonomy?tab=currencies");
+
+    expect(screen.getByText("USDT")).toBeInTheDocument();
+    expect(container.textContent).toContain("\u2014/\u2014");
+    expect(container.textContent).not.toMatch(/1e2|0x10/);
+  });
+
   it("shows empty-state copy when categories list is empty", () => {
     mockState.categories = [];
     renderPage();
@@ -195,6 +213,29 @@ describe("<AdminTaxonomyPage />", () => {
     confirmSpy.mockRestore();
   });
 
+  it("normalizes string category ids before delete mutation", async () => {
+    mockState.categories = [makeCategory({ id: "7" as unknown as number })];
+    mockState.delCategory.mutateAsync.mockResolvedValue({});
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByText("×"));
+    await waitFor(() =>
+      expect(mockState.delCategory.mutateAsync).toHaveBeenCalledWith(7),
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it("does not expose category delete for malformed runtime ids", () => {
+    mockState.categories = [makeCategory({ id: "0x7" as unknown as number })];
+
+    renderPage();
+
+    expect(screen.queryByText("×")).not.toBeInTheDocument();
+    expect(mockState.delCategory.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it("currency delete with confirm fires mutation and toasts", async () => {
     mockState.categories = [makeCategory()];
     mockState.currencies = [makeCurrency()];
@@ -211,6 +252,31 @@ describe("<AdminTaxonomyPage />", () => {
       expect.objectContaining({ kind: "info", title: "РЈРґР°Р»РµРЅРѕ" }),
     );
     confirmSpy.mockRestore();
+  });
+
+  it("normalizes string currency ids before delete mutation", async () => {
+    mockState.categories = [makeCategory()];
+    mockState.currencies = [makeCurrency({ id: "8" as unknown as number })];
+    mockState.delCurrency.mutateAsync.mockResolvedValue({});
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const user = userEvent.setup();
+    renderPage("/admin/taxonomy?tab=currencies");
+
+    await user.click(screen.getByText("Г—"));
+    await waitFor(() =>
+      expect(mockState.delCurrency.mutateAsync).toHaveBeenCalledWith(8),
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it("does not expose currency delete for malformed runtime ids", () => {
+    mockState.categories = [makeCategory()];
+    mockState.currencies = [makeCurrency({ id: "0x8" as unknown as number })];
+
+    renderPage("/admin/taxonomy?tab=currencies");
+
+    expect(screen.queryByText("Г—")).not.toBeInTheDocument();
+    expect(mockState.delCurrency.mutateAsync).not.toHaveBeenCalled();
   });
 
   it("category 'Добавить' opens an empty new-category form", async () => {
@@ -257,5 +323,52 @@ describe("<AdminTaxonomyPage />", () => {
     const codeInput = (await screen.findAllByRole("textbox"))[0];
     fireEvent.change(codeInput, { target: { value: "btc" } });
     expect((codeInput as HTMLInputElement).value).toBe("BTC");
+  });
+
+  it("blocks ambiguous currency numeric fields", async () => {
+    mockState.categories = [];
+    mockState.currencies = [];
+    const user = userEvent.setup();
+    renderPage("/admin/taxonomy?tab=currencies");
+    await user.click(screen.getByRole("button", { name: /Добавить/ }));
+
+    const inputs = await screen.findAllByRole("textbox");
+    fireEvent.change(inputs[0], { target: { value: "btc" } });
+    fireEvent.change(inputs[3], { target: { value: "1e2" } });
+
+    expect(screen.getByText("Введите целое число 0..8")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Сохранить" })).toBeDisabled();
+    expect(mockState.upsertCurrency.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("currency save sends decimal limits as exact strings", async () => {
+    mockState.categories = [];
+    mockState.currencies = [];
+    mockState.upsertCurrency.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage("/admin/taxonomy?tab=currencies");
+    await user.click(screen.getByRole("button", { name: /Добавить/ }));
+
+    const inputs = await screen.findAllByRole("textbox");
+    fireEvent.change(inputs[0], { target: { value: "btc" } });
+    fireEvent.change(inputs[1], { target: { value: " Bitcoin " } });
+    fireEvent.change(inputs[2], { target: { value: " mainnet " } });
+    fireEvent.change(inputs[3], { target: { value: "8" } });
+    fireEvent.change(inputs[4], { target: { value: "0.123456789123456789" } });
+    fireEvent.change(inputs[5], { target: { value: ".987654321987654321" } });
+
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() =>
+      expect(mockState.upsertCurrency.mutateAsync).toHaveBeenCalledWith({
+        code: "BTC",
+        name: "Bitcoin",
+        network: "mainnet",
+        decimals: 8,
+        min_deposit: "0.123456789123456789",
+        min_withdraw: ".987654321987654321",
+        is_active: true,
+      }),
+    );
   });
 });

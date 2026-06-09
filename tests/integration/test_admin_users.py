@@ -135,6 +135,44 @@ async def test_users_list_search_by_username(client):
     assert any(i["username"] == "carol" for i in items)
 
 
+async def test_users_list_search_ranks_exact_username_before_newer_partial_matches(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    exact_id = await _bootstrap(client, tg_user_id=100, username="arbiter_target")
+    for i in range(25):
+        await _bootstrap(client, tg_user_id=200 + i, username=f"new_arbiter_target_{i:02d}")
+
+    resp = await client.get(
+        "/api/admin/users?q=arbiter_target&page_size=1",
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] >= 26
+    assert [item["id"] for item in body["items"]] == [exact_id]
+
+
+async def test_users_list_search_ranks_exact_tg_id_before_partial_text_matches(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    exact_id = await _bootstrap(client, tg_user_id=777777, username="numeric_target")
+    for i in range(25):
+        await _bootstrap(client, tg_user_id=300 + i, username=f"new_777777_{i:02d}")
+
+    resp = await client.get(
+        "/api/admin/users?q=777777&page_size=1",
+        headers=auth_headers(admin_init),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] >= 26
+    assert [item["id"] for item in body["items"]] == [exact_id]
+
+
 async def test_users_list_filter_by_role_vip(client):
     admin_init = signed_init_data(1, "admin")
     admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
@@ -236,6 +274,26 @@ async def test_ban_user_idempotent(client):
     assert await _audit_count("user.ban") == 0
 
 
+async def test_reban_with_null_reason_clears_existing_reason(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    await _set_flags(target_id, is_banned=True, ban_reason="old reason")
+
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/ban",
+        json={"reason": None},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["is_banned"] is True
+    assert body["ban_reason"] is None
+    assert await _audit_count("user.ban") == 1
+
+
 async def test_ban_self_forbidden(client):
     admin_init = signed_init_data(1, "admin")
     admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
@@ -287,6 +345,25 @@ async def test_freeze_user(client):
     body = resp.json()
     assert body["is_frozen"] is True
     assert body["freeze_reason"] == "Подозрительная активность"
+
+async def test_refreeze_with_null_reason_clears_existing_reason(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    await _set_flags(target_id, is_frozen=True, freeze_reason="old reason")
+
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/freeze",
+        json={"reason": None},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["is_frozen"] is True
+    assert body["freeze_reason"] is None
+    assert await _audit_count("user.freeze") == 1
 
 
 # ── Reset PIN ──────────────────────────────────────────────────────────────
@@ -436,6 +513,50 @@ async def test_set_role_grants_vip(client):
     assert body["is_arbiter"] is False
 
 
+async def test_set_role_partial_update_preserves_unmentioned_flags(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    await _set_flags(target_id, is_arbiter=True, is_vip=True)
+
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/role",
+        json={"is_admin": True},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["is_admin"] is True
+    assert body["is_arbiter"] is True
+    assert body["is_vip"] is True
+
+
+async def test_set_role_empty_body_rejected_without_mutation(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+    await _set_flags(target_id, is_arbiter=True, is_vip=True)
+
+    resp = await client.post(
+        f"/api/admin/users/{target_id}/role",
+        json={},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+
+    assert resp.status_code == 400, resp.text
+    async with async_session() as session:
+        target = await session.get(User, target_id)
+        assert target is not None
+        assert target.is_admin is False
+        assert target.is_arbiter is True
+        assert target.is_vip is True
+
+
 async def test_set_role_self_demotion_forbidden(client):
     admin_init = signed_init_data(1, "admin")
     admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
@@ -578,6 +699,22 @@ async def test_set_stats_rejects_negative(client):
     assert resp.status_code == 422
 
 
+async def test_set_stats_rejects_explicit_null_noop_fields(client):
+    admin_init = signed_init_data(1, "admin")
+    admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+    await _set_flags(admin_id, is_admin=True)
+
+    target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+
+    for payload in ({"deals_total": None}, {"deals_sum_override": None}):
+        resp = await client.post(
+            f"/api/admin/users/{target_id}/stats",
+            json=payload,
+            headers=with_totp(auth_headers(admin_init)),
+        )
+        assert resp.status_code == 422, resp.text
+
+
 async def test_set_stats_rejects_deposit_total(client):
     """``POST /api/admin/users/:id/stats`` no longer accepts
     ``deposit_total`` — the column was retired together with the
@@ -596,13 +733,7 @@ async def test_set_stats_rejects_deposit_total(client):
         json={"deposit_total": 1250.50},
         headers=with_totp(auth_headers(admin_init)),
     )
-    # Pydantic ignores unknown keys by default (the schema is not
-    # ``model_config = ConfigDict(extra="forbid")``). The request
-    # therefore succeeds but writes nothing — assert the response
-    # body does not carry a ``deposit_total`` field at all (the
-    # admin detail DTO no longer declares it).
-    assert resp.status_code == 200
-    assert "deposit_total" not in resp.json()
+    assert resp.status_code == 422, resp.text
 
 
 # ── Item 11: public DTO breakdown ──────────────────────────────────────────

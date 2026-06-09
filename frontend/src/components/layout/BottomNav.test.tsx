@@ -69,6 +69,13 @@ describe("<BottomNav />", () => {
     expect(screen.getByText("99+")).toBeInTheDocument();
   });
 
+  it("does not coerce malformed unread counters into a badge", () => {
+    mockState.counters = { unread: "1e2" as unknown as number, by_type: {} };
+    renderAt("/search");
+    expect(screen.queryByText("99+")).not.toBeInTheDocument();
+    expect(screen.queryByText("1e2")).not.toBeInTheDocument();
+  });
+
   it("fires haptic('light') when a tab is tapped", async () => {
     const user = userEvent.setup();
     renderAt("/search");

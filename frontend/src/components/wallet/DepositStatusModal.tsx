@@ -17,7 +17,10 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { usePresence } from "@/lib/animate";
-import { formatCurrency } from "@/lib/format";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
+import { formatPaymentProvider } from "@/lib/paymentProviders";
+import { formatCurrency, parseDecimalValue } from "@/lib/format";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 import { haptic, openPaymentLink } from "@/lib/tg";
 import type { WalletDepositDto } from "@/api/types";
 
@@ -119,23 +122,33 @@ export function DepositStatusModal({
   const qc = useQueryClient();
   const { mounted, visible } = usePresence(open, 200);
   const initial = deposit ?? null;
-  const query = useWalletDeposit(open ? initial?.id : undefined);
+  const initialDepositId = parsePositiveIntValue(initial?.id);
+  const query = useWalletDeposit(open ? initialDepositId : undefined);
   const current = isValidDeposit(query.data) ? query.data : initial;
+  const currentDepositId = parsePositiveIntValue(current?.id);
+  const currentAmountValue = parseDecimalValue(current?.amount);
+  const canAutoOpenProvider =
+    current?.status === "pending" &&
+    !!current.pay_url &&
+    currentAmountValue !== null &&
+    currentAmountValue > 0;
 
   // Track which deposit we've already auto-opened so reopening the
   // modal for a different deposit fires the timer again, but a
   // background refetch on the same deposit doesn't reopen the
   // already-shown invoice in the user's browser.
-  const autoOpenedRef = useRef<number | null>(null);
+  const autoOpenedRef = useRef<number | string | null>(null);
   useEffect(() => {
-    if (!open || !initial?.pay_url) return;
-    if (autoOpenedRef.current === initial.id) return;
-    autoOpenedRef.current = initial.id;
+    if (!open || !current?.pay_url || !canAutoOpenProvider) return;
+    const autoOpenKey = currentDepositId ?? current.pay_url;
+    if (autoOpenedRef.current === autoOpenKey) return;
+    autoOpenedRef.current = autoOpenKey;
+    const payUrl = current.pay_url;
     const t = setTimeout(() => {
-      if (initial.pay_url) openPayUrl(initial.pay_url);
+      openPayUrl(payUrl);
     }, autoOpenDelayMs);
     return () => clearTimeout(t);
-  }, [open, initial?.id, initial?.pay_url, autoOpenDelayMs]);
+  }, [open, currentDepositId, current?.pay_url, canAutoOpenProvider, autoOpenDelayMs]);
 
   // Auto-close shortly after a successful payment so the user sees
   // the "Оплачено" state, the success haptic fires, and then they're
@@ -219,8 +232,14 @@ export function DepositStatusModal({
   const badge = badgeFor(current.status);
   const isPending = current.status === "pending";
   const decimals = current.currency.decimals;
-  const providerLabel =
-    current.provider === "crystalpay" ? "Crystalpay" : "CryptoBot";
+  const currencyCode = normalizeCurrencyCode(current.currency.code) ?? "USD";
+  const providerLabel = formatPaymentProvider(current.provider);
+  const formattedAmount =
+    currentAmountValue !== null && currentAmountValue >= 0
+      ? formatCurrency(currentAmountValue, currencyCode, decimals)
+      : `\u2014 ${currencyCode}`;
+  const canOpenProvider =
+    isPending && !!current.pay_url && currentAmountValue !== null && currentAmountValue > 0;
 
   const body = (
     <div role="dialog" aria-modal="true" aria-labelledby="deposit-status-title">
@@ -255,7 +274,7 @@ export function DepositStatusModal({
                 Пополнение баланса
               </h2>
               <p className="text-[12px] text-text-muted">
-                {providerLabel} · {formatCurrency(current.amount, current.currency.code, decimals)}
+                {providerLabel} · {formattedAmount}
               </p>
             </div>
             <button
@@ -312,7 +331,7 @@ export function DepositStatusModal({
             <div className="rounded-xl border border-border bg-secondary/30 px-3 py-2">
               <div className="text-text-muted">Сумма</div>
               <div className="text-text font-medium">
-                {formatCurrency(current.amount, current.currency.code, decimals)}
+                {formattedAmount}
               </div>
             </div>
             <button
@@ -346,8 +365,10 @@ export function DepositStatusModal({
             </button>
             <Button
               size="md"
-              onClick={() => current.pay_url && openPayUrl(current.pay_url)}
-              disabled={!isPending || !current.pay_url}
+              onClick={() => {
+                if (canOpenProvider && current.pay_url) openPayUrl(current.pay_url);
+              }}
+              disabled={!canOpenProvider}
               className="!h-11"
             >
               <ExternalLink className="size-4" />

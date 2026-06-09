@@ -3,11 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Users, Handshake, DollarSign } from "lucide-react";
 import { api } from "@/api/client";
 import { qk } from "@/api/queryKeys";
+import { parseDecimalValue, parseNonNegativeIntegerValue } from "@/lib/format";
 
 interface PublicStats {
-  users: number;
-  deals: number;
-  total_usd: number;
+  users: unknown;
+  deals: unknown;
+  total_usd: unknown;
 }
 
 /** Smoothly count from 0 to ``target`` over ~1.2s. */
@@ -15,18 +16,22 @@ function useCountUp(target: number, durationMs = 1200): number {
   const [value, setValue] = useState(0);
   const rafRef = useRef<number | null>(null);
   const startRef = useRef<number | null>(null);
-  const startValueRef = useRef(0);
+  const valueRef = useRef(0);
 
   useEffect(() => {
-    startValueRef.current = value;
+    valueRef.current = value;
+  }, [value]);
+
+  useEffect(() => {
+    const startValue = valueRef.current;
     startRef.current = null;
     const animate = (now: number) => {
       if (startRef.current === null) startRef.current = now;
       const t = Math.min(1, (now - startRef.current) / durationMs);
       // ease-out cubic
       const eased = 1 - Math.pow(1 - t, 3);
-      const next =
-        startValueRef.current + (target - startValueRef.current) * eased;
+      const next = startValue + (target - startValue) * eased;
+      valueRef.current = next;
       setValue(next);
       if (t < 1) rafRef.current = requestAnimationFrame(animate);
     };
@@ -34,7 +39,6 @@ function useCountUp(target: number, durationMs = 1200): number {
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target, durationMs]);
 
   return value;
@@ -72,6 +76,18 @@ function formatUsd(n: number): string {
     }) +
     "M"
   );
+}
+
+function parsePublicCount(value: unknown): number {
+  return parseNonNegativeIntegerValue(value) ?? 0;
+}
+
+function parsePublicUsd(value: unknown): number {
+  if (value !== null && value !== undefined && typeof value !== "number" && typeof value !== "string") {
+    return 0;
+  }
+  const parsed = parseDecimalValue(value);
+  return parsed !== null && parsed >= 0 ? parsed : 0;
 }
 
 interface StatsBadgeProps {
@@ -117,9 +133,9 @@ export function StatsBadge({
   const data = stats ?? query.data;
   const isLoading = stats === undefined && query.isLoading;
 
-  const users = useCountUp(data?.users ?? 0);
-  const deals = useCountUp(data?.deals ?? 0);
-  const usd = useCountUp(data?.total_usd ?? 0);
+  const users = useCountUp(parsePublicCount(data?.users));
+  const deals = useCountUp(parsePublicCount(data?.deals));
+  const usd = useCountUp(parsePublicUsd(data?.total_usd));
 
   const isHero = variant === "hero";
 

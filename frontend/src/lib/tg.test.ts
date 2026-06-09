@@ -81,7 +81,9 @@ async function importTgWithFake(platform: string) {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   (window as unknown as { Telegram?: { WebApp: FakeWebApp } }).Telegram = undefined;
+  window.localStorage.clear();
   vi.resetModules();
 });
 
@@ -217,6 +219,14 @@ describe("getInitData", () => {
     expect(mod.getInitData()).toBe("dev-fallback-token");
     window.localStorage.clear();
   });
+
+  it("ignores the dev fallback when localStorage reads are blocked", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("blocked", "SecurityError");
+    });
+    const { mod } = await importTgWithFake("ios");
+    expect(mod.getInitData()).toBe("");
+  });
 });
 
 describe("getTelegramUser", () => {
@@ -235,6 +245,18 @@ describe("getTelegramUser", () => {
 });
 
 describe("openExternalLink", () => {
+  it("exposes the shared http(s)-only URL predicate for direct-link renderers", async () => {
+    vi.resetModules();
+    const mod = await import("./tg");
+    expect(mod.isSafeExternalLink("https://example.com/pay")).toBe(true);
+    expect(mod.isSafeExternalLink("http://example.com/pay")).toBe(true);
+    expect(mod.isSafeExternalLink("https://example.com/%20pay")).toBe(true);
+    expect(mod.isSafeExternalLink("javascript:alert(1)")).toBe(false);
+    expect(mod.isSafeExternalLink("https://example.com@evil.example/pay")).toBe(false);
+    expect(mod.isSafeExternalLink("https://user:pass@example.com/pay")).toBe(false);
+    expect(mod.isSafeExternalLink("https://example.com/pay\nnext")).toBe(false);
+  });
+
   it("delegates to Telegram.WebApp.openLink when available", async () => {
     const { fake, mod } = await importTgWithFake("ios");
     mod.openExternalLink("https://example.com");
@@ -257,6 +279,9 @@ describe("openExternalLink", () => {
     ["data:text/html,<script>alert(1)</script>"],
     ["vbscript:msgbox"],
     ["file:///etc/passwd"],
+    ["https://example.com@evil.example/pay"],
+    ["https://user:pass@example.com/pay"],
+    ["https://example.com/pay\nnext"],
     ["not-a-url"],
     [""],
   ])("refuses to open unsafe URL %s", async (badUrl) => {
@@ -283,6 +308,25 @@ describe("openExternalLink", () => {
   });
 });
 
+describe("openPaymentLink", () => {
+  it("routes Telegram invoice URLs through openTelegramLink even with an explicit default port", async () => {
+    const { fake, mod } = await importTgWithFake("ios");
+    mod.openPaymentLink("https://t.me:443/CryptoBot?start=invoice");
+    expect(fake.openTelegramLink).toHaveBeenCalledWith("https://t.me/CryptoBot?start=invoice");
+    expect(fake.openLink).not.toHaveBeenCalled();
+  });
+
+  it("refuses invoice URLs with embedded credentials", async () => {
+    const { fake, mod } = await importTgWithFake("ios");
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    mod.openPaymentLink("https://t.me@evil.example/CryptoBot?start=invoice");
+    expect(fake.openTelegramLink).not.toHaveBeenCalled();
+    expect(fake.openLink).not.toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalled();
+    openSpy.mockRestore();
+  });
+});
+
 describe("openTelegramLink", () => {
   it("delegates to Telegram.WebApp.openTelegramLink when available", async () => {
     const { fake, mod } = await importTgWithFake("ios");
@@ -295,11 +339,29 @@ describe("openTelegramLink", () => {
     vi.resetModules();
     const mod = await import("./tg");
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
-    mod.openTelegramLink("https://example.com");
+    mod.openTelegramLink("https://t.me/test");
     // Audit M-7 — the fallback path opens links outside Telegram (desktop
     // preview / tests). We must pass ``noopener,noreferrer`` so the target
     // page can't reach back through ``window.opener``.
-    expect(openSpy).toHaveBeenCalledWith("https://example.com", "_blank", "noopener,noreferrer");
+    expect(openSpy).toHaveBeenCalledWith("https://t.me/test", "_blank", "noopener,noreferrer");
+    openSpy.mockRestore();
+  });
+
+  it("refuses non-t.me http(s) URLs", async () => {
+    const { fake, mod } = await importTgWithFake("ios");
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    mod.openTelegramLink("https://example.com");
+    expect(fake.openTelegramLink).not.toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalled();
+    openSpy.mockRestore();
+  });
+
+  it("refuses t.me URLs with embedded credentials", async () => {
+    const { fake, mod } = await importTgWithFake("ios");
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    mod.openTelegramLink("https://user:pass@t.me/test");
+    expect(fake.openTelegramLink).not.toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalled();
     openSpy.mockRestore();
   });
 

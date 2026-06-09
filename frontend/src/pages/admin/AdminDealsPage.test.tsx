@@ -123,6 +123,73 @@ describe("<AdminDealsPage />", () => {
     expect(screen.getByText(/150\.00/)).toBeInTheDocument();
   });
 
+  it("renders malformed deal amounts as a neutral dash", () => {
+    mockState.list = {
+      items: [makeDeal({ amount: "1e3" })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+    expect(screen.getByText(/\u2014 USDT/)).toBeInTheDocument();
+    expect(screen.queryByText(/0\.00 USDT/)).not.toBeInTheDocument();
+  });
+
+  it("normalizes deal currency labels before display", () => {
+    mockState.list = {
+      items: [
+        makeDeal({ currency_code: " usdt " }),
+        makeDeal({ id: 43, amount: "151.00", currency_code: "../USDT" }),
+      ],
+      total: 2,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+
+    expect(screen.getByText(/150\.00 USDT/)).toBeInTheDocument();
+    expect(screen.getByText(/151\.000000 \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/ usdt /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\.\.\/USDT/)).not.toBeInTheDocument();
+  });
+
+  it("renders unknown runtime statuses as neutral labels", () => {
+    mockState.list = {
+      items: [makeDeal({ status: "provider_reconciled" })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+
+    expect(screen.getByText("Статус неизвестен")).toBeInTheDocument();
+    expect(screen.queryByText(/provider_reconciled/)).not.toBeInTheDocument();
+  });
+
+  it("does not coerce malformed totals into admin pagination", () => {
+    mockState.list = {
+      items: [makeDeal()],
+      total: "1e2" as unknown as number,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+    expect(screen.queryByText("1e2")).not.toBeInTheDocument();
+    expect(screen.queryByText(/1 \/ 5/)).not.toBeInTheDocument();
+  });
+
+  it("renders missing buyer/seller usernames as non-handle labels", () => {
+    mockState.list = {
+      items: [makeDeal({ buyer_username: null, seller_username: null })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+    expect(screen.getAllByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
   it("reads URL filters and passes them to useAdminDeals", () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
     renderPage([
@@ -131,13 +198,59 @@ describe("<AdminDealsPage />", () => {
     expect(mockState.lastQuery).toEqual({
       status: "in_progress",
       currency: "USDT",
-      min_amount: 10,
-      max_amount: 500,
+      min_amount: "10",
+      max_amount: "500",
       has_arbitration: true,
       has_cancel_request: undefined,
       page: 3,
       page_size: 20,
     });
+  });
+
+  it("drops malformed URL filters before calling useAdminDeals", () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+    renderPage([
+      "/admin/deals?status=pending_payment&currency=bad%20code&min_amount=NaN&max_amount=-1&page=1e2",
+    ]);
+
+    expect(mockState.lastQuery).toEqual({
+      status: undefined,
+      currency: undefined,
+      min_amount: undefined,
+      max_amount: undefined,
+      has_arbitration: undefined,
+      has_cancel_request: undefined,
+      page: 1,
+      page_size: 20,
+    });
+  });
+
+  it("drops reversed amount ranges from URL filters before calling useAdminDeals", () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+    renderPage(["/admin/deals?min_amount=500&max_amount=10"]);
+
+    expect(mockState.lastQuery?.min_amount).toBeUndefined();
+    expect(mockState.lastQuery?.max_amount).toBeUndefined();
+  });
+
+  it("preserves high-precision Decimal amount filters from URL params", () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+    renderPage([
+      "/admin/deals?min_amount=0.123456789123456789&max_amount=0.123456789123456790",
+    ]);
+
+    expect(mockState.lastQuery?.min_amount).toBe("0.123456789123456789");
+    expect(mockState.lastQuery?.max_amount).toBe("0.123456789123456790");
+  });
+
+  it("drops high-precision reversed Decimal amount ranges without Number coercion", () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+    renderPage([
+      "/admin/deals?min_amount=0.123456789123456790&max_amount=0.123456789123456789",
+    ]);
+
+    expect(mockState.lastQuery?.min_amount).toBeUndefined();
+    expect(mockState.lastQuery?.max_amount).toBeUndefined();
   });
 
   it("clicking a status chip updates URL status param", async () => {
@@ -148,6 +261,15 @@ describe("<AdminDealsPage />", () => {
     await waitFor(() =>
       expect(mockState.lastQuery?.status).toBe("in_progress"),
     );
+  });
+
+  it("exposes pending_topup but not deprecated pending_payment as list filters", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+    const user = userEvent.setup();
+    renderPage();
+    expect(screen.queryByRole("button", { name: "Ожидание оплаты" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ожидание инвойса" }));
+    await waitFor(() => expect(mockState.lastQuery?.status).toBe("pending_topup"));
   });
 
   it("clicking 'Все' resets status to undefined (no filter)", async () => {
@@ -190,6 +312,23 @@ describe("<AdminDealsPage />", () => {
     );
   });
 
+  it("does not navigate admin deal rows with malformed runtime ids", async () => {
+    mockState.list = {
+      items: [makeDeal({ id: "0x3e7" as unknown as number })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    const idText = screen.getByText("#\u2014");
+    expect(idText.closest("button")).toBeDisabled();
+    expect(screen.queryByText(/0x3e7/)).not.toBeInTheDocument();
+    await user.click(idText);
+    expect(screen.getByTestId("path").textContent).toBe("/admin/deals");
+  });
+
   it("pagination prev disabled on page 1, next advances page", async () => {
     mockState.list = {
       items: [makeDeal()],
@@ -215,5 +354,19 @@ describe("<AdminDealsPage />", () => {
     const input = await screen.findByPlaceholderText(/USDT, BTC/);
     fireEvent.change(input, { target: { value: "btc" } });
     expect((input as HTMLInputElement).value).toBe("BTC");
+  });
+
+  it("filter sheet blocks reversed amount ranges before applying", async () => {
+    mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByLabelText("\u0424\u0438\u043b\u044c\u0442\u0440\u044b"));
+    const amountInputs = screen.getAllByRole("spinbutton");
+    fireEvent.change(amountInputs[0], { target: { value: "500" } });
+    fireEvent.change(amountInputs[1], { target: { value: "10" } });
+
+    const apply = screen.getByText("\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c").closest("button");
+    expect(apply).toBeDisabled();
   });
 });

@@ -49,6 +49,48 @@ from .time_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
+# Marker stored in ``WalletWithdrawal.admin_note`` while an automatic
+# CryptoBot Transfer is in flight outside a DB transaction. Admin-side
+# decision routes use it to avoid racing a ``reject`` against an
+# already-started payout.
+AUTO_WITHDRAW_IN_PROGRESS_NOTE = "[auto-send in progress]"
+AUTO_WITHDRAW_FAILED_PREFIX = "[auto-send failed]"
+AUTO_WITHDRAW_IN_PROGRESS_SWEEP_GRACE = timedelta(minutes=5)
+
+
+def withdrawal_auto_send_in_progress(withdrawal: WalletWithdrawal) -> bool:
+    return any(
+        line.strip() == AUTO_WITHDRAW_IN_PROGRESS_NOTE
+        for line in (withdrawal.admin_note or "").splitlines()
+    )
+
+
+def _withdrawal_auto_send_recently_in_progress(withdrawal: WalletWithdrawal) -> bool:
+    return (
+        withdrawal_auto_send_in_progress(withdrawal)
+        and withdrawal.created_at > utcnow() - AUTO_WITHDRAW_IN_PROGRESS_SWEEP_GRACE
+    )
+
+
+def mark_withdrawal_auto_send_in_progress(note: str | None) -> str:
+    base = clear_withdrawal_auto_send_in_progress(note)
+    return f"{base}\n{AUTO_WITHDRAW_IN_PROGRESS_NOTE}".strip()
+
+
+def clear_withdrawal_auto_send_in_progress(note: str | None) -> str:
+    lines = [
+        line
+        for line in (note or "").splitlines()
+        if line.strip() != AUTO_WITHDRAW_IN_PROGRESS_NOTE
+    ]
+    return "\n".join(lines).strip()
+
+
+def mark_withdrawal_auto_send_failed(note: str | None, error: object) -> str:
+    base = clear_withdrawal_auto_send_in_progress(note)
+    tag = f"{AUTO_WITHDRAW_FAILED_PREFIX} {error}"[:500]
+    return f"{base}\n{tag}".strip() if base else tag
+
 
 # Audit L-8 — width cap + control-byte blacklist for the
 # user-supplied withdrawal address. Anchored to the ``Numeric(255)``-
@@ -1132,6 +1174,11 @@ async def create_withdrawal(
         amount=amount,
         address=address,
         status=WalletWithdrawStatus.pending,
+        admin_note=(
+            mark_withdrawal_auto_send_in_progress("")
+            if auto_withdraw_enabled and cryptopay_configured
+            else ""
+        ),
     )
     session.add(withdrawal)
     await session.flush()
@@ -1276,6 +1323,20 @@ async def create_withdrawal(
                             },
                         )
                     return w_locked
+            else:
+                w_locked = (
+                    await session.execute(
+                        select(WalletWithdrawal)
+                        .where(WalletWithdrawal.id == withdrawal.id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                ).scalar_one_or_none()
+                if w_locked is not None:
+                    w_locked.admin_note = mark_withdrawal_auto_send_failed(
+                        w_locked.admin_note,
+                        e,
+                    )
         else:
             # Phase 3: re-lock the withdrawal + balance and apply the
             # ``locked`` decrement against the fresh row. We must NOT
@@ -1506,9 +1567,10 @@ async def sweep_stale_withdrawals(session: AsyncSession) -> int:
     :func:`backend.app.main._make_sweep_loop` factory can log it
     under the ``withdrawal-stale-reconcile`` sweep name.
 
-    Concurrency: uses ``with_for_update(skip_locked=True)`` like
-    :func:`sweep_expired_deposits` so two workers running the same
-    sweep don't double-flip rows.
+    Concurrency: the provider lookup runs without row locks, then
+    Phase C re-locks and re-checks one withdrawal at a time. Each
+    reconciled row is committed before the next provider lookup so
+    later CryptoBot latency cannot hold locks from earlier rows.
     """
     stale_seconds = int(settings.wallet_withdrawal_stale_seconds)
     if stale_seconds <= 0:
@@ -1548,10 +1610,18 @@ async def sweep_stale_withdrawals(session: AsyncSession) -> int:
     if not candidates:
         return 0
 
+    # Close the read-only snapshot transaction before the first
+    # upstream call. The ORM rows keep their loaded fields because the
+    # session is configured with ``expire_on_commit=False``.
+    await session.commit()
+
     reconciled = 0
     pending_dispatch: list[tuple[Notification, dict[str, Any] | None]] = []
 
     for candidate in candidates:
+        if _withdrawal_auto_send_recently_in_progress(candidate):
+            continue
+
         # Snapshot the fields we need for the upstream call before
         # the session goes through commits below — accessing
         # candidate.* after commit risks lazy-load round trips that
@@ -1599,10 +1669,18 @@ async def sweep_stale_withdrawals(session: AsyncSession) -> int:
         ).scalar_one_or_none()
         if w_locked is None:
             # Hard-deleted under us; nothing to reconcile.
+            await session.commit()
             continue
         if w_locked.status != WalletWithdrawStatus.pending:
             # A sibling decide / sweep got here first. The row is
             # terminal — leave it alone, do NOT double-apply.
+            await session.commit()
+            continue
+        if _withdrawal_auto_send_recently_in_progress(w_locked):
+            # The stale cutoff is configurable, so defend against a
+            # too-low value racing the still-running CryptoBot request
+            # and refunding funds that may already be on their way out.
+            await session.commit()
             continue
 
         bal = await lock_user_balance(session, wd_user_id, wd_currency_id)
@@ -1615,12 +1693,26 @@ async def sweep_stale_withdrawals(session: AsyncSession) -> int:
             # Transfer landed on CryptoBot's side; we crashed
             # before Phase 3. Drop the matching amount from
             # ``locked`` and promote the row to ``sent``.
+            before_amount = Decimal(str(bal.amount))
+            before_locked = Decimal(str(bal.locked))
             bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - amount_d)
             w_locked.status = WalletWithdrawStatus.sent
             w_locked.processed_at = utcnow()
             existing_note = w_locked.admin_note or ""
             stamp = f"sweep-reconcile: cryptobot_transfer_id={matched.transfer_id}"
             w_locked.admin_note = existing_note + ("\n" if existing_note else "") + stamp
+            record_balance_ledger(
+                session,
+                bal,
+                before_amount=before_amount,
+                before_locked=before_locked,
+                event_type="withdrawal.sent",
+                source_type="withdrawal",
+                source_id=w_locked.id,
+                provider="cryptobot",
+                provider_event_id=str(matched.transfer_id),
+                meta={"reconciled_by": "stale_sweep"},
+            )
             notif, ws_payload = await notifier.insert(
                 session,
                 wd_user_id,
@@ -1636,6 +1728,8 @@ async def sweep_stale_withdrawals(session: AsyncSession) -> int:
             # flip the row to ``rejected`` with a synthetic note
             # so audit readers can tell apart sweep-rejected from
             # admin-rejected rows.
+            before_amount = Decimal(str(bal.amount))
+            before_locked = Decimal(str(bal.locked))
             bal.locked = max(Decimal(0), Decimal(str(bal.locked)) - amount_d)
             bal.amount = Decimal(str(bal.amount)) + amount_d
             w_locked.status = WalletWithdrawStatus.rejected
@@ -1645,6 +1739,18 @@ async def sweep_stale_withdrawals(session: AsyncSession) -> int:
                 f"sweep-reconcile: no cryptobot transfer for spend_id={spend_id}, funds refunded"
             )
             w_locked.admin_note = existing_note + ("\n" if existing_note else "") + stamp
+            record_balance_ledger(
+                session,
+                bal,
+                before_amount=before_amount,
+                before_locked=before_locked,
+                event_type="withdrawal.stale_refund",
+                source_type="withdrawal",
+                source_id=w_locked.id,
+                provider="cryptobot",
+                provider_event_id=spend_id,
+                meta={"reconciled_by": "stale_sweep"},
+            )
             notif, ws_payload = await notifier.insert(
                 session,
                 wd_user_id,
@@ -1657,10 +1763,13 @@ async def sweep_stale_withdrawals(session: AsyncSession) -> int:
                 {"withdrawal_id": wd_id},
             )
 
+        # Commit each reconciled row before the next upstream
+        # ``get_transfers`` call. Otherwise the first row's
+        # withdrawal/balance locks stay open for the whole batch and
+        # unrelated users wait behind later CryptoBot latency.
+        await session.commit()
         pending_dispatch.append((notif, ws_payload))
         reconciled += 1
-
-    await session.commit()
 
     for notif, ws_payload in pending_dispatch:
         try:

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Ban,
@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { BadgePrefix } from "@/components/ui/BadgePrefix";
+import { Avatar } from "@/components/ui/Avatar";
 import { useToast } from "@/components/ui/Toast";
 import {
   useAdminAdjustBalance,
@@ -40,10 +41,18 @@ import {
 } from "@/api/admin/hooks";
 import { useMe } from "@/api/hooks";
 import type { AdminUserDetailDto } from "@/api/types";
-import { parseDecimal } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
+import {
+  parseNonNegativeDecimalInput,
+  parseNonNegativeIntInput,
+  parsePositiveDecimalInput,
+} from "@/lib/formNumbers";
+import { normalizeCurrencyCodeRows } from "@/lib/currencyCodes";
 import { haptic } from "@/lib/tg";
 import { ServicesSection, ReviewsSection, CommentsSection } from "./UserContentSections";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { parsePositiveIntRouteParam } from "@/lib/routeParams";
+import { formatAdminAmount, formatAdminCount, formatAdminCurrencyCode, formatAdminId, formatAdminRating, formatAdminUsd, formatAdminUsername, hasVisibleAdminBalance, parseAdminId, pickAdminMutationCurrency } from "./format";
 
 /**
  * Continental admin user detail screen.
@@ -58,19 +67,33 @@ import { useAdminRedirect } from "@/hooks/useAdminRedirect";
  * Each section is its own subcomponent — they all share the same
  * mutation pattern (mutate → toast → invalidate via hook).
  */
+
+function normalizeDecimalInput(raw: string): string {
+  return raw.trim().replace(",", ".");
+}
+
+function parseAdminNonNegativeDecimal(raw: string): number | null {
+  return parseNonNegativeDecimalInput(normalizeDecimalInput(raw));
+}
+
+function parseRatingOverride(raw: string): number | null {
+  const parsed = parseAdminNonNegativeDecimal(raw);
+  return parsed !== null && parsed <= 5 ? parsed : null;
+}
+
 export default function AdminUserDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const userId = Number(id);
+  const userId = parsePositiveIntRouteParam(id);
   const navigate = useNavigate();
   const { data: me } = useMe();
-  const { data: user, isLoading } = useAdminUser(
-    Number.isFinite(userId) ? userId : undefined,
-  );
+  const { data: user, isLoading } = useAdminUser(userId);
+  const currentAdminId = parseAdminId(me?.id);
+  const isSelf = userId !== undefined && currentAdminId !== null && currentAdminId === userId;
 
   const __guard = useAdminRedirect();
   if (!__guard.shouldRender) return null;
 
-  if (!Number.isFinite(userId)) {
+  if (!userId) {
     return (
       <Page showBack onBack={() => navigate(-1)}>
         <AdminHeader title="Пользователь" />
@@ -91,15 +114,15 @@ export default function AdminUserDetailPage() {
       ) : (
         <div className="px-4 space-y-4 pb-8">
           <IdentityCard user={user} />
-          <ModerationSection user={user} isSelf={user.id === me?.id} />
-          <RolesSection user={user} isSelf={user.id === me?.id} />
-          <RatingSection user={user} />
-          <StatsSection user={user} />
-          <TrustDepositSection user={user} />
-          <BalanceSection user={user} />
-          <ServicesSection userId={user.id} />
-          <ReviewsSection userId={user.id} />
-          <CommentsSection userId={user.id} />
+          <ModerationSection user={user} userId={userId} isSelf={isSelf} />
+          <RolesSection user={user} userId={userId} isSelf={isSelf} />
+          <RatingSection user={user} userId={userId} />
+          <StatsSection user={user} userId={userId} />
+          <TrustDepositSection user={user} userId={userId} />
+          <BalanceSection userId={userId} />
+          <ServicesSection userId={userId} />
+          <ReviewsSection userId={userId} />
+          <CommentsSection userId={userId} />
         </div>
       )}
     </Page>
@@ -112,18 +135,14 @@ function IdentityCard({ user }: { user: AdminUserDetailDto }) {
   return (
     <section className="bg-panel rounded-card p-4">
       <div className="flex items-start gap-3">
-        <div className="w-16 h-16 rounded-full bg-panel-2 overflow-hidden flex-shrink-0">
-          {user.photo_url && (
-            <img src={user.photo_url} alt="" className="w-full h-full object-cover" />
-          )}
-        </div>
+        <Avatar name={user.display_name} src={user.photo_url} size={64} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <h2 className="font-semibold truncate">{user.display_name}</h2>
             <BadgePrefix prefix={pickPrefix(user)} />
           </div>
-          <div className="text-xs text-text-muted">@{user.username ?? "—"}</div>
-          <div className="text-xs text-text-muted">tg_id: {user.tg_user_id}</div>
+          <div className="text-xs text-text-muted">{formatAdminUsername(user.username)}</div>
+          <div className="text-xs text-text-muted">tg_id: {formatAdminId(user.tg_user_id)}</div>
         </div>
       </div>
 
@@ -131,12 +150,12 @@ function IdentityCard({ user }: { user: AdminUserDetailDto }) {
         <Detail label="Создан" value={shortDate(user.created_at)} />
         <Detail label="Последний вход" value={user.last_login_at ? shortDate(user.last_login_at) : "—"} />
         <Detail label="IP" value={user.last_ip ?? "—"} mono />
-        <Detail label="Входов всего" value={String(user.login_count)} />
+        <Detail label="Входов всего" value={formatAdminCount(user.login_count)} />
         <Detail
           label="Трастовый депозит"
-          value={`$${user.trust_deposit_balance.toFixed(2)}`}
+          value={formatAdminUsd(user.trust_deposit_balance)}
         />
-        <Detail label="Рейтинг" value={user.rating_effective.toFixed(1)} />
+        <Detail label="Рейтинг" value={formatAdminRating(user.rating_effective)} />
         <Detail label="PIN" value={user.has_pin ? "Установлен" : "Нет"} />
       </dl>
 
@@ -171,13 +190,12 @@ function Detail({ label, value, mono }: { label: string; value: string; mono?: b
 }
 
 function shortDate(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
+  return formatDateTime(iso, { dateStyle: "short", timeStyle: "short" });
 }
 
 // ── Moderation actions ────────────────────────────────────────────────
 
-function ModerationSection({ user, isSelf }: { user: AdminUserDetailDto; isSelf: boolean }) {
+function ModerationSection({ user, userId, isSelf }: { user: AdminUserDetailDto; userId: number; isSelf: boolean }) {
   const toast = useToast();
   const ban = useAdminBanUser();
   const unban = useAdminUnbanUser();
@@ -189,13 +207,18 @@ function ModerationSection({ user, isSelf }: { user: AdminUserDetailDto; isSelf:
   const [banReason, setBanReason] = useState("");
   const [freezeReason, setFreezeReason] = useState("");
 
+  useEffect(() => {
+    setBanReason("");
+    setFreezeReason("");
+  }, [userId]);
+
   const run = async <T,>(
     label: string,
     mutateAsync: (args: { userId: number; body?: Record<string, unknown> }) => Promise<T>,
     body?: Record<string, unknown>,
   ) => {
     try {
-      await mutateAsync({ userId: user.id, body });
+      await mutateAsync({ userId, body });
       haptic("success");
       toast.show({ kind: "success", title: label });
     } catch (e) {
@@ -290,12 +313,18 @@ function ModerationSection({ user, isSelf }: { user: AdminUserDetailDto; isSelf:
 
 // ── Roles ─────────────────────────────────────────────────────────────
 
-function RolesSection({ user, isSelf }: { user: AdminUserDetailDto; isSelf: boolean }) {
+function RolesSection({ user, userId, isSelf }: { user: AdminUserDetailDto; userId: number; isSelf: boolean }) {
   const toast = useToast();
   const setRole = useAdminSetRole();
   const [isAdmin, setIsAdmin] = useState(user.is_admin);
   const [isArbiter, setIsArbiter] = useState(user.is_arbiter);
   const [isVip, setIsVip] = useState(user.is_vip);
+
+  useEffect(() => {
+    setIsAdmin(user.is_admin);
+    setIsArbiter(user.is_arbiter);
+    setIsVip(user.is_vip);
+  }, [userId, user.is_admin, user.is_arbiter, user.is_vip]);
 
   const dirty =
     isAdmin !== user.is_admin || isArbiter !== user.is_arbiter || isVip !== user.is_vip;
@@ -303,7 +332,7 @@ function RolesSection({ user, isSelf }: { user: AdminUserDetailDto; isSelf: bool
   const apply = async () => {
     try {
       await setRole.mutateAsync({
-        userId: user.id,
+        userId,
         body: { is_admin: isAdmin, is_arbiter: isArbiter, is_vip: isVip },
       });
       haptic("success");
@@ -379,22 +408,26 @@ function RoleToggle({
 
 // ── Rating ────────────────────────────────────────────────────────────
 
-function RatingSection({ user }: { user: AdminUserDetailDto }) {
+function RatingSection({ user, userId }: { user: AdminUserDetailDto; userId: number }) {
   const toast = useToast();
   const setRating = useAdminSetRating();
   const [draft, setDraft] = useState(
     user.rating_manual !== null ? String(user.rating_manual) : "",
   );
 
+  useEffect(() => {
+    setDraft(user.rating_manual !== null ? String(user.rating_manual) : "");
+  }, [userId, user.rating_manual]);
+
   const save = async (clear = false) => {
-    const value = clear ? null : Number(draft.replace(",", "."));
-    if (!clear && Number.isNaN(value)) {
+    const value = clear ? null : parseRatingOverride(draft);
+    if (!clear && value === null) {
       toast.show({ kind: "error", title: "Неверное число" });
       return;
     }
     try {
       await setRating.mutateAsync({
-        userId: user.id,
+        userId,
         body: { rating: value },
       });
       haptic("success");
@@ -415,8 +448,8 @@ function RatingSection({ user }: { user: AdminUserDetailDto }) {
         <Star size={16} /> Рейтинг (0..5)
       </h3>
       <p className="text-xs text-text-muted">
-        Авто-рейтинг: {user.rating_auto.toFixed(1)} · Сейчас:{" "}
-        {user.rating_effective.toFixed(1)}
+        Авто-рейтинг: {formatAdminRating(user.rating_auto)} · Сейчас:{" "}
+        {formatAdminRating(user.rating_effective)}
         {user.rating_manual !== null && " (override)"}
       </p>
       <Input
@@ -464,18 +497,46 @@ interface StatsDraft {
   bad: string;
 }
 
-function StatsSection({ user }: { user: AdminUserDetailDto }) {
+function StatsSection({ user, userId }: { user: AdminUserDetailDto; userId: number }) {
   const toast = useToast();
   const setStats = useAdminSetStats();
-  const [draft, setDraft] = useState<StatsDraft>({
-    deals_total: String(user.deals_total),
-    deals_success: String(user.deals_success),
-    deals_failed: String(user.deals_failed),
-    deals_arbitrage: String(user.deals_arbitrage),
-    deals_sum_override: String(user.deals_sum_override ?? 0),
-    good: String(user.good),
-    bad: String(user.bad),
-  });
+  const userDealsTotal = user.deals_total;
+  const userDealsSuccess = user.deals_success;
+  const userDealsFailed = user.deals_failed;
+  const userDealsArbitrage = user.deals_arbitrage;
+  const userDealsSumOverride = user.deals_sum_override;
+  const userGood = user.good;
+  const userBad = user.bad;
+  const [draft, setDraft] = useState<StatsDraft>(() => ({
+    deals_total: String(userDealsTotal),
+    deals_success: String(userDealsSuccess),
+    deals_failed: String(userDealsFailed),
+    deals_arbitrage: String(userDealsArbitrage),
+    deals_sum_override: String(userDealsSumOverride ?? 0),
+    good: String(userGood),
+    bad: String(userBad),
+  }));
+
+  useEffect(() => {
+    setDraft({
+      deals_total: String(userDealsTotal),
+      deals_success: String(userDealsSuccess),
+      deals_failed: String(userDealsFailed),
+      deals_arbitrage: String(userDealsArbitrage),
+      deals_sum_override: String(userDealsSumOverride ?? 0),
+      good: String(userGood),
+      bad: String(userBad),
+    });
+  }, [
+    userId,
+    userDealsTotal,
+    userDealsSuccess,
+    userDealsFailed,
+    userDealsArbitrage,
+    userDealsSumOverride,
+    userGood,
+    userBad,
+  ]);
 
   const fields: Array<{
     key: keyof StatsDraft;
@@ -492,19 +553,21 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
   ];
 
   const apply = async () => {
-    const body: Record<string, number | null> = {};
+    const body: Record<string, number | string | null> = {};
     for (const f of fields) {
       const raw = draft[f.key];
-      if (raw === "") continue;
-      const n = Number(raw.replace(",", "."));
-      if (Number.isNaN(n)) {
+      if (raw.trim() === "") continue;
+      const n = f.type === "int"
+        ? parseNonNegativeIntInput(raw)
+        : parseAdminNonNegativeDecimal(raw);
+      if (n === null) {
         toast.show({ kind: "error", title: `Неверное число: ${f.label}` });
         return;
       }
-      body[f.key] = f.type === "int" ? Math.trunc(n) : n;
+      body[f.key] = f.type === "int" ? n : normalizeDecimalInput(raw);
     }
     try {
-      await setStats.mutateAsync({ userId: user.id, body });
+      await setStats.mutateAsync({ userId, body });
       haptic("success");
       toast.show({ kind: "success", title: "Статистика сохранена" });
     } catch (e) {
@@ -549,15 +612,21 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
  * its ``deposit`` field. This section is the only path to mutate
  * the column from the admin panel.
  */
-function TrustDepositSection({ user }: { user: AdminUserDetailDto }) {
+function TrustDepositSection({ user, userId }: { user: AdminUserDetailDto; userId: number }) {
   const toast = useToast();
   const setTrust = useAdminSetTrustDeposit();
   const [amount, setAmount] = useState(String(user.trust_deposit_balance));
   const [reason, setReason] = useState("");
 
+  useEffect(() => {
+    setAmount(String(user.trust_deposit_balance));
+    setReason("");
+  }, [userId, user.trust_deposit_balance]);
+
   const apply = async () => {
-    const n = Number(amount.replace(",", "."));
-    if (!Number.isFinite(n) || n < 0) {
+    const amountValue = normalizeDecimalInput(amount);
+    const n = parseAdminNonNegativeDecimal(amount);
+    if (n === null) {
       toast.show({
         kind: "error",
         title: "Введите неотрицательное число",
@@ -566,14 +635,14 @@ function TrustDepositSection({ user }: { user: AdminUserDetailDto }) {
     }
     try {
       await setTrust.mutateAsync({
-        userId: user.id,
-        body: { amount: n, reason: reason.trim() || null },
+        userId,
+        body: { amount: amountValue, reason: reason.trim() || null },
       });
       haptic("success");
       toast.show({
         kind: "success",
         title: "Трастовый депозит обновлён",
-        body: `${user.username ?? user.tg_user_id} ← $${n.toFixed(2)}`,
+        body: `${user.username ?? formatAdminId(user.tg_user_id)} ← $${n.toFixed(2)}`,
       });
       setReason("");
     } catch (e) {
@@ -619,21 +688,38 @@ function TrustDepositSection({ user }: { user: AdminUserDetailDto }) {
 
 // ── Balance ─────────────────────────────────────────────────────────
 
-function BalanceSection({ user }: { user: AdminUserDetailDto }) {
-  const { data: balances } = useAdminUserWallet(user.id);
+function BalanceSection({ userId }: { userId: number }) {
+  const { data: balances } = useAdminUserWallet(userId);
   const { data: currencies } = useAdminCurrencies();
-  const adjust = useAdminAdjustBalance(user.id);
+  const adjust = useAdminAdjustBalance(userId);
   const toast = useToast();
-  const fallback =
-    balances?.find((b) => parseDecimal(b.total) > 0)?.currency_code ?? "USDT";
-  const [currency, setCurrency] = useState<string>(fallback);
+  const fallback = balances?.find(hasVisibleAdminBalance)?.currency_code ?? "USDT";
+  const [currency, setCurrency] = useState<string>(() =>
+    pickAdminMutationCurrency(fallback, []),
+  );
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
-  const allCurrencies = currencies ?? [];
+  const previousUserId = useRef(userId);
+  const allCurrencies = useMemo(() => normalizeCurrencyCodeRows(currencies ?? []), [currencies]);
+  useEffect(() => {
+    const userChanged = previousUserId.current !== userId;
+    previousUserId.current = userId;
+    setCurrency((current) =>
+      pickAdminMutationCurrency(userChanged ? fallback : current, allCurrencies, fallback),
+    );
+    if (userChanged) {
+      setAmount("");
+      setReason("");
+    }
+  }, [allCurrencies, fallback, userId]);
+  const amountValue = normalizeDecimalInput(amount);
+  const parsedAmount = amountValue ? parsePositiveDecimalInput(amountValue) : null;
+  const amountError = amountValue && parsedAmount === null
+    ? "Введите положительное число без экспоненты"
+    : undefined;
 
   async function submit(sign: 1 | -1) {
-    const n = Number(amount);
-    if (!n || !Number.isFinite(n)) {
+    if (parsedAmount === null) {
       toast.show({
         kind: "error",
         title: "Введите сумму",
@@ -644,13 +730,13 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
     try {
       await adjust.mutateAsync({
         currency_code: currency,
-        amount: sign * Math.abs(n),
+        amount: sign > 0 ? amountValue : `-${amountValue}`,
         reason: reason.trim() || undefined,
       });
       toast.show({
         kind: "success",
         title: "Готово",
-        body: `${currency} ${sign > 0 ? "+" : "-"}${Math.abs(n)} применено`,
+        body: `${currency} ${sign > 0 ? "+" : "-"}${amountValue} применено`,
       });
       setAmount("");
       setReason("");
@@ -676,8 +762,8 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
               key={b.currency_code}
               className="flex justify-between bg-panel-2 rounded-button px-3 py-1.5"
             >
-              <span className="text-text-muted">{b.currency_code}</span>
-              <span className="font-mono">{b.total}</span>
+              <span className="text-text-muted">{formatAdminCurrencyCode(b.currency_code)}</span>
+              <span className="font-mono">{formatAdminAmount(b.total, b.decimals)}</span>
             </div>
           ))}
         </div>
@@ -707,6 +793,7 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
         label="Сумма (положительная)"
         inputMode="decimal"
         value={amount}
+        error={amountError}
         onChange={(e) => setAmount(e.target.value)}
         placeholder="25.5"
       />
@@ -721,7 +808,7 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
           type="button"
           variant="danger"
           className="flex-1"
-          disabled={adjust.isPending || !Number(amount)}
+          disabled={adjust.isPending || parsedAmount === null}
           onClick={() => submit(-1)}
         >
           <Minus size={14} className="mr-1" /> Списать
@@ -730,7 +817,7 @@ function BalanceSection({ user }: { user: AdminUserDetailDto }) {
           type="button"
           variant="primary"
           className="flex-1"
-          disabled={adjust.isPending || !Number(amount)}
+          disabled={adjust.isPending || parsedAmount === null}
           onClick={() => submit(1)}
         >
           <Plus size={14} className="mr-1" /> Зачислить

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { DealDto, ReviewDto, UserCardDto } from "@/api/types";
@@ -7,9 +8,14 @@ import type { DealDto, ReviewDto, UserCardDto } from "@/api/types";
 const dealState = vi.hoisted(() => ({
   data: undefined as DealDto | undefined,
   isLoading: false,
+  lastId: undefined as number | undefined,
 }));
 const meState = vi.hoisted(() => ({ data: undefined as UserCardDto | undefined }));
 const reviewsState = vi.hoisted(() => ({ data: undefined as ReviewDto[] | undefined }));
+const reviewsCall = vi.hoisted(() => ({
+  username: undefined as string | undefined,
+  params: undefined as unknown,
+}));
 const actionStub = vi.hoisted(() => () => ({
   mutate: vi.fn(),
   mutateAsync: vi.fn(),
@@ -19,15 +25,35 @@ const cancelTopupState = vi.hoisted(() => ({
   mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
   isPending: false,
 }));
+const createReviewState = vi.hoisted(() => ({
+  mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
+  isPending: false,
+}));
+const chatState = vi.hoisted(() => ({
+  lastDealId: undefined as number | undefined,
+}));
+const walletDepositState = vi.hoisted(() => ({
+  lastId: undefined as number | undefined,
+}));
 
 vi.mock("@/api/hooks", () => ({
-  useDeal: () => dealState,
+  useDeal: (id: number | undefined) => {
+    dealState.lastId = id;
+    return dealState;
+  },
   useMe: () => meState,
-  useReviews: () => reviewsState,
+  useReviews: (username: string | undefined, params: unknown) => {
+    reviewsCall.username = username;
+    reviewsCall.params = params;
+    return reviewsState;
+  },
   useDealAction: () => actionStub(),
   useCancelPendingTopup: () => cancelTopupState,
-  useCreateReview: () => actionStub(),
-  useWalletDeposit: () => ({ data: undefined, isLoading: false }),
+  useCreateReview: () => createReviewState,
+  useWalletDeposit: (id: number | undefined) => {
+    walletDepositState.lastId = id;
+    return { data: undefined, isLoading: false, refetch: vi.fn() };
+  },
 }));
 
 vi.mock("@/lib/tg", () => ({
@@ -39,7 +65,10 @@ vi.mock("@/lib/tg", () => ({
 }));
 
 vi.mock("./DealChatPanel", () => ({
-  DealChatPanel: () => null,
+  DealChatPanel: ({ dealId }: { dealId: number }) => {
+    chatState.lastDealId = dealId;
+    return null;
+  },
 }));
 
 import DealDetailPage from "./DealDetailPage";
@@ -103,7 +132,20 @@ function makeUser(overrides: Partial<UserCardDto> = {}): UserCardDto {
   };
 }
 
-function renderAt(id: number) {
+function makeReview(overrides: Partial<ReviewDto> = {}): ReviewDto {
+  return {
+    id: 501,
+    deal_id: 42,
+    author_username: "alice",
+    target_username: "bob",
+    rating: 5,
+    text: "ok",
+    created_at: "2026-01-02T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function renderAt(id: number | string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -121,13 +163,26 @@ function renderAt(id: number) {
 beforeEach(() => {
   dealState.data = undefined;
   dealState.isLoading = false;
+  dealState.lastId = undefined;
   meState.data = makeUser({ username: "alice" });
   reviewsState.data = [];
+  reviewsCall.username = undefined;
+  reviewsCall.params = undefined;
   cancelTopupState.mutateAsync = vi.fn().mockResolvedValue(makeDeal({ status: "cancelled" }));
   cancelTopupState.isPending = false;
+  createReviewState.mutateAsync = vi.fn().mockResolvedValue(undefined);
+  createReviewState.isPending = false;
+  chatState.lastDealId = undefined;
+  walletDepositState.lastId = undefined;
 });
 
 describe("<DealDetailPage />", () => {
+  it("rejects ambiguous route ids before querying the deal detail", () => {
+    renderAt("1e2");
+    expect(dealState.lastId).toBeUndefined();
+    expect(screen.getByText("Сделка не найдена")).toBeInTheDocument();
+  });
+
   it("renders skeletons while the deal is loading", () => {
     dealState.isLoading = true;
     const { container } = renderAt(42);
@@ -141,6 +196,83 @@ describe("<DealDetailPage />", () => {
     expect(screen.getByText("@bob")).toBeInTheDocument();
     expect(screen.getByText("Лендинг под ключ")).toBeInTheDocument();
     expect(screen.getByText("Комиссия оплачена")).toBeInTheDocument();
+  });
+
+  it("renders unknown runtime deal statuses as a neutral label", () => {
+    dealState.data = makeDeal({ status: "provider_reconciled" });
+    renderAt(42);
+
+    expect(screen.getAllByText("Статус неизвестен").length).toBeGreaterThan(0);
+    expect(screen.queryByText("provider_reconciled")).not.toBeInTheDocument();
+  });
+
+  it("does not render a commission row from malformed runtime amounts", () => {
+    dealState.data = makeDeal({
+      commission_amount: "1e2" as unknown as number,
+    });
+    renderAt(42);
+
+    expect(screen.queryByText("Размер комиссии")).not.toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
+  it("renders malformed deal totals as a neutral amount", () => {
+    dealState.data = makeDeal({
+      amount: "0x10" as unknown as number,
+      currency_code: "USD",
+    });
+    renderAt(42);
+
+    expect(screen.getByText(/\u2014 USD/)).toBeInTheDocument();
+    expect(screen.queryByText(/0x10/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^0 USD$/)).not.toBeInTheDocument();
+  });
+
+  it("does not render @null actions when the counterparty username is missing", () => {
+    dealState.data = makeDeal({
+      id: 42,
+      buyer: "alice",
+      seller: null,
+      role: "buyer",
+      status: "completed",
+    });
+    renderAt(42);
+    expect(screen.getByText("Контрагент недоступен")).toBeInTheDocument();
+    expect(screen.queryByText("@null")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Оставить отзыв/i })).not.toBeInTheDocument();
+    expect(reviewsCall.username).toBeUndefined();
+  });
+
+  it("does not render profile or review actions for unsafe counterparty usernames", () => {
+    dealState.data = makeDeal({
+      id: 42,
+      buyer: "alice",
+      seller: "../admin",
+      role: "buyer",
+      status: "completed",
+    });
+    renderAt(42);
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /admin/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /\u041e\u0441\u0442\u0430\u0432\u0438\u0442\u044c \u043e\u0442\u0437\u044b\u0432/i })).not.toBeInTheDocument();
+    expect(reviewsCall.username).toBeUndefined();
+  });
+
+  it("does not expose participant cancellation actions for unknown runtime roles", () => {
+    dealState.data = makeDeal({
+      role: "auditor",
+      status: "pending_cancellation",
+      cancellation_initiator: "buyer",
+      cancellation_reason: "cancel requested",
+    });
+    renderAt(42);
+
+    expect(screen.getByText("Контрагент")).toBeInTheDocument();
+    expect(screen.getByText("Контрагент недоступен")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Согласиться/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Арбитраж/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("@alice")).not.toBeInTheDocument();
+    expect(screen.queryByText("@bob")).not.toBeInTheDocument();
   });
 
   it("shows the 'confirm execution' CTA for buyer on an in-progress deal", () => {
@@ -158,9 +290,10 @@ describe("<DealDetailPage />", () => {
       topup_invoice: {
         deposit_id: 501,
         pay_url: "https://pay.example/invoice/501",
-        total: "105",
-        topup_principal: "100",
-        commission: "5",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: 0,
         currency_code: "USD",
         provider: "cryptobot",
         expires_at: null,
@@ -174,11 +307,296 @@ describe("<DealDetailPage />", () => {
     expect(screen.getByRole("button", { name: /^Отменить$/i })).toBeInTheDocument();
   });
 
+  it("does not append currency to topup invoice metadata or show malformed paid totals", () => {
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      commission_paid: false,
+      topup_deposit_id: 501,
+      topup_invoice: {
+        deposit_id: 501,
+        pay_url: "https://pay.example/invoice/501",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: "0x10",
+        currency_code: "USD",
+        provider: "cryptobot",
+        expires_at: "2026-01-01T00:00:00Z",
+      } as unknown as NonNullable<DealDto["topup_invoice"]>,
+    });
+    renderAt(42);
+
+    expect(screen.getByText("CryptoBot")).toBeInTheDocument();
+    expect(screen.queryByText("CryptoBot USD")).not.toBeInTheDocument();
+    expect(screen.queryByText("0x10 USD")).not.toBeInTheDocument();
+  });
+
+  it("renders unknown topup invoice providers as neutral labels", () => {
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      commission_paid: false,
+      topup_deposit_id: 501,
+      topup_invoice: {
+        deposit_id: 501,
+        pay_url: "https://pay.example/invoice/501",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: 0,
+        currency_code: "USD",
+        provider: "provider_reconciled",
+        expires_at: null,
+      },
+    });
+    renderAt(42);
+
+    expect(screen.getByText("Провайдер неизвестен")).toBeInTheDocument();
+    expect(screen.queryByText(/provider_reconciled/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^CryptoBot$/)).not.toBeInTheDocument();
+  });
+
+  it("does not render malformed topup invoice totals as money", () => {
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      commission_paid: false,
+      topup_deposit_id: 501,
+      topup_invoice: {
+        deposit_id: 501,
+        pay_url: "https://pay.example/invoice/501",
+        total: "1e2" as unknown as number,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: "25.00" as unknown as number,
+        currency_code: "USD",
+        provider: "cryptobot",
+        expires_at: null,
+      },
+    });
+    renderAt(42);
+
+    expect(screen.getByText("25.00 USD")).toBeInTheDocument();
+    expect(screen.getByText("— USD")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Открыть оплату/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Отменить$/i })).toBeInTheDocument();
+    expect(screen.queryByText("1e2 USD")).not.toBeInTheDocument();
+  });
+
+  it("normalizes deal and topup invoice currency labels before display", () => {
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      amount: 105,
+      currency_code: " usd ",
+      commission_paid: false,
+      topup_deposit_id: 501,
+      topup_invoice: {
+        deposit_id: 501,
+        pay_url: "https://pay.example/invoice/501",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: 0,
+        currency_code: "../USD",
+        provider: "cryptobot",
+        expires_at: null,
+      },
+    });
+    renderAt(42);
+
+    expect(screen.getAllByText("105 USD").length).toBeGreaterThan(1);
+    expect(screen.queryByText(/\.\.\/USD/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ usd /)).not.toBeInTheDocument();
+  });
+
+  it("renders malformed topup invoice expiry as a neutral timestamp", () => {
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      commission_paid: false,
+      topup_deposit_id: 501,
+      topup_invoice: {
+        deposit_id: 501,
+        pay_url: "https://pay.example/invoice/501",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: 0,
+        currency_code: "USD",
+        provider: "cryptobot",
+        expires_at: "not-a-date",
+      },
+    });
+    renderAt(42);
+
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+  });
+
+  it("opens the realtime topup invoice modal with a normalized deposit id", async () => {
+    const user = userEvent.setup();
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      commission_paid: false,
+      topup_deposit_id: "501" as unknown as number,
+      topup_invoice: {
+        deposit_id: "501" as unknown as number,
+        pay_url: "https://pay.example/invoice/501",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: 0,
+        currency_code: "USD",
+        provider: "cryptobot",
+        expires_at: null,
+      },
+    });
+    renderAt(42);
+
+    await user.click(screen.getByRole("button", { name: /Открыть оплату/i }));
+
+    expect(screen.getByTestId("deal-invoice-modal")).toBeInTheDocument();
+    expect(walletDepositState.lastId).toBe(501);
+    expect(walletDepositState.lastId).not.toBe("501");
+  });
+
+  it("does not open realtime topup payment actions for malformed deposit ids", () => {
+    dealState.data = makeDeal({
+      status: "pending_topup",
+      role: "buyer",
+      commission_paid: false,
+      topup_deposit_id: "0x501" as unknown as number,
+      topup_invoice: {
+        deposit_id: "0x501" as unknown as number,
+        pay_url: "https://pay.example/invoice/501",
+        total: 105,
+        topup_principal: 100,
+        commission: 5,
+        paid_total: 0,
+        currency_code: "USD",
+        provider: "cryptobot",
+        expires_at: null,
+      },
+    });
+    renderAt(42);
+
+    expect(screen.queryByRole("button", { name: /Открыть оплату/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Отменить$/i })).toBeInTheDocument();
+    expect(walletDepositState.lastId).toBeUndefined();
+  });
+
   it("shows the accept/decline CTAs for seller on a pending_confirmation deal", () => {
     dealState.data = makeDeal({ status: "pending_confirmation", role: "seller" });
     renderAt(42);
     expect(screen.getByRole("button", { name: /Принять/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Отклонить/i })).toBeInTheDocument();
+  });
+
+  it("checks review status with a deal-scoped reviews query", () => {
+    dealState.data = makeDeal({
+      id: 77,
+      buyer: "alice",
+      seller: "bob",
+      role: "buyer",
+      status: "completed",
+    });
+
+    renderAt(77);
+
+    expect(reviewsCall.username).toBe("bob");
+    expect(reviewsCall.params).toEqual({ deal_id: 77, limit: 1 });
+    expect(screen.getByRole("button", { name: /Оставить отзыв/i })).toBeInTheDocument();
+  });
+
+  it("uses the validated route id for deal-scoped child flows", () => {
+    dealState.data = makeDeal({
+      id: "0x4d" as unknown as number,
+      buyer: "alice",
+      seller: "bob",
+      role: "buyer",
+      status: "completed",
+    });
+
+    renderAt(77);
+
+    expect(screen.getByRole("heading", { name: /Сделка #77/ })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /0x4d/ })).not.toBeInTheDocument();
+    expect(reviewsCall.username).toBe("bob");
+    expect(reviewsCall.params).toEqual({ deal_id: 77, limit: 1 });
+    expect(chatState.lastDealId).toBe(77);
+  });
+
+  it("hides the review CTA when the deal-scoped query returns my review", () => {
+    dealState.data = makeDeal({
+      id: 77,
+      buyer: "alice",
+      seller: "bob",
+      role: "buyer",
+      status: "completed",
+    });
+    reviewsState.data = [makeReview({ deal_id: 77, author_username: "alice" })];
+
+    renderAt(77);
+
+    expect(screen.queryByRole("button", { name: /Оставить отзыв/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/уже оставили отзыв/i)).toBeInTheDocument();
+  });
+
+  it("normalizes review row deal ids before checking already-reviewed state", () => {
+    dealState.data = makeDeal({
+      id: "0x4d" as unknown as number,
+      buyer: "alice",
+      seller: "bob",
+      role: "buyer",
+      status: "completed",
+    });
+    reviewsState.data = [makeReview({ deal_id: "77" as unknown as number, author_username: "alice" })];
+
+    renderAt(77);
+
+    expect(screen.queryByRole("button", { name: /Оставить отзыв/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/уже оставили отзыв/i)).toBeInTheDocument();
+  });
+
+  it("ignores malformed review row deal ids when checking already-reviewed state", () => {
+    dealState.data = makeDeal({
+      id: "0x4d" as unknown as number,
+      buyer: "alice",
+      seller: "bob",
+      role: "buyer",
+      status: "completed",
+    });
+    reviewsState.data = [makeReview({ deal_id: "0x4d" as unknown as number, author_username: "alice" })];
+
+    renderAt(77);
+
+    expect(screen.getByRole("button", { name: /Оставить отзыв/i })).toBeInTheDocument();
+    expect(screen.queryByText(/уже оставили отзыв/i)).not.toBeInTheDocument();
+  });
+
+  it("submits reviews against the validated route id", async () => {
+    const user = userEvent.setup();
+    dealState.data = makeDeal({
+      id: "0x4d" as unknown as number,
+      buyer: "alice",
+      seller: "bob",
+      role: "buyer",
+      status: "completed",
+    });
+
+    renderAt(77);
+    await user.click(screen.getByRole("button", { name: /Оставить отзыв/i }));
+    await user.click(screen.getByRole("button", { name: /Опубликовать отзыв/i }));
+
+    expect(createReviewState.mutateAsync).toHaveBeenCalledWith({
+      target_username: "bob",
+      rating: 5,
+      text: "",
+      deal_id: 77,
+    });
   });
 
   it("renders the arbitration reason when status is arbitration", () => {

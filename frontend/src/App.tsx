@@ -24,6 +24,7 @@ import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import { useLiveNotifications } from "@/lib/useLiveNotifications";
 import { queryClient } from "@/lib/queryClient";
 import { initTelegram } from "@/lib/tg";
+import { userProfilePath } from "@/lib/usernames";
 
 // ``lazyWithRetry`` (V12-Ix) wraps ``React.lazy`` with a one-shot
 // hard-reload on chunk-load failures. The previous bare ``lazy(() =>
@@ -116,7 +117,7 @@ function ScrollToTop() {
 
 function RedirectUser() {
   const { username } = useParams<{ username: string }>();
-  return <Navigate to={`/users/${username ?? ""}`} replace />;
+  return <Navigate to={userProfilePath(username) ?? "/search"} replace />;
 }
 
 /**

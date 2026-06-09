@@ -7,11 +7,14 @@ admin permissions).
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from sqlalchemy import select
 
 from backend.app.db import async_session
 from backend.app.models import Category, Service, ServiceComment, ServiceStatus, User
+from backend.app.time_utils import utcnow
 from tests.helpers import auth_headers, signed_init_data
 
 
@@ -44,6 +47,7 @@ async def _seed_service(
     *,
     title: str = "Test service",
     status: ServiceStatus = ServiceStatus.active,
+    photo_urls: list[str] | None = None,
 ) -> int:
     async with async_session() as session:
         s = Service(
@@ -53,6 +57,7 @@ async def _seed_service(
             description="",
             price=10,
             status=status,
+            photo_urls=photo_urls or [],
         )
         session.add(s)
         await session.commit()
@@ -78,6 +83,54 @@ async def test_get_service_detail_returns_owner_card_and_zero_stats(client):
     assert body["comments_count"] == 0
     assert body["rating_avg"] is None
     assert body["rating_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_update_service_rejects_explicit_null_for_noop_fields(client):
+    cat_id = await _seed_category("update-contract")
+    owner_id = await _seed_user(1101, "svc_owner")
+    owner_init = signed_init_data(1101, "svc_owner")
+    svc_id = await _seed_service(
+        owner_id,
+        cat_id,
+        title="Original",
+        photo_urls=["/media/service/original.png"],
+    )
+
+    for field in ("title", "description", "price", "status", "photo_urls"):
+        resp = await client.patch(
+            f"/api/services/{svc_id}",
+            json={field: None},
+            headers=auth_headers(owner_init),
+        )
+        assert resp.status_code == 422, (field, resp.text)
+
+    async with async_session() as session:
+        service = await session.get(Service, svc_id)
+        assert service is not None
+        assert service.title == "Original"
+        assert service.photo_urls == ["/media/service/original.png"]
+
+
+@pytest.mark.asyncio
+async def test_update_service_clears_gallery_with_empty_list(client):
+    cat_id = await _seed_category("update-gallery")
+    owner_id = await _seed_user(1102, "gallery_owner")
+    owner_init = signed_init_data(1102, "gallery_owner")
+    svc_id = await _seed_service(
+        owner_id,
+        cat_id,
+        photo_urls=["/media/service/original.png"],
+    )
+
+    resp = await client.patch(
+        f"/api/services/{svc_id}",
+        json={"photo_urls": []},
+        headers=auth_headers(owner_init),
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["photo_urls"] == []
 
 
 @pytest.mark.asyncio
@@ -133,6 +186,40 @@ async def test_create_comment_appears_in_list_and_updates_aggregates(client):
     assert detail.json()["comments_count"] == 1
     assert detail.json()["rating_avg"] == 5.0
     assert detail.json()["rating_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_list_comments_supports_limit_offset(client):
+    cat_id = await _seed_category()
+    owner_id = await _seed_user(1020, "owner_page")
+    author_id = await _seed_user(1021, "comment_page")
+    viewer_init = signed_init_data(1022, "comment_viewer")
+    svc_id = await _seed_service(owner_id, cat_id)
+
+    async with async_session() as session:
+        now = utcnow()
+        comments = [
+            ServiceComment(
+                service_id=svc_id,
+                author_id=author_id,
+                text=f"paged comment {idx}",
+                rating=5,
+                created_at=now - timedelta(minutes=idx),
+            )
+            for idx in range(4)
+        ]
+        session.add_all(comments)
+        await session.commit()
+        expected_ids = [comments[1].id, comments[2].id]
+
+    resp = await client.get(
+        f"/api/services/{svc_id}/comments",
+        params={"limit": 2, "offset": 1},
+        headers=auth_headers(viewer_init),
+    )
+    assert resp.status_code == 200, resp.text
+    assert int(resp.headers["X-Total-Count"]) == 4
+    assert [row["id"] for row in resp.json()] == expected_ids
 
 
 @pytest.mark.asyncio

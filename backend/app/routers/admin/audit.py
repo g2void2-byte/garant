@@ -7,8 +7,9 @@ action / actor / target / date range.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 
 from ...deps import AdminUser, SessionDep
@@ -21,6 +22,15 @@ router = APIRouter(
     tags=["admin"],
     dependencies=[Depends(rate_limit("admin:audit", limit=600, window=60))],
 )
+
+AuditActionFilter = Annotated[
+    str | None,
+    Query(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$"),
+]
+AuditTargetTypeFilter = Annotated[
+    str | None,
+    Query(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_:-]+$"),
+]
 
 
 def _to_out(log: AdminAuditLog, actor: User | None) -> AdminAuditLogOut:
@@ -42,15 +52,18 @@ def _to_out(log: AdminAuditLog, actor: User | None) -> AdminAuditLogOut:
 async def list_audit(
     _admin: AdminUser,
     session: SessionDep,
-    action: str | None = Query(None),
-    actor_id: int | None = Query(None),
-    target_type: str | None = Query(None),
-    target_id: int | None = Query(None),
-    since: datetime | None = Query(None),
-    until: datetime | None = Query(None),
+    action: AuditActionFilter = None,
+    actor_id: Annotated[int | None, Query(ge=1)] = None,
+    target_type: AuditTargetTypeFilter = None,
+    target_id: Annotated[int | None, Query(ge=1)] = None,
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
+    if since is not None and until is not None and since > until:
+        raise HTTPException(422, "since cannot be after until")
+
     stmt = select(AdminAuditLog, User).outerjoin(User, User.id == AdminAuditLog.actor_id)
     count_stmt = select(func.count()).select_from(AdminAuditLog)
     if action:
@@ -75,7 +88,7 @@ async def list_audit(
     total = (await session.execute(count_stmt)).scalar_one()
     rows = (
         await session.execute(
-            stmt.order_by(AdminAuditLog.created_at.desc())
+            stmt.order_by(AdminAuditLog.created_at.desc(), AdminAuditLog.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )

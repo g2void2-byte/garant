@@ -15,7 +15,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..rate_limit import rate_limit_anon
 
@@ -27,6 +27,8 @@ RLClientError = Annotated[None, Depends(rate_limit_anon("client-error", limit=10
 
 
 class ClientErrorReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     message: str = Field(max_length=2000)
     stack: str = Field(default="", max_length=8000)
     component_stack: str = Field(default="", max_length=4000)

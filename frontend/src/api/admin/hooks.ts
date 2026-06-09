@@ -9,6 +9,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api } from "../client";
 import { qk } from "../queryKeys";
+import { isPositiveSafeInteger, parsePositiveIntValue } from "@/lib/routeParams";
 import type {
   Admin2faConfirmBody,
   Admin2faSetupDto,
@@ -27,6 +28,7 @@ import type {
   AdminCategoryDto,
   AdminCategoryUpsertBody,
   AdminCommentItemDto,
+  AdminCommentListDto,
   AdminCommentUpdateBody,
   AdminCurrencyDto,
   AdminCurrencyRateDto,
@@ -41,8 +43,10 @@ import type {
   AdminListDealsQuery,
   AdminListUsersQuery,
   AdminReviewItemDto,
+  AdminReviewListDto,
   AdminReviewUpsertBody,
   AdminServiceItemDto,
+  AdminServiceListDto,
   AdminServiceUpdateBody,
   AdminSettingsDto,
   AdminSettingsUpdateBody,
@@ -97,7 +101,7 @@ export function useAdminUser(userId: number | undefined) {
   return useQuery<AdminUserDetailDto>({
     queryKey: qk.admin.user.detail(userId),
     queryFn: () => api.get(`api/admin/users/${userId}`).json(),
-    enabled: typeof userId === "number" && Number.isFinite(userId),
+    enabled: isPositiveSafeInteger(userId),
   });
 }
 
@@ -117,7 +121,7 @@ function useAdminUserAction(action: string) {
           json: body ?? {},
         })
         .json(),
-    onSuccess: (_data, vars) => {
+    onSuccess: (data, vars) => {
       qc.invalidateQueries({ queryKey: qk.admin.users.all() });
       qc.invalidateQueries({ queryKey: qk.admin.user.detail(vars.userId) });
       qc.invalidateQueries({ queryKey: qk.admin.dashboard() });
@@ -127,6 +131,11 @@ function useAdminUserAction(action: string) {
       qc.invalidateQueries({ queryKey: qk.admin.userWallet.forUser(vars.userId) });
       qc.invalidateQueries({ queryKey: qk.admin.userComments.forUser(vars.userId) });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+      qc.invalidateQueries({ queryKey: qk.users.all() });
+      qc.invalidateQueries({
+        queryKey: data.username ? qk.user.detail(data.username) : qk.user.all(),
+      });
+      qc.invalidateQueries({ queryKey: qk.me() });
     },
   });
 }
@@ -212,13 +221,46 @@ export function useAdminDeal(dealId: number | undefined) {
   return useQuery<AdminDealDetailDto>({
     queryKey: qk.admin.deal.detail(dealId),
     queryFn: () => api.get(`api/admin/deals/${dealId}`).json(),
-    enabled: typeof dealId === "number" && Number.isFinite(dealId),
+    enabled: isPositiveSafeInteger(dealId),
   });
 }
 
 interface DealActionVars {
   dealId: number;
   body?: Record<string, unknown>;
+}
+
+function parseRuntimeId(value: unknown): number | undefined {
+  return parsePositiveIntValue(value);
+}
+
+function invalidateAdminDealDetailOrAll(qc: QueryClient, dealId: unknown) {
+  const parsedDealId = parseRuntimeId(dealId);
+  if (parsedDealId !== undefined) {
+    qc.invalidateQueries({ queryKey: qk.admin.deal.detail(parsedDealId) });
+  } else {
+    qc.invalidateQueries({ queryKey: qk.admin.deal.all() });
+  }
+}
+
+function invalidateAdminUserDetailOrAll(qc: QueryClient, userId: unknown) {
+  const parsedUserId = parseRuntimeId(userId);
+  if (parsedUserId !== undefined) {
+    qc.invalidateQueries({ queryKey: qk.admin.user.detail(parsedUserId) });
+  } else {
+    qc.invalidateQueries({ queryKey: qk.admin.user.all() });
+  }
+}
+
+function invalidateAdminWalletUserOrAll(qc: QueryClient, userId: unknown) {
+  const parsedUserId = parseRuntimeId(userId);
+  if (parsedUserId !== undefined) {
+    qc.invalidateQueries({ queryKey: qk.admin.userWallet.forUser(parsedUserId) });
+    qc.invalidateQueries({ queryKey: qk.admin.user.detail(parsedUserId) });
+  } else {
+    qc.invalidateQueries({ queryKey: qk.admin.userWallet.all() });
+    qc.invalidateQueries({ queryKey: qk.admin.user.all() });
+  }
 }
 
 function useAdminDealAction(action: string) {
@@ -235,14 +277,15 @@ function useAdminDealAction(action: string) {
       qc.invalidateQueries({ queryKey: qk.admin.arbitration.all() });
       qc.invalidateQueries({ queryKey: qk.admin.dashboard() });
       qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
       // V5-F-5: when the response carries the full AdminDealDetailDto,
       // also invalidate the buyer + seller user-detail queries so an
       // admin viewing one of the parties sees the post-action balance.
       // The other branch of the union is `{ deleted?: boolean }`, which
       // has no party ids and is intentionally skipped.
       if (data && typeof data === "object" && "deal" in data) {
-        qc.invalidateQueries({ queryKey: qk.admin.user.detail(data.deal.buyer.user_id) });
-        qc.invalidateQueries({ queryKey: qk.admin.user.detail(data.deal.seller.user_id) });
+        invalidateAdminUserDetailOrAll(qc, data.deal.buyer.user_id);
+        invalidateAdminUserDetailOrAll(qc, data.deal.seller.user_id);
       }
     },
   });
@@ -254,7 +297,7 @@ export function useAdminApproveDealApproval() {
     mutationFn: (approvalId) => api.post(`api/admin/deals/approvals/${approvalId}/approve`).json(),
     onSuccess: (approval) => {
       qc.invalidateQueries({ queryKey: qk.admin.deals.all() });
-      qc.invalidateQueries({ queryKey: qk.admin.deal.detail(approval.target_id) });
+      invalidateAdminDealDetailOrAll(qc, approval.target_id);
       qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
     },
@@ -267,7 +310,7 @@ export function useAdminRejectDealApproval() {
     mutationFn: (approvalId) => api.post(`api/admin/deals/approvals/${approvalId}/reject`).json(),
     onSuccess: (approval) => {
       qc.invalidateQueries({ queryKey: qk.admin.deals.all() });
-      qc.invalidateQueries({ queryKey: qk.admin.deal.detail(approval.target_id) });
+      invalidateAdminDealDetailOrAll(qc, approval.target_id);
       qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
     },
@@ -319,9 +362,15 @@ export function useAdminClaimArbitration() {
   return useMutation<{ claimed: boolean; deal_id: number; arbiter_id: number }, Error, number>({
     mutationFn: (dealId) =>
       api.post(`api/admin/arbitration/${dealId}/claim`).json(),
-    onSuccess: () => {
+    onSuccess: (data, dealId) => {
       qc.invalidateQueries({ queryKey: qk.admin.arbitration.all() });
       qc.invalidateQueries({ queryKey: qk.admin.deals.all() });
+      invalidateAdminDealDetailOrAll(qc, dealId);
+      const responseDealId = parseRuntimeId(data.deal_id);
+      if (responseDealId !== undefined && responseDealId !== dealId) {
+        qc.invalidateQueries({ queryKey: qk.admin.deal.detail(responseDealId) });
+      }
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
       // V5-F-5: claim response only carries `{ claimed, deal_id, arbiter_id }`
       // and does NOT expose buyer/seller ids. Fall back to a prefix-only
       // invalidation — TanStack Query treats `["admin", "user"]` as a
@@ -333,31 +382,47 @@ export function useAdminClaimArbitration() {
 
 // ── Services / Reviews / Comments (PR-B) ─────────────────────────────────
 
-export function useAdminUserServices(userId: number | undefined) {
-  return useQuery<AdminServiceItemDto[]>({
-    queryKey: qk.admin.userServices.forUser(userId),
-    queryFn: () => api.get(`api/admin/users/${userId}/services`).json(),
-    enabled: typeof userId === "number" && Number.isFinite(userId),
+interface AdminUserContentParams {
+  page?: number;
+  page_size?: number;
+}
+
+export function useAdminUserServices(
+  userId: number | undefined,
+  params: AdminUserContentParams = {},
+) {
+  return useQuery<AdminServiceListDto>({
+    queryKey: qk.admin.userServices.list(userId, params),
+    queryFn: () => {
+      const sp = new URLSearchParams();
+      sp.set("page", String(params.page ?? 1));
+      sp.set("page_size", String(params.page_size ?? 20));
+      return api.get(`api/admin/users/${userId}/services`, { searchParams: sp }).json();
+    },
+    enabled: isPositiveSafeInteger(userId),
+    placeholderData: (prev) => prev,
   });
 }
 
 function invalidateAdminServiceSideEffects(
   qc: QueryClient,
-  serviceId: number | undefined,
-  ownerId?: number,
+  serviceId: unknown,
+  ownerId?: unknown,
 ) {
-  if (ownerId !== undefined) {
-    qc.invalidateQueries({ queryKey: qk.admin.userServices.forUser(ownerId) });
-    qc.invalidateQueries({ queryKey: qk.admin.user.detail(ownerId) });
+  const parsedOwnerId = parseRuntimeId(ownerId);
+  if (parsedOwnerId !== undefined) {
+    qc.invalidateQueries({ queryKey: qk.admin.userServices.forUser(parsedOwnerId) });
+    qc.invalidateQueries({ queryKey: qk.admin.user.detail(parsedOwnerId) });
   } else {
     qc.invalidateQueries({ queryKey: qk.admin.userServices.all() });
   }
   qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
   qc.invalidateQueries({ queryKey: qk.services.all() });
   qc.invalidateQueries({ queryKey: qk.categories() });
-  if (serviceId !== undefined) {
-    qc.invalidateQueries({ queryKey: qk.service.detail(serviceId) });
-    qc.invalidateQueries({ queryKey: qk.service.comments(serviceId) });
+  const parsedServiceId = parseRuntimeId(serviceId);
+  if (parsedServiceId !== undefined) {
+    qc.invalidateQueries({ queryKey: qk.service.detail(parsedServiceId) });
+    qc.invalidateQueries({ queryKey: qk.service.comments(parsedServiceId) });
   } else {
     qc.invalidateQueries({ queryKey: qk.service.all() });
   }
@@ -375,8 +440,8 @@ export function useAdminUpdateService(userId?: number) {
     onSuccess: (service, vars) => {
       invalidateAdminServiceSideEffects(
         qc,
-        service.id ?? vars.serviceId,
-        service.owner_id ?? userId,
+        parseRuntimeId(service.id) ?? vars.serviceId,
+        parseRuntimeId(service.owner_id) ?? userId,
       );
     },
   });
@@ -388,21 +453,26 @@ export function useAdminDeleteService(userId?: number) {
     mutationFn: (serviceId) =>
       api.post(`api/admin/services/${serviceId}/delete`).json(),
     onSuccess: (data, serviceId) => {
-      invalidateAdminServiceSideEffects(qc, data.service_id ?? serviceId, userId);
+      invalidateAdminServiceSideEffects(qc, parseRuntimeId(data.service_id) ?? serviceId, userId);
     },
   });
 }
 
-export function useAdminUserReviews(userId: number | undefined, direction: "received" | "written" = "received") {
-  return useQuery<AdminReviewItemDto[]>({
-    queryKey: qk.admin.userReviews.forUserDirection(userId, direction),
-    queryFn: () =>
-      api
-        .get(`api/admin/users/${userId}/reviews`, {
-          searchParams: { direction },
-        })
-        .json(),
-    enabled: typeof userId === "number" && Number.isFinite(userId),
+export function useAdminUserReviews(
+  userId: number | undefined,
+  direction: "received" | "written" = "received",
+  params: AdminUserContentParams = {},
+) {
+  return useQuery<AdminReviewListDto>({
+    queryKey: qk.admin.userReviews.list(userId, direction, params),
+    queryFn: () => {
+      const sp = new URLSearchParams({ direction });
+      sp.set("page", String(params.page ?? 1));
+      sp.set("page_size", String(params.page_size ?? 20));
+      return api.get(`api/admin/users/${userId}/reviews`, { searchParams: sp }).json();
+    },
+    enabled: isPositiveSafeInteger(userId),
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -410,8 +480,8 @@ function invalidateAdminReviewSideEffects(qc: QueryClient, review?: AdminReviewI
   qc.invalidateQueries({ queryKey: qk.admin.userReviews.all() });
   qc.invalidateQueries({ queryKey: qk.admin.users.all() });
   if (review) {
-    qc.invalidateQueries({ queryKey: qk.admin.user.detail(review.target_id) });
-    qc.invalidateQueries({ queryKey: qk.admin.user.detail(review.author_id) });
+    invalidateAdminUserDetailOrAll(qc, review.target_id);
+    invalidateAdminUserDetailOrAll(qc, review.author_id);
   } else {
     qc.invalidateQueries({ queryKey: qk.admin.user.all() });
   }
@@ -466,11 +536,20 @@ export function useAdminDeleteReview(userId?: number) {
   });
 }
 
-export function useAdminUserComments(userId: number | undefined) {
-  return useQuery<AdminCommentItemDto[]>({
-    queryKey: qk.admin.userComments.forUser(userId),
-    queryFn: () => api.get(`api/admin/users/${userId}/comments`).json(),
-    enabled: typeof userId === "number" && Number.isFinite(userId),
+export function useAdminUserComments(
+  userId: number | undefined,
+  params: AdminUserContentParams = {},
+) {
+  return useQuery<AdminCommentListDto>({
+    queryKey: qk.admin.userComments.list(userId, params),
+    queryFn: () => {
+      const sp = new URLSearchParams();
+      sp.set("page", String(params.page ?? 1));
+      sp.set("page_size", String(params.page_size ?? 20));
+      return api.get(`api/admin/users/${userId}/comments`, { searchParams: sp }).json();
+    },
+    enabled: isPositiveSafeInteger(userId),
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -479,16 +558,17 @@ function invalidateAdminCommentSideEffects(
   comment?: Partial<Pick<AdminCommentItemDto, "service_id" | "author_id">>,
   userId?: number,
 ) {
-  const authorId = userId ?? comment?.author_id;
+  const authorId = parseRuntimeId(userId) ?? parseRuntimeId(comment?.author_id);
   if (authorId !== undefined) {
     qc.invalidateQueries({ queryKey: qk.admin.userComments.forUser(authorId) });
   } else {
     qc.invalidateQueries({ queryKey: qk.admin.userComments.all() });
   }
   qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
-  if (comment?.service_id !== undefined) {
-    qc.invalidateQueries({ queryKey: qk.service.comments(comment.service_id) });
-    qc.invalidateQueries({ queryKey: qk.service.detail(comment.service_id) });
+  const serviceId = parseRuntimeId(comment?.service_id);
+  if (serviceId !== undefined) {
+    qc.invalidateQueries({ queryKey: qk.service.comments(serviceId) });
+    qc.invalidateQueries({ queryKey: qk.service.detail(serviceId) });
   } else {
     qc.invalidateQueries({ queryKey: qk.service.all() });
   }
@@ -544,7 +624,7 @@ export function useAdminUserWallet(userId: number | undefined) {
   return useQuery<AdminUserBalanceDto[]>({
     queryKey: qk.admin.userWallet.forUser(userId),
     queryFn: () => api.get(`api/admin/wallets/${userId}`).json(),
-    enabled: typeof userId === "number" && Number.isFinite(userId),
+    enabled: isPositiveSafeInteger(userId),
   });
 }
 
@@ -558,7 +638,9 @@ export function useAdminAdjustBalance(userId: number) {
       qc.invalidateQueries({ queryKey: qk.admin.userWallet.forUser(userId) });
       // V5-F-3: invalidate user detail + audit caches.
       qc.invalidateQueries({ queryKey: qk.admin.user.detail(userId) });
+      qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+      qc.invalidateQueries({ queryKey: qk.wallet.all() });
     },
   });
 }
@@ -578,6 +660,7 @@ export function useAdminUpsertCurrencyRate() {
     mutationFn: (body) => api.post("api/admin/wallets/rates", { json: body }).json(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.admin.wallets.all() });
+      qc.invalidateQueries({ queryKey: qk.admin.userWallet.all() });
       qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
     },
@@ -614,8 +697,7 @@ export function useAdminDepositMarkPaid() {
     onSuccess: (deposit) => {
       qc.invalidateQueries({ queryKey: qk.admin.deposits.all() });
       qc.invalidateQueries({ queryKey: qk.admin.wallets.all() });
-      qc.invalidateQueries({ queryKey: qk.admin.userWallet.forUser(deposit.user_id) });
-      qc.invalidateQueries({ queryKey: qk.admin.user.detail(deposit.user_id) });
+      invalidateAdminWalletUserOrAll(qc, deposit.user_id);
       qc.invalidateQueries({ queryKey: qk.admin.dashboard() });
       qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
@@ -634,8 +716,7 @@ export function useAdminDepositRefund() {
     onSuccess: (deposit) => {
       qc.invalidateQueries({ queryKey: qk.admin.deposits.all() });
       qc.invalidateQueries({ queryKey: qk.admin.wallets.all() });
-      qc.invalidateQueries({ queryKey: qk.admin.userWallet.forUser(deposit.user_id) });
-      qc.invalidateQueries({ queryKey: qk.admin.user.detail(deposit.user_id) });
+      invalidateAdminWalletUserOrAll(qc, deposit.user_id);
       qc.invalidateQueries({ queryKey: qk.admin.dashboard() });
       qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
@@ -670,13 +751,7 @@ export function useAdminDecideWithdrawal() {
     onSettled: (withdrawal) => {
       qc.invalidateQueries({ queryKey: qk.admin.withdrawals.all() });
       qc.invalidateQueries({ queryKey: qk.admin.wallets.all() });
-      if (withdrawal?.user_id !== undefined) {
-        qc.invalidateQueries({ queryKey: qk.admin.userWallet.forUser(withdrawal.user_id) });
-        qc.invalidateQueries({ queryKey: qk.admin.user.detail(withdrawal.user_id) });
-      } else {
-        qc.invalidateQueries({ queryKey: qk.admin.userWallet.all() });
-        qc.invalidateQueries({ queryKey: qk.admin.user.all() });
-      }
+      invalidateAdminWalletUserOrAll(qc, withdrawal?.user_id);
       qc.invalidateQueries({ queryKey: qk.admin.analytics.kpi() });
       qc.invalidateQueries({ queryKey: qk.admin.analytics.series() });
       qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
@@ -703,6 +778,9 @@ export function useAdminUpdateSettings() {
       qc.invalidateQueries({ queryKey: qk.admin.settings() });
       qc.invalidateQueries({ queryKey: qk.publicSettings() });
       qc.invalidateQueries({ queryKey: qk.publicStats() });
+      qc.invalidateQueries({ queryKey: qk.maintenance() });
+      qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
     },
   });
 }
@@ -781,10 +859,16 @@ export function useAdminDeleteCurrency() {
 
 // ── Broadcasts ──────────────────────────────────────────────────────────
 
-export function useAdminBroadcasts() {
+export function useAdminBroadcasts(params: { page?: number; page_size?: number } = {}) {
   return useQuery<AdminBroadcastListDto>({
-    queryKey: qk.admin.broadcasts(),
-    queryFn: () => api.get("api/admin/broadcasts").json(),
+    queryKey: [...qk.admin.broadcasts(), params] as const,
+    queryFn: () => {
+      const sp = new URLSearchParams();
+      sp.set("page", String(params.page ?? 1));
+      sp.set("page_size", String(params.page_size ?? 50));
+      return api.get("api/admin/broadcasts", { searchParams: sp }).json();
+    },
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -803,6 +887,7 @@ export function useAdminCreateBroadcast() {
       qc.invalidateQueries({ queryKey: qk.admin.broadcasts() });
       // V5-F-4: invalidate audit cache.
       qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+      qc.invalidateQueries({ queryKey: qk.notifications.all() });
     },
   });
 }
@@ -853,8 +938,13 @@ export function useAdminSystemStatus() {
 }
 
 export function useAdminFlushRedis() {
+  const qc = useQueryClient();
   return useMutation<{ ok: boolean; message?: string }, Error, void>({
     mutationFn: () => api.post("api/admin/system/redis/flush").json(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.admin.systemStatus() });
+      qc.invalidateQueries({ queryKey: qk.admin.audit.all() });
+    },
   });
 }
 
@@ -896,6 +986,8 @@ export function useAdminAuditLog(params: {
   actor_id?: number;
   target_type?: string;
   target_id?: number;
+  since?: string;
+  until?: string;
   page?: number;
   page_size?: number;
 }) {
@@ -907,6 +999,8 @@ export function useAdminAuditLog(params: {
       if (params.actor_id !== undefined) sp.set("actor_id", String(params.actor_id));
       if (params.target_type) sp.set("target_type", params.target_type);
       if (params.target_id !== undefined) sp.set("target_id", String(params.target_id));
+      if (params.since) sp.set("since", params.since);
+      if (params.until) sp.set("until", params.until);
       sp.set("page", String(params.page ?? 1));
       sp.set("page_size", String(params.page_size ?? 50));
       return api.get("api/admin/audit", { searchParams: sp }).json();

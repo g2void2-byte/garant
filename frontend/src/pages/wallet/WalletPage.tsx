@@ -10,8 +10,12 @@ import { Page } from "@/components/layout/Page";
 import { Header } from "@/components/layout/Header";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { normalizeCurrencyCode, walletCurrencyPath } from "@/lib/currencyCodes";
 import { formatMoney } from "@/lib/format";
-import { formatCurrency } from "@/lib/format";
+import {
+  formatWalletBalanceCurrency,
+  hasPositiveWalletBalance,
+} from "@/lib/walletAmounts";
 import type { WalletBalanceDto } from "@/api/types";
 
 /**
@@ -64,7 +68,11 @@ export default function WalletPage() {
           // we default missing values to ``"crypto"`` (which gets
           // filtered out).
           const fiatBalances =
-            data?.filter((b) => (b.currency.kind ?? "crypto") === "fiat") ?? [];
+            data?.filter(
+              (b) =>
+                (b.currency.kind ?? "crypto") === "fiat" &&
+                normalizeCurrencyCode(b.currency.code) !== null,
+            ) ?? [];
           if (isLoading) return null;
           if (fiatBalances.length === 0) {
             return (
@@ -139,31 +147,34 @@ export default function WalletPage() {
 }
 
 function WalletBalanceRow({ balance }: { balance: WalletBalanceDto }) {
-  const { currency, amount } = balance;
+  const { currency } = balance;
+  const code = normalizeCurrencyCode(currency.code);
+  const path = walletCurrencyPath(code);
+  if (!code || !path) return null;
   return (
     <Link
-      to={`/wallet/${currency.code}`}
+      to={path}
       className="flex items-center justify-between bg-panel rounded-card p-3 active:scale-[0.98] transition"
       aria-label={`Открыть ${currency.name}`}
     >
       <div className="flex items-center gap-3">
         <div className="size-10 rounded-full bg-panel-2 grid place-items-center text-[13px] font-bold text-accent">
-          {currency.code.slice(0, 4)}
+          {code.slice(0, 4)}
         </div>
         <div>
           <div className="font-semibold leading-tight">{currency.name}</div>
           <div className="text-xs text-text-muted leading-tight mt-0.5">
-            {currency.network || currency.code}
+            {currency.network || code}
           </div>
         </div>
       </div>
       <div className="text-right">
         <div className="font-semibold tabular-nums">
-          {formatCurrency(amount, currency.code, currency.decimals)}
+          {formatWalletBalanceCurrency(balance, "amount", code, currency.decimals)}
         </div>
-        {balance.locked > 0 && (
+        {hasPositiveWalletBalance(balance, "locked") && (
           <div className="text-xs text-text-muted">
-            +{formatCurrency(balance.locked, currency.code, currency.decimals)} в заявках
+            +{formatWalletBalanceCurrency(balance, "locked", code, currency.decimals)} в заявках
           </div>
         )}
       </div>

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import case, func, or_, select, update
@@ -21,21 +22,28 @@ router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 _PAGE_SIZE = 200
 
 
+def _cursor_timestamp(value: datetime) -> datetime:
+    """Return a naive UTC timestamp for the DB's timestamp-without-TZ column."""
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
+
+
 @router.get("", response_model=list[NotificationOut])
 async def list_notifications(
     user: CurrentUser,
     session: SessionDep,
-    type: str | None = Query(None),
+    type: Annotated[NotificationType | None, Query()] = None,
     # cursor pagination by ``(created_at, id)``. Two
     # rows can share a ``created_at`` (we INSERT in bulk on broadcast
     # fan-out), so the tuple is required to make the order strict —
     # otherwise pages would silently drop or duplicate rows. The
     # cursor is the ``(created_at, id)`` of the last row the client
     # already has; we return rows strictly older than that.
-    before_created_at: str | None = Query(
-        None,
-        description="ISO-8601 timestamp from the last seen notification.",
-    ),
+    before_created_at: Annotated[
+        datetime | None,
+        Query(description="ISO-8601 timestamp from the last seen notification."),
+    ] = None,
     before_id: int | None = Query(
         None,
         description="Id from the last seen notification (must accompany before_created_at).",
@@ -44,56 +52,16 @@ async def list_notifications(
     limit: int = Query(_PAGE_SIZE, ge=1, le=_PAGE_SIZE),
 ):
     stmt = select(Notification).where(Notification.recipient_id == user.id)
-    if type:
-        try:
-            type_enum = NotificationType(type)
-            stmt = stmt.where(Notification.type == type_enum)
-        except ValueError:
-            # V11-L-15 — an unknown ``type`` filter used to be silently
-            # swallowed; surface it as a structured ``debug`` event so
-            # JSON-logger pipelines can spot a frontend typo / stale
-            # client without raising the user-visible status (the API
-            # contract is "unknown filter = no filter"). ``type`` is
-            # client-supplied but ``NotificationType`` is a closed enum,
-            # so cardinality is fine to index.
-            logger.debug(
-                "notifications list: unknown type filter %r — falling back to no filter",
-                type,
-                extra={
-                    "event": "notifications.list.unknown_type_filter",
-                    "user_id": user.id,
-                    "filter_type": type,
-                },
-            )
+    if type is not None:
+        stmt = stmt.where(Notification.type == type)
     if (before_created_at is None) != (before_id is None):
         # Keyset cursor must arrive as a ``(created_at, id)`` pair so
         # the ``OR``-form below stays strict; silently dropping the
         # half-specified case (the previous behaviour) hid frontend
         # encoding bugs by serving an unpaginated first page.
-        raise HTTPException(
-            400,
-            "before_created_at и before_id должны передаваться вместе",
-        )
+        raise HTTPException(422, "before_created_at and before_id must be sent together")
     if before_created_at is not None and before_id is not None:
-        try:
-            cursor_ts = datetime.fromisoformat(before_created_at.replace("Z", "+00:00"))
-        except ValueError:
-            # V11-L-15 — cursor parse failures point at either a
-            # frontend regression on keyset-pagination encoding or a
-            # scraper passing garbage. Either way it's worth alerting
-            # on. ``before_created_at`` itself isn't indexed in
-            # ``extra`` (client-supplied strings → unbounded
-            # cardinality); the boolean presence of a paired
-            # ``before_id`` is.
-            logger.warning(
-                "notifications list: invalid before_created_at cursor",
-                extra={
-                    "event": "notifications.list.bad_cursor",
-                    "user_id": user.id,
-                    "before_id_present": before_id is not None,
-                },
-            )
-            raise HTTPException(400, "Invalid before_created_at")  # noqa: B904
+        cursor_ts = _cursor_timestamp(before_created_at)
         # Standard keyset pagination: ``(created_at, id) < (cursor_ts,
         # cursor_id)`` in descending order. The OR-form avoids the
         # need for ``tuple_`` row-value support across all dialects

@@ -117,6 +117,18 @@ describe("<AdminUsersPage />", () => {
     expect(screen.getByText("Никого не найдено")).toBeInTheDocument();
   });
 
+  it("renders malformed list totals as a neutral dash", () => {
+    mockState.list = {
+      items: [],
+      total: "1e2" as unknown as number,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+    expect(screen.getByText(/\u2014 всего/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it("reads URL filter params and passes them into useAdminUsers", () => {
     mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
     renderPage(["/admin/users?role=admin&status=banned&page=2&q=alice"]);
@@ -128,6 +140,16 @@ describe("<AdminUsersPage />", () => {
       page_size: 20,
     });
   });
+
+  it.each(["-5", "1e2", "0x10"])(
+    "falls back to page 1 for ambiguous page param %s",
+    (page) => {
+      mockState.list = { items: [], total: 0, page: 1, page_size: 20 };
+      renderPage([`/admin/users?page=${page}`]);
+
+      expect(mockState.lastQuery?.page).toBe(1);
+    },
+  );
 
   it("renders a user row with Бан + Заморожен badges", () => {
     mockState.list = {
@@ -144,6 +166,54 @@ describe("<AdminUsersPage />", () => {
     expect(screen.getByText("Заморожен")).toBeInTheDocument();
   });
 
+  it("renders string metric payloads in user rows without crashing", () => {
+    mockState.list = {
+      items: [
+        makeUser({
+          rating: "4.5" as unknown as number,
+          trust_deposit_balance: "1500.5" as unknown as number,
+        }),
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+    expect(screen.getAllByText(/4\.5/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/\$1500\.50/).length).toBeGreaterThan(0);
+  });
+
+  it("renders malformed user row identifiers and counts as neutral values", () => {
+    mockState.list = {
+      items: [
+        makeUser({
+          tg_user_id: "1e2" as unknown as number,
+          deals_total: "0x10" as unknown as number,
+        }),
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+
+    expect(screen.getByText(/tg \u2014/)).toBeInTheDocument();
+    expect(screen.getByText(/Сделок: \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2|0x10/)).not.toBeInTheDocument();
+  });
+
+  it("renders missing usernames as non-handle labels", () => {
+    mockState.list = {
+      items: [makeUser({ username: null })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    renderPage();
+    expect(screen.getByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/)).toBeInTheDocument();
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
   it("clicking a user row navigates to /admin/users/<id>", async () => {
     mockState.list = {
       items: [makeUser({ id: 99 })],
@@ -155,6 +225,23 @@ describe("<AdminUsersPage />", () => {
     renderPage();
     await user.click(screen.getByText("Alice Smith"));
     expect(screen.getByTestId("path").textContent).toBe("/admin/users/99");
+  });
+
+  it("does not navigate from rows with malformed runtime user ids", async () => {
+    mockState.list = {
+      items: [makeUser({ id: "0x63" as unknown as number })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    };
+    const user = userEvent.setup();
+    renderPage();
+
+    const row = screen.getByText("Alice Smith").closest("button");
+    expect(row).toBeDisabled();
+    await user.click(row!);
+
+    expect(screen.getByTestId("path").textContent).toBe("/admin/users");
   });
 
   it("typing a search and pressing Enter triggers a query refetch with trimmed q", async () => {

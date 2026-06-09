@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { UserCardDto, CategoryDto, ServiceDto } from "@/api/types";
@@ -44,11 +45,27 @@ const categoriesState = vi.hoisted(() => ({
 const servicesState = vi.hoisted(() => ({
   data: undefined as ServiceDto[] | undefined,
   isLoading: false,
+  lastParams: undefined as unknown,
+}));
+const apiGetMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/api/client", () => ({
+  api: { get: apiGetMock },
 }));
 
 vi.mock("@/api/hooks", () => ({
   useCategories: () => categoriesState,
-  useServices: () => servicesState,
+  buildServicesSearchParams: (params: { category?: string; limit?: number; offset?: number }) => {
+    const searchParams: Record<string, string> = {};
+    if (params.category) searchParams.category = params.category;
+    if (params.limit !== undefined) searchParams.limit = String(params.limit);
+    if (params.offset !== undefined) searchParams.offset = String(params.offset);
+    return searchParams;
+  },
+  useServices: (params: unknown) => {
+    servicesState.lastParams = params;
+    return { data: servicesState.data, isLoading: servicesState.isLoading };
+  },
   useMe: () => meState,
 }));
 
@@ -68,11 +85,28 @@ function renderPage(initialRoute = "/search/categories") {
   );
 }
 
+function makeService(id: number, category: CategoryDto, overrides: Partial<ServiceDto> = {}): ServiceDto {
+  return {
+    id,
+    title: `Service ${id}`,
+    description: "Service description",
+    price: 100,
+    currency: "USD",
+    status: "active",
+    owner_username: "alice",
+    created_at: "2026-01-01T00:00:00Z",
+    category,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
+  apiGetMock.mockReset();
   categoriesState.data = undefined;
   categoriesState.isLoading = false;
   servicesState.data = undefined;
   servicesState.isLoading = false;
+  servicesState.lastParams = undefined;
   meState.data = makeUser({ id: 100, deals_count: 5, is_admin: false });
   meState.isLoading = false;
 });
@@ -92,6 +126,16 @@ describe("<CategoriesPage />", () => {
     expect(screen.getByText("Development")).toBeInTheDocument();
   });
 
+  it("does not display malformed category tile counters", () => {
+    categoriesState.data = [
+      { id: 1, name: "Development", slug: "dev", icon_key: "code", services_count: "1e2" as unknown as number },
+    ];
+    renderPage();
+    expect(screen.getByText("Development")).toBeInTheDocument();
+    expect(screen.getByText(/Всего: —/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
   it("renders warning overlay when user has 0 deals and is not admin", () => {
     meState.data = makeUser({ id: 100, deals_count: 0, is_admin: false });
     categoriesState.data = [
@@ -100,6 +144,15 @@ describe("<CategoriesPage />", () => {
     renderPage();
     expect(screen.getByText("Поиск ограничен")).toBeInTheDocument();
     expect(screen.getByText(/каталог категорий доступен только участникам/)).toBeInTheDocument();
+  });
+
+  it("keeps the catalog gate closed for string zero deal counts", () => {
+    meState.data = makeUser({ id: 100, deals_count: "0" as unknown as number, is_admin: false });
+    categoriesState.data = [
+      { id: 1, name: "Development", slug: "dev", icon_key: "code", services_count: 5 },
+    ];
+    renderPage();
+    expect(screen.getByText("Поиск ограничен")).toBeInTheDocument();
   });
 
   it("renders service detail page and warns when user has 0 deals and is not admin", () => {
@@ -116,11 +169,55 @@ describe("<CategoriesPage />", () => {
         currency: "USD",
         status: "active",
         owner_username: "bob",
+        created_at: "2026-01-01T00:00:00Z",
         category: categoriesState.data[0],
       },
     ];
     renderPage("/search/categories/dev");
     expect(screen.getByText("Поиск ограничен")).toBeInTheDocument();
     expect(screen.getByText(/просмотр каталога услуг доступен только участникам/)).toBeInTheDocument();
+  });
+
+  it("requests the first category service page", () => {
+    categoriesState.data = [
+      { id: 1, name: "Development", slug: "dev", icon_key: "code", services_count: 0 },
+    ];
+    servicesState.data = [];
+    renderPage("/search/categories/dev");
+    expect(servicesState.lastParams).toEqual({ category: "dev", limit: 50, offset: 0 });
+  });
+
+  it("loads more category services with the backend offset", async () => {
+    const category = { id: 1, name: "Development", slug: "dev", icon_key: "code", services_count: 51 };
+    categoriesState.data = [category];
+    servicesState.data = Array.from({ length: 50 }, (_, idx) => makeService(idx + 1, category));
+    apiGetMock.mockReturnValue({ json: async () => [makeService(51, category)] });
+
+    const user = userEvent.setup();
+    renderPage("/search/categories/dev");
+    await user.click(screen.getByRole("button", { name: "Показать еще" }));
+
+    await waitFor(() => expect(apiGetMock).toHaveBeenCalledTimes(1));
+    expect(apiGetMock).toHaveBeenCalledWith("api/services", {
+      searchParams: { category: "dev", limit: "50", offset: "50" },
+    });
+  });
+
+  it("does not trust malformed category service counters for display or pagination", () => {
+    const category = {
+      id: 1,
+      name: "Development",
+      slug: "dev",
+      icon_key: "code",
+      services_count: "1e2" as unknown as number,
+    };
+    categoriesState.data = [category];
+    servicesState.data = Array.from({ length: 50 }, (_, idx) => makeService(idx + 1, category));
+
+    renderPage("/search/categories/dev");
+
+    expect(screen.getByText(/Услуг: —/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Показать еще" })).not.toBeInTheDocument();
   });
 });

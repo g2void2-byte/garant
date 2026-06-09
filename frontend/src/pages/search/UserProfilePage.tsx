@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MessageSquare, HandCoins, Flag, Star } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { Button } from "@/components/ui/Button";
@@ -10,20 +10,130 @@ import { ProfileHeader } from "@/components/domain/ProfileHeader";
 import { ProfileStatsGrid } from "@/components/domain/ProfileStatsGrid";
 import { ProfileForumsCard } from "@/components/domain/ProfileForumsCard";
 import { ServiceCard } from "@/components/domain/ServiceCard";
-import { useMe, useReviews, useServices, useUser } from "@/api/hooks";
+import {
+  buildReviewsSearchParams,
+  buildServicesSearchParams,
+  useMe,
+  useReviews,
+  useServices,
+  useUser,
+} from "@/api/hooks";
+import { api } from "@/api/client";
+import type { ReviewDto, ServiceDto } from "@/api/types";
 import { openTelegramLink } from "@/lib/tg";
-import { relativeTime } from "@/lib/format";
+import { buildTelegramUserUrl } from "@/lib/telegramLinks";
+import { formatRatingValue, parseNonNegativeIntegerValue, relativeTime } from "@/lib/format";
+import { newDealToPath, normalizeUsernameRef } from "@/lib/usernames";
+
+const PROFILE_REVIEWS_PAGE_SIZE = 50;
+const PROFILE_SERVICES_PAGE_SIZE = 50;
 
 export default function UserProfilePage() {
   const navigate = useNavigate();
   const { username } = useParams<{ username: string }>();
+  const routeUsername = normalizeUsernameRef(username);
   const { data: me } = useMe();
-  const { data: user, isLoading } = useUser(username);
-  const isSelf = me?.username === username;
+  const { data: user, isLoading } = useUser(routeUsername ?? undefined);
+  const isSelf = normalizeUsernameRef(me?.username) === routeUsername;
 
   const [tab, setTab] = useState<"services" | "reviews">("services");
-  const { data: services } = useServices({ owner: username });
-  const { data: reviews } = useReviews(username);
+  const firstServicesParams = useMemo(
+    () => ({ owner: routeUsername ?? undefined, limit: PROFILE_SERVICES_PAGE_SIZE, offset: 0 }),
+    [routeUsername],
+  );
+  const { data: services } = useServices(firstServicesParams, { enabled: !!routeUsername });
+  const [serviceItems, setServiceItems] = useState<ServiceDto[]>([]);
+  const [servicesReachedEnd, setServicesReachedEnd] = useState(false);
+  const [loadingMoreServices, setLoadingMoreServices] = useState(false);
+  const [servicesError, setServicesError] = useState<string | null>(null);
+  const firstReviewsParams = useMemo(
+    () => ({ limit: PROFILE_REVIEWS_PAGE_SIZE, offset: 0 }),
+    [],
+  );
+  const { data: reviews } = useReviews(routeUsername ?? undefined, firstReviewsParams);
+  const [reviewItems, setReviewItems] = useState<ReviewDto[]>([]);
+  const [reviewsReachedEnd, setReviewsReachedEnd] = useState(false);
+  const [loadingMoreReviews, setLoadingMoreReviews] = useState(false);
+  const [reviewsError, setReviewsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const page = reviews ?? [];
+    setReviewItems(page);
+    setReviewsReachedEnd(page.length < PROFILE_REVIEWS_PAGE_SIZE);
+    setReviewsError(null);
+  }, [reviews, routeUsername]);
+
+  const loadMoreReviews = async () => {
+    if (!routeUsername || loadingMoreReviews || reviewsReachedEnd) return;
+    setLoadingMoreReviews(true);
+    setReviewsError(null);
+    try {
+      const page = await api
+        .get("api/reviews", {
+          searchParams: buildReviewsSearchParams(routeUsername, {
+            limit: PROFILE_REVIEWS_PAGE_SIZE,
+            offset: reviewItems.length,
+          }),
+        })
+        .json<ReviewDto[]>();
+      setReviewItems((prev) => [...prev, ...page]);
+      if (page.length < PROFILE_REVIEWS_PAGE_SIZE) setReviewsReachedEnd(true);
+    } catch (e: unknown) {
+      setReviewsError((e as Error)?.message || "Не удалось загрузить еще отзывы");
+    } finally {
+      setLoadingMoreReviews(false);
+    }
+  };
+
+  const reviewsCount = parseNonNegativeIntegerValue(user?.reviews_count);
+  const hasMoreReviews =
+    !reviewsReachedEnd &&
+    reviewItems.length >= PROFILE_REVIEWS_PAGE_SIZE &&
+    reviewsCount !== null &&
+    reviewItems.length < reviewsCount;
+
+  useEffect(() => {
+    const page = services ?? [];
+    setServiceItems(page);
+    setServicesReachedEnd(page.length < PROFILE_SERVICES_PAGE_SIZE);
+    setServicesError(null);
+  }, [services, routeUsername]);
+
+  const loadMoreServices = async () => {
+    if (!routeUsername || loadingMoreServices || servicesReachedEnd) return;
+    setLoadingMoreServices(true);
+    setServicesError(null);
+    try {
+      const page = await api
+        .get("api/services", {
+          searchParams: buildServicesSearchParams({
+            owner: routeUsername,
+            limit: PROFILE_SERVICES_PAGE_SIZE,
+            offset: serviceItems.length,
+          }),
+        })
+        .json<ServiceDto[]>();
+      setServiceItems((prev) => [...prev, ...page]);
+      if (page.length < PROFILE_SERVICES_PAGE_SIZE) setServicesReachedEnd(true);
+    } catch (e: unknown) {
+      setServicesError((e as Error)?.message || "Не удалось загрузить еще услуги");
+    } finally {
+      setLoadingMoreServices(false);
+    }
+  };
+
+  const hasMoreServices =
+    !servicesReachedEnd && serviceItems.length >= PROFILE_SERVICES_PAGE_SIZE;
+
+  if (!routeUsername) {
+    return (
+      <Page showBack>
+        <div className="px-4">
+          <EmptyState title={"\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d"} />
+        </div>
+      </Page>
+    );
+  }
 
   if (isLoading || !user) {
     return (
@@ -37,6 +147,10 @@ export default function UserProfilePage() {
     );
   }
 
+  const profileUsername = normalizeUsernameRef(user.username);
+  const profileDealPath = newDealToPath(profileUsername);
+  const profileTelegramUrl = buildTelegramUserUrl(profileUsername);
+
   return (
     <Page showBack>
       <ProfileHeader user={user} />
@@ -44,10 +158,20 @@ export default function UserProfilePage() {
       <div className="px-4 mt-3 space-y-3">
         {!isSelf && (
           <div className="grid grid-cols-3 gap-2">
-            <Button variant="primary" size="md" onClick={() => navigate(`/deals/new?to=${user.username}`)}>
+            <Button
+              variant="primary"
+              size="md"
+              disabled={!profileDealPath}
+              onClick={() => profileDealPath && navigate(profileDealPath)}
+            >
               <HandCoins className="size-4" /> Сделка
             </Button>
-            <Button variant="secondary" size="md" onClick={() => openTelegramLink(`https://t.me/${user.username}`)}>
+            <Button
+              variant="secondary"
+              size="md"
+              disabled={!profileTelegramUrl}
+              onClick={() => profileTelegramUrl && openTelegramLink(profileTelegramUrl)}
+            >
               <MessageSquare className="size-4" /> Написать
             </Button>
             <Button variant="ghost" size="md">
@@ -63,41 +187,65 @@ export default function UserProfilePage() {
         <ToggleTabs
           value={tab}
           options={[
-            { value: "services", label: "Услуги", count: services?.length ?? 0 },
-            { value: "reviews", label: "Отзывы", count: reviews?.length ?? 0 },
+            { value: "services", label: "Услуги", count: serviceItems.length },
+            { value: "reviews", label: "Отзывы", count: user.reviews_count },
           ]}
           onChange={setTab}
         />
 
         {tab === "services" && (
           <div className="space-y-2">
-            {!services || services.length === 0 ? (
+            {serviceItems.length === 0 ? (
               <EmptyState title="Услуги отсутствуют" description="Пользователь пока не добавил услуг" />
             ) : (
-              services.map((s, i) => <ServiceCard key={s.id} service={s} index={i} />)
+              <>
+                {serviceItems.map((s, i) => <ServiceCard key={s.id} service={s} index={i} />)}
+                {hasMoreServices && (
+                  <Button onClick={loadMoreServices} disabled={loadingMoreServices} className="w-full">
+                    {loadingMoreServices ? "Загружаю..." : "Показать еще"}
+                  </Button>
+                )}
+                {servicesError && <div className="text-xs text-danger text-center">{servicesError}</div>}
+              </>
             )}
           </div>
         )}
 
         {tab === "reviews" && (
           <div className="space-y-2">
-            {!reviews || reviews.length === 0 ? (
+            {reviewItems.length === 0 ? (
               <EmptyState
                 icon={<Star className="size-5" />}
                 title="Отзывов нет"
                 description="Тут будут собираться отзывы по успешным сделкам"
               />
             ) : (
-              reviews.map((r) => (
+              <>
+                {reviewItems.map((rawReview) => {
+                  const r = {
+                    ...rawReview,
+                    author_username: normalizeUsernameRef(rawReview.author_username),
+                  };
+                  return (
                 <div key={r.id} className="bg-panel border border-border rounded-card p-3">
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="text-accent font-bold">★ {r.rating.toFixed(1)}</span>
-                    <span className="text-text-muted">от @{r.author_username}</span>
+                    <span className="text-accent font-bold">★ {formatRatingValue(r.rating)}</span>
+                    <span className="text-text-muted">
+                      {r.author_username ? `от @${r.author_username}` : "автор недоступен"}
+                    </span>
                     <span className="text-text-muted ml-auto">{relativeTime(r.created_at)}</span>
                   </div>
                   {r.text && <div className="mt-2 text-sm">{r.text}</div>}
                 </div>
-              ))
+                  );
+                })}
+                {hasMoreReviews && (
+                  <Button onClick={loadMoreReviews} disabled={loadingMoreReviews} className="w-full">
+                    {loadingMoreReviews ? "Загружаю..." : "Показать еще"}
+                  </Button>
+                )}
+                {reviewsError && <div className="text-xs text-danger text-center">{reviewsError}</div>}
+              </>
             )}
           </div>
         )}

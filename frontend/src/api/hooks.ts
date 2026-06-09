@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import { qk } from "./queryKeys";
+import { normalizeCurrencyCode } from "@/lib/currencyCodes";
+import { parseNonNegativeIntegerValue } from "@/lib/format";
+import { isPositiveSafeInteger, parsePositiveIntValue } from "@/lib/routeParams";
+import { normalizeUsernameRef, userDetailApiPath } from "@/lib/usernames";
 import type {
   AccountTransferConfirmDto,
   AccountTransferStartDto,
@@ -9,8 +13,11 @@ import type {
   CurrencyDto,
   DealCreateWithTopupResponseDto,
   DealDto,
+  DealMessageDto,
+  MediaDto,
   NotificationCountersDto,
   NotificationDto,
+  NotificationType,
   PinResetRequestDto,
   PinStatusDto,
   PinTokenDto,
@@ -34,14 +41,13 @@ export function useMe() {
   });
 }
 
-export interface MediaDto {
-  id: number;
-  kind: string;
-  url: string;
-  name: string;
-  size: number;
-  content_type: string;
-  created_at?: string | null;
+export function invalidateDealParticipantSideEffects(
+  qc: ReturnType<typeof useQueryClient>,
+) {
+  qc.invalidateQueries({ queryKey: qk.wallet.all() });
+  qc.invalidateQueries({ queryKey: qk.users.all() });
+  qc.invalidateQueries({ queryKey: qk.user.all() });
+  qc.invalidateQueries({ queryKey: qk.me() });
 }
 
 export function useUploadMedia() {
@@ -88,8 +94,16 @@ export function useUpdateMe() {
       // doesn't show a stale banner.
       if (data.username) {
         qc.invalidateQueries({ queryKey: qk.user.detail(data.username) });
+        qc.invalidateQueries({ queryKey: qk.reviews.forUser(data.username) });
       }
       qc.invalidateQueries({ queryKey: qk.users.all() });
+      // M-27: ``is_hidden_profile`` and public profile fields are also
+      // projected into service catalog/detail/comment and category badge
+      // surfaces. Refresh those prefixes after profile edits so hiding
+      // or revealing the current profile does not leave stale public rows.
+      qc.invalidateQueries({ queryKey: qk.services.all() });
+      qc.invalidateQueries({ queryKey: qk.service.all() });
+      qc.invalidateQueries({ queryKey: qk.categories() });
     },
   });
 }
@@ -143,19 +157,35 @@ export function useForums() {
   });
 }
 
+export interface ServicesQueryParams {
+  category?: string;
+  q?: string;
+  owner?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function buildServicesSearchParams(params: ServicesQueryParams = {}) {
+  const searchParams: Record<string, string> = {};
+  if (params.category) searchParams.category = params.category;
+  if (params.q) searchParams.q = params.q;
+  if (params.owner) searchParams.owner = params.owner;
+  if (params.status) searchParams.status = params.status;
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  if (params.offset !== undefined) searchParams.offset = String(params.offset);
+  return searchParams;
+}
+
 export function useServices(
-  params: { category?: string; q?: string; owner?: string; status?: string } = {},
+  params: ServicesQueryParams = {},
   // Audit (continuation) L-2 — opt-in ``enabled`` gate. Callers that
   // pass ``owner: me?.username`` need a way to keep the query
   // dormant until ``me`` resolves; without it the first render
   // issues a list-all request that pollutes the cache.
   options: { enabled?: boolean } = {},
 ) {
-  const searchParams: Record<string, string> = {};
-  if (params.category) searchParams.category = params.category;
-  if (params.q) searchParams.q = params.q;
-  if (params.owner) searchParams.owner = params.owner;
-  if (params.status) searchParams.status = params.status;
+  const searchParams = buildServicesSearchParams(params);
   return useQuery<ServiceDto[]>({
     queryKey: qk.services.list(params),
     queryFn: () => api.get("api/services", { searchParams }).json(),
@@ -175,13 +205,15 @@ export function useUpdateService() {
       body: Partial<{
         title: string;
         description: string;
-        price: number;
+        price: number | string;
         status: string;
         photo_urls: string[];
       }>;
     }) => api.patch(`api/services/${id}`, { json: body }).json<ServiceDto>(),
-    onSuccess: () => {
+    onSuccess: (_service, vars) => {
       qc.invalidateQueries({ queryKey: qk.services.all() });
+      qc.invalidateQueries({ queryKey: qk.categories() });
+      qc.invalidateQueries({ queryKey: qk.service.detail(vars.id) });
     },
   });
 }
@@ -193,7 +225,7 @@ export function useCreateService() {
       category_slug: string;
       title: string;
       description: string;
-      price: number;
+      price: number | string;
       photo_urls?: string[];
     }) => api.post("api/services", { json: body }).json<ServiceDto>(),
     onSuccess: () => {
@@ -208,8 +240,11 @@ export function useDeleteService() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => api.delete(`api/services/${id}`).json(),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: qk.services.all() });
+      qc.invalidateQueries({ queryKey: qk.categories() });
+      qc.invalidateQueries({ queryKey: qk.service.detail(id) });
+      qc.invalidateQueries({ queryKey: qk.service.comments(id) });
     },
   });
 }
@@ -218,16 +253,34 @@ export function useServiceDetail(id: number | undefined) {
   return useQuery<ServiceDetailDto>({
     queryKey: qk.service.detail(id),
     queryFn: () => api.get(`api/services/${id}`).json(),
-    enabled: !!id,
+    enabled: isPositiveSafeInteger(id),
     staleTime: 30_000,
   });
 }
 
-export function useServiceComments(id: number | undefined) {
+export interface ServiceCommentsQueryParams {
+  limit?: number;
+  offset?: number;
+}
+
+export function buildServiceCommentsSearchParams(
+  params: ServiceCommentsQueryParams = {},
+) {
+  const searchParams: Record<string, string> = {};
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  if (params.offset !== undefined) searchParams.offset = String(params.offset);
+  return searchParams;
+}
+
+export function useServiceComments(
+  id: number | undefined,
+  params: ServiceCommentsQueryParams = {},
+) {
+  const searchParams = buildServiceCommentsSearchParams(params);
   return useQuery<ServiceCommentDto[]>({
-    queryKey: qk.service.comments(id),
-    queryFn: () => api.get(`api/services/${id}/comments`).json(),
-    enabled: !!id,
+    queryKey: qk.service.comments(id, params),
+    queryFn: () => api.get(`api/services/${id}/comments`, { searchParams }).json(),
+    enabled: isPositiveSafeInteger(id),
     staleTime: 15_000,
   });
 }
@@ -258,12 +311,14 @@ export function useDeleteServiceComment(id: number) {
 
 export interface UsersQueryParams {
   q?: string;
-  filter?: string;
-  rating?: string;
-  deals?: string;
-  status?: string;
+  filter?: "all" | "arbiters" | "admins" | "with_deposit" | "top_rating";
+  rating?: "5.0" | "4.5-4.9" | "4.0-4.4" | "3.5-3.9" | "lt3.5";
+  deals?: "0-10" | "11-50" | "51-100" | "101+";
+  status?: "5" | "3" | "2";
   reg_from?: string;
   reg_to?: string;
+  limit?: number;
+  offset?: number;
   /**
    * When true, the request is for a counterparty picker (e.g.
    * /deals/new) — the backend bypasses the "min 1 deal" search gate
@@ -272,10 +327,7 @@ export interface UsersQueryParams {
   picker?: boolean;
 }
 
-export function useUsers(
-  params: UsersQueryParams = {},
-  options: { enabled?: boolean } = {},
-) {
+export function buildUsersSearchParams(params: UsersQueryParams = {}) {
   const searchParams: Record<string, string> = {};
   if (params.q) searchParams.q = params.q;
   if (params.filter) searchParams.filter = params.filter;
@@ -284,7 +336,17 @@ export function useUsers(
   if (params.status) searchParams.status = params.status;
   if (params.reg_from) searchParams.reg_from = params.reg_from;
   if (params.reg_to) searchParams.reg_to = params.reg_to;
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  if (params.offset !== undefined) searchParams.offset = String(params.offset);
   if (params.picker) searchParams.picker = "1";
+  return searchParams;
+}
+
+export function useUsers(
+  params: UsersQueryParams = {},
+  options: { enabled?: boolean } = {},
+) {
+  const searchParams = buildUsersSearchParams(params);
   return useQuery<UserCardDto[]>({
     queryKey: qk.users.list(params),
     queryFn: () => api.get("api/users", { searchParams }).json(),
@@ -294,17 +356,33 @@ export function useUsers(
 }
 
 export function useUser(username: string | undefined) {
+  const normalizedUsername = normalizeUsernameRef(username);
+  const path = userDetailApiPath(normalizedUsername);
   return useQuery<UserCardDto>({
-    queryKey: qk.user.detail(username),
-    queryFn: () => api.get(`api/users/${username}`).json(),
-    enabled: !!username,
+    queryKey: qk.user.detail(normalizedUsername ?? undefined),
+    queryFn: () => api.get(path!).json(),
+    enabled: !!path,
   });
 }
 
-export function useDeals(params: { role?: string; status?: string } = {}) {
+export interface DealQueryParams {
+  role?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function buildDealsSearchParams(params: DealQueryParams) {
   const searchParams: Record<string, string> = {};
-  if (params.role) searchParams.role = params.role;
+  if (params.role && params.role !== "all") searchParams.role = params.role;
   if (params.status) searchParams.status = params.status;
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  if (params.offset !== undefined) searchParams.offset = String(params.offset);
+  return searchParams;
+}
+
+export function useDeals(params: DealQueryParams = {}) {
+  const searchParams = buildDealsSearchParams(params);
   return useQuery<DealDto[]>({
     queryKey: qk.deals.list(params),
     queryFn: () => api.get("api/deals", { searchParams }).json(),
@@ -327,7 +405,7 @@ export function useDeal(id: number | undefined) {
   return useQuery<DealDto>({
     queryKey: qk.deal.detail(id),
     queryFn: () => api.get(`api/deals/${id}`).json(),
-    enabled: !!id,
+    enabled: isPositiveSafeInteger(id),
     // Item 22 — fallback poll for active deals so the UI eventually
     // catches a missed ``deal.updated`` WS frame (Telegram WebView
     // suspended, transient socket close, etc.). Terminal deals stop
@@ -350,17 +428,7 @@ export type DealActionPath =
   | "debate"
   | "resolve";
 
-export interface DealMessageDto {
-  id: number;
-  deal_id: number;
-  sender_id: number;
-  sender_username: string | null;
-  text: string;
-  attachments: MediaDto[];
-  created_at: string;
-}
-
-// Audit H2 — backend paginates ``GET /api/deals/{id}/messages`` with a
+// Audit H2 - backend paginates ``GET /api/deals/{id}/messages`` with a
 // ``limit`` (default 50, max 200) and a ``before_id`` cursor. The
 // initial query fetches the newest page; ``useLoadOlderDealMessages``
 // prepends the next older page to the same cache entry. Keeping a
@@ -368,6 +436,15 @@ export interface DealMessageDto {
 // preserves the existing append-on-WS / append-on-POST contract used
 // by ``useLiveNotifications`` and ``useSendDealMessage``.
 export const DEAL_MESSAGE_PAGE_SIZE = 50;
+
+function hasSameRuntimePositiveId(left: unknown, right: unknown): boolean {
+  const parsedLeft = parsePositiveIntValue(left);
+  const parsedRight = parsePositiveIntValue(right);
+  if (parsedLeft !== undefined && parsedRight !== undefined) {
+    return parsedLeft === parsedRight;
+  }
+  return left === right;
+}
 
 export function useDealMessages(dealId: number | undefined) {
   return useQuery<DealMessageDto[]>({
@@ -378,7 +455,7 @@ export function useDealMessages(dealId: number | undefined) {
           searchParams: { limit: DEAL_MESSAGE_PAGE_SIZE },
         })
         .json(),
-    enabled: !!dealId,
+    enabled: isPositiveSafeInteger(dealId),
     staleTime: 10_000,
   });
 }
@@ -399,8 +476,9 @@ export function useLoadOlderDealMessages(dealId: number) {
         qk.deal.messages(dealId),
         (prev) => {
           if (!prev) return page;
-          const seen = new Set(prev.map((m) => m.id));
-          const older = page.filter((m) => !seen.has(m.id));
+          const older = page.filter(
+            (m) => !prev.some((existing) => hasSameRuntimePositiveId(existing.id, m.id)),
+          );
           return [...older, ...prev];
         },
       );
@@ -419,7 +497,7 @@ export function useSendDealMessage(dealId: number) {
         qk.deal.messages(dealId),
         (prev) => {
           if (!prev) return [msg];
-          if (prev.some((m) => m.id === msg.id)) return prev;
+          if (prev.some((m) => hasSameRuntimePositiveId(m.id, msg.id))) return prev;
           return [...prev, msg];
         },
       );
@@ -443,7 +521,7 @@ export function useDealAction(action: DealActionPath) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.deals.all() });
       qc.invalidateQueries({ queryKey: qk.deal.all() });
-      qc.invalidateQueries({ queryKey: qk.wallet.all() });
+      invalidateDealParticipantSideEffects(qc);
     },
   });
 }
@@ -496,11 +574,37 @@ export function useCancelPendingTopup() {
   });
 }
 
-export function useReviews(username: string | undefined) {
+export interface ReviewsQueryParams {
+  limit?: number;
+  offset?: number;
+  deal_id?: number;
+}
+
+export function buildReviewsSearchParams(
+  username: string,
+  params: ReviewsQueryParams = {},
+) {
+  const searchParams: Record<string, string> = { user: username };
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  if (params.offset !== undefined) searchParams.offset = String(params.offset);
+  if (params.deal_id !== undefined) searchParams.deal_id = String(params.deal_id);
+  return searchParams;
+}
+
+export function useReviews(
+  username: string | undefined,
+  params: ReviewsQueryParams = {},
+) {
+  const normalizedUsername = normalizeUsernameRef(username);
   return useQuery<ReviewDto[]>({
-    queryKey: qk.reviews.forUser(username),
-    queryFn: () => api.get("api/reviews", { searchParams: { user: username! } }).json(),
-    enabled: !!username,
+    queryKey: qk.reviews.forUser(normalizedUsername ?? undefined, params),
+    queryFn: () =>
+      api
+        .get("api/reviews", {
+          searchParams: buildReviewsSearchParams(normalizedUsername!, params),
+        })
+        .json(),
+    enabled: !!normalizedUsername,
   });
 }
 
@@ -512,15 +616,32 @@ export function useCreateReview() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: qk.reviews.forUser(vars.target_username) });
       qc.invalidateQueries({ queryKey: qk.user.detail(vars.target_username) });
+      qc.invalidateQueries({ queryKey: qk.users.all() });
     },
   });
 }
 
-export function useNotifications(type?: string) {
+export interface NotificationsQueryParams {
+  type?: NotificationType;
+  before_created_at?: string;
+  before_id?: number;
+  limit?: number;
+}
+
+export function buildNotificationsSearchParams(params: NotificationsQueryParams) {
+  const searchParams: Record<string, string> = {};
+  if (params.type) searchParams.type = params.type;
+  if (params.before_created_at) searchParams.before_created_at = params.before_created_at;
+  if (params.before_id !== undefined) searchParams.before_id = String(params.before_id);
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  return searchParams;
+}
+
+export function useNotifications(params: NotificationsQueryParams = {}) {
+  const searchParams = buildNotificationsSearchParams(params);
   return useQuery<NotificationDto[]>({
-    queryKey: qk.notifications.list(type),
-    queryFn: () =>
-      api.get("api/notifications", { searchParams: type ? { type } : {} }).json(),
+    queryKey: qk.notifications.list(params),
+    queryFn: () => api.get("api/notifications", { searchParams }).json(),
     refetchInterval: 30_000,
   });
 }
@@ -529,7 +650,7 @@ export function useNotification(id: number | undefined) {
   return useQuery<NotificationDto>({
     queryKey: qk.notifications.detail(id),
     queryFn: () => api.get(`api/notifications/${id}`).json(),
-    enabled: typeof id === "number" && Number.isFinite(id),
+    enabled: isPositiveSafeInteger(id),
   });
 }
 
@@ -575,13 +696,17 @@ function applyCountersDelta(
   flippedByType: Record<string, number>,
   flippedTotal: number,
 ) {
+  const decrementCounterValue = (value: unknown, delta: number): unknown => {
+    const parsed = parseNonNegativeIntegerValue(value);
+    return parsed === null ? value : Math.max(0, parsed - delta);
+  };
   qc.setQueryData<NotificationCountersDto | undefined>(
     qk.notifications.counters(),
     (prev) => {
       if (!prev) return prev;
       const dec = (key: keyof NotificationCountersDto) => {
         const delta = flippedByType[key as string] ?? 0;
-        return Math.max(0, (prev[key] ?? 0) - delta);
+        return decrementCounterValue(prev[key], delta) as number;
       };
       return {
         ...prev,
@@ -589,7 +714,7 @@ function applyCountersDelta(
         deals: dec("deals"),
         deposits: dec("deposits"),
         system: dec("system"),
-        unread: Math.max(0, (prev.unread ?? 0) - flippedTotal),
+        unread: decrementCounterValue(prev.unread, flippedTotal) as number,
       };
     },
   );
@@ -613,7 +738,7 @@ export function useMarkNotificationRead() {
       );
       const { flippedByType, flippedTotal } = applyReadToCaches(
         qc,
-        (n) => n.id === id,
+        (n) => hasSameRuntimePositiveId(n.id, id),
       );
       applyCountersDelta(qc, flippedByType, flippedTotal);
       return { listsSnapshot, countersSnapshot };
@@ -672,10 +797,11 @@ export function applyServerNotificationRead(
   qc: ReturnType<typeof useQueryClient>,
   payload: { ids?: number[]; all?: boolean },
 ): void {
-  const idSet = new Set(payload.ids ?? []);
+  const ids = payload.ids ?? [];
   const predicate = payload.all
     ? () => true
-    : (n: NotificationDto) => idSet.has(n.id);
+    : (n: NotificationDto) =>
+        ids.some((id) => hasSameRuntimePositiveId(n.id, id));
   const { flippedByType, flippedTotal } = applyReadToCaches(qc, predicate);
   applyCountersDelta(qc, flippedByType, flippedTotal);
 }
@@ -839,10 +965,59 @@ export function useWalletBalances(opts: { kind?: "fiat" | "crypto" } = {}) {
   });
 }
 
-export function useWalletDeposits() {
+export interface WalletHistoryQueryParams {
+  currency?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface WalletHistoryQueryOptions {
+  enabled?: boolean;
+}
+
+function normalizeWalletHistoryQueryParams(
+  params: WalletHistoryQueryParams = {},
+): WalletHistoryQueryParams {
+  const normalized: WalletHistoryQueryParams = {};
+  const currency = normalizeCurrencyCode(params.currency);
+  if (currency) normalized.currency = currency;
+  if (
+    params.limit !== undefined &&
+    Number.isSafeInteger(params.limit) &&
+    params.limit >= 1 &&
+    params.limit <= 100
+  ) {
+    normalized.limit = params.limit;
+  }
+  if (
+    params.offset !== undefined &&
+    Number.isSafeInteger(params.offset) &&
+    params.offset >= 0
+  ) {
+    normalized.offset = params.offset;
+  }
+  return normalized;
+}
+
+export function buildWalletHistorySearchParams(params: WalletHistoryQueryParams = {}) {
+  const normalized = normalizeWalletHistoryQueryParams(params);
+  const searchParams: Record<string, string> = {};
+  if (normalized.currency) searchParams.currency = normalized.currency;
+  if (normalized.limit !== undefined) searchParams.limit = String(normalized.limit);
+  if (normalized.offset !== undefined) searchParams.offset = String(normalized.offset);
+  return searchParams;
+}
+
+export function useWalletDeposits(
+  params: WalletHistoryQueryParams = {},
+  options: WalletHistoryQueryOptions = {},
+) {
+  const normalized = normalizeWalletHistoryQueryParams(params);
+  const searchParams = buildWalletHistorySearchParams(normalized);
   return useQuery<WalletDepositDto[]>({
-    queryKey: qk.wallet.deposits(),
-    queryFn: () => api.get("api/wallet/deposits").json(),
+    queryKey: qk.wallet.deposits(normalized),
+    queryFn: () => api.get("api/wallet/deposits", { searchParams }).json(),
+    enabled: options.enabled ?? true,
   });
 }
 
@@ -850,7 +1025,7 @@ export function useWalletDeposit(id: number | undefined) {
   return useQuery<WalletDepositDto>({
     queryKey: qk.wallet.deposit(id),
     queryFn: () => api.get(`api/wallet/deposits/${id}`).json(),
-    enabled: !!id,
+    enabled: isPositiveSafeInteger(id),
     refetchInterval: (q) => (q.state.data?.status === "pending" ? 5_000 : false),
   });
 }
@@ -885,10 +1060,16 @@ export function useCreateWalletDeposit() {
   });
 }
 
-export function useWalletWithdrawals() {
+export function useWalletWithdrawals(
+  params: WalletHistoryQueryParams = {},
+  options: WalletHistoryQueryOptions = {},
+) {
+  const normalized = normalizeWalletHistoryQueryParams(params);
+  const searchParams = buildWalletHistorySearchParams(normalized);
   return useQuery<WalletWithdrawalDto[]>({
-    queryKey: qk.wallet.withdrawals(),
-    queryFn: () => api.get("api/wallet/withdrawals").json(),
+    queryKey: qk.wallet.withdrawals(normalized),
+    queryFn: () => api.get("api/wallet/withdrawals", { searchParams }).json(),
+    enabled: options.enabled ?? true,
   });
 }
 

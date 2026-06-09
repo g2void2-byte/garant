@@ -10,7 +10,7 @@ import type { AdminDepositListDto } from "@/api/types";
  *
  * Covers status filter chips, deposit row rendering with badge, mark-
  * paid mutation (only on 'pending' rows) and refund mutation (only on
- * 'paid' rows), pay_url link rendering, admin guard, loading skeleton,
+ * 'paid' rows), pay_url opener rendering, admin guard, loading skeleton,
  * empty state.
  */
 
@@ -53,10 +53,16 @@ vi.mock("@/components/ui/Toast", () => ({
   useToast: () => ({ show: toastSpy }),
 }));
 
+const openPaymentLinkSpy = vi.hoisted(() => vi.fn());
+const isSafeExternalLinkSpy = vi.hoisted(() =>
+  vi.fn((url: string) => /^https?:\/\//i.test(url)),
+);
 vi.mock("@/lib/tg", () => ({
   useTelegramViewport: () => null,
   haptic: () => {},
   showBackButton: () => () => {},
+  isSafeExternalLink: isSafeExternalLinkSpy,
+  openPaymentLink: openPaymentLinkSpy,
 }));
 
 import AdminDepositsPage from "./AdminDepositsPage";
@@ -70,6 +76,10 @@ function renderPage() {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+function renderedNeutralIds(container: HTMLElement): number {
+  return (container.textContent ?? "").match(/#\s*\u2014/g)?.length ?? 0;
 }
 
 function makeDeposit(
@@ -99,6 +109,11 @@ beforeEach(() => {
   mockState.shouldRender = true;
   mockState.lastDepositsQuery = undefined;
   toastSpy.mockClear();
+  openPaymentLinkSpy.mockClear();
+  isSafeExternalLinkSpy.mockClear();
+  isSafeExternalLinkSpy.mockImplementation((url: string) =>
+    /^https?:\/\//i.test(url),
+  );
 });
 
 describe("<AdminDepositsPage />", () => {
@@ -120,13 +135,26 @@ describe("<AdminDepositsPage />", () => {
     expect(screen.getByText("Депозитов нет")).toBeInTheDocument();
   });
 
-  it("renders deposit rows with amount, user, badge and pay_url link", () => {
+  it("renders malformed list totals as a neutral dash", () => {
+    mockState.list = {
+      items: [],
+      total: "1e2" as unknown as number,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText(/\u2014 всего/)).toBeInTheDocument();
+    expect(screen.queryByText(/1e2/)).not.toBeInTheDocument();
+  });
+
+  it("renders deposit rows with amount, user, badge and safe pay_url opener", async () => {
     mockState.list = {
       items: [makeDeposit()],
       total: 1,
       page: 1,
       page_size: 50,
     };
+    const user = userEvent.setup();
     renderPage();
     expect(screen.getByText(/50\.00 USDT/)).toBeInTheDocument();
     expect(screen.getByText(/@alice/)).toBeInTheDocument();
@@ -134,8 +162,140 @@ describe("<AdminDepositsPage />", () => {
     expect(
       screen.getByText("pending", { selector: "span" }),
     ).toBeInTheDocument();
-    const link = screen.getByRole("link", { name: /pay_url/i });
-    expect(link).toHaveAttribute("href", "https://example.com/pay/inv-1");
+    expect(screen.queryByRole("link", { name: /pay_url/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /pay_url/i }));
+    expect(openPaymentLinkSpy).toHaveBeenCalledWith(
+      "https://example.com/pay/inv-1",
+    );
+  });
+
+  it("normalizes deposit currency labels before display", () => {
+    mockState.list = {
+      items: [
+        makeDeposit({ currency_code: " usd " }),
+        makeDeposit({ id: 101, amount: "51.0", currency_code: "../USD" }),
+      ],
+      total: 2,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+
+    expect(screen.getByText(/50\.00 USD/)).toBeInTheDocument();
+    expect(screen.getByText(/51\.00 \u2014/)).toBeInTheDocument();
+    expect(screen.queryByText(/ usd /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\.\.\/USD/)).not.toBeInTheDocument();
+  });
+
+  it("renders unknown deposit statuses as a neutral badge label", () => {
+    mockState.list = {
+      items: [makeDeposit({ status: "provider_reconciled" })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+
+    expect(screen.getByText("Статус неизвестен", { selector: "span" })).toBeInTheDocument();
+    expect(screen.queryByText("provider_reconciled")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u0417\u0430\u0447\u0438\u0441\u043b\u0438\u0442\u044c/,
+    })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u0412\u043e\u0437\u0432\u0440\u0430\u0442/,
+    })).not.toBeInTheDocument();
+  });
+
+  it("renders malformed deposit amounts as a neutral dash", () => {
+    mockState.list = {
+      items: [makeDeposit({ amount: "1e3" })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText(/\u2014 USDT/)).toBeInTheDocument();
+    expect(screen.queryByText(/0\.00 USDT/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /pay_url/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u0417\u0430\u0447\u0438\u0441\u043b\u0438\u0442\u044c/,
+    })).not.toBeInTheDocument();
+    expect(openPaymentLinkSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not expose refund actions for paid deposits with malformed amounts", () => {
+    mockState.list = {
+      items: [makeDeposit({ amount: "1e3", status: "paid" })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText(/\u2014 USDT/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u0412\u043e\u0437\u0432\u0440\u0430\u0442/,
+    })).not.toBeInTheDocument();
+  });
+
+  it("does not render unsafe pay_url values as links or openers", () => {
+    mockState.list = {
+      items: [makeDeposit({ pay_url: "javascript:alert(1)" })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+
+    expect(screen.queryByRole("link", { name: /pay_url/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /pay_url/i })).not.toBeInTheDocument();
+    expect(openPaymentLinkSpy).not.toHaveBeenCalled();
+  });
+
+  it("renders missing depositor username as a non-handle label", () => {
+    mockState.list = {
+      items: [makeDeposit({ username: null })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/)).toBeInTheDocument();
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
+  it("does not expose money actions for malformed runtime deposit ids", () => {
+    mockState.list = {
+      items: [
+        makeDeposit({ id: "0x64" as unknown as number }),
+        makeDeposit({ id: "0xc8" as unknown as number, status: "paid" }),
+      ],
+      total: 2,
+      page: 1,
+      page_size: 50,
+    };
+
+    const { container } = renderPage();
+
+    expect(renderedNeutralIds(container)).toBe(2);
+    expect(screen.queryByText(/0x64|0xc8/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u0417\u0430\u0447\u0438\u0441\u043b\u0438\u0442\u044c/,
+    })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /\u0412\u043e\u0437\u0432\u0440\u0430\u0442/,
+    })).not.toBeInTheDocument();
+  });
+
+  it("renders malformed created_at as a neutral timestamp", () => {
+    mockState.list = {
+      items: [makeDeposit({ created_at: "not-a-date" })],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    };
+    renderPage();
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
   });
 
   it("'Зачислить' only appears on pending rows and fires mark-paid", async () => {
@@ -206,6 +366,22 @@ describe("<AdminDepositsPage />", () => {
     await waitFor(() =>
       expect(mockState.lastDepositsQuery?.status).toBeUndefined(),
     );
+  });
+
+  it("pagination advances beyond the first page and resets when status changes", async () => {
+    mockState.list = { items: [makeDeposit()], total: 80, page: 1, page_size: 50 };
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    await user.click(screen.getByLabelText("Вперёд"));
+    await waitFor(() => expect(mockState.lastDepositsQuery?.page).toBe(2));
+
+    await user.click(screen.getByRole("button", { name: "paid" }));
+    await waitFor(() => {
+      expect(mockState.lastDepositsQuery?.status).toBe("paid");
+      expect(mockState.lastDepositsQuery?.page).toBe(1);
+    });
   });
 
   it("refund failure surfaces an error toast with message body", async () => {

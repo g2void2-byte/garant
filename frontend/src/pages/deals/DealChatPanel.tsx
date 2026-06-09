@@ -7,16 +7,21 @@ import {
   useMe,
   useSendDealMessage,
   useUploadMedia,
-  type DealMessageDto,
-  type MediaDto,
 } from "@/api/hooks";
+import type { DealMessageDto, MediaDto } from "@/api/types";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { haptic } from "@/lib/tg";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { safeMediaUrl } from "@/lib/mediaLinks";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 
 const MAX_ATTACHMENTS = 10;
+const INVALID_DEAL_MESSAGE_CURSOR_ERROR =
+  "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 ID \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f";
+const INVALID_DEAL_ATTACHMENT_ERROR =
+  "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 ID \u0432\u043b\u043e\u0436\u0435\u043d\u0438\u044f";
 
 interface DealChatPanelProps {
   dealId: number;
@@ -73,8 +78,16 @@ export function DealChatPanel({ dealId }: DealChatPanelProps) {
     const el = scrollRef.current;
     prevScrollHeightRef.current = el ? el.scrollHeight : null;
     stickToBottomRef.current = false;
+    const beforeId = parsePositiveIntValue(oldest.id);
+    if (beforeId === undefined) {
+      stickToBottomRef.current = true;
+      prevScrollHeightRef.current = null;
+      setReachedOldest(true);
+      toast.show({ kind: "error", title: INVALID_DEAL_MESSAGE_CURSOR_ERROR });
+      return;
+    }
     try {
-      const page = await loadOlder.mutateAsync({ beforeId: oldest.id });
+      const page = await loadOlder.mutateAsync({ beforeId });
       if (page.length < DEAL_MESSAGE_PAGE_SIZE) {
         setReachedOldest(true);
       }
@@ -107,7 +120,11 @@ export function DealChatPanel({ dealId }: DealChatPanelProps) {
     try {
       for (const file of files) {
         const media = await uploadMedia.mutateAsync({ kind: "deal", file });
-        setPending((p) => [...p, media]);
+        const mediaId = parsePositiveIntValue(media.id);
+        if (mediaId === undefined) {
+          throw new Error(INVALID_DEAL_ATTACHMENT_ERROR);
+        }
+        setPending((p) => [...p, { ...media, id: mediaId }]);
       }
     } catch (err) {
       const message = (err as Error)?.message || "Не удалось загрузить файл";
@@ -127,10 +144,21 @@ export function DealChatPanel({ dealId }: DealChatPanelProps) {
     const trimmed = text.trim();
     if (!trimmed && pending.length === 0) return;
     setError(null);
+    const attachmentIds: number[] = [];
+    for (const media of pending) {
+      const mediaId = parsePositiveIntValue(media.id);
+      if (mediaId === undefined) {
+        setError(INVALID_DEAL_ATTACHMENT_ERROR);
+        toast.show({ kind: "error", title: INVALID_DEAL_ATTACHMENT_ERROR });
+        haptic("error");
+        return;
+      }
+      attachmentIds.push(mediaId);
+    }
     try {
       await sendMessage.mutateAsync({
         text: trimmed,
-        attachments: pending.map((m) => m.id),
+        attachments: attachmentIds,
       });
       setText("");
       setPending([]);
@@ -246,7 +274,7 @@ function ChatAttachmentImage({
   name,
   className,
 }: {
-  src: string;
+  src: string | null;
   name: string;
   className: string;
 }) {
@@ -254,7 +282,7 @@ function ChatAttachmentImage({
   useEffect(() => {
     setBroken(false);
   }, [src]);
-  if (broken) {
+  if (!src || broken) {
     return (
       <div
         className={cn(
@@ -305,21 +333,37 @@ function MessageBubble({
         {msg.text && <div className="whitespace-pre-wrap break-words">{msg.text}</div>}
         {msg.attachments.length > 0 && (
           <div className="mt-2 grid grid-cols-2 gap-1">
-            {msg.attachments.map((m) => (
-              <a
-                key={m.id}
-                href={m.url}
-                target="_blank"
-                rel="noreferrer"
-                className="block overflow-hidden rounded-md bg-panel"
-              >
+            {msg.attachments.map((m) => {
+              const mediaUrl = safeMediaUrl(m.url);
+              const preview = (
                 <ChatAttachmentImage
-                  src={m.url}
+                  src={mediaUrl}
                   name={m.name}
                   className="w-full h-24 object-cover"
                 />
-              </a>
-            ))}
+              );
+              if (!mediaUrl) {
+                return (
+                  <div
+                    key={m.id}
+                    className="block overflow-hidden rounded-md bg-panel"
+                  >
+                    {preview}
+                  </div>
+                );
+              }
+              return (
+                <a
+                  key={m.id}
+                  href={mediaUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block overflow-hidden rounded-md bg-panel"
+                >
+                  {preview}
+                </a>
+              );
+            })}
           </div>
         )}
       </div>
@@ -340,7 +384,7 @@ function AttachmentChip({
   return (
     <div className="relative">
       <ChatAttachmentImage
-        src={media.url}
+        src={safeMediaUrl(media.url)}
         name={media.name}
         className="size-16 object-cover rounded-md border border-border"
       />

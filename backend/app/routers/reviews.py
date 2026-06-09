@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException, Query, Response
+from sqlalchemy import func, select
 
 from ..deps import CurrentUser, SessionDep
 from ..models import Review, User
@@ -33,8 +33,10 @@ async def list_reviews(
     session: SessionDep,
     viewer: CurrentUser,
     _rl: RLReviewsList,
+    response: Response,
     user: str = Query(...),
     limit: int = Query(50, ge=1, le=100),
+    deal_id: int | None = Query(default=None, ge=1),
     # cap ``offset`` at 10 000. Without an upper bound a
     # scraper could request ``offset=10_000_000`` and force Postgres
     # to walk the full review index just to skip rows we already
@@ -45,10 +47,8 @@ async def list_reviews(
 ):
     # Cap the page at 100 to avoid an attacker (or a misbehaving
     # client) walking every review on a popular profile in one shot.
-    # The frontend's ``useReviews`` doesn't pass ``limit``/``offset``
-    # yet — it receives the first 50 rows which is enough for the
-    # current profile UI; pagination params let admins/tools page
-    # through the rest without DoS-ing the DB.
+    # ``useReviews`` now passes explicit pagination params; the default
+    # still keeps older clients on the first bounded page.
     #
     # R7/H-12 — if the target has flipped ``is_hidden_profile`` we
     # return 404 to mirror ``GET /api/users/{username}``. The owner
@@ -60,10 +60,19 @@ async def list_reviews(
         raise HTTPException(404, "Пользователь не найден")
     if target.is_hidden_profile and not (viewer.is_admin or viewer.id == target.id):
         raise HTTPException(404, "Пользователь не найден")
+    filters = [Review.target_id == target.id]
+    if deal_id is not None:
+        filters.append(Review.deal_id == deal_id)
+
+    total = (
+        await session.execute(select(func.count(Review.id)).where(*filters))
+    ).scalar_one()
+    response.headers["X-Total-Count"] = str(int(total))
+
     stmt = (
         select(Review)
-        .where(Review.target_id == target.id)
-        .order_by(Review.created_at.desc())
+        .where(*filters)
+        .order_by(Review.created_at.desc(), Review.id.desc())
         .limit(limit)
         .offset(offset)
     )

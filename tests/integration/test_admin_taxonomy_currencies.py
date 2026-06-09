@@ -84,6 +84,111 @@ async def test_currency_update_partial_fields_keeps_unset_values(client):
     assert after["sort_order"] == 7
 
 
+async def test_currency_update_clears_nullable_string_fields_with_null(client):
+    """OpenAPI exposes these fields as nullable; explicit ``null`` must
+    clear them instead of being collapsed into "field omitted"."""
+    admin_init, admin_id = await _make_admin(client, tg=1)
+
+    resp = await client.put(
+        "/api/admin/currencies",
+        json={
+            "code": "JETN",
+            "name": "Nullable Jeton",
+            "network": "TON",
+            "icon_url": "https://example.test/jetn.svg",
+            "address_regex": "^JETN[0-9]+$",
+        },
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.put(
+        "/api/admin/currencies",
+        json={"code": "JETN", "network": None, "icon_url": None, "address_regex": None},
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["network"] == ""
+    assert body["icon_url"] == ""
+    assert body["address_regex"] == ""
+
+    async with async_session() as session:
+        row = (await session.execute(select(Currency).where(Currency.code == "JETN"))).scalar_one()
+        assert row.network == ""
+        assert row.icon_url == ""
+        assert row.address_regex == ""
+        audit = (
+            await session.execute(
+                select(AdminAuditLog)
+                .where(AdminAuditLog.actor_id == admin_id)
+                .where(AdminAuditLog.target_type == "currency")
+                .where(AdminAuditLog.action == "currency.update")
+                .order_by(AdminAuditLog.id.desc())
+                .limit(1)
+            )
+        ).scalar_one()
+    assert audit.payload is not None
+    assert audit.payload["before"]["network"] == "TON"
+    assert audit.payload["after"]["network"] == ""
+    assert audit.payload["before"]["icon_url"] == "https://example.test/jetn.svg"
+    assert audit.payload["after"]["icon_url"] == ""
+    assert audit.payload["before"]["address_regex"] == "^JETN[0-9]+$"
+    assert audit.payload["after"]["address_regex"] == ""
+
+
+async def test_currency_upsert_rejects_explicit_null_for_noop_fields(client):
+    """Non-nullable currency columns use omission for no-op/defaults.
+
+    Explicit JSON ``null`` should fail instead of looking successful
+    while preserving the previous row values.
+    """
+    admin_init, _ = await _make_admin(client, tg=1)
+
+    resp = await client.put(
+        "/api/admin/currencies",
+        json={
+            "code": "NUL1",
+            "name": "Null Guard",
+            "network": "BANK",
+            "decimals": 6,
+            "min_deposit": "0.75000001",
+            "min_withdraw": "1.25000001",
+            "is_active": True,
+            "sort_order": 4,
+            "kind": "fiat",
+        },
+        headers=with_totp(auth_headers(admin_init)),
+    )
+    assert resp.status_code == 200, resp.text
+
+    for field in (
+        "name",
+        "decimals",
+        "min_deposit",
+        "min_withdraw",
+        "is_active",
+        "sort_order",
+        "kind",
+    ):
+        resp = await client.put(
+            "/api/admin/currencies",
+            json={"code": "NUL1", field: None},
+            headers=with_totp(auth_headers(admin_init)),
+        )
+        assert resp.status_code == 422, (field, resp.text)
+
+    async with async_session() as session:
+        row = (await session.execute(select(Currency).where(Currency.code == "NUL1"))).scalar_one()
+        assert row.name == "Null Guard"
+        assert row.decimals == 6
+        assert Decimal(str(row.min_deposit)) == Decimal("0.75000001")
+        assert Decimal(str(row.min_withdraw)) == Decimal("1.25000001")
+        assert row.is_active is True
+        assert row.sort_order == 4
+        assert row.kind == "fiat"
+
+
 async def test_currency_update_can_deactivate(client):
     """Flipping ``is_active`` to False on an existing row must persist
     and must surface in the response body (so the admin UI can render
@@ -125,8 +230,8 @@ async def test_currency_update_writes_audit_payload_with_before(client):
             "code": "JET3",
             "name": "Jeton 3",
             "decimals": 4,
-            "min_deposit": 0.3,
-            "min_withdraw": 0.4,
+            "min_deposit": "0.12345678",
+            "min_withdraw": "5.00000001",
             "is_active": True,
         },
         headers=with_totp(auth_headers(admin_init)),
@@ -136,7 +241,7 @@ async def test_currency_update_writes_audit_payload_with_before(client):
     # Update (changes name + min_deposit).
     resp = await client.put(
         "/api/admin/currencies",
-        json={"code": "JET3", "name": "Jeton III", "min_deposit": 0.9},
+        json={"code": "JET3", "name": "Jeton III", "min_deposit": "0.87654321"},
         headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
@@ -161,11 +266,15 @@ async def test_currency_update_writes_audit_payload_with_before(client):
     create_payload = next(r.payload for r in logs if r.action == "currency.create")
     update_payload = next(r.payload for r in logs if r.action == "currency.update")
     assert create_payload["before"] is None
+    assert create_payload["after"]["min_deposit"] == "0.12345678"
+    assert create_payload["after"]["min_withdraw"] == "5.00000001"
     assert update_payload["before"] is not None
     assert update_payload["before"]["name"] == "Jeton 3"
-    assert update_payload["before"]["min_deposit"] == 0.3
+    assert update_payload["before"]["min_deposit"] == "0.12345678"
+    assert update_payload["before"]["min_withdraw"] == "5.00000001"
     assert update_payload["after"]["name"] == "Jeton III"
-    assert update_payload["after"]["min_deposit"] == 0.9
+    assert update_payload["after"]["min_deposit"] == "0.87654321"
+    assert update_payload["after"]["min_withdraw"] == "5.00000001"
 
 
 async def test_currency_update_requires_admin(client):
@@ -224,7 +333,17 @@ async def test_currency_delete_removes_unreferenced_row(client):
 
     resp = await client.put(
         "/api/admin/currencies",
-        json={"code": "DEL1", "name": "Doomed", "decimals": 8},
+        json={
+            "code": "DEL1",
+            "name": "Doomed",
+            "network": "TON",
+            "icon_url": "https://example.test/del1.svg",
+            "decimals": 8,
+            "min_deposit": "0.12345678",
+            "min_withdraw": "5.00000001",
+            "address_regex": "^DEL[0-9]+$",
+            "kind": "crypto",
+        },
         headers=with_totp(auth_headers(admin_init)),
     )
     assert resp.status_code == 200, resp.text
@@ -256,7 +375,14 @@ async def test_currency_delete_removes_unreferenced_row(client):
             .all()
         )
     assert len(logs) == 1
-    assert logs[0].payload["code"] == "DEL1"
+    payload = logs[0].payload
+    assert payload["code"] == "DEL1"
+    assert payload["network"] == "TON"
+    assert payload["icon_url"] == "https://example.test/del1.svg"
+    assert payload["min_deposit"] == "0.12345678"
+    assert payload["min_withdraw"] == "5.00000001"
+    assert payload["address_regex"] == "^DEL[0-9]+$"
+    assert payload["kind"] == "crypto"
 
 
 async def test_currency_delete_missing_returns_404(client):

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Wallet, Plus, Minus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Minus, Plus, Search, Wallet } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Avatar } from "@/components/ui/Avatar";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -15,9 +16,21 @@ import {
   useAdminUpsertCurrencyRate,
   useAdminWallets,
 } from "@/api/admin/hooks";
-import { parseDecimal } from "@/lib/format";
-import type { AdminCurrencyRateDto, AdminWalletListItemDto } from "@/api/types";
+import { formatDateTime } from "@/lib/format";
+import type {
+  AdminCurrencyRateDto,
+  AdminUserBalanceDto,
+  AdminWalletListItemDto,
+} from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import {
+  parsePositiveDecimalInput,
+  parseSignedNonZeroDecimalInput,
+} from "@/lib/formNumbers";
+import { normalizeCurrencyCodeRows } from "@/lib/currencyCodes";
+import { formatAdminAmount, formatAdminCount, formatAdminCurrencyCode, formatAdminUsd, formatAdminUsername, getAdminTotalPages, hasVisibleAdminBalance, parseAdminDecimal, pickAdminMutationCurrency, shouldShowAdminPagination } from "./format";
+
+const PAGE_SIZE = 50;
 
 /**
  * `/admin/wallets` — user-balance inspector + manual credit/debit.
@@ -32,7 +45,7 @@ export default function AdminWalletsPage() {
   const [q, setQ] = useState("");
   const [draftQ, setDraftQ] = useState("");
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useAdminWallets({ q, page });
+  const { data, isLoading } = useAdminWallets({ q, page, page_size: PAGE_SIZE });
   const [target, setTarget] = useState<AdminWalletListItemDto | null>(null);
   const [ratesOpen, setRatesOpen] = useState(false);
 
@@ -43,7 +56,7 @@ export default function AdminWalletsPage() {
     <Page showBack onBack={() => navigate(-1)}>
       <AdminHeader
         title="Балансы"
-        subtitle={data ? `${data.total} пользователей` : undefined}
+        subtitle={data ? `${formatAdminCount(data.total)} пользователей` : undefined}
       />
       <div className="px-4 mb-3">
         <div className="flex items-center gap-2">
@@ -91,22 +104,18 @@ export default function AdminWalletsPage() {
               className="w-full text-left bg-panel rounded-card p-3 hover:bg-panel-2 transition active:scale-[0.98]"
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-panel-2 overflow-hidden flex-shrink-0">
-                  {it.photo_url && (
-                    <img src={it.photo_url} alt="" className="w-full h-full object-cover" />
-                  )}
-                </div>
+                <Avatar name={it.display_name} src={it.photo_url} size={40} />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate">{it.display_name}</div>
                   <div className="text-xs text-text-muted truncate">
-                    @{it.username ?? "—"}
+                    {formatAdminUsername(it.username)}
                   </div>
                 </div>
                 <Wallet size={16} className="text-text-muted" />
               </div>
               {it.total_usd_estimate !== undefined && it.total_usd_estimate !== null ? (
                 <div className="mt-2 text-xs text-success">
-                  USD estimate: ${parseDecimal(it.total_usd_estimate).toFixed(2)}
+                  USD estimate: {formatAdminUsd(it.total_usd_estimate)}
                 </div>
               ) : it.usd_estimate_missing_rates?.length ? (
                 <div className="mt-2 text-xs text-warning">
@@ -118,7 +127,7 @@ export default function AdminWalletsPage() {
                 // at all *and* what to put in it — otherwise users with
                 // all-zero balances would see an empty grid container
                 // that looks like a broken layout.
-                const nonZero = it.balances.filter((b) => parseDecimal(b.total) > 0);
+                const nonZero = it.balances.filter(hasVisibleAdminBalance);
                 if (nonZero.length === 0) {
                   return (
                     <div className="mt-2 text-xs text-text-muted italic">
@@ -129,19 +138,18 @@ export default function AdminWalletsPage() {
                 return (
                   <div className="mt-3 grid grid-cols-2 gap-1.5">
                     {nonZero.slice(0, 4).map((b) => {
-                      const amt = parseDecimal(b.amount);
-                      const locked = parseDecimal(b.locked);
+                      const locked = parseAdminDecimal(b.locked);
                       return (
                         <div
                           key={b.currency_id}
                           className="text-xs bg-panel-2 rounded-button px-2 py-1.5"
                         >
-                          <div className="text-text-muted">{b.currency_code}</div>
+                          <div className="text-text-muted">{formatAdminCurrencyCode(b.currency_code)}</div>
                           <div className="font-mono">
-                            {amt.toFixed(b.decimals)}
-                            {locked > 0 && (
+                            {formatAdminAmount(b.amount, b.decimals)}
+                            {locked !== null && locked > 0 && (
                               <span className="text-warning ml-1">
-                                (+{locked.toFixed(b.decimals)} лок.)
+                                (+{formatAdminAmount(b.locked, b.decimals)} лок.)
                               </span>
                             )}
                           </div>
@@ -155,13 +163,25 @@ export default function AdminWalletsPage() {
           ))
         )}
       </div>
+      {data && shouldShowAdminPagination(data.total, data.page_size) && (
+        <Pagination
+          page={page}
+          totalPages={getAdminTotalPages(data.total, data.page_size)}
+          onPage={setPage}
+        />
+      )}
 
       <Sheet
         open={!!target}
         onClose={() => setTarget(null)}
         title={target ? `Корректировка: ${target.display_name}` : undefined}
       >
-        {target && <AdjustForm target={target} onClose={() => setTarget(null)} />}
+        {target && (
+          <>
+            <BalanceOverview target={target} />
+            <AdjustForm target={target} onClose={() => setTarget(null)} />
+          </>
+        )}
       </Sheet>
       <Sheet open={ratesOpen} onClose={() => setRatesOpen(false)} title="USD rates">
         <RatesForm onClose={() => setRatesOpen(false)} />
@@ -170,28 +190,114 @@ export default function AdminWalletsPage() {
   );
 }
 
+function Pagination({
+  page,
+  totalPages,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-3 mt-1 mb-4 text-sm">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+        className="p-2 rounded-button bg-panel disabled:opacity-40 active:scale-95"
+        aria-label={"\u041d\u0430\u0437\u0430\u0434"}
+      >
+        <ChevronLeft size={18} />
+      </button>
+      <span className="text-text-muted">
+        {page} / {totalPages}
+      </span>
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => onPage(page + 1)}
+        className="p-2 rounded-button bg-panel disabled:opacity-40 active:scale-95"
+        aria-label={"\u0412\u043f\u0435\u0440\u0451\u0434"}
+      >
+        <ChevronRight size={18} />
+      </button>
+    </div>
+  );
+}
+
+function BalanceOverview({ target }: { target: AdminWalletListItemDto }) {
+  const nonZero = target.balances.filter(hasVisibleAdminBalance);
+  return (
+    <div className="mb-4 rounded-card border border-border bg-panel p-3">
+      <div className="text-xs uppercase tracking-wide text-text-muted">Balances</div>
+      {nonZero.length === 0 ? (
+        <div className="mt-2 text-xs text-text-muted italic">No balances</div>
+      ) : (
+        <div className="mt-3 grid grid-cols-2 gap-1.5">
+          {nonZero.map((balance) => (
+            <BalancePill key={balance.currency_id} balance={balance} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BalancePill({ balance }: { balance: AdminUserBalanceDto }) {
+  const locked = parseAdminDecimal(balance.locked);
+  return (
+    <div className="text-xs bg-panel-2 rounded-button px-2 py-1.5">
+      <div className="text-text-muted">{formatAdminCurrencyCode(balance.currency_code)}</div>
+      <div className="font-mono">
+        {formatAdminAmount(balance.amount, balance.decimals)}
+        {locked !== null && locked > 0 && (
+          <span className="text-warning ml-1">
+            (+{formatAdminAmount(balance.locked, balance.decimals)} lock)
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RatesForm({ onClose }: { onClose: () => void }) {
   const { data: currencies } = useAdminCurrencies();
   const { data: rates } = useAdminCurrencyRates();
   const upsert = useAdminUpsertCurrencyRate();
   const toast = useToast();
+  const allCurrencies = useMemo(() => normalizeCurrencyCodeRows(currencies ?? []), [currencies]);
   const [currency, setCurrency] = useState("USDT");
-  const current = (rates ?? []).find((r: AdminCurrencyRateDto) => r.currency_code === currency);
+  useEffect(() => {
+    setCurrency((current) =>
+      pickAdminMutationCurrency(current, allCurrencies, allCurrencies[0]?.code ?? "USDT"),
+    );
+  }, [allCurrencies]);
+  const current = (rates ?? []).find(
+    (r: AdminCurrencyRateDto) => formatAdminCurrencyCode(r.currency_code) === currency,
+  );
   const [rate, setRate] = useState<string | null>(null);
   const [source, setSource] = useState("manual");
   const value = rate ?? (current ? String(current.usd_rate) : "");
+  const rateValue = value.trim();
+  const parsedRate = parsePositiveDecimalInput(value);
+  const rateError = rateValue && parsedRate === null
+    ? "Введите положительное число без экспоненты"
+    : undefined;
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-1.5">
-        {(currencies ?? []).map((c) => (
+        {allCurrencies.map((c) => (
           <button
             key={c.id}
             type="button"
             onClick={() => {
               setCurrency(c.code);
               setRate(null);
-              setSource((rates ?? []).find((r) => r.currency_code === c.code)?.source ?? "manual");
+              setSource(
+                (rates ?? []).find((r) => formatAdminCurrencyCode(r.currency_code) === c.code)?.source ?? "manual",
+              );
             }}
             className={`rounded-button px-3 py-1.5 text-sm transition ${
               c.code === currency ? "bg-accent text-accent-fg font-medium" : "bg-panel-2 text-text-muted"
@@ -205,19 +311,24 @@ function RatesForm({ onClose }: { onClose: () => void }) {
         label={`USD rate for ${currency}`}
         inputMode="decimal"
         value={value}
+        error={rateError}
         onChange={(e) => setRate(e.target.value)}
       />
       <Input label="Source" value={source} onChange={(e) => setSource(e.target.value)} />
       {current?.observed_at && (
-        <div className="text-xs text-text-muted">Last observed: {new Date(current.observed_at).toLocaleString()}</div>
+        <div className="text-xs text-text-muted">Last observed: {formatDateTime(current.observed_at)}</div>
       )}
       <Button
         type="button"
         fullWidth
-        disabled={upsert.isPending || !Number(value)}
+        disabled={upsert.isPending || parsedRate === null}
         onClick={async () => {
+          if (parsedRate === null) {
+            toast.show({ kind: "error", title: "Некорректный USD rate" });
+            return;
+          }
           try {
-            await upsert.mutateAsync({ currency_code: currency, usd_rate: Number(value), source: source.trim() || "manual" });
+            await upsert.mutateAsync({ currency_code: currency, usd_rate: rateValue, source: source.trim() || "manual" });
             toast.show({ kind: "success", title: "USD rate saved" });
             setRate(null);
             onClose();
@@ -232,6 +343,10 @@ function RatesForm({ onClose }: { onClose: () => void }) {
   );
 }
 
+function unsignedSignedDecimalInput(raw: string): string {
+  return raw.trim().replace(/^[+-]/, "");
+}
+
 function AdjustForm({
   target,
   onClose,
@@ -240,14 +355,25 @@ function AdjustForm({
   onClose: () => void;
 }) {
   const { data: currencies } = useAdminCurrencies();
-  const [currency, setCurrency] = useState(
-    target.balances.find((b) => parseDecimal(b.total) > 0)?.currency_code ?? "USDT",
+  const preferredCurrency = target.balances.find(hasVisibleAdminBalance)?.currency_code ?? "USDT";
+  const [currency, setCurrency] = useState(() =>
+    pickAdminMutationCurrency(preferredCurrency, []),
   );
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const toast = useToast();
   const adjust = useAdminAdjustBalance(target.user_id);
-  const allCurrencies = currencies ?? [];
+  const allCurrencies = useMemo(() => normalizeCurrencyCodeRows(currencies ?? []), [currencies]);
+  useEffect(() => {
+    setCurrency((current) =>
+      pickAdminMutationCurrency(current, allCurrencies, preferredCurrency),
+    );
+  }, [allCurrencies, preferredCurrency]);
+  const amountValue = amount.trim();
+  const parsedAmount = parseSignedNonZeroDecimalInput(amount);
+  const amountError = amountValue && parsedAmount === null
+    ? "Введите ненулевую сумму без экспоненты"
+    : undefined;
   return (
     <div className="space-y-3">
       <div>
@@ -286,6 +412,7 @@ function AdjustForm({
         <Input
           inputMode="decimal"
           value={amount}
+          error={amountError}
           onChange={(e) => setAmount(e.target.value)}
           placeholder="напр. -25.5"
         />
@@ -304,7 +431,13 @@ function AdjustForm({
         <Button
           type="button"
           variant="ghost"
-          onClick={() => setAmount((v) => `-${Math.abs(Number(v || "0"))}`)}
+          onClick={() =>
+            setAmount((v) => {
+              const parsed = parseSignedNonZeroDecimalInput(v);
+              const unsigned = unsignedSignedDecimalInput(v);
+              return parsed === null || !unsigned ? "" : `-${unsigned}`;
+            })
+          }
           className="flex-1"
         >
           <Minus size={14} className="mr-1" /> Списать
@@ -312,7 +445,13 @@ function AdjustForm({
         <Button
           type="button"
           variant="ghost"
-          onClick={() => setAmount((v) => `${Math.abs(Number(v || "0"))}`)}
+          onClick={() =>
+            setAmount((v) => {
+              const parsed = parseSignedNonZeroDecimalInput(v);
+              const unsigned = unsignedSignedDecimalInput(v);
+              return parsed === null || !unsigned ? "" : unsigned;
+            })
+          }
           className="flex-1"
         >
           <Plus size={14} className="mr-1" /> Зачислить
@@ -320,12 +459,16 @@ function AdjustForm({
       </div>
       <Button
         type="button"
-        disabled={adjust.isPending || !Number(amount)}
+        disabled={adjust.isPending || parsedAmount === null || allCurrencies.length === 0}
         onClick={async () => {
+          if (parsedAmount === null) {
+            toast.show({ kind: "error", title: "Некорректная сумма" });
+            return;
+          }
           try {
             await adjust.mutateAsync({
               currency_code: currency,
-              amount: Number(amount),
+              amount: amountValue,
               reason: reason.trim() || undefined,
             });
             toast.show({

@@ -28,21 +28,39 @@ const mockState = vi.hoisted(() => ({
     dm_system?: boolean;
   } | undefined,
   lastType: undefined as string | undefined,
+  lastParams: undefined as Record<string, unknown> | undefined,
   updateMe: { mutate: vi.fn() as ReturnType<typeof vi.fn> },
   markRead: { mutate: vi.fn() as ReturnType<typeof vi.fn> },
   markAll: { mutate: vi.fn() as ReturnType<typeof vi.fn> },
 }));
+const apiMock = vi.hoisted(() => ({ get: vi.fn() }));
+const buildNotificationsSearchParamsMock = vi.hoisted(() =>
+  vi.fn((params: Record<string, unknown>) => {
+    const searchParams: Record<string, string> = {};
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === "") continue;
+      searchParams[key] = String(value);
+    }
+    return searchParams;
+  }),
+);
 
 vi.mock("@/api/hooks", () => ({
+  buildNotificationsSearchParams: buildNotificationsSearchParamsMock,
   useMe: () => ({ data: mockState.me }),
   useNotificationCounters: () => ({ data: mockState.counters }),
-  useNotifications: (type?: string) => {
-    mockState.lastType = type;
+  useNotifications: (params: Record<string, unknown>) => {
+    mockState.lastParams = params;
+    mockState.lastType = params.type as string | undefined;
     return { data: mockState.list, isLoading: mockState.loading };
   },
   useUpdateMe: () => mockState.updateMe,
   useMarkNotificationRead: () => mockState.markRead,
   useMarkAllRead: () => mockState.markAll,
+}));
+
+vi.mock("@/api/client", () => ({
+  api: apiMock,
 }));
 
 vi.mock("@/lib/tg", () => ({
@@ -90,9 +108,12 @@ beforeEach(() => {
   mockState.loading = false;
   mockState.me = { id: 1, dm_deals: true, dm_deposits: true, dm_system: true };
   mockState.lastType = undefined;
+  mockState.lastParams = undefined;
   mockState.updateMe = { mutate: vi.fn() };
   mockState.markRead = { mutate: vi.fn() };
   mockState.markAll = { mutate: vi.fn() };
+  apiMock.get.mockReset();
+  buildNotificationsSearchParamsMock.mockClear();
 });
 
 describe("<NotificationsPage />", () => {
@@ -131,6 +152,22 @@ describe("<NotificationsPage />", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not coerce malformed unread counters into header actions", () => {
+    mockState.counters = {
+      all: 5,
+      deals: 3,
+      deposits: 1,
+      system: 1,
+      unread: "1e2" as unknown as number,
+    };
+    mockState.list = [];
+    renderPage();
+    expect(screen.queryByText(/непрочитанных/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Прочитать все/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("'Прочитать все' calls useMarkAllRead.mutate", async () => {
     mockState.counters = { all: 1, deals: 1, deposits: 0, system: 0, unread: 1 };
     mockState.list = [];
@@ -153,6 +190,7 @@ describe("<NotificationsPage />", () => {
     mockState.list = [];
     renderPage();
     expect(mockState.lastType).toBeUndefined();
+    expect(mockState.lastParams).toEqual({ type: undefined, limit: 50 });
   });
 
   it("clicking a tab passes the matching type to useNotifications", async () => {
@@ -161,6 +199,103 @@ describe("<NotificationsPage />", () => {
     renderPage();
     await user.click(screen.getByRole("button", { name: /^Депозиты/ }));
     await waitFor(() => expect(mockState.lastType).toBe("deposits"));
+  });
+
+  it("loads older notifications with a keyset cursor", async () => {
+    const user = userEvent.setup();
+    mockState.list = Array.from({ length: 50 }, (_, idx) =>
+      makeNotification({
+        id: 100 - idx,
+        title: `Notification ${idx}`,
+        created_at: `2026-01-01T00:${String(59 - idx).padStart(2, "0")}:00Z`,
+      }),
+    );
+    apiMock.get.mockReturnValue({
+      json: async () => [makeNotification({ id: 49, title: "Older notification" })],
+    });
+
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Показать еще" }));
+
+    expect(apiMock.get).toHaveBeenCalledWith("api/notifications", {
+      searchParams: {
+        limit: "50",
+        before_created_at: "2026-01-01T00:10:00Z",
+        before_id: "51",
+      },
+    });
+    expect(await screen.findByText("Older notification")).toBeInTheDocument();
+  });
+
+  it("normalizes numeric-string ids before loading older notifications", async () => {
+    const user = userEvent.setup();
+    mockState.list = Array.from({ length: 50 }, (_, idx) =>
+      makeNotification({
+        id: (idx === 49 ? "51" : 100 - idx) as unknown as number,
+        title: `Notification ${idx}`,
+        created_at: `2026-01-01T00:${String(59 - idx).padStart(2, "0")}:00Z`,
+      }),
+    );
+    apiMock.get.mockReturnValue({
+      json: async () => [makeNotification({ id: 49, title: "Older notification" })],
+    });
+
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Показать еще" }));
+
+    expect(apiMock.get).toHaveBeenCalledWith("api/notifications", {
+      searchParams: {
+        limit: "50",
+        before_created_at: "2026-01-01T00:10:00Z",
+        before_id: "51",
+      },
+    });
+  });
+
+  it("de-dupes loaded notification pages by normalized ids", async () => {
+    const user = userEvent.setup();
+    mockState.list = Array.from({ length: 50 }, (_, idx) =>
+      makeNotification({
+        id: 100 - idx,
+        title: `Notification ${idx}`,
+        created_at: `2026-01-01T00:${String(59 - idx).padStart(2, "0")}:00Z`,
+      }),
+    );
+    apiMock.get.mockReturnValue({
+      json: async () => [
+        makeNotification({ id: "51" as unknown as number, title: "Duplicate notification" }),
+        makeNotification({ id: 50, title: "Older unique notification" }),
+      ],
+    });
+
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Показать еще" }));
+
+    expect(await screen.findByText("Older unique notification")).toBeInTheDocument();
+    expect(screen.queryByText("Duplicate notification")).not.toBeInTheDocument();
+  });
+
+  it("does not send load-more when the keyset cursor is malformed", async () => {
+    const user = userEvent.setup();
+    const loadMoreName = /\u041f\u043e\u043a\u0430\u0437\u0430\u0442\u044c \u0435\u0449\u0435/;
+    const loadMoreError = "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0435\u0449\u0435 \u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0439";
+
+    mockState.list = Array.from({ length: 50 }, (_, idx) =>
+      makeNotification({
+        id: idx === 49 ? 0 : 100 - idx,
+        title: `Notification ${idx}`,
+        created_at: idx === 49
+          ? "not-a-date"
+          : `2026-01-01T00:${String(59 - idx).padStart(2, "0")}:00Z`,
+      }),
+    );
+
+    renderPage();
+    await user.click(screen.getByRole("button", { name: loadMoreName }));
+
+    expect(apiMock.get).not.toHaveBeenCalled();
+    expect(screen.getByText(loadMoreError)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: loadMoreName })).not.toBeInTheDocument();
   });
 
   it("clicking a notification row navigates to /notifications/<id>", async () => {
@@ -173,6 +308,18 @@ describe("<NotificationsPage />", () => {
         "/notifications/99",
       ),
     );
+  });
+
+  it("does not navigate or mark read for malformed runtime notification ids", async () => {
+    mockState.list = [makeNotification({ id: "0x63" as unknown as number })];
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByText(/#42/));
+
+    expect(screen.getByTestId("path").textContent).toBe("/notifications");
+    expect(mockState.markRead.mutate).not.toHaveBeenCalled();
+    expect(screen.queryByText(/0x63/)).not.toBeInTheDocument();
   });
 
   it("DM toggles dispatch updateMe with the matching key", async () => {

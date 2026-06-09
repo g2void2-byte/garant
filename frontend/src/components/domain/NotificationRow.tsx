@@ -4,6 +4,7 @@ import type { NotificationDto } from "@/api/types";
 import { cn } from "@/lib/cn";
 import { relativeTime } from "@/lib/format";
 import { staggerDelay, useHorizontalSwipe } from "@/lib/animate";
+import { parsePositiveIntValue } from "@/lib/routeParams";
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   deals: Briefcase,
@@ -19,7 +20,14 @@ interface Props {
 
 export function NotificationRow({ item, index = 0, onRead }: Props) {
   const navigate = useNavigate();
-  const swipe = useHorizontalSwipe(() => onRead?.(item.id));
+  const notificationId = parsePositiveIntValue(item.id);
+  const canOpen = notificationId !== undefined;
+  const openNotification = () => {
+    if (notificationId !== undefined) navigate(`/notifications/${notificationId}`);
+  };
+  const swipe = useHorizontalSwipe(() => {
+    if (notificationId !== undefined) onRead?.(notificationId);
+  });
   const Icon = ICONS[item.type] ?? Bell;
 
   return (
@@ -32,21 +40,24 @@ export function NotificationRow({ item, index = 0, onRead }: Props) {
       </div>
       <div
         ref={swipe.elRef}
-        onPointerDown={item.is_read ? undefined : swipe.onPointerDown}
-        onPointerMove={item.is_read ? undefined : swipe.onPointerMove}
-        onPointerUp={item.is_read ? undefined : swipe.onPointerUp}
-        onClick={() => navigate(`/notifications/${item.id}`)}
+        onPointerDown={item.is_read || !canOpen ? undefined : swipe.onPointerDown}
+        onPointerMove={item.is_read || !canOpen ? undefined : swipe.onPointerMove}
+        onPointerUp={item.is_read || !canOpen ? undefined : swipe.onPointerUp}
+        onClick={canOpen ? openNotification : undefined}
         role="button"
-        tabIndex={0}
+        aria-disabled={!canOpen}
+        tabIndex={canOpen ? 0 : -1}
         onKeyDown={(e) => {
+          if (!canOpen) return;
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            navigate(`/notifications/${item.id}`);
+            openNotification();
           }
         }}
         className={cn(
-          "relative flex items-start gap-3 p-3 rounded-card border bg-panel cursor-pointer touch-none",
+          "relative flex items-start gap-3 p-3 rounded-card border bg-panel touch-none",
           item.is_read ? "border-border" : "border-accent/40",
+          canOpen ? "cursor-pointer" : "cursor-not-allowed opacity-60",
         )}
       >
         <div

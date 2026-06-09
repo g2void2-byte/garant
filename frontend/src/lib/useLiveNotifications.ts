@@ -5,8 +5,90 @@ import { haptic } from "@/lib/tg";
 import { clearPinToken } from "@/lib/pin";
 import { useToast } from "@/components/ui/Toast";
 import { qk } from "@/api/queryKeys";
-import type { NotificationDto } from "@/api/types";
-import { applyServerNotificationRead, type DealMessageDto } from "@/api/hooks";
+import type { DealMessageDto, MediaDto, NotificationDto } from "@/api/types";
+import { isPositiveSafeInteger, parsePositiveIntValue } from "@/lib/routeParams";
+import { safeMediaUrl } from "@/lib/mediaLinks";
+import {
+  applyServerNotificationRead,
+  invalidateDealParticipantSideEffects,
+} from "@/api/hooks";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPositiveSafeIntValue(value: unknown): value is number {
+  return typeof value === "number" && isPositiveSafeInteger(value);
+}
+
+function hasSameRuntimePositiveId(left: unknown, right: unknown): boolean {
+  const parsedLeft = parsePositiveIntValue(left);
+  const parsedRight = parsePositiveIntValue(right);
+  if (parsedLeft !== undefined && parsedRight !== undefined) {
+    return parsedLeft === parsedRight;
+  }
+  return left === right;
+}
+
+function isNonNegativeSafeIntValue(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isMediaDto(value: unknown): value is MediaDto {
+  if (!isRecord(value)) return false;
+  return (
+    isPositiveSafeIntValue(value.id) &&
+    typeof value.kind === "string" &&
+    typeof value.url === "string" &&
+    safeMediaUrl(value.url) !== null &&
+    typeof value.name === "string" &&
+    isNonNegativeSafeIntValue(value.size) &&
+    typeof value.content_type === "string" &&
+    (typeof value.created_at === "string" || value.created_at === null)
+  );
+}
+
+function isDealMessageDto(value: unknown): value is DealMessageDto {
+  if (!isRecord(value)) return false;
+  return (
+    isPositiveSafeIntValue(value.id) &&
+    isPositiveSafeIntValue(value.deal_id) &&
+    isPositiveSafeIntValue(value.sender_id) &&
+    (typeof value.sender_username === "string" || value.sender_username === null) &&
+    typeof value.text === "string" &&
+    Array.isArray(value.attachments) &&
+    value.attachments.every(isMediaDto) &&
+    typeof value.created_at === "string"
+  );
+}
+
+function isNotificationDto(value: unknown): value is NotificationDto {
+  if (!isRecord(value)) return false;
+  return (
+    isPositiveSafeIntValue(value.id) &&
+    (value.type === "deals" || value.type === "deposits" || value.type === "system") &&
+    typeof value.title === "string" &&
+    typeof value.body === "string" &&
+    (isRecord(value.payload) || value.payload === null) &&
+    typeof value.is_read === "boolean" &&
+    typeof value.created_at === "string"
+  );
+}
+
+function parseNotificationReadPayload(value: unknown): { ids?: number[]; all?: boolean } | null {
+  if (!isRecord(value)) return null;
+  const payload: { ids?: number[]; all?: boolean } = {};
+  if (value.all !== undefined) {
+    if (typeof value.all !== "boolean") return null;
+    if (value.all) payload.all = true;
+  }
+  if (value.ids !== undefined) {
+    if (!Array.isArray(value.ids)) return null;
+    if (!value.ids.every(isPositiveSafeIntValue)) return null;
+    if (value.ids.length > 0) payload.ids = value.ids;
+  }
+  return payload.all || payload.ids ? payload : null;
+}
 
 export function useLiveNotifications() {
   const qc = useQueryClient();
@@ -25,12 +107,13 @@ export function useLiveNotifications() {
     const disconnect = connectNotifications({
       onEvent: (event: WsEvent) => {
         if (event.event === "deal_message" && event.data) {
-          const msg = event.data as DealMessageDto;
+          if (!isDealMessageDto(event.data)) return;
+          const msg = event.data;
           qc.setQueryData<DealMessageDto[] | undefined>(
             qk.deal.messages(msg.deal_id),
             (prev) => {
               if (!prev) return [msg];
-              if (prev.some((m) => m.id === msg.id)) return prev;
+              if (prev.some((m) => hasSameRuntimePositiveId(m.id, msg.id))) return prev;
               return [...prev, msg];
             },
           );
@@ -42,12 +125,13 @@ export function useLiveNotifications() {
           // backend after every state-changing deal op so every party
           // (initiator + counterparty + arbiter) re-pulls the deal
           // without waiting for the next focus / poll refetch.
-          const data = event.data as { deal_id?: number } | undefined;
-          if (data?.deal_id) {
+          const data = isRecord(event.data) ? event.data : undefined;
+          if (isPositiveSafeIntValue(data?.deal_id)) {
             qc.invalidateQueries({ queryKey: qk.deal.detail(data.deal_id) });
           }
           qc.invalidateQueries({ queryKey: qk.deals.all() });
           qc.invalidateQueries({ queryKey: qk.deal.all() });
+          invalidateDealParticipantSideEffects(qc);
           return;
         }
         if (event.event === "notification.read") {
@@ -55,9 +139,7 @@ export function useLiveNotifications() {
           // Splice ``is_read=true`` into our local list cache and
           // decrement counters in place so the bell badge updates
           // without waiting for the next 30-second poll.
-          const data = event.data as
-            | { ids?: number[]; all?: boolean }
-            | undefined;
+          const data = parseNotificationReadPayload(event.data);
           if (data) {
             applyServerNotificationRead(qc, data);
           }
@@ -75,13 +157,14 @@ export function useLiveNotifications() {
           return;
         }
         if (event.event !== "notification" || !event.data) return;
-        const notif = event.data as NotificationDto;
+        if (!isNotificationDto(event.data)) return;
+        const notif = event.data;
 
         qc.setQueriesData<NotificationDto[] | undefined>(
           { queryKey: qk.notifications.all() },
           (prev) => {
             if (!prev) return prev;
-            if (prev.some((n) => n.id === notif.id)) return prev;
+            if (prev.some((n) => hasSameRuntimePositiveId(n.id, notif.id))) return prev;
             return [notif, ...prev];
           },
         );
@@ -89,6 +172,7 @@ export function useLiveNotifications() {
         if (notif.type === "deals") {
           qc.invalidateQueries({ queryKey: qk.deals.all() });
           qc.invalidateQueries({ queryKey: qk.deal.all() });
+          invalidateDealParticipantSideEffects(qc);
         }
         if (notif.type === "deposits") {
           qc.invalidateQueries({ queryKey: qk.me() });

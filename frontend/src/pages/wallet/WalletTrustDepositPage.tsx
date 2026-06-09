@@ -16,8 +16,15 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { usePresence } from "@/lib/animate";
 import { cn } from "@/lib/cn";
-import { formatCurrency, formatMoney } from "@/lib/format";
+import { normalizeCurrencyCode, normalizeCurrencyCodeRows } from "@/lib/currencyCodes";
+import {
+  formatCurrency,
+  formatCurrencyStrict,
+  formatMoney,
+  parseDecimalValue,
+} from "@/lib/format";
 import { haptic, openPaymentLink, openTelegramLink } from "@/lib/tg";
+import { buildTelegramUserUrl } from "@/lib/telegramLinks";
 
 const DECIMAL_RE = /^\d+(?:\.\d{1,18})?$|^\.\d{1,18}$/;
 
@@ -37,16 +44,21 @@ export default function WalletTrustDepositPage() {
   const [amount, setAmount] = useState<string>("");
   const [withdrawOpen, setWithdrawOpen] = useState(false);
 
+  const currencyRows = useMemo(
+    () => normalizeCurrencyCodeRows(currencies.data ?? []),
+    [currencies.data],
+  );
+
   const current = useMemo(
-    () => currencies.data?.find((c) => c.code === code),
-    [currencies.data, code],
+    () => currencyRows.find((c) => c.code === code),
+    [currencyRows, code],
   );
 
   useEffect(() => {
-    if (!code && currencies.data?.length) {
-      setCode(currencies.data[0].code);
+    if (!code && currencyRows.length) {
+      setCode(currencyRows[0].code);
     }
-  }, [code, currencies.data]);
+  }, [code, currencyRows]);
 
   useEffect(() => {
     if (current && !amount) {
@@ -82,11 +94,15 @@ export default function WalletTrustDepositPage() {
         purpose: "trust",
       });
       haptic("success");
-      if (dep.pay_url) openPaymentLink(dep.pay_url);
+      const depositAmount = parseDecimalValue(dep.amount);
+      if (dep.pay_url && depositAmount !== null && depositAmount > 0) {
+        openPaymentLink(dep.pay_url);
+      }
+      const paidCurrencyCode = normalizeCurrencyCode(dep.currency.code) ?? current.code;
       toast.show({
         kind: "success",
         title: "Счёт создан",
-        body: `Оплатите ${formatCurrency(dep.amount, dep.currency.code, current.decimals)} в CryptoBot.`,
+        body: `Оплатите ${formatCurrencyStrict(dep.amount, paidCurrencyCode, current.decimals)} в CryptoBot.`,
       });
     } catch (e: unknown) {
       haptic("error");
@@ -97,7 +113,7 @@ export default function WalletTrustDepositPage() {
     }
   }
 
-  const currencyOptions = (currencies.data ?? []).map((c) => ({
+  const currencyOptions = currencyRows.map((c) => ({
     value: c.code,
     label: `${c.name} (${c.network || c.code})`,
   }));
@@ -193,18 +209,17 @@ export default function WalletTrustDepositPage() {
 interface TrustWithdrawModalProps {
   open: boolean;
   onClose: () => void;
-  admins: { username?: string }[];
+  admins: { username?: string | null }[];
 }
 
 function TrustWithdrawModal({ open, onClose, admins }: TrustWithdrawModalProps) {
   const { mounted, visible } = usePresence(open, 200);
   const adminUsername = admins?.[0]?.username;
+  const adminContactUrl = buildTelegramUserUrl(adminUsername);
 
   function writeAdmin() {
     haptic("light");
-    if (adminUsername) {
-      openTelegramLink(`https://t.me/${adminUsername}`);
-    }
+    if (adminContactUrl) openTelegramLink(adminContactUrl);
   }
 
   if (!mounted) return null;
@@ -271,13 +286,13 @@ function TrustWithdrawModal({ open, onClose, admins }: TrustWithdrawModalProps) 
             <Button
               size="md"
               onClick={writeAdmin}
-              disabled={!adminUsername}
+              disabled={!adminContactUrl}
               className="!h-11"
             >
               Написать админу
             </Button>
           </div>
-          {!adminUsername && (
+          {!adminContactUrl && (
             <p className="mt-3 text-[12px] text-danger">
               Контакт администратора пока недоступен. Попробуйте позже.
             </p>

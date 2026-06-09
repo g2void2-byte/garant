@@ -164,6 +164,22 @@ def _cur_to_out(c: Currency) -> AdminCurrencyOut:
     )
 
 
+def _currency_audit_snapshot(c: Currency) -> dict:
+    return {
+        "code": c.code,
+        "name": c.name,
+        "network": c.network,
+        "icon_url": c.icon_url,
+        "decimals": c.decimals,
+        "min_deposit": str(Decimal(str(c.min_deposit))),
+        "min_withdraw": str(Decimal(str(c.min_withdraw))),
+        "is_active": bool(c.is_active),
+        "sort_order": c.sort_order,
+        "address_regex": c.address_regex or "",
+        "kind": c.kind or "crypto",
+    }
+
+
 @router.get("/currencies", response_model=list[AdminCurrencyOut])
 async def list_currencies_admin(_admin: AdminUser, session: SessionDep):
     rows = (
@@ -181,6 +197,22 @@ async def upsert_currency(
     session: SessionDep,
     request: Request,
 ):
+    explicit_null_fields = [
+        field
+        for field in (
+            "name",
+            "decimals",
+            "min_deposit",
+            "min_withdraw",
+            "is_active",
+            "sort_order",
+            "kind",
+        )
+        if field in body.model_fields_set and getattr(body, field) is None
+    ]
+    if explicit_null_fields:
+        raise HTTPException(422, "Field cannot be null")
+
     existing = (
         await session.execute(select(Currency).where(Currency.code == body.code))
     ).scalar_one_or_none()
@@ -209,24 +241,14 @@ async def upsert_currency(
         await session.flush()
         action = "currency.create"
     else:
-        before = {
-            "name": existing.name,
-            "network": existing.network,
-            "icon_url": existing.icon_url,
-            "decimals": existing.decimals,
-            "min_deposit": float(existing.min_deposit),
-            "min_withdraw": float(existing.min_withdraw),
-            "is_active": bool(existing.is_active),
-            "sort_order": existing.sort_order,
-            "address_regex": existing.address_regex or "",
-            "kind": existing.kind or "crypto",
-        }
+        before = _currency_audit_snapshot(existing)
         if body.name is not None:
             existing.name = body.name
-        if body.network is not None:
-            existing.network = body.network
-        if body.icon_url is not None:
-            existing.icon_url = body.icon_url
+        requested_fields = body.model_fields_set
+        if "network" in requested_fields:
+            existing.network = body.network or ""
+        if "icon_url" in requested_fields:
+            existing.icon_url = body.icon_url or ""
         if body.decimals is not None:
             existing.decimals = body.decimals
         if body.min_deposit is not None:
@@ -237,8 +259,8 @@ async def upsert_currency(
             existing.is_active = body.is_active
         if body.sort_order is not None:
             existing.sort_order = body.sort_order
-        if body.address_regex is not None:
-            existing.address_regex = body.address_regex
+        if "address_regex" in requested_fields:
+            existing.address_regex = body.address_regex or ""
         if body.kind is not None:
             existing.kind = body.kind
         action = "currency.update"
@@ -251,7 +273,7 @@ async def upsert_currency(
         target_id=existing.id,
         payload=state_change_payload(
             before=before,
-            after=_cur_to_out(existing).model_dump(),
+            after=_currency_audit_snapshot(existing),
             extra={"code": existing.code},
         ),
         request=request,
@@ -318,14 +340,7 @@ async def delete_currency(
             },
         )
 
-    payload = {
-        "code": c.code,
-        "name": c.name,
-        "network": c.network,
-        "decimals": c.decimals,
-        "is_active": bool(c.is_active),
-        "sort_order": c.sort_order,
-    }
+    payload = _currency_audit_snapshot(c)
     await session.delete(c)
     await log_admin_action(
         session,

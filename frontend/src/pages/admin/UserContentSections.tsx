@@ -12,6 +12,8 @@
  */
 import { useEffect, useState } from "react";
 import {
+  ChevronLeft,
+  ChevronRight,
   Edit2,
   MessageSquare,
   Plus,
@@ -29,6 +31,18 @@ import { useToast } from "@/components/ui/Toast";
 import { confirmDialog } from "@/lib/dialog";
 import { UserPicker } from "@/components/domain/UserPicker";
 import {
+  formatAdminCount,
+  formatAdminId,
+  formatAdminRating,
+  formatAdminServiceStatus,
+  formatAdminUsdSuffix,
+  formatAdminUsername,
+  getAdminTotalPages,
+  parseAdminId,
+  parseAdminCount,
+  shouldShowAdminPagination,
+} from "./format";
+import {
   useAdminCreateReview,
   useAdminDeleteComment,
   useAdminDeleteReview,
@@ -43,26 +57,72 @@ import {
 import type {
   AdminCommentItemDto,
   AdminReviewItemDto,
+  AdminServiceUpdateBody,
   AdminServiceItemDto,
   UserCardDto,
 } from "@/api/types";
+import {
+  parseNonNegativeDecimalInput,
+  parseNonNegativeIntInput,
+} from "@/lib/formNumbers";
 
 interface SectionProps {
   userId: number;
 }
 
+const PAGE_SIZE = 20;
+type AdminServiceStatus = NonNullable<AdminServiceUpdateBody["status"]>;
+const ADMIN_SERVICE_STATUSES: AdminServiceStatus[] = [
+  "draft",
+  "active",
+  "paused",
+  "banned",
+];
+
+function normalizeAdminServiceStatus(status: string): AdminServiceStatus {
+  return ADMIN_SERVICE_STATUSES.includes(status as AdminServiceStatus)
+    ? (status as AdminServiceStatus)
+    : "active";
+}
+
+function parseRatingIntInput(raw: string): number | null {
+  const parsed = parseNonNegativeIntInput(raw, 5);
+  return parsed !== null && parsed >= 1 ? parsed : null;
+}
+
+function parseRatingDecimalInput(raw: string): number | null {
+  const parsed = parseNonNegativeDecimalInput(raw);
+  return parsed !== null && parsed <= 5 ? parsed : null;
+}
+
 // ── Services ──────────────────────────────────────────────────────────────
 
 export function ServicesSection({ userId }: SectionProps) {
-  const { data, isLoading } = useAdminUserServices(userId);
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useAdminUserServices(userId, {
+    page,
+    page_size: PAGE_SIZE,
+  });
   const [editing, setEditing] = useState<AdminServiceItemDto | null>(null);
+  const services = data?.items ?? [];
+  const totalCount = parseAdminCount(data?.total);
+
+  useEffect(() => {
+    setPage(1);
+  }, [userId]);
+
+  useEffect(() => {
+    if (totalCount !== null && totalCount > 0 && services.length === 0 && page > 1) {
+      setPage(page - 1);
+    }
+  }, [totalCount, services.length, page]);
 
   return (
     <section className="bg-panel rounded-card p-4">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-text-muted flex items-center gap-1.5">
           <Briefcase size={14} /> Услуги
-          {data && <span className="text-text">({data.length})</span>}
+          {data && <span className="text-text">({formatAdminCount(data.total)})</span>}
         </h3>
       </div>
       {isLoading ? (
@@ -70,11 +130,11 @@ export function ServicesSection({ userId }: SectionProps) {
           <Skeleton className="h-12" />
           <Skeleton className="h-12" />
         </div>
-      ) : !data || data.length === 0 ? (
+      ) : !data || services.length === 0 ? (
         <p className="text-sm text-text-muted py-2">Нет услуг.</p>
       ) : (
         <ul className="space-y-2">
-            {data.map((s, _idx) => (
+            {services.map((s, _idx) => (
               <li
                 key={s.id}
                 className="bg-panel-2 rounded-card p-3"
@@ -84,16 +144,16 @@ export function ServicesSection({ userId }: SectionProps) {
                     <div className="font-medium truncate">{s.title}</div>
                     <div className="text-xs text-text-muted line-clamp-2">{s.description}</div>
                     <div className="mt-1 text-[11px] text-text-muted flex items-center gap-2 flex-wrap">
-                      <span>{s.price.toFixed(2)} $</span>
+                      <span>{formatAdminUsdSuffix(s.price)}</span>
                       <span>·</span>
-                      <span>{s.status}</span>
+                      <span>{formatAdminServiceStatus(s.status)}</span>
                       <span>·</span>
-                      <span>{s.deals_count} сделок</span>
+                      <span>{formatAdminCount(s.deals_count)} сделок</span>
                       {s.rating_manual !== null && (
                         <>
                           <span>·</span>
                           <span className="flex items-center gap-0.5">
-                            <Star size={10} className="text-accent" /> {s.rating_manual}
+                            <Star size={10} className="text-accent" /> {formatAdminRating(s.rating_manual)}
                           </span>
                         </>
                       )}
@@ -111,6 +171,13 @@ export function ServicesSection({ userId }: SectionProps) {
               </li>
             ))}
         </ul>
+      )}
+      {data && shouldShowAdminPagination(data.total, data.page_size) && (
+        <ContentPagination
+          page={page}
+          totalPages={getAdminTotalPages(data.total, data.page_size)}
+          onPage={setPage}
+        />
       )}
       <ServiceEditSheet userId={userId} service={editing} onClose={() => setEditing(null)} />
     </section>
@@ -136,7 +203,8 @@ function ServiceEditSheet({
   const [views, setViews] = useState("");
   const [dealsCount, setDealsCount] = useState("");
   const [ratingManual, setRatingManual] = useState("");
-  const [status, setStatus] = useState("active");
+  const [status, setStatus] = useState<AdminServiceStatus>("active");
+  const [statusTouched, setStatusTouched] = useState(false);
 
   // Seed inputs when the sheet opens (re-seed each time it (re)opens with
   // a different service).
@@ -149,7 +217,8 @@ function ServiceEditSheet({
     setViews(String(service.views));
     setDealsCount(String(service.deals_count));
     setRatingManual(service.rating_manual !== null ? String(service.rating_manual) : "");
-    setStatus(service.status);
+    setStatus(normalizeAdminServiceStatus(service.status));
+    setStatusTouched(false);
   }, [service]);
 
   const reset = () => {
@@ -161,6 +230,7 @@ function ServiceEditSheet({
     setDealsCount("");
     setRatingManual("");
     setStatus("active");
+    setStatusTouched(false);
   };
 
   const close = () => {
@@ -168,28 +238,64 @@ function ServiceEditSheet({
     onClose();
   };
 
+  const parsedPrice = parseNonNegativeDecimalInput(price);
+  const parsedDeposit = parseNonNegativeDecimalInput(deposit);
+  const parsedViews = parseNonNegativeIntInput(views);
+  const parsedDealsCount = parseNonNegativeIntInput(dealsCount);
+  const hasRatingManual = ratingManual.trim() !== "";
+  const parsedRatingManual = ratingManual.trim()
+    ? parseRatingDecimalInput(ratingManual)
+    : null;
+  const serviceId = service ? parseAdminId(service.id) : null;
+  const priceValue = price.trim();
+  const depositValue = deposit.trim();
+  const ratingManualValue = ratingManual.trim();
+  const serviceNumberErrors = {
+    price: parsedPrice === null ? "Введите число 0 или больше без экспоненты" : undefined,
+    deposit: parsedDeposit === null ? "Введите число 0 или больше без экспоненты" : undefined,
+    views: parsedViews === null ? "Введите целое число 0 или больше" : undefined,
+    dealsCount: parsedDealsCount === null ? "Введите целое число 0 или больше" : undefined,
+    ratingManual: hasRatingManual && parsedRatingManual === null
+      ? "Введите число 0..5 без экспоненты"
+      : undefined,
+  };
+
   const save = async () => {
     if (!service) return;
+    if (serviceId === null) {
+      toast.show({ kind: "error", title: "Неверный ID услуги" });
+      return;
+    }
+    if (
+      parsedPrice === null ||
+      parsedDeposit === null ||
+      parsedViews === null ||
+      parsedDealsCount === null ||
+      (hasRatingManual && parsedRatingManual === null)
+    ) {
+      toast.show({ kind: "error", title: "Проверьте числовые поля" });
+      return;
+    }
     try {
-      const body: Record<string, unknown> = {};
+      const body: AdminServiceUpdateBody = {};
       if (title !== service.title) body.title = title;
       if (description !== service.description) body.description = description;
-      if (Number(price) !== service.price) body.price = Number(price);
-      if (Number(deposit) !== service.deposit) body.deposit = Number(deposit);
-      if (Number(views) !== service.views) body.views = Number(views);
-      if (Number(dealsCount) !== service.deals_count) body.deals_count = Number(dealsCount);
-      if (ratingManual === "") {
+      if (priceValue !== String(service.price)) body.price = priceValue;
+      if (depositValue !== String(service.deposit)) body.deposit = depositValue;
+      if (parsedViews !== service.views) body.views = parsedViews;
+      if (parsedDealsCount !== service.deals_count) body.deals_count = parsedDealsCount;
+      if (!hasRatingManual) {
         if (service.rating_manual !== null) body.clear_rating = true;
-      } else if (Number(ratingManual) !== service.rating_manual) {
-        body.rating_manual = Number(ratingManual);
+      } else if (ratingManualValue !== String(service.rating_manual)) {
+        body.rating_manual = ratingManualValue;
       }
-      if (status !== service.status) body.status = status;
+      if (statusTouched && status !== service.status) body.status = status;
       if (Object.keys(body).length === 0) {
         toast.show({ kind: "info", title: "Нет изменений" });
         close();
         return;
       }
-      await update.mutateAsync({ serviceId: service.id, body });
+      await update.mutateAsync({ serviceId, body });
       toast.show({ kind: "success", title: "Услуга обновлена" });
       close();
     } catch (e: unknown) {
@@ -199,10 +305,14 @@ function ServiceEditSheet({
 
   const onDelete = async () => {
     if (!service) return;
+    if (serviceId === null) {
+      toast.show({ kind: "error", title: "Неверный ID услуги" });
+      return;
+    }
     // Audit L-15 — ``confirmDialog`` prefers ``Telegram.WebApp.showConfirm``.
     if (!(await confirmDialog("Удалить услугу?"))) return;
     try {
-      await del.mutateAsync(service.id);
+      await del.mutateAsync(serviceId);
       toast.show({ kind: "success", title: "Услуга удалена" });
       close();
     } catch (e: unknown) {
@@ -221,6 +331,7 @@ function ServiceEditSheet({
             type="number"
             inputMode="decimal"
             value={price}
+            error={serviceNumberErrors.price}
             onChange={(e) => setPrice(e.target.value)}
           />
           <Input
@@ -228,6 +339,7 @@ function ServiceEditSheet({
             type="number"
             inputMode="decimal"
             value={deposit}
+            error={serviceNumberErrors.deposit}
             onChange={(e) => setDeposit(e.target.value)}
           />
           <Input
@@ -235,6 +347,7 @@ function ServiceEditSheet({
             type="number"
             inputMode="numeric"
             value={views}
+            error={serviceNumberErrors.views}
             onChange={(e) => setViews(e.target.value)}
           />
           <Input
@@ -242,6 +355,7 @@ function ServiceEditSheet({
             type="number"
             inputMode="numeric"
             value={dealsCount}
+            error={serviceNumberErrors.dealsCount}
             onChange={(e) => setDealsCount(e.target.value)}
           />
           <Input
@@ -249,13 +363,17 @@ function ServiceEditSheet({
             type="number"
             inputMode="decimal"
             value={ratingManual}
+            error={serviceNumberErrors.ratingManual}
             onChange={(e) => setRatingManual(e.target.value)}
           />
           <label className="block">
             <div className="mb-1 text-[14px] font-medium text-text">Статус</div>
             <select
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) => {
+                setStatus(normalizeAdminServiceStatus(e.target.value));
+                setStatusTouched(true);
+              }}
               className="h-11 w-full px-3 rounded-button bg-panel text-text"
             >
               <option value="draft">draft</option>
@@ -266,13 +384,25 @@ function ServiceEditSheet({
           </label>
         </div>
         <div className="flex gap-2 pt-2">
-          <Button variant="danger" onClick={onDelete} disabled={del.isPending}>
+          <Button variant="danger" onClick={onDelete} disabled={serviceId === null || del.isPending}>
             <Trash2 size={14} />
           </Button>
           <Button variant="secondary" fullWidth onClick={close}>
             Отмена
           </Button>
-          <Button fullWidth onClick={save} disabled={update.isPending}>
+          <Button
+            fullWidth
+            onClick={save}
+            disabled={
+              update.isPending ||
+              serviceId === null ||
+              parsedPrice === null ||
+              parsedDeposit === null ||
+              parsedViews === null ||
+              parsedDealsCount === null ||
+              (hasRatingManual && parsedRatingManual === null)
+            }
+          >
             Сохранить
           </Button>
         </div>
@@ -285,26 +415,48 @@ function ServiceEditSheet({
 
 export function ReviewsSection({ userId }: SectionProps) {
   const [direction, setDirection] = useState<"received" | "written">("received");
-  const { data, isLoading } = useAdminUserReviews(userId, direction);
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useAdminUserReviews(userId, direction, {
+    page,
+    page_size: PAGE_SIZE,
+  });
   const [editing, setEditing] = useState<AdminReviewItemDto | null>(null);
   const [creating, setCreating] = useState(false);
+  const reviews = data?.items ?? [];
+  const totalCount = parseAdminCount(data?.total);
+
+  useEffect(() => {
+    setPage(1);
+  }, [userId, direction]);
+
+  useEffect(() => {
+    if (totalCount !== null && totalCount > 0 && reviews.length === 0 && page > 1) {
+      setPage(page - 1);
+    }
+  }, [totalCount, reviews.length, page]);
 
   return (
     <section className="bg-panel rounded-card p-4">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-text-muted flex items-center gap-1.5">
           <Star size={14} /> Отзывы
-          {data && <span className="text-text">({data.length})</span>}
+          {data && <span className="text-text">({formatAdminCount(data.total)})</span>}
         </h3>
         <div className="flex gap-1">
           <ToggleButton
             active={direction === "received"}
-            onClick={() => setDirection("received")}
+            onClick={() => {
+              setDirection("received");
+              setPage(1);
+            }}
             label="Получено"
           />
           <ToggleButton
             active={direction === "written"}
-            onClick={() => setDirection("written")}
+            onClick={() => {
+              setDirection("written");
+              setPage(1);
+            }}
             label="Написано"
           />
         </div>
@@ -314,14 +466,14 @@ export function ReviewsSection({ userId }: SectionProps) {
           <Skeleton className="h-12" />
           <Skeleton className="h-12" />
         </div>
-      ) : !data || data.length === 0 ? (
+      ) : !data || reviews.length === 0 ? (
         <EmptyState
           icon={<Star size={20} />}
           title={direction === "received" ? "Отзывов нет" : "Юзер не оставлял отзывов"}
         />
       ) : (
         <ul className="space-y-2">
-            {data.map((r, _idx) => (
+            {reviews.map((r, _idx) => (
               <li
                 key={r.id}
                 className="bg-panel-2 rounded-card p-3"
@@ -329,7 +481,7 @@ export function ReviewsSection({ userId }: SectionProps) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] uppercase tracking-wide text-text-muted">
-                      @{r.author_username ?? "—"} → @{r.target_username ?? "—"} · {r.rating}/5
+                      {formatAdminUsername(r.author_username)} → {formatAdminUsername(r.target_username)} · {formatAdminRating(r.rating)}/5
                     </div>
                     <div className="mt-1 text-sm">{r.text}</div>
                   </div>
@@ -345,6 +497,13 @@ export function ReviewsSection({ userId }: SectionProps) {
               </li>
             ))}
         </ul>
+      )}
+      {data && shouldShowAdminPagination(data.total, data.page_size) && (
+        <ContentPagination
+          page={page}
+          totalPages={getAdminTotalPages(data.total, data.page_size)}
+          onPage={setPage}
+        />
       )}
       <Button
         variant="secondary"
@@ -382,21 +541,28 @@ function ReviewCreateSheet({
     onClose();
   };
 
+  const parsedRating = parseRatingIntInput(rating);
+  const authorId = author ? parseAdminId(author.id) : null;
+  const ratingError = parsedRating === null ? "Введите целый рейтинг 1..5" : undefined;
+
   const submit = async () => {
-    const r = Number(rating);
-    if (!Number.isFinite(r) || r < 0 || r > 5) {
-      toast.show({ kind: "error", title: "Рейтинг 0..5" });
+    if (parsedRating === null) {
+      toast.show({ kind: "error", title: "Рейтинг 1..5" });
       return;
     }
     if (!author) {
       toast.show({ kind: "error", title: "Выберите автора" });
       return;
     }
+    if (authorId === null) {
+      toast.show({ kind: "error", title: "Неверный ID автора" });
+      return;
+    }
     try {
       await create.mutateAsync({
-        author_id: author.id,
+        author_id: authorId,
         target_id: userId,
-        rating: r,
+        rating: parsedRating,
         text,
       });
       toast.show({ kind: "success", title: "Отзыв создан" });
@@ -422,10 +588,11 @@ function ReviewCreateSheet({
           onPick={setAuthor}
         />
         <Input
-          label="Рейтинг 0..5"
+          label="Рейтинг 1..5"
           type="number"
           inputMode="decimal"
           value={rating}
+          error={ratingError}
           onChange={(e) => setRating(e.target.value)}
         />
         <Textarea label="Текст" value={text} onChange={(e) => setText(e.target.value)} />
@@ -469,15 +636,22 @@ function ReviewEditSheet({
     onClose();
   };
 
+  const parsedRating = parseRatingIntInput(rating);
+  const reviewId = review ? parseAdminId(review.id) : null;
+  const ratingError = parsedRating === null ? "Введите целый рейтинг 1..5" : undefined;
+
   const save = async () => {
     if (!review) return;
-    const r = Number(rating);
-    if (!Number.isFinite(r) || r < 0 || r > 5) {
-      toast.show({ kind: "error", title: "Рейтинг 0..5" });
+    if (reviewId === null) {
+      toast.show({ kind: "error", title: "Неверный ID отзыва" });
+      return;
+    }
+    if (parsedRating === null) {
+      toast.show({ kind: "error", title: "Рейтинг 1..5" });
       return;
     }
     try {
-      await update.mutateAsync({ reviewId: review.id, body: { rating: r, text } });
+      await update.mutateAsync({ reviewId, body: { rating: parsedRating, text } });
       toast.show({ kind: "success", title: "Отзыв обновлён" });
       close();
     } catch (e: unknown) {
@@ -487,10 +661,14 @@ function ReviewEditSheet({
 
   const onDelete = async () => {
     if (!review) return;
+    if (reviewId === null) {
+      toast.show({ kind: "error", title: "Неверный ID отзыва" });
+      return;
+    }
     // Audit L-15 — ``confirmDialog`` prefers ``Telegram.WebApp.showConfirm``.
     if (!(await confirmDialog("Удалить отзыв?"))) return;
     try {
-      await del.mutateAsync(review.id);
+      await del.mutateAsync(reviewId);
       toast.show({ kind: "success", title: "Отзыв удалён" });
       close();
     } catch (e: unknown) {
@@ -502,21 +680,22 @@ function ReviewEditSheet({
     <Sheet open={!!review} onClose={close} title="Отзыв">
       <div className="space-y-3">
         <Input
-          label="Рейтинг 0..5"
+          label="Рейтинг 1..5"
           type="number"
           inputMode="decimal"
           value={rating}
+          error={ratingError}
           onChange={(e) => setRating(e.target.value)}
         />
         <Textarea label="Текст" value={text} onChange={(e) => setText(e.target.value)} />
         <div className="flex gap-2 pt-2">
-          <Button variant="danger" onClick={onDelete} disabled={del.isPending}>
+          <Button variant="danger" onClick={onDelete} disabled={reviewId === null || del.isPending}>
             <Trash2 size={14} />
           </Button>
           <Button variant="secondary" fullWidth onClick={close}>
             Отмена
           </Button>
-          <Button fullWidth onClick={save} disabled={update.isPending}>
+          <Button fullWidth onClick={save} disabled={reviewId === null || update.isPending}>
             Сохранить
           </Button>
         </div>
@@ -528,26 +707,47 @@ function ReviewEditSheet({
 // ── Comments ──────────────────────────────────────────────────────────────
 
 export function CommentsSection({ userId }: SectionProps) {
-  const { data, isLoading } = useAdminUserComments(userId);
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useAdminUserComments(userId, {
+    page,
+    page_size: PAGE_SIZE,
+  });
   const [editing, setEditing] = useState<AdminCommentItemDto | null>(null);
+  const comments = data?.items ?? [];
+  const commentsForRender = comments.map((comment) => ({
+    ...comment,
+    service_id: formatAdminId(comment.service_id),
+    raw: comment,
+  }));
+  const totalCount = parseAdminCount(data?.total);
+
+  useEffect(() => {
+    setPage(1);
+  }, [userId]);
+
+  useEffect(() => {
+    if (totalCount !== null && totalCount > 0 && comments.length === 0 && page > 1) {
+      setPage(page - 1);
+    }
+  }, [totalCount, comments.length, page]);
 
   return (
     <section className="bg-panel rounded-card p-4">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-text-muted flex items-center gap-1.5">
           <MessageSquare size={14} /> Комментарии
-          {data && <span className="text-text">({data.length})</span>}
+          {data && <span className="text-text">({formatAdminCount(data.total)})</span>}
         </h3>
       </div>
       {isLoading ? (
         <div className="space-y-2">
           <Skeleton className="h-12" />
         </div>
-      ) : !data || data.length === 0 ? (
+      ) : !data || comments.length === 0 ? (
         <p className="text-sm text-text-muted py-2">Юзер не оставлял комментариев.</p>
       ) : (
         <ul className="space-y-2">
-            {data.map((c, _idx) => (
+            {commentsForRender.map((c, _idx) => (
               <li
                 key={c.id}
                 className="bg-panel-2 rounded-card p-3"
@@ -556,13 +756,13 @@ export function CommentsSection({ userId }: SectionProps) {
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] uppercase tracking-wide text-text-muted">
                       В услуге #{c.service_id}
-                      {c.rating !== null && ` · ${c.rating}/5`}
+                      {c.rating !== null && ` · ${formatAdminRating(c.rating)}/5`}
                     </div>
                     <div className="mt-1 text-sm">{c.text}</div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setEditing(c)}
+                    onClick={() => setEditing(c.raw)}
                     className="p-1.5 rounded-button bg-panel hover:bg-panel-2 active:scale-95"
                     aria-label="Изменить"
                   >
@@ -572,6 +772,13 @@ export function CommentsSection({ userId }: SectionProps) {
               </li>
             ))}
         </ul>
+      )}
+      {data && shouldShowAdminPagination(data.total, data.page_size) && (
+        <ContentPagination
+          page={page}
+          totalPages={getAdminTotalPages(data.total, data.page_size)}
+          onPage={setPage}
+        />
       )}
       <CommentEditSheet userId={userId} comment={editing} onClose={() => setEditing(null)} />
     </section>
@@ -605,26 +812,34 @@ function CommentEditSheet({
     onClose();
   };
 
+  const hasRating = rating.trim() !== "";
+  const parsedRating = hasRating ? parseRatingIntInput(rating) : null;
+  const commentId = comment ? parseAdminId(comment.id) : null;
+  const ratingError = hasRating && parsedRating === null ? "Введите целый рейтинг 1..5" : undefined;
+
   const save = async () => {
     if (!comment) return;
+    if (commentId === null) {
+      toast.show({ kind: "error", title: "Неверный ID комментария" });
+      return;
+    }
     try {
       const body: Record<string, unknown> = {};
       if (text !== comment.text) body.text = text;
-      if (rating === "") {
+      if (!hasRating) {
         if (comment.rating !== null) body.clear_rating = true;
       } else {
-        const r = Number(rating);
-        if (!Number.isFinite(r) || r < 0 || r > 5) {
-          toast.show({ kind: "error", title: "Рейтинг 0..5" });
+        if (parsedRating === null) {
+          toast.show({ kind: "error", title: "Рейтинг 1..5" });
           return;
         }
-        if (r !== comment.rating) body.rating = r;
+        if (parsedRating !== comment.rating) body.rating = parsedRating;
       }
       if (Object.keys(body).length === 0) {
         close();
         return;
       }
-      await update.mutateAsync({ commentId: comment.id, body });
+      await update.mutateAsync({ commentId, body });
       toast.show({ kind: "success", title: "Комментарий обновлён" });
       close();
     } catch (e: unknown) {
@@ -634,10 +849,14 @@ function CommentEditSheet({
 
   const onDelete = async () => {
     if (!comment) return;
+    if (commentId === null) {
+      toast.show({ kind: "error", title: "Неверный ID комментария" });
+      return;
+    }
     // Audit L-15 — ``confirmDialog`` prefers ``Telegram.WebApp.showConfirm``.
     if (!(await confirmDialog("Удалить комментарий?"))) return;
     try {
-      await del.mutateAsync(comment.id);
+      await del.mutateAsync(commentId);
       toast.show({ kind: "success", title: "Комментарий удалён" });
       close();
     } catch (e: unknown) {
@@ -650,25 +869,62 @@ function CommentEditSheet({
       <div className="space-y-3">
         <Textarea label="Текст" value={text} onChange={(e) => setText(e.target.value)} />
         <Input
-          label="Рейтинг 0..5 (пусто = сброс)"
+          label="Рейтинг 1..5 (пусто = сброс)"
           type="number"
           inputMode="decimal"
           value={rating}
+          error={ratingError}
           onChange={(e) => setRating(e.target.value)}
         />
         <div className="flex gap-2 pt-2">
-          <Button variant="danger" onClick={onDelete} disabled={del.isPending}>
+          <Button variant="danger" onClick={onDelete} disabled={commentId === null || del.isPending}>
             <Trash2 size={14} />
           </Button>
           <Button variant="secondary" fullWidth onClick={close}>
             Отмена
           </Button>
-          <Button fullWidth onClick={save} disabled={update.isPending}>
+          <Button fullWidth onClick={save} disabled={commentId === null || update.isPending}>
             Сохранить
           </Button>
         </div>
       </div>
     </Sheet>
+  );
+}
+
+function ContentPagination({
+  page,
+  totalPages,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-3 mt-3 text-sm">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+        className="p-2 rounded-button bg-panel-2 disabled:opacity-40 active:scale-95"
+        aria-label={"\u041d\u0430\u0437\u0430\u0434"}
+      >
+        <ChevronLeft size={18} />
+      </button>
+      <span className="text-text-muted">
+        {page} / {totalPages}
+      </span>
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => onPage(page + 1)}
+        className="p-2 rounded-button bg-panel-2 disabled:opacity-40 active:scale-95"
+        aria-label={"\u0412\u043f\u0435\u0440\u0451\u0434"}
+      >
+        <ChevronRight size={18} />
+      </button>
+    </div>
   );
 }
 

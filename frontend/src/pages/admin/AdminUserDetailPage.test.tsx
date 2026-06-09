@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useEffect } from "react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AdminUserDetailDto } from "@/api/types";
 
@@ -17,11 +18,15 @@ import type { AdminUserDetailDto } from "@/api/types";
 
 const mockState = vi.hoisted(() => ({
   user: undefined as AdminUserDetailDto | undefined,
+  lastUserId: undefined as number | undefined,
   loading: false,
   me: { id: 999, display_name: "Admin", username: "admin" } as
     | { id: number }
     | undefined,
   shouldRender: true as boolean,
+  serviceUserId: undefined as number | undefined,
+  reviewUserId: undefined as number | undefined,
+  commentUserId: undefined as number | undefined,
   ban: {
     mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
     isPending: false,
@@ -62,7 +67,10 @@ const mockState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/api/admin/hooks", () => ({
-  useAdminUser: () => ({ data: mockState.user, isLoading: mockState.loading }),
+  useAdminUser: (userId: number | undefined) => {
+    mockState.lastUserId = userId;
+    return { data: mockState.user, isLoading: mockState.loading };
+  },
   useAdminBanUser: () => mockState.ban,
   useAdminUnbanUser: () => mockState.unban,
   useAdminFreezeUser: () => mockState.freeze,
@@ -101,18 +109,41 @@ vi.mock("@/lib/tg", () => ({
 }));
 
 vi.mock("./UserContentSections", () => ({
-  ServicesSection: () => <div data-testid="services" />,
-  ReviewsSection: () => <div data-testid="reviews" />,
-  CommentsSection: () => <div data-testid="comments" />,
+  ServicesSection: ({ userId }: { userId: number }) => {
+    mockState.serviceUserId = userId;
+    return <div data-testid="services" />;
+  },
+  ReviewsSection: ({ userId }: { userId: number }) => {
+    mockState.reviewUserId = userId;
+    return <div data-testid="reviews" />;
+  },
+  CommentsSection: ({ userId }: { userId: number }) => {
+    mockState.commentUserId = userId;
+    return <div data-testid="comments" />;
+  },
 }));
 
 import AdminUserDetailPage from "./AdminUserDetailPage";
+
+let navigateInTest: ((to: string) => void) | undefined;
+
+function NavigationCapture() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    navigateInTest = navigate;
+    return () => {
+      navigateInTest = undefined;
+    };
+  }, [navigate]);
+  return null;
+}
 
 function renderPage(id: number | string = "5") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[`/admin/users/${id}`]}>
+        <NavigationCapture />
         <Routes>
           <Route
             path="/admin/users/:id"
@@ -159,16 +190,22 @@ function makeUser(
     last_ip: "1.2.3.4",
     last_login_at: "2026-01-01T00:00:00Z",
     login_count: 7,
+    sessions_count: 2,
     created_at: "2025-01-01T00:00:00Z",
     ...overrides,
   };
 }
 
 beforeEach(() => {
+  navigateInTest = undefined;
   mockState.user = undefined;
+  mockState.lastUserId = undefined;
   mockState.loading = false;
   mockState.me = { id: 999 } as { id: number };
   mockState.shouldRender = true;
+  mockState.serviceUserId = undefined;
+  mockState.reviewUserId = undefined;
+  mockState.commentUserId = undefined;
   mockState.ban = { mutateAsync: vi.fn(), isPending: false };
   mockState.unban = { mutateAsync: vi.fn(), isPending: false };
   mockState.freeze = { mutateAsync: vi.fn(), isPending: false };
@@ -188,9 +225,99 @@ describe("<AdminUserDetailPage />", () => {
     expect(screen.queryByText("Пользователь")).not.toBeInTheDocument();
   });
 
-  it("renders 'Неверный ID' when the :id param is not numeric", () => {
-    renderPage("abc");
-    expect(screen.getByText("Неверный ID.")).toBeInTheDocument();
+  it.each(["abc", "0", "1e2", "0x5"])(
+    "renders 'Неверный ID' for invalid :id=%s without querying detail",
+    (id) => {
+      renderPage(id);
+      expect(mockState.lastUserId).toBeUndefined();
+      expect(screen.getByText("Неверный ID.")).toBeInTheDocument();
+    },
+  );
+
+  it("passes canonical route ids to useAdminUser", () => {
+    mockState.user = makeUser();
+    renderPage("5");
+    expect(mockState.lastUserId).toBe(5);
+  });
+
+  it("uses the canonical route id for child content sections when payload id is malformed", () => {
+    mockState.user = makeUser({ id: "0x5" as unknown as number });
+    renderPage("5");
+
+    expect(mockState.serviceUserId).toBe(5);
+    expect(mockState.reviewUserId).toBe(5);
+    expect(mockState.commentUserId).toBe(5);
+  });
+
+  it("resets editable form state after navigating to another user detail", async () => {
+    mockState.user = makeUser({
+      id: 5,
+      username: "alice",
+      display_name: "Alice",
+      is_admin: false,
+      is_arbiter: false,
+      is_vip: false,
+      rating_manual: 4.8,
+      deals_total: 10,
+      deals_success: 9,
+      deals_failed: 1,
+      deals_arbitrage: 0,
+      deals_sum_override: 0,
+      good: 20,
+      bad: 1,
+      trust_deposit_balance: 100,
+    });
+    renderPage("5");
+
+    fireEvent.change(
+      screen.getByPlaceholderText("\u041f\u0440\u0438\u0447\u0438\u043d\u0430 \u0431\u0430\u043d\u0430 (\u043e\u043f\u0446\u0438\u043e\u043d\u0430\u043b\u044c\u043d\u043e)"),
+      { target: { value: "old ban reason" } },
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: /\u0410\u0434\u043c\u0438\u043d/ }));
+    fireEvent.change(screen.getByPlaceholderText(/4\.8/), {
+      target: { value: "1.1" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: /\u0421\u0434\u0435\u043b\u043e\u043a \u0432\u0441\u0435\u0433\u043e/i }), {
+      target: { value: "123" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: /\u041d\u043e\u0432\u043e\u0435 \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435/i }), {
+      target: { value: "555" },
+    });
+
+    mockState.user = makeUser({
+      id: 6,
+      username: "bob",
+      display_name: "Bob",
+      is_admin: true,
+      is_arbiter: true,
+      is_vip: true,
+      rating_manual: null,
+      deals_total: 2,
+      deals_success: 2,
+      deals_failed: 0,
+      deals_arbitrage: 1,
+      deals_sum_override: 42,
+      good: 3,
+      bad: 4,
+      trust_deposit_balance: 250,
+    });
+    expect(navigateInTest).toBeDefined();
+    act(() => navigateInTest?.("/admin/users/6"));
+
+    await waitFor(() => expect(mockState.lastUserId).toBe(6));
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("\u041f\u0440\u0438\u0447\u0438\u043d\u0430 \u0431\u0430\u043d\u0430 (\u043e\u043f\u0446\u0438\u043e\u043d\u0430\u043b\u044c\u043d\u043e)"),
+    ).toHaveValue("");
+    expect(screen.getByRole("checkbox", { name: /\u0410\u0434\u043c\u0438\u043d/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /\u0410\u0440\u0431\u0438\u0442\u0440/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /VIP/ })).toBeChecked();
+    expect(screen.getByPlaceholderText(/4\.8/)).toHaveDisplayValue("");
+    expect(screen.getByRole("spinbutton", { name: /\u0421\u0434\u0435\u043b\u043e\u043a \u0432\u0441\u0435\u0433\u043e/i })).toHaveValue(2);
+    expect(screen.getByRole("spinbutton", { name: /^\u0423\u0441\u043f\u0435\u0448\u043d\u044b\u0445$/i })).toHaveValue(2);
+    expect(screen.getByRole("spinbutton", { name: /\u0412 \u0430\u0440\u0431\u0438\u0442\u0440\u0430\u0436\u0435/i })).toHaveValue(1);
+    expect(screen.getByRole("spinbutton", { name: /\u041f\u043e\u043b\u043e\u0436\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0445/i })).toHaveValue(3);
+    expect(screen.getByRole("spinbutton", { name: /\u041d\u043e\u0432\u043e\u0435 \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435/i })).toHaveValue(250);
   });
 
   it("renders skeletons while loading", () => {
@@ -214,6 +341,48 @@ describe("<AdminUserDetailPage />", () => {
     expect(screen.getByText("Установлен")).toBeInTheDocument();
   });
 
+  it("renders malformed identity identifiers and counters as neutral values", () => {
+    mockState.user = makeUser({
+      tg_user_id: "1e2" as unknown as number,
+      login_count: "0x10" as unknown as number,
+    });
+    renderPage();
+
+    expect(screen.getByText("tg_id: \u2014")).toBeInTheDocument();
+    expect(screen.getAllByText("\u2014").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/1e2|0x10/)).not.toBeInTheDocument();
+  });
+
+  it("renders string trust deposit and rating payloads without crashing", () => {
+    mockState.user = makeUser({
+      trust_deposit_balance: "1500.5" as unknown as number,
+      rating_auto: "4.25" as unknown as number,
+      rating_effective: "4.5" as unknown as number,
+    });
+
+    renderPage();
+
+    expect(screen.getByText("$1500.50")).toBeInTheDocument();
+    expect(screen.getAllByText("4.5").length).toBeGreaterThan(0);
+  });
+
+  it("renders malformed identity timestamps as neutral values", () => {
+    mockState.user = makeUser({
+      created_at: "not-a-date",
+      last_login_at: "also-not-a-date",
+    });
+    renderPage();
+    expect(screen.getAllByText("\u2014").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+  });
+
+  it("renders a non-handle label when username is missing", () => {
+    mockState.user = makeUser({ username: null });
+    renderPage();
+    expect(screen.getByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/)).toBeInTheDocument();
+    expect(screen.queryByText(/@\u2014/)).not.toBeInTheDocument();
+  });
+
   it("ban click with empty reason sends reason=null", async () => {
     mockState.user = makeUser();
     mockState.ban.mutateAsync.mockResolvedValue({});
@@ -228,6 +397,22 @@ describe("<AdminUserDetailPage />", () => {
     );
     expect(toastSpy).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "success", title: "Забанен" }),
+    );
+  });
+
+  it("uses the canonical route id for moderation when payload id is malformed", async () => {
+    mockState.user = makeUser({ id: "0x5" as unknown as number });
+    mockState.ban.mutateAsync.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage("5");
+
+    await user.click(screen.getByRole("button", { name: /\u0417\u0430\u0431\u0430\u043d\u0438\u0442\u044c/ }));
+
+    await waitFor(() =>
+      expect(mockState.ban.mutateAsync).toHaveBeenCalledWith({
+        userId: 5,
+        body: { reason: null },
+      }),
     );
   });
 
@@ -266,6 +451,16 @@ describe("<AdminUserDetailPage />", () => {
     expect(
       screen.getByRole("button", { name: /Разлогинить/ }),
     ).toBeDisabled();
+  });
+
+  it("uses the canonical route id for self-disable when payload id is malformed", () => {
+    mockState.user = makeUser({ id: "0x5" as unknown as number });
+    mockState.me = { id: 5 } as { id: number };
+    renderPage("5");
+
+    expect(screen.getByRole("button", { name: /\u0417\u0430\u0431\u0430\u043d\u0438\u0442\u044c/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /\u0417\u0430\u043c\u043e\u0440\u043e\u0437\u0438\u0442\u044c/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /\u0420\u0430\u0437\u043b\u043e\u0433\u0438\u043d\u0438\u0442\u044c/ })).toBeDisabled();
   });
 
   it("'Сбросить PIN' is disabled when has_pin=false", () => {

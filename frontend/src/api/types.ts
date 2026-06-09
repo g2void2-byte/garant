@@ -8,14 +8,14 @@ export interface CategoryDto {
 
 export interface ServiceDto {
   id: number;
-  owner_username: string;
+  owner_username: string | null;
   title: string;
   description: string;
   price: number;
   currency: string;
   status: string;
   category: CategoryDto;
-  created_at?: string | null;
+  created_at: string | null;
   // V12-UI — gallery URLs (``/media/service/...`` or ``https://...``)
   // attached to the service by its owner. Capped at 6 server-side.
   photo_urls?: string[];
@@ -56,7 +56,7 @@ export interface ServiceCommentDto {
 export interface UserCardDto {
   id: number;
   user_id: number;
-  username: string;
+  username: string | null;
   display_name: string;
   photo_url: string | null;
   admin: number;
@@ -115,10 +115,12 @@ export type DealStatus =
   | "pending_cancellation"
   | "cancelled_for_inactivity";
 
+export type DealRole = "buyer" | "seller" | "other";
+
 export interface DealDto {
   id: number;
-  buyer: string;
-  seller: string;
+  buyer: string | null;
+  seller: string | null;
   // Item 21 — counterparty avatar URLs surfaced for deal list + detail.
   buyer_photo_url?: string | null;
   seller_photo_url?: string | null;
@@ -129,17 +131,17 @@ export interface DealDto {
   status: DealStatus | string;
   confirm_buyer: boolean;
   confirm_seller: boolean;
-  role: "buyer" | "seller";
+  role: DealRole | string;
   created_at: string | null;
   currency_code: string | null;
   amount: number;
   commission_amount: number | null;
   in_progress_at: string | null;
   completed_at: string | null;
-  cancellation_initiator: "buyer" | "seller" | "other" | null;
+  cancellation_initiator: DealRole | null;
   cancellation_reason: string | null;
   cancellation_requested_at: string | null;
-  arbitration_initiator: "buyer" | "seller" | "other" | null;
+  arbitration_initiator: DealRole | null;
   arbitration_reason: string | null;
   arbitration_resolved_by: string | null;
   arbitration_resolution: "buyer" | "seller" | null;
@@ -153,10 +155,10 @@ export interface DealDto {
 export interface DealTopupInvoiceDto {
   deposit_id: number;
   pay_url: string;
-  total: string | number;
-  topup_principal: string | number;
-  commission: string | number;
-  paid_total?: string | number;
+  total: number;
+  topup_principal: number;
+  commission: number;
+  paid_total: number;
   currency_code: string;
   provider: string;
   expires_at?: string | null;
@@ -164,25 +166,29 @@ export interface DealTopupInvoiceDto {
 
 export interface DealCreateWithTopupResponseDto {
   deal: DealDto;
-  invoice: DealTopupInvoiceDto;
+  // ``null`` when the buyer's balance fully covers amount + commission
+  // and the backend skips the invoice path.
+  invoice: DealTopupInvoiceDto | null;
 }
 
 export interface ReviewDto {
   id: number;
   deal_id: number | null;
-  author_username: string;
-  target_username: string;
+  author_username: string | null;
+  target_username: string | null;
   rating: number;
   text: string;
   created_at: string;
 }
 
+export type NotificationType = "deals" | "deposits" | "system";
+
 export interface NotificationDto {
   id: number;
-  type: "deals" | "deposits" | "system" | string;
+  type: NotificationType;
   title: string;
   body: string;
-  payload: Record<string, unknown>;
+  payload: Record<string, unknown> | null;
   is_read: boolean;
   created_at: string;
 }
@@ -195,10 +201,30 @@ export interface NotificationCountersDto {
   unread: number;
 }
 
+export interface MediaDto {
+  id: number;
+  kind: string;
+  url: string;
+  name: string;
+  size: number;
+  content_type: string;
+  created_at: string | null;
+}
+
+export interface DealMessageDto {
+  id: number;
+  deal_id: number;
+  sender_id: number;
+  sender_username: string | null;
+  text: string;
+  attachments: MediaDto[];
+  created_at: string;
+}
+
 export interface SupportPersonDto {
   id: number;
   user_id: number;
-  username: string;
+  username: string | null;
   display_name: string;
   photo_url: string | null;
   admin: number;
@@ -258,7 +284,7 @@ export interface CurrencyDto {
   // Distinguishes fiat invoices (``"fiat"`` — UAH/RUB/USD) from
   // crypto invoices (``"crypto"`` — USDT/TON/...). Surfaced so the
   // deposit page can filter the dropdown to fiat-only options.
-  kind?: "crypto" | "fiat" | string;
+  kind: "crypto" | "fiat" | string;
 }
 
 export interface WalletBalanceDto {
@@ -284,7 +310,7 @@ export interface WalletDepositDto {
   id: number;
   currency: CurrencyDto;
   amount: number;
-  status: "pending" | "paid" | "expired" | string;
+  status: "pending" | "paid" | "expired" | "refunded" | string;
   pay_url: string;
   invoice_id: string;
   // Routing tag chosen by the user at deposit-create time. ``"wallet"``
@@ -408,6 +434,7 @@ export interface AdminUserDetailDto {
   last_ip: string | null;
   last_login_at: string | null;
   login_count: number;
+  sessions_count: number;
   created_at: string;
 }
 
@@ -498,7 +525,7 @@ export interface AdminDealDetailDto {
   confirm_buyer: boolean;
   confirm_seller: boolean;
   events: AdminDealEventDto[];
-  messages: AdminDealMessageDto[];
+  messages: DealMessageDto[];
   pending_approvals?: AdminApprovalDto[];
 }
 
@@ -512,8 +539,8 @@ export interface AdminApprovalDto {
   approved_by_id?: number | null;
   executed_by_id?: number | null;
   currency_code?: string | null;
-  amount?: string | number | null;
-  amount_usd_estimate?: string | number | null;
+  amount?: string | null;
+  amount_usd_estimate?: string | null;
   reason?: string | null;
   payload?: Record<string, unknown> | null;
   created_at: string;
@@ -527,25 +554,16 @@ export interface AdminDealActionResultDto {
   pending_approval?: AdminApprovalDto | null;
 }
 
-export interface AdminDealMessageDto {
-  id: number;
-  deal_id: number;
-  sender_id: number;
-  sender_username: string | null;
-  sender_display_name: string;
-  text: string;
-  attachments: { id: number; url: string; mime: string | null }[];
-  created_at: string;
-}
+export type AdminDealMessageDto = DealMessageDto;
 
 export interface AdminListDealsQuery {
   // Audit L-10 — ``undefined`` (param omitted) is the canonical "no
   // filter" value; the previous ``"any"`` literal is no longer part
   // of the union on the frontend.
-  status?: DealStatus | string;
+  status?: Exclude<DealStatus, "pending_payment">;
   currency?: string;
-  min_amount?: number;
-  max_amount?: number;
+  min_amount?: number | string;
+  max_amount?: number | string;
   has_arbitration?: boolean;
   has_cancel_request?: boolean;
   buyer_id?: number;
@@ -587,17 +605,24 @@ export interface AdminServiceItemDto {
   created_at: string;
 }
 
+export interface AdminServiceListDto {
+  items: AdminServiceItemDto[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface AdminServiceUpdateBody {
   title?: string;
   description?: string;
-  price?: number;
-  deposit?: number;
+  price?: number | string;
+  deposit?: number | string;
   views?: number;
   deals_count?: number;
-  rating_manual?: number | null;
+  rating_manual?: number | string | null;
   clear_rating?: boolean;
   status?: "draft" | "active" | "paused" | "banned";
-  ban_reason?: string;
+  ban_reason?: string | null;
 }
 
 export interface AdminReviewItemDto {
@@ -610,6 +635,13 @@ export interface AdminReviewItemDto {
   rating: number;
   text: string;
   created_at: string;
+}
+
+export interface AdminReviewListDto {
+  items: AdminReviewItemDto[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 export interface AdminReviewUpsertBody {
@@ -630,9 +662,16 @@ export interface AdminCommentItemDto {
   created_at: string;
 }
 
+export interface AdminCommentListDto {
+  items: AdminCommentItemDto[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface AdminCommentUpdateBody {
   text?: string;
-  rating?: number;
+  rating?: number | null;
   clear_rating?: boolean;
 }
 
@@ -649,8 +688,8 @@ export interface AdminUserBalanceDto {
   amount: string;
   locked: string;
   total: string;
-  usd_rate?: string | number | null;
-  usd_estimate?: string | number | null;
+  usd_rate?: string | null;
+  usd_estimate?: string | null;
   usd_rate_source?: string | null;
   usd_rate_observed_at?: string | null;
   updated_at: string | null;
@@ -667,7 +706,7 @@ export interface AdminWalletListItemDto {
   is_banned: boolean;
   is_frozen: boolean;
   balances: AdminUserBalanceDto[];
-  total_usd_estimate?: string | number | null;
+  total_usd_estimate?: string | null;
   usd_estimate_missing_rates?: string[];
 }
 
@@ -680,14 +719,14 @@ export interface AdminWalletListDto {
 
 export interface AdminWalletAdjustBody {
   currency_code: string;
-  amount: number;
+  amount: number | string;
   reason?: string;
 }
 
 export interface AdminCurrencyRateDto {
   currency_id: number;
   currency_code: string;
-  usd_rate: string | number;
+  usd_rate: string;
   source: string;
   observed_at: string;
   updated_at?: string | null;
@@ -696,7 +735,7 @@ export interface AdminCurrencyRateDto {
 
 export interface AdminCurrencyRateUpsertBody {
   currency_code: string;
-  usd_rate: number;
+  usd_rate: number | string;
   source?: string;
   observed_at?: string | null;
 }
@@ -764,8 +803,8 @@ export interface AdminSettingsDto {
 }
 
 export interface AdminSettingsUpdateBody {
-  deal_commission_percent?: number;
-  vip_commission_percent?: number;
+  deal_commission_percent?: number | string;
+  vip_commission_percent?: number | string;
   inactivity_pending_confirmation_days?: number;
   inactivity_pending_cancellation_days?: number;
   pending_topup_expiry_hours?: number;
@@ -773,11 +812,11 @@ export interface AdminSettingsUpdateBody {
   maintenance_enabled?: boolean;
   maintenance_message?: string;
   auto_withdraw_enabled?: boolean;
-  pin_reset_price_usd?: number;
+  pin_reset_price_usd?: number | string;
   faq_stats_badge_enabled?: boolean;
   faq_stats_users?: number;
   faq_stats_deals?: number;
-  faq_stats_total_usd?: number;
+  faq_stats_total_usd?: number | string;
 }
 
 export interface AdminCategoryDto {
@@ -804,21 +843,21 @@ export interface AdminCurrencyDto {
   min_withdraw: number;
   is_active: boolean;
   sort_order: number;
-  address_regex?: string;
-  kind?: "crypto" | "fiat" | string;
+  address_regex: string;
+  kind: "crypto" | "fiat" | string;
 }
 
 export interface AdminCurrencyUpsertBody {
   code: string;
   name?: string;
-  network?: string;
-  icon_url?: string;
+  network?: string | null;
+  icon_url?: string | null;
   decimals?: number;
-  min_deposit?: number;
-  min_withdraw?: number;
+  min_deposit?: number | string;
+  min_withdraw?: number | string;
   is_active?: boolean;
   sort_order?: number;
-  address_regex?: string;
+  address_regex?: string | null;
   kind?: "crypto" | "fiat";
 }
 

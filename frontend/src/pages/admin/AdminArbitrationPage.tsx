@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, Gavel, Inbox, CheckCheck, type LucideIcon } from "lucide-react";
+import { CheckCheck, ChevronLeft, ChevronRight, Gavel, Inbox, type LucideIcon } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { AdminHeader } from "@/components/layout/AdminHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -8,12 +8,21 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { useAdminArbitration, useAdminClaimArbitration } from "@/api/admin/hooks";
-import { parseDecimal } from "@/lib/format";
 import type { AdminDealListItemDto } from "@/api/types";
 import { haptic } from "@/lib/tg";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import {
+  formatAdminAmount,
+  formatAdminCurrencyCode,
+  formatAdminId,
+  formatAdminUsername,
+  getAdminTotalPages,
+  parseAdminCount,
+  parseAdminId,
+} from "./format";
 
 type Queue = "new" | "in_progress" | "closed";
+const PAGE_SIZE = 20;
 
 const QUEUE_TABS: Array<{ key: Queue; label: string; icon: LucideIcon }> = [
   { key: "new", label: "Новые", icon: Inbox },
@@ -35,7 +44,8 @@ const QUEUE_TABS: Array<{ key: Queue; label: string; icon: LucideIcon }> = [
 export default function AdminArbitrationPage() {
   const navigate = useNavigate();
   const [queue, setQueue] = useState<Queue>("new");
-  const { data, isLoading } = useAdminArbitration(queue);
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useAdminArbitration(queue, page, PAGE_SIZE);
   const toast = useToast();
   const claim = useAdminClaimArbitration();
 
@@ -44,6 +54,7 @@ export default function AdminArbitrationPage() {
 
   const items = data?.items ?? [];
   const counters = data?.counters ?? { new: 0, in_progress: 0, closed: 0 };
+  const totalPages = getAdminTotalPages(counters[queue], PAGE_SIZE);
 
   const onClaim = async (dealId: number) => {
     haptic("medium");
@@ -51,6 +62,7 @@ export default function AdminArbitrationPage() {
       await claim.mutateAsync(dealId);
       toast.show({ kind: "success", title: "Дело взято в работу" });
       setQueue("in_progress");
+      setPage(1);
     } catch (e: unknown) {
       const status = (e as { response?: { status?: number } })?.response?.status;
       if (status === 409) {
@@ -67,7 +79,7 @@ export default function AdminArbitrationPage() {
 
       <div className="px-4 grid grid-cols-3 gap-2 mb-3">
         {QUEUE_TABS.map((t) => {
-          const count = counters[t.key];
+          const count = parseAdminCount(counters[t.key]);
           const active = queue === t.key;
           return (
             <button
@@ -76,6 +88,7 @@ export default function AdminArbitrationPage() {
               onClick={() => {
                 haptic("light");
                 setQueue(t.key);
+                setPage(1);
               }}
               className={`relative flex flex-col items-center justify-center rounded-card py-2.5 transition-colors ${
                 active ? "bg-accent text-black" : "bg-panel text-text-muted"
@@ -83,7 +96,7 @@ export default function AdminArbitrationPage() {
             >
               <t.icon size={16} />
               <span className="mt-1 text-[11px] font-medium">{t.label}</span>
-              {count > 0 && (
+              {count !== null && count > 0 && (
                 <span
                   className={`absolute top-1 right-1 min-w-[18px] h-[18px] rounded-full px-1 text-[10px] font-bold grid place-items-center ${
                     active ? "bg-black text-accent" : "bg-accent text-black"
@@ -123,18 +136,66 @@ export default function AdminArbitrationPage() {
             <li
               key={d.id}
             >
-              <ArbRow
-                deal={d}
-                queue={queue}
-                onOpen={() => navigate(`/admin/deals/${d.id}`)}
-                onClaim={() => onClaim(d.id)}
-                claiming={claim.isPending}
-              />
+              {(() => {
+                const dealId = parseAdminId(d.id);
+                return (
+                  <ArbRow
+                    deal={d}
+                    queue={queue}
+                    onOpen={dealId !== null ? () => navigate(`/admin/deals/${dealId}`) : undefined}
+                    onClaim={dealId !== null ? () => onClaim(dealId) : undefined}
+                    claiming={claim.isPending}
+                  />
+                );
+              })()}
             </li>
           ))}
         </ul>
       )}
+      {totalPages > 1 && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPage={setPage}
+        />
+      )}
     </Page>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-3 mt-3 mb-4 text-sm">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+        className="p-2 rounded-button bg-panel disabled:opacity-40 active:scale-95"
+        aria-label={"\u041d\u0430\u0437\u0430\u0434"}
+      >
+        <ChevronLeft size={18} />
+      </button>
+      <span className="text-text-muted">
+        {page} / {totalPages}
+      </span>
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => onPage(page + 1)}
+        className="p-2 rounded-button bg-panel disabled:opacity-40 active:scale-95"
+        aria-label={"\u0412\u043f\u0435\u0440\u0451\u0434"}
+      >
+        <ChevronRight size={18} />
+      </button>
+    </div>
   );
 }
 
@@ -147,25 +208,30 @@ function ArbRow({
 }: {
   deal: AdminDealListItemDto;
   queue: Queue;
-  onOpen: () => void;
-  onClaim: () => void;
+  onOpen?: () => void;
+  onClaim?: () => void;
   claiming: boolean;
 }) {
   return (
     <div className="bg-panel rounded-card p-3 border border-danger/20">
-      <button type="button" onClick={onOpen} className="w-full text-left">
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={!onOpen}
+        className="w-full text-left disabled:cursor-not-allowed disabled:opacity-60"
+      >
         <div className="flex items-center gap-1.5 text-sm font-semibold">
-          <span>#{deal.id}</span>
+          <span>#{formatAdminId(deal.id)}</span>
           <span className="text-text-muted">·</span>
           <span className="text-text-muted truncate">
-            @{deal.buyer_username ?? "—"} ↔ @{deal.seller_username ?? "—"}
+            {formatAdminUsername(deal.buyer_username)} ↔ {formatAdminUsername(deal.seller_username)}
           </span>
           <ChevronRight size={14} className="text-text-muted ml-auto shrink-0" />
         </div>
         <div className="mt-0.5 text-xs text-text-muted flex items-center gap-2 flex-wrap">
           <span className="font-medium text-text">
-            {parseDecimal(deal.amount).toFixed(2)}{" "}
-            {deal.currency_code ?? "USD"}
+            {formatAdminAmount(deal.amount)}{" "}
+            {formatAdminCurrencyCode(deal.currency_code)}
           </span>
           <span>·</span>
           <span>Арбитраж</span>
@@ -177,8 +243,8 @@ function ArbRow({
           fullWidth
           variant="primary"
           className="mt-3"
-          disabled={claiming}
-          onClick={onClaim}
+          disabled={claiming || !onClaim}
+          onClick={() => onClaim?.()}
         >
           {claiming ? "..." : "Взять в работу"}
         </Button>

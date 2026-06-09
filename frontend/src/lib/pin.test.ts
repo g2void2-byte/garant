@@ -46,6 +46,15 @@ describe("pin token storage", () => {
     expect(window.localStorage.getItem("garant.pin_token")).toBeNull();
   });
 
+  it("auto-clears tokens with malformed stored expiry values", () => {
+    window.localStorage.setItem("garant.pin_token", "tok-invalid-expiry");
+    window.localStorage.setItem("garant.pin_token_expires", "not-a-date");
+    expect(getPinToken()).toBeNull();
+    expect(hasValidPinToken()).toBe(false);
+    expect(window.localStorage.getItem("garant.pin_token")).toBeNull();
+    expect(window.localStorage.getItem("garant.pin_token_expires")).toBeNull();
+  });
+
   it("dispatches the change event on set and clear", () => {
     const listener = vi.fn();
     window.addEventListener(PIN_TOKEN_CHANGED_EVENT, listener);

@@ -55,4 +55,36 @@ describe("<ProfileHeader />", () => {
     render(<ProfileHeader user={makeUser({ prefix: "vip" })} />);
     expect(screen.getByText("VIP")).toBeInTheDocument();
   });
+
+  it("renders unknown runtime prefixes as a neutral role label", () => {
+    render(<ProfileHeader user={makeUser({ prefix: "moderator" as UserCardDto["prefix"] })} />);
+    expect(screen.getByText("Роль неизвестна")).toBeInTheDocument();
+    expect(screen.queryByText("moderator")).not.toBeInTheDocument();
+  });
+
+  it("renders banner URLs as an image instead of interpolating them into CSS", () => {
+    const bannerUrl = "https://cdn.example/a),url(https://evil.example/pixel)";
+    const { container } = render(<ProfileHeader user={makeUser({ banner_url: bannerUrl })} />);
+
+    const banner = screen.getByTestId("profile-banner-image");
+    expect(banner).toHaveAttribute("src", bannerUrl);
+    expect(container.querySelector("[style*='background-image']")).toBeNull();
+  });
+
+  it("ignores unsafe banner URLs before rendering an image", () => {
+    render(<ProfileHeader user={makeUser({ banner_url: "data:image/svg+xml,<svg onload=alert(1)>" })} />);
+    expect(screen.queryByTestId("profile-banner-image")).not.toBeInTheDocument();
+  });
+
+  it("renders a username fallback for unsafe username refs", () => {
+    render(<ProfileHeader user={makeUser({ username: "../admin" })} />);
+    expect(screen.queryByText("@../admin")).not.toBeInTheDocument();
+    expect(screen.getByText(/username \u043d\u0435 \u0437\u0430\u0434\u0430\u043d/)).toBeInTheDocument();
+  });
+
+  it("renders a username fallback instead of @null", () => {
+    render(<ProfileHeader user={makeUser({ username: null })} />);
+    expect(screen.getByText("username не задан")).toBeInTheDocument();
+    expect(screen.queryByText("@null")).not.toBeInTheDocument();
+  });
 });

@@ -10,6 +10,8 @@ import {
 } from "@/api/admin/hooks";
 import type { AdminAnalyticsSeriesPointDto } from "@/api/types";
 import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+import { formatCountValue, parseDecimalValue, parseNonNegativeIntegerValue } from "@/lib/format";
+import { formatAdminUsername } from "./format";
 
 /**
  * `/admin/analytics` — KPI cards, 30-day sparklines, top-user lists.
@@ -18,6 +20,39 @@ import { useAdminRedirect } from "@/hooks/useAdminRedirect";
  * so we don't take a charting dep just for the admin panel. Auto-
  * refresh every minute.
  */
+const DASH = "\u2014";
+
+function parseNonNegativeDecimalValue(value: unknown): number | null {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  const parsed = parseDecimalValue(value);
+  return parsed !== null && parsed >= 0 ? parsed : null;
+}
+
+function formatCountTuple(values: unknown[]): string {
+  return values.map((value) => formatCountValue(value)).join(" / ");
+}
+
+function formatAnalyticsUsd(value: unknown): string {
+  const parsed = parseNonNegativeDecimalValue(value);
+  return parsed === null
+    ? DASH
+    : `$${parsed.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+}
+
+function formatAnalyticsNumber(value: unknown): string {
+  const parsed = parseNonNegativeDecimalValue(value);
+  return parsed === null
+    ? DASH
+    : parsed.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+type SeriesValueKind = "count" | "decimal";
+
+function parseSeriesValue(value: unknown, kind: SeriesValueKind): number | null {
+  if (kind === "count") return parseNonNegativeIntegerValue(value);
+  return parseNonNegativeDecimalValue(value);
+}
+
 export default function AdminAnalyticsPage() {
   const navigate = useNavigate();
   const kpi = useAdminAnalyticsKpi();
@@ -35,7 +70,7 @@ export default function AdminAnalyticsPage() {
           icon={<Users size={14} />}
           label="DAU / WAU / MAU"
           value={
-            kpi.data ? `${kpi.data.dau} / ${kpi.data.wau} / ${kpi.data.mau}` : "—"
+            kpi.data ? formatCountTuple([kpi.data.dau, kpi.data.wau, kpi.data.mau]) : "—"
           }
           loading={kpi.isLoading}
         />
@@ -43,35 +78,31 @@ export default function AdminAnalyticsPage() {
           icon={<Activity size={14} />}
           label="Новых юзеров (24h / 7d)"
           value={
-            kpi.data ? `${kpi.data.new_users_24h} / ${kpi.data.new_users_7d}` : "—"
+            kpi.data ? formatCountTuple([kpi.data.new_users_24h, kpi.data.new_users_7d]) : "—"
           }
           loading={kpi.isLoading}
         />
         <KpiCard
           icon={<TrendingUp size={14} />}
           label="Сделок (24h / 7d)"
-          value={kpi.data ? `${kpi.data.deals_24h} / ${kpi.data.deals_7d}` : "—"}
+          value={kpi.data ? formatCountTuple([kpi.data.deals_24h, kpi.data.deals_7d]) : "—"}
           loading={kpi.isLoading}
         />
         <KpiCard
           icon={<Wallet size={14} />}
           label="Объём (30d)"
-          value={
-            kpi.data
-              ? `$${kpi.data.deals_volume_usd_30d.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
-              : "—"
-          }
+          value={kpi.data ? formatAnalyticsUsd(kpi.data.deals_volume_usd_30d) : "—"}
           loading={kpi.isLoading}
         />
         <KpiCard
           label="Открытых арбитражей"
-          value={kpi.data ? String(kpi.data.open_arbitration) : "—"}
+          value={kpi.data ? formatCountValue(kpi.data.open_arbitration) : "—"}
           loading={kpi.isLoading}
           accent="warning"
         />
         <KpiCard
           label="Ожидают вывод"
-          value={kpi.data ? String(kpi.data.pending_withdrawals) : "—"}
+          value={kpi.data ? formatCountValue(kpi.data.pending_withdrawals) : "—"}
           loading={kpi.isLoading}
           accent="warning"
         />
@@ -91,7 +122,8 @@ export default function AdminAnalyticsPage() {
             <SparklineCard
               title="Объём ($) в день"
               data={series.data?.deals_volume_30d ?? []}
-              format={(v) => `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+              valueKind="decimal"
+              format={formatAnalyticsUsd}
             />
             <SparklineCard
               title="Новые юзеры в день"
@@ -100,19 +132,21 @@ export default function AdminAnalyticsPage() {
             <SparklineCard
               title="Депозиты в день"
               data={series.data?.deposits_30d ?? []}
+              valueKind="decimal"
             />
             <SparklineCard
               title="Выводы в день"
               data={series.data?.withdrawals_30d ?? []}
+              valueKind="decimal"
             />
           </>
         )}
       </div>
 
       <div className="px-4 mt-4 pb-24 space-y-3">
-        <TopList title="Топ продавцов" entries={top.data?.top_sellers ?? []} />
-        <TopList title="Топ покупателей" entries={top.data?.top_buyers ?? []} />
-        <TopList title="Топ арбитров" entries={top.data?.top_arbiters ?? []} />
+        <TopList title="Топ продавцов" entries={top.data?.top_sellers ?? []} valueKind="decimal" />
+        <TopList title="Топ покупателей" entries={top.data?.top_buyers ?? []} valueKind="decimal" />
+        <TopList title="Топ арбитров" entries={top.data?.top_arbiters ?? []} valueKind="count" />
       </div>
     </Page>
   );
@@ -151,12 +185,17 @@ function SparklineCard({
   title,
   data,
   format,
+  valueKind = "count",
 }: {
   title: string;
   data: AdminAnalyticsSeriesPointDto[];
   format?: (v: number) => string;
+  valueKind?: SeriesValueKind;
 }) {
-  if (data.length === 0) {
+  const values = data
+    .map((d) => parseSeriesValue(d.value, valueKind))
+    .filter((value): value is number => value !== null);
+  if (values.length === 0) {
     return (
       <div className="bg-panel rounded-card p-3">
         <div className="text-xs text-text-muted">{title}</div>
@@ -164,15 +203,15 @@ function SparklineCard({
       </div>
     );
   }
-  const max = Math.max(...data.map((d) => d.value), 1);
-  const points = data
-    .map((d, i) => {
-      const x = (i / Math.max(data.length - 1, 1)) * 100;
-      const y = 100 - (d.value / max) * 100;
+  const max = Math.max(...values, 1);
+  const points = values
+    .map((value, i) => {
+      const x = (i / Math.max(values.length - 1, 1)) * 100;
+      const y = ((100 - (value / max) * 100) / 100) * 28;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
-  const last = data[data.length - 1]?.value ?? 0;
+  const last = values[values.length - 1];
   return (
     <div
       className="bg-panel rounded-card p-3"
@@ -180,7 +219,7 @@ function SparklineCard({
       <div className="flex items-baseline justify-between">
         <div className="text-xs text-text-muted">{title}</div>
         <div className="text-sm font-semibold">
-          {format ? format(last) : last}
+          {format ? format(last) : formatAnalyticsNumber(last)}
         </div>
       </div>
       <svg viewBox="0 0 100 28" preserveAspectRatio="none" className="w-full h-12 mt-2">
@@ -188,13 +227,7 @@ function SparklineCard({
           fill="none"
           stroke="currentColor"
           strokeWidth="1.2"
-          points={points
-            .split(" ")
-            .map((p) => {
-              const [x, y] = p.split(",").map(Number);
-              return `${x},${(y / 100) * 28}`;
-            })
-            .join(" ")}
+          points={points}
           className="text-accent"
         />
       </svg>
@@ -205,14 +238,16 @@ function SparklineCard({
 function TopList({
   title,
   entries,
+  valueKind,
 }: {
   title: string;
   entries: Array<{
     user_id: number;
     username: string | null;
     display_name: string;
-    value: number;
+    value: unknown;
   }>;
+  valueKind: SeriesValueKind;
 }) {
   return (
     <div className="bg-panel rounded-card p-3">
@@ -227,10 +262,12 @@ function TopList({
                 <span className="text-text-muted w-5 text-right">{i + 1}.</span>
                 <span className="truncate">
                   {e.display_name}{" "}
-                  <span className="text-text-muted">@{e.username ?? "—"}</span>
+                  <span className="text-text-muted">{formatAdminUsername(e.username)}</span>
                 </span>
               </div>
-              <span className="font-mono text-text-muted">{e.value}</span>
+              <span className="font-mono text-text-muted">
+                {valueKind === "count" ? formatCountValue(e.value) : formatAnalyticsNumber(e.value)}
+              </span>
             </div>
           ))}
         </div>
